@@ -13,5 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
-/app/src/main/assets/all-minilm-l6-v2/model.onnx
-/app/src/main/assets/all-minilm-l6-v2/tokenizer.json
+/app/src/main/assets/all-minilm-l6-v2/
+/app/src/main/assets/multilingual-e5-small/
