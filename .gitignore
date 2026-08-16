@@ -15,3 +15,4 @@
 local.properties
 /app/src/main/assets/all-minilm-l6-v2/
 /app/src/main/assets/multilingual-e5-small/
+/app/src/main/assets/embeddinggemma-300m/
