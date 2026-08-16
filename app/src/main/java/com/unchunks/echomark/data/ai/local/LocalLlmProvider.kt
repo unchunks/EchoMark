@@ -13,4 +13,18 @@ class LocalLlmProvider @Inject constructor() : LlmProvider {
         // TODO: ローカルAIでタグ生成する
         return listOf("仮タグ")
     }
+
+    override suspend fun categorize(text: String): String {
+        // TODO: 実際のカテゴリ分類ロジックに置き換える
+        return "未分類"
+    }
+
+    override suspend fun chat(userMessage: String, context: List<String>): String {
+        // TODO: 実際のLLM呼び出しに置き換える。contextを含めたプロンプトを組み立てて渡す
+        return if (context.isEmpty()) {
+            "[ローカルAI仮実装] 関連する保存内容が見つかりませんでした。"
+        } else {
+            "[ローカルAI仮実装] ${context.size}件の関連ブックマークを参照しました:\n${context.first().take(80)}"
+        }
+    }
 }

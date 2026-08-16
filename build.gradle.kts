@@ -4,4 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.devtools.ksp) apply false
     alias(libs.plugins.hilt.android) apply false
+    alias(libs.plugins.androidx.room) apply false
+    alias(libs.plugins.kotlin.legacy.kapt) apply false
+    alias(libs.plugins.objectbox) apply false
 }
