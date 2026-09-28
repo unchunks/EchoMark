@@ -81,6 +81,10 @@ dependencies {
 
     // AI
     implementation(libs.mediapipe.tasks.text)
+    implementation(libs.mediapipe.tasks.genai)
+
+    // Network
+    implementation(libs.okhttp)
 
     // Testing
     testImplementation(libs.junit)
