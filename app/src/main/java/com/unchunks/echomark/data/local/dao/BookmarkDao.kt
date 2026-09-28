@@ -70,6 +70,10 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE id = :id")
     suspend fun getById(id: Long): BookmarkEntity?
 
+    /** 再発見通知用: 指定時刻以前から開かれていないものを、古い順に取得する。 */
+    @Query("SELECT * FROM bookmarks WHERE lastAccessedAt <= :threshold ORDER BY lastAccessedAt ASC LIMIT :limit")
+    suspend fun getStale(threshold: Long, limit: Int): List<BookmarkEntity>
+
     @Query("SELECT * FROM bookmarks WHERE id IN (:ids)")
     suspend fun getByIds(ids: List<Long>): List<BookmarkEntity>
 

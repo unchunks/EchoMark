@@ -16,6 +16,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import androidx.navigation.compose.rememberNavController
 import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
@@ -101,7 +102,8 @@ fun EchoMarkNavHost() {
             composable(TopLevelDestination.SETTINGS.route) { SettingsScreen() }
             composable(
                 route = Routes.BOOKMARK_DETAIL,
-                arguments = listOf(navArgument("bookmarkId") { type = NavType.LongType })
+                arguments = listOf(navArgument("bookmarkId") { type = NavType.LongType }),
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.BOOKMARK_DEEP_LINK })
             ) {
                 BookmarkDetailScreen(
                     onBack = { navController.popBackStack() },

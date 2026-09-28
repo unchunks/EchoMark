@@ -218,6 +218,11 @@ class BookmarkRepositoryImpl @Inject constructor(
         }
 
 
+    override suspend fun getStaleBookmarks(threshold: Long, limit: Int): List<Bookmark> =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.getStale(threshold, limit).map { it.toDomain() }
+        }
+
     override suspend fun getAllBookmarkIds(): List<Long> =
         withContext(dispatcherProvider.io) {
             bookmarkDao.getAllIds()

@@ -41,6 +41,8 @@ interface BookmarkRepository {
     // Read
     suspend fun getBookmarkById(id: Long): Bookmark?
     suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark>
+    /** [threshold] (epoch millis) 以前から開かれていないブックマークを、最終アクセスが古い順に返す。再発見通知用。 */
+    suspend fun getStaleBookmarks(threshold: Long, limit: Int): List<Bookmark>
     suspend fun getAllBookmarkIds(): List<Long>
     suspend fun getRelatedBookmarks(bookmarkId: Long, limit: Int = 5): List<Bookmark>
     suspend fun getEmbeddingModelVersion(bookmarkId: Long): String?

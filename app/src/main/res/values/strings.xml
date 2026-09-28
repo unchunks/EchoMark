@@ -1,4 +1,7 @@
 <resources>
     <string name="app_name">EchoMark</string>
     <string name="share_label">EchoMarkに保存</string>
+    <string name="notification_channel_rediscover">再発見ダイジェスト</string>
+    <string name="notification_channel_rediscover_desc">しばらく開いていないブックマークをお知らせします</string>
+    <string name="rediscover_notification_title">こんなブックマーク、忘れていませんか?</string>
 </resources>

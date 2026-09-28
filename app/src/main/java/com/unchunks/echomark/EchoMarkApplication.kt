@@ -1,6 +1,8 @@
 package com.unchunks.echomark
 
 import android.app.Application
+import androidx.core.app.NotificationChannelCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import androidx.work.Constraints
@@ -25,6 +27,8 @@ class EchoMarkApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
+        createNotificationChannels()
+
         workManager.enqueueUniqueWork(
             ReembedAllWorker.WORK_NAME,
             // 起動のたびに再実行・中断しないよう、実行中/待機中のものがあればそれを維持する
@@ -37,5 +41,21 @@ class EchoMarkApplication : Application(), Configuration.Provider {
                 )
                 .build()
         )
+    }
+
+    /** 通知チャンネルを作成する(既存なら何もしない)。 */
+    private fun createNotificationChannels() {
+        val channel = NotificationChannelCompat.Builder(
+            REDISCOVER_CHANNEL_ID,
+            NotificationManagerCompat.IMPORTANCE_LOW
+        )
+            .setName(getString(R.string.notification_channel_rediscover))
+            .setDescription(getString(R.string.notification_channel_rediscover_desc))
+            .build()
+        NotificationManagerCompat.from(this).createNotificationChannel(channel)
+    }
+
+    companion object {
+        const val REDISCOVER_CHANNEL_ID = "rediscover_digest"
     }
 }
