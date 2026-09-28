@@ -15,17 +15,17 @@ class ChatViewModel @Inject constructor(
     private val repository: ChatRepository
 ) : ViewModel() {
 
-    private val learningItemIdFlow = MutableStateFlow<Long?>(null)
+    private val conversationIdFlow = MutableStateFlow<Long?>(null)
     private val isSendingFlow = MutableStateFlow(false)
 
     init {
         viewModelScope.launch {
-            learningItemIdFlow.value = repository.createLearningItem()
+            conversationIdFlow.value = repository.createConversation()
         }
     }
 
     val uiState: StateFlow<ChatUiState> = combine(
-        learningItemIdFlow.flatMapLatest { id ->
+        conversationIdFlow.flatMapLatest { id ->
             if (id == null) flowOf(emptyList())
             else repository.observeMessages(id)
         },
@@ -35,7 +35,7 @@ class ChatViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     fun sendMessage(text: String) {
-        val id = learningItemIdFlow.value ?: return
+        val id = conversationIdFlow.value ?: return
         if (text.isBlank()) return
         viewModelScope.launch {
             isSendingFlow.value = true

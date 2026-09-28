@@ -1,20 +1,18 @@
 package com.unchunks.echomark.data.mapper
 
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
-import com.unchunks.echomark.data.local.entity.LearningItemEntity
+import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.LearningItem
+import com.unchunks.echomark.domain.model.Conversation
 
 
-fun LearningItemEntity.toDomain() = LearningItem(
+fun ConversationEntity.toDomain() = Conversation(
     id = id, title = title, isTitleManuallySet = isTitleManuallySet,
-    summary = summary, learningObjective = learningObjective,
-    status = status, createdAt = createdAt, updatedAt = updatedAt,
-    nextReviewAt = nextReviewAt, reviewStage = reviewStage, lastReviewedAt = lastReviewedAt
+    summary = summary, createdAt = createdAt, updatedAt = updatedAt
 )
 
 fun ChatMessageEntity.toDomain() = ChatMessage(
-    id = id, learningItemId = learningItemId, role = role, content = content,
+    id = id, conversationId = conversationId, role = role, content = content,
     referencedBookmarkIds = referencedBookmarkIds
         ?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList(),
     createdAt = createdAt
