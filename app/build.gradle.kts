@@ -38,6 +38,13 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests {
+            // SavedStateHandle 等が触る Android スタブで落ちないようにする
+            isReturnDefaultValues = true
+        }
+    }
+
     androidResources {
         noCompress += "task"
     }
@@ -92,6 +99,10 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver3)
+    // android.jar のスタブ(org.json)は JVM テストで動かないため、実装を差し替える
+    testImplementation(libs.org.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
