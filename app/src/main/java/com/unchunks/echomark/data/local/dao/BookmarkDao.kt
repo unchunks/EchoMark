@@ -9,6 +9,7 @@ import androidx.room.Transaction
 import androidx.room.Update
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -29,6 +30,9 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET category = :category WHERE id = :id")
     suspend fun updateCategory(id: Long, category: String)
 
+    @Query("UPDATE bookmarks SET aiStatus = :status WHERE id = :id")
+    suspend fun updateAiStatus(id: Long, status: AiStatus)
+
 
     // 削除
     @Delete
@@ -38,6 +42,10 @@ interface BookmarkDao {
     // IDの取得
     @Query("SELECT id FROM bookmarks")
     suspend fun getAllIds(): List<Long>
+
+
+    @Query("SELECT id FROM bookmarks WHERE aiStatus = :status")
+    suspend fun getIdsByAiStatus(status: AiStatus): List<Long>
 
 
     // ブックマークの取得

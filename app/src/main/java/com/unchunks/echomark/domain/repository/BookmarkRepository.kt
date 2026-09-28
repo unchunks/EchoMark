@@ -1,5 +1,6 @@
 package com.unchunks.echomark.domain.repository
 
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
@@ -13,6 +14,11 @@ interface BookmarkRepository {
     // Update
     suspend fun updateSummary(id: Long, summary: String)
     suspend fun updateCategory(id: Long, category: String)
+    suspend fun updateAiStatus(id: Long, status: AiStatus)
+
+    // AI 処理
+    /** モデル未取得で待機中(WAITING_MODEL)のブックマークの AI 処理を再度キューに積む。 */
+    suspend fun enqueueWaitingModelProcessing()
 
     // Delete
     suspend fun deleteBookmark(bookmark: Bookmark)

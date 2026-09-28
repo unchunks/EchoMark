@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.repository
 
+import androidx.work.BackoffPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -12,6 +13,7 @@ import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.worker.BookmarkAiProcessingWorker
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.collections.map
 
@@ -39,6 +42,7 @@ class BookmarkRepositoryImpl @Inject constructor(
     private fun enqueueAiProcessing(bookmarkId: Long) {
         val request = OneTimeWorkRequestBuilder<BookmarkAiProcessingWorker>()
             .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
         workManager.enqueue(request)
     }
@@ -68,6 +72,19 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun updateCategory(id: Long, category: String) =
         withContext(dispatcherProvider.io) {
             bookmarkDao.updateCategory(id, category)
+        }
+
+    override suspend fun updateAiStatus(id: Long, status: AiStatus) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateAiStatus(id, status)
+        }
+
+    override suspend fun enqueueWaitingModelProcessing() =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.getIdsByAiStatus(AiStatus.WAITING_MODEL).forEach { id ->
+                bookmarkDao.updateAiStatus(id, AiStatus.PENDING)
+                enqueueAiProcessing(id)
+            }
         }
 
 

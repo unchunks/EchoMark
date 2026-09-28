@@ -2,6 +2,7 @@ package com.unchunks.echomark.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 
 // ここを変更するときは、ccom.unchunks.echomark.domain.bookmark.model.Bookmark.kt の変更が不要か確認すること
@@ -17,5 +18,6 @@ data class BookmarkEntity (
     val summary: String? = null,
     val category: String? = null,
     val createdAt: Long,
-    val lastAccessedAt: Long
+    val lastAccessedAt: Long,
+    val aiStatus: AiStatus = AiStatus.PENDING
 )
