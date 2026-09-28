@@ -3,6 +3,7 @@ package com.unchunks.echomark
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -26,8 +27,15 @@ class EchoMarkApplication : Application(), Configuration.Provider {
 
         workManager.enqueueUniqueWork(
             ReembedAllWorker.WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<ReembedAllWorker>().build()
+            // 起動のたびに再実行・中断しないよう、実行中/待機中のものがあればそれを維持する
+            ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<ReembedAllWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiresBatteryNotLow(true)
+                        .build()
+                )
+                .build()
         )
     }
 }

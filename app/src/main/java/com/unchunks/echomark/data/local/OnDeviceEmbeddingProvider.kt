@@ -26,6 +26,7 @@ class OnDeviceEmbeddingProvider @Inject constructor(
     private var textEmbedder: TextEmbedder? = null
     private val initMutex = Mutex()
 
+    // TODO: EmbeddingGemma を assets 同梱から ModelManager 管理(ダウンロード)へ移行する
     private suspend fun ensureInitialized(): TextEmbedder {
         textEmbedder?.let { return it }
         return initMutex.withLock {
