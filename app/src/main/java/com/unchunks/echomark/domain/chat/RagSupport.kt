@@ -22,7 +22,7 @@ object RagSupport {
     const val HISTORY_LIMIT = 6
 
     /** 文脈1件あたりの本文の最大文字数。 */
-    const val MAX_SNIPPET_CHARS = 600
+    const val MAX_SNIPPET_CHARS = 300
 
     /** 自動タイトルの最大文字数。 */
     const val TITLE_MAX_CHARS = 30

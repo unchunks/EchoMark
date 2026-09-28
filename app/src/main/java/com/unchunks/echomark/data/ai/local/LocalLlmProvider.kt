@@ -7,6 +7,8 @@ import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.data.ai.model.ModelSpecs
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
+import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -67,8 +69,12 @@ class LocalLlmProvider @Inject constructor(
         return parseAnalysis(response, text)
     }
 
-    override suspend fun chat(userMessage: String, context: List<String>): String {
-        return generate(buildChatPrompt(userMessage, context)).trim()
+    override suspend fun chat(
+        userMessage: String,
+        context: List<String>,
+        history: List<ChatMessage>
+    ): String {
+        return generate(buildChatPrompt(userMessage, context, history)).trim()
     }
 
     // 注意: 本文を埋め込むため trimIndent は使わず、行の連結で組み立てる
@@ -88,24 +94,35 @@ class LocalLlmProvider @Inject constructor(
         text.take(MAX_INPUT_CHARS)
     ).joinToString("\n")
 
-    private fun buildChatPrompt(userMessage: String, context: List<String>): String {
+    // context は呼び出し側で "[n] タイトル: 要約" に整形済み(番号は呼び出し側の付番をそのまま使う)
+    private fun buildChatPrompt(
+        userMessage: String,
+        context: List<String>,
+        history: List<ChatMessage>
+    ): String {
         val snippets = context.take(MAX_CONTEXT_ITEMS)
-            .mapIndexed { i, s -> "[${i + 1}] ${s.take(MAX_SNIPPET_CHARS)}" }
-        val lines = if (snippets.isEmpty()) {
-            listOf(
-                "あなたはユーザーの保存したブックマークに答えるアシスタントです。",
-                "関連する保存内容は見つかりませんでした。その旨を伝えたうえで、分かる範囲で簡潔に日本語で答えてください。",
-                "",
-                "質問: $userMessage"
-            )
-        } else {
-            listOf(
-                "あなたはユーザーの保存したブックマークに答えるアシスタントです。",
-                "以下の保存内容だけを根拠に、質問へ日本語で簡潔に答えてください。",
-                "根拠がない場合は、分からないと答えてください。参照した番号を [1] のように示してください。",
-                "",
-                "保存内容:"
-            ) + snippets.flatMap { listOf(it, "") } + listOf("質問: $userMessage")
+        val historyLines = history.takeLast(MAX_HISTORY_ITEMS).map {
+            val speaker = if (it.role == ChatRole.USER) "ユーザー" else "アシスタント"
+            "$speaker: ${it.content.take(MAX_HISTORY_CHARS)}"
+        }
+        val lines = buildList {
+            add("あなたはユーザーの保存したブックマークに答えるアシスタントです。")
+            if (snippets.isEmpty()) {
+                add("関連する保存内容は見つかりませんでした。その旨を伝えたうえで、分かる範囲で簡潔に日本語で答えてください。")
+            } else {
+                add("以下の保存内容だけを根拠に、質問へ日本語で簡潔に答えてください。")
+                add("根拠がない場合は、分からないと答えてください。参照した番号を [1] のように示してください。")
+                add("")
+                add("保存内容:")
+                snippets.forEach { add(it); add("") }
+            }
+            if (historyLines.isNotEmpty()) {
+                add("")
+                add("これまでの会話:")
+                addAll(historyLines)
+            }
+            add("")
+            add("質問: $userMessage")
         }
         return lines.joinToString("\n")
     }
@@ -148,10 +165,11 @@ class LocalLlmProvider @Inject constructor(
     private fun fallbackSummary(source: String): String = source.trim().take(FALLBACK_SUMMARY_CHARS)
 
     companion object {
-        private const val MAX_TOKENS = 2048
+        private const val MAX_TOKENS = 4096
         private const val MAX_INPUT_CHARS = 2000
         private const val MAX_CONTEXT_ITEMS = 5
-        private const val MAX_SNIPPET_CHARS = 600
+        private const val MAX_HISTORY_ITEMS = 6
+        private const val MAX_HISTORY_CHARS = 200
         private const val MAX_TAGS = 5
         private const val FALLBACK_SUMMARY_CHARS = 100
         private const val DEFAULT_CATEGORY = "未分類"

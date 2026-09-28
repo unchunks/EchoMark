@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.ai.api
 
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
+import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmProvider
 import javax.inject.Inject
 
@@ -14,8 +15,12 @@ class ApiLlmProvider @Inject constructor() : LlmProvider {
         )
     }
 
-    override suspend fun chat(userMessage: String, context: List<String>): String {
-        // TODO: 実際のLLM呼び出しに置き換える。contextを含めたプロンプトを組み立てて渡す
+    override suspend fun chat(
+        userMessage: String,
+        context: List<String>,
+        history: List<ChatMessage>
+    ): String {
+        // TODO: 実際のLLM呼び出しに置き換える。context と history を含めたプロンプト/メッセージ列を組み立てて渡す
         return if (context.isEmpty()) {
             "[API AI仮実装] 関連する保存内容が見つかりませんでした。"
         } else {
