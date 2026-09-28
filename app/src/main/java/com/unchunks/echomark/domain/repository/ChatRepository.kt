@@ -9,6 +9,4 @@ interface ChatRepository {
     fun observeLearningItems(): Flow<List<LearningItem>>
     fun observeMessages(learningItemId: Long): Flow<List<ChatMessage>>
     suspend fun sendMessage(learningItemId: Long, userMessage: String)
-    suspend fun markReviewed(learningItemId: Long)
-    suspend fun getDueLearningItems(now: Long): List<LearningItem>
 }

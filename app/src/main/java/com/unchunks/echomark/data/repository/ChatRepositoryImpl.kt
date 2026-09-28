@@ -14,7 +14,6 @@ import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.LearningItem
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
-import com.unchunks.echomark.domain.scheduler.ReviewIntervals
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -77,33 +76,5 @@ class ChatRepositoryImpl @Inject constructor(
                     createdAt = System.currentTimeMillis()
                 )
             )
-
-            // 6. まだ復習スケジュールが無ければ、ここで初期化する
-            val item = learningItemDao.getById(learningItemId)
-            if (item != null && item.nextReviewAt == null) {
-                val now = System.currentTimeMillis()
-                val next = ReviewIntervals.nextReviewAt(now, reviewStage = 0)
-                learningItemDao.updateReviewSchedule(
-                    id = learningItemId, nextReviewAt = next, reviewStage = 0,
-                    lastReviewedAt = null, updatedAt = now
-                )
-            }
-        }
-
-    override suspend fun markReviewed(learningItemId: Long) =
-        withContext(dispatcherProvider.io) {
-            val item = learningItemDao.getById(learningItemId) ?: return@withContext
-            val now = System.currentTimeMillis()
-            val newStage = item.reviewStage + 1
-            val next = ReviewIntervals.nextReviewAt(now, newStage)
-            learningItemDao.updateReviewSchedule(
-                id = learningItemId, nextReviewAt = next, reviewStage = newStage,
-                lastReviewedAt = now, updatedAt = now
-            )
-        }
-
-    override suspend fun getDueLearningItems(now: Long): List<LearningItem> =
-        withContext(dispatcherProvider.io) {
-            learningItemDao.getDueItems(now).map { it.toDomain() }
         }
 }
