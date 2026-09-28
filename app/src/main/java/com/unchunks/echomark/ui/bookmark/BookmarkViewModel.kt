@@ -74,19 +74,20 @@ class BookmarkViewModel @Inject constructor(
         _relatedBookmarks.value = emptyList()
     }
 
-    fun addTestBookmark(title: String) {
+    /** テキストのブックマークを保存する。本文は任意。 */
+    fun saveTextBookmark(title: String, content: String?) {
+        if (title.isBlank()) return
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
             repository.saveBookmark(
                 Bookmark(
                     type = BookmarkType.TEXT,
-                    content = title,
-                    title = title,
-                    createdAt = System.currentTimeMillis(),
-                    lastAccessedAt = System.currentTimeMillis()
+                    content = content?.takeIf { it.isNotBlank() },
+                    title = title.trim(),
+                    createdAt = now,
+                    lastAccessedAt = now
                 )
             )
         }
     }
-
-
 }

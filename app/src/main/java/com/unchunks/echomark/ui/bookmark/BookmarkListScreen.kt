@@ -40,6 +40,7 @@ fun BookmarkListScreen(
     val uiState by viewModel.uiState.collectAsState()
     val related by viewModel.relatedBookmarks.collectAsState()
     var text by remember { mutableStateOf("") }
+    var content by remember { mutableStateOf("") }
     var relatedDialogBookmark by remember { mutableStateOf<Bookmark?>(null) }
 
     Column(
@@ -61,13 +62,21 @@ fun BookmarkListScreen(
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = {
                 if (text.isNotBlank()) {
-                    viewModel.addTestBookmark(text)
+                    viewModel.saveTextBookmark(text, content)
                     text = ""
+                    content = ""
                 }
             }) {
                 Text("保存")
             }
         }
+
+        OutlinedTextField(
+            value = content,
+            onValueChange = { content = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("本文(任意)") }
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
