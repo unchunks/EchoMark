@@ -1,5 +1,8 @@
 package com.unchunks.echomark.data.repository
 
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -12,9 +15,12 @@ import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.worker.BookmarkAiProcessingWorker
+import com.unchunks.echomark.worker.UrlFetchWorker
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -31,16 +37,66 @@ class BookmarkRepositoryImpl @Inject constructor(
 ) : BookmarkRepository {
 
     override suspend fun saveBookmark(bookmark: Bookmark): Long =
+        saveBookmarkWithResult(bookmark).id
+
+    override suspend fun saveBookmarkWithResult(bookmark: Bookmark): SaveResult =
         withContext(dispatcherProvider.io) {
-            val id = bookmarkDao.insert(bookmark.toEntity())
-            enqueueAiProcessing(id)
-            id
+            val contentUri = bookmark.contentUri
+            if (contentUri == null) {
+                val id = bookmarkDao.insert(bookmark.toEntity())
+                enqueueProcessing(id, bookmark.type)
+                return@withContext SaveResult(id, isDuplicate = false)
+            }
+
+            // contentUri を持つもの(URLなど)は重複チェック。REPLACEするとタグ参照が消えるためIGNOREで挿入する
+            val insertedId = bookmarkDao.insertIgnore(bookmark.toEntity())
+            if (insertedId != -1L) {
+                enqueueProcessing(insertedId, bookmark.type)
+                SaveResult(insertedId, isDuplicate = false)
+            } else {
+                val existing = bookmarkDao.getByContentUri(contentUri)
+                    ?: return@withContext SaveResult(-1L, isDuplicate = false)
+                bookmarkDao.updateLastAccessedAt(existing.id, System.currentTimeMillis())
+                SaveResult(existing.id, isDuplicate = true)
+            }
         }
-    private fun enqueueAiProcessing(bookmarkId: Long) {
-        val request = OneTimeWorkRequestBuilder<BookmarkAiProcessingWorker>()
-            .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
+
+    override suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult {
+        val trimmedUrl = url.trim()
+        val now = System.currentTimeMillis()
+        return saveBookmarkWithResult(
+            Bookmark(
+                type = BookmarkType.URL,
+                content = memo?.takeIf { it.isNotBlank() }?.trim(),
+                contentUri = trimmedUrl,
+                title = title?.takeIf { it.isNotBlank() }?.trim() ?: trimmedUrl,
+                createdAt = now,
+                lastAccessedAt = now
+            )
+        )
+    }
+
+    /** URLは「本文取得 → AI処理」のチェーン、それ以外はAI処理のみを実行する */
+    private fun enqueueProcessing(bookmarkId: Long, type: BookmarkType) {
+        val inputData = workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId)
+        val aiRequest = OneTimeWorkRequestBuilder<BookmarkAiProcessingWorker>()
+            .setInputData(inputData)
             .build()
-        workManager.enqueue(request)
+
+        if (type == BookmarkType.URL) {
+            val fetchRequest = OneTimeWorkRequestBuilder<UrlFetchWorker>()
+                .setInputData(inputData)
+                .setConstraints(
+                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+                )
+                .build()
+            workManager
+                .beginUniqueWork("process_bookmark_$bookmarkId", ExistingWorkPolicy.REPLACE, fetchRequest)
+                .then(aiRequest)
+                .enqueue()
+        } else {
+            workManager.enqueue(aiRequest)
+        }
     }
 
     override suspend fun saveTags(bookmarkId: Long, tagNames: List<String>) =
@@ -68,6 +124,11 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun updateCategory(id: Long, category: String) =
         withContext(dispatcherProvider.io) {
             bookmarkDao.updateCategory(id, category)
+        }
+
+    override suspend fun updateTitleAndContent(id: Long, title: String, content: String?) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateTitleAndContent(id, title, content)
         }
 
 
