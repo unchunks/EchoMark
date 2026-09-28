@@ -9,9 +9,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -21,6 +21,7 @@ import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.chat.ConversationListScreen
+import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 
 /** ボトムバーに並ぶトップレベル画面。route は文字列ルート。 */
@@ -70,7 +71,11 @@ fun EchoMarkNavHost() {
             // Scaffold が反映済みのインセットを消費し、画面側の imePadding との二重余白を防ぐ
             modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
         ) {
-            composable(TopLevelDestination.BOOKMARKS.route) { BookmarkListScreen() }
+            composable(TopLevelDestination.BOOKMARKS.route) {
+                BookmarkListScreen(
+                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) }
+                )
+            }
             // チャットタブ = 会話一覧。"chat/new" は初回送信時に会話を作成、"chat/{conversationId}" は再開
             composable(TopLevelDestination.CHAT.route) {
                 ConversationListScreen(
@@ -81,7 +86,7 @@ fun EchoMarkNavHost() {
             composable(CHAT_NEW_ROUTE) {
                 ChatScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenBookmark = { id -> navController.navigate("bookmark/$id") } // TODO: Routes.bookmarkDetail に置き換え
+                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )
             }
             composable(
@@ -90,10 +95,19 @@ fun EchoMarkNavHost() {
             ) {
                 ChatScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenBookmark = { id -> navController.navigate("bookmark/$id") } // TODO: Routes.bookmarkDetail に置き換え
+                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )
             }
             composable(TopLevelDestination.SETTINGS.route) { SettingsScreen() }
+            composable(
+                route = Routes.BOOKMARK_DETAIL,
+                arguments = listOf(navArgument("bookmarkId") { type = NavType.LongType })
+            ) {
+                BookmarkDetailScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) }
+                )
+            }
         }
     }
 }

@@ -22,7 +22,16 @@ interface BookmarkRepository {
     suspend fun updateTitleAndContent(id: Long, title: String, content: String?)
     suspend fun updateAiStatus(id: Long, status: AiStatus)
 
+    /** 削除の取り消し用。同じ ID・タグで復元し、埋め込みを再生成する。 */
+    suspend fun restoreBookmark(bookmark: Bookmark)
+    suspend fun addTag(bookmarkId: Long, tagName: String)
+    suspend fun removeTag(bookmarkId: Long, tagName: String)
+    /** 詳細画面を開いたときに lastAccessedAt を現在時刻に更新する。 */
+    suspend fun markAccessed(id: Long)
+
     // AI 処理
+    /** 要約をクリアして AI 処理(要約・タグ・埋め込み)をやり直す。 */
+    suspend fun reprocess(id: Long)
     /** モデル未取得で待機中(WAITING_MODEL)のブックマークの AI 処理を再度キューに積む。 */
     suspend fun enqueueWaitingModelProcessing()
 
@@ -40,5 +49,11 @@ interface BookmarkRepository {
     fun observeBookmarks(): Flow<List<Bookmark>>
     fun observeBookmarksByTag(tagId: Long): Flow<List<Bookmark>>
     fun observeAllTags(): Flow<List<Tag>>
-    fun searchBookmarks(query: String): Flow<List<Bookmark>>
+    fun observeBookmark(id: Long): Flow<Bookmark?>
+
+    /**
+     * ハイブリッド検索。キーワード(LIKE)とベクトル類似の結果を RRF で統合して返す。
+     * tagId が非NULLならそのタグを持つものに絞る(AND)。埋め込みが使えない場合はキーワードのみ。
+     */
+    suspend fun search(query: String, tagId: Long?): List<Bookmark>
 }

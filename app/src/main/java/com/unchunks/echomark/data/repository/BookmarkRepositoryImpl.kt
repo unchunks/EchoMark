@@ -21,12 +21,16 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.provider.EmbeddingProvider
+import com.unchunks.echomark.domain.search.RankFusion
 import com.unchunks.echomark.worker.BookmarkAiProcessingWorker
 import com.unchunks.echomark.worker.UrlFetchWorker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.collections.map
@@ -36,7 +40,8 @@ class BookmarkRepositoryImpl @Inject constructor(
     private val tagDao: TagDao,
     private val vectorSearch: VectorSearchDataSource,
     private val dispatcherProvider: DispatcherProvider,
-    private val workManager: WorkManager
+    private val workManager: WorkManager,
+    private val embeddingProvider: EmbeddingProvider
 ) : BookmarkRepository {
 
     override suspend fun saveBookmark(bookmark: Bookmark): Long =
@@ -151,6 +156,41 @@ class BookmarkRepositoryImpl @Inject constructor(
             }
         }
 
+    override suspend fun reprocess(id: Long) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.resetAiResult(id, AiStatus.PENDING)
+            enqueueAiProcessing(id)
+        }
+
+    override suspend fun restoreBookmark(bookmark: Bookmark) {
+        withContext(dispatcherProvider.io) {
+            // 同じ ID で挿入し直す(削除済みなので競合しない)。ベクトルは削除時に消えているため再生成する
+            bookmarkDao.insert(bookmark.copy(aiStatus = AiStatus.PENDING).toEntity())
+            bookmark.tags.forEach { name ->
+                val tagId = getOrCreateTagId(name)
+                tagDao.insertCrossRef(BookmarkTagCrossRef(bookmark.id, tagId))
+            }
+            enqueueAiProcessing(bookmark.id)
+        }
+    }
+
+    override suspend fun addTag(bookmarkId: Long, tagName: String) {
+        val name = tagName.trim()
+        if (name.isEmpty()) return
+        saveTags(bookmarkId, listOf(name))
+    }
+
+    override suspend fun removeTag(bookmarkId: Long, tagName: String) =
+        withContext(dispatcherProvider.io) {
+            val tag = tagDao.getTagByName(tagName) ?: return@withContext
+            tagDao.deleteCrossRef(bookmarkId, tag.id)
+        }
+
+    override suspend fun markAccessed(id: Long) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateLastAccessedAt(id, System.currentTimeMillis())
+        }
+
     override suspend fun updateTitleAndContent(id: Long, title: String, content: String?) =
         withContext(dispatcherProvider.io) {
             bookmarkDao.updateTitleAndContent(id, title, content)
@@ -218,8 +258,53 @@ class BookmarkRepositoryImpl @Inject constructor(
         tagDao.getAllTags().map { list -> list.map { Tag(it.id, it.name) } }
             .flowOn(dispatcherProvider.io)
 
-    override fun searchBookmarks(query: String): Flow<List<Bookmark>> =
-        bookmarkDao.searchWithTags(query)
-            .map { list -> list.map { it.toDomain() }}
+    override fun observeBookmark(id: Long): Flow<Bookmark?> =
+        bookmarkDao.observeByIdWithTags(id)
+            .map { it?.toDomain() }
             .flowOn(dispatcherProvider.io)
+
+    override suspend fun search(query: String, tagId: Long?): List<Bookmark> =
+        withContext(dispatcherProvider.io) {
+            val q = query.trim()
+
+            // キーワード検索(タイトル・要約・本文・タグ名)。createdAt 降順
+            val keyword = bookmarkDao.searchByKeyword(escapeLike(q), tagId).map { it.toDomain() }
+            if (q.isEmpty()) return@withContext keyword
+
+            // ベクトル検索。モデル未取得などで失敗したらキーワードのみにフォールバックする
+            val semantic = try {
+                val vector = embeddingProvider.embedQuery(q)
+                val ids = vectorSearch.nearestNeighbors(vector, VECTOR_TOP_K)
+                    .filter { it.score <= MAX_VECTOR_DISTANCE }
+                    .map { it.bookmarkId }
+                val byId = bookmarkDao.getByIdsWithTags(ids).associateBy { it.bookmark.id }
+                ids.mapNotNull { byId[it] }
+                    .filter { tagId == null || it.tags.any { tag -> tag.id == tagId } }
+                    .map { it.toDomain() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "ベクトル検索に失敗したためキーワード検索のみ実行")
+                emptyList()
+            }
+
+            val all = (keyword + semantic).associateBy { it.id }
+            RankFusion.fuse(listOf(keyword.map { it.id }, semantic.map { it.id }))
+                .mapNotNull { all[it] }
+        }
+
+    /** LIKE のワイルドカード(% _)とエスケープ文字自体を無効化する(DAO側は ESCAPE バックスラッシュ)。 */
+    private fun escapeLike(s: String): String =
+        s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    private companion object {
+        /** ベクトル検索で取得する上位件数 */
+        const val VECTOR_TOP_K = 20
+
+        /**
+         * ベクトル検索の採用上限(ObjectBox COSINE の距離 = 1 - コサイン類似度。小さいほど近い)。
+         * 0.4 はコサイン類似度 0.6 相当。無関係な結果が混ざる/取りこぼす場合はここを調整する。
+         */
+        const val MAX_VECTOR_DISTANCE = 0.4
+    }
 }

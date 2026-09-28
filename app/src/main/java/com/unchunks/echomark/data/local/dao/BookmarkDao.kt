@@ -47,6 +47,10 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET aiStatus = :status WHERE id = :id")
     suspend fun updateAiStatus(id: Long, status: AiStatus)
 
+    /** AI再処理用: 要約を消して指定ステータスに戻す */
+    @Query("UPDATE bookmarks SET summary = NULL, aiStatus = :status WHERE id = :id")
+    suspend fun resetAiResult(id: Long, status: AiStatus)
+
 
     // 削除
     @Delete
@@ -85,11 +89,35 @@ interface BookmarkDao {
     fun getAllWithTags(): Flow<List<BookmarkWithTags>>
 
     @Transaction
+    @Query("SELECT * FROM bookmarks WHERE id = :id")
+    fun observeByIdWithTags(id: Long): Flow<BookmarkWithTags?>
+
+    @Transaction
+    @Query("SELECT * FROM bookmarks WHERE id IN (:ids)")
+    suspend fun getByIdsWithTags(ids: List<Long>): List<BookmarkWithTags>
+
+    /**
+     * キーワード検索(タイトル・要約・本文・タグ名の部分一致)。
+     * :pattern は呼び出し側で LIKE 用にエスケープ済み(エスケープ文字は '\')の検索語。
+     * :tagId が非NULLならそのタグを持つものだけに絞る(AND)。
+     */
+    @Transaction
     @Query("""
-        SELECT * FROM bookmarks 
-        WHERE title LIKE '%' || :query || '%' 
-            OR summary LIKE '%' || :query || '%' 
+        SELECT * FROM bookmarks
+        WHERE (
+            title LIKE '%' || :pattern || '%' ESCAPE '\'
+            OR summary LIKE '%' || :pattern || '%' ESCAPE '\'
+            OR content LIKE '%' || :pattern || '%' ESCAPE '\'
+            OR id IN (
+                SELECT r.bookmarkId FROM bookmark_tag_cross_ref AS r
+                INNER JOIN tags AS t ON t.id = r.tagId
+                WHERE t.name LIKE '%' || :pattern || '%' ESCAPE '\'
+            )
+        )
+        AND (:tagId IS NULL OR id IN (
+            SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId = :tagId
+        ))
         ORDER BY createdAt DESC
     """)
-    fun searchWithTags(query: String): Flow<List<BookmarkWithTags>>
+    suspend fun searchByKeyword(pattern: String, tagId: Long?): List<BookmarkWithTags>
 }
