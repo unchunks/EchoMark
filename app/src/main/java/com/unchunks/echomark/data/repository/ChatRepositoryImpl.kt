@@ -3,10 +3,9 @@ package com.unchunks.echomark.data.repository
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.LearningItemDao
 import com.unchunks.echomark.data.local.entity.LearningItemEntity
-import com.unchunks.echomark.data.local.objectbox.EmbeddingEntity
+import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
-import com.unchunks.echomark.data.local.objectbox.EmbeddingEntity_
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -16,7 +15,6 @@ import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.LearningItem
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.scheduler.ReviewIntervals
-import io.objectbox.Box
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -25,7 +23,7 @@ import javax.inject.Inject
 class ChatRepositoryImpl @Inject constructor(
     private val learningItemDao: LearningItemDao,
     private val chatMessageDao: ChatMessageDao,
-    private val embeddingBox: Box<EmbeddingEntity>,
+    private val vectorSearch: VectorSearchDataSource,
     private val embeddingProvider: EmbeddingProvider,
     private val llmProviderResolver: LlmProviderResolver,
     private val bookmarkRepository: BookmarkRepository,
@@ -62,13 +60,7 @@ class ChatRepositoryImpl @Inject constructor(
             val queryVector = embeddingProvider.embedQuery(userMessage)
 
             // 3. ObjectBoxで類似度上位5件を検索
-            val query = embeddingBox.query(
-                EmbeddingEntity_.vector.nearestNeighbors(queryVector, 5)
-            ).build()
-            val results = query.findWithScores()
-            query.close()
-
-            val relatedBookmarkIds = results.map { it.get().bookmarkId }
+            val relatedBookmarkIds = vectorSearch.nearestNeighbors(queryVector, 5).map { it.bookmarkId }
             val relatedBookmarks = bookmarkRepository.getBookmarksByIds(relatedBookmarkIds)
             val context = relatedBookmarks.mapNotNull { it.summary ?: it.content }
 
