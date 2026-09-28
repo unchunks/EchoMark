@@ -53,6 +53,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
     implementation(libs.datastore.preferences)
+    implementation(libs.timber)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
@@ -91,7 +92,6 @@ dependencies {
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    debugImplementation(libs.timber)
 }
 
 // ObjectBoxのタスクをConfiguration Cacheの対象外にする
