@@ -63,6 +63,14 @@ fun ChatScreen(
             }
         }
 
+        uiState.errorMessage?.let { error ->
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()

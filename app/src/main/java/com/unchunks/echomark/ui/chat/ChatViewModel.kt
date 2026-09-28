@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -17,30 +19,37 @@ class ChatViewModel @Inject constructor(
 
     private val conversationIdFlow = MutableStateFlow<Long?>(null)
     private val isSendingFlow = MutableStateFlow(false)
-
-    init {
-        viewModelScope.launch {
-            conversationIdFlow.value = repository.createConversation()
-        }
-    }
+    private val errorMessageFlow = MutableStateFlow<String?>(null)
 
     val uiState: StateFlow<ChatUiState> = combine(
         conversationIdFlow.flatMapLatest { id ->
             if (id == null) flowOf(emptyList())
             else repository.observeMessages(id)
         },
-        isSendingFlow
-    ) { messages, sending ->
-        ChatUiState(messages = messages, isSending = sending)
+        isSendingFlow,
+        errorMessageFlow
+    ) { messages, sending, error ->
+        ChatUiState(messages = messages, isSending = sending, errorMessage = error)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     fun sendMessage(text: String) {
-        val id = conversationIdFlow.value ?: return
-        if (text.isBlank()) return
+        if (text.isBlank() || isSendingFlow.value) return
         viewModelScope.launch {
             isSendingFlow.value = true
-            repository.sendMessage(id, text)
-            isSendingFlow.value = false
+            errorMessageFlow.value = null
+            try {
+                // 会話は最初の送信時に遅延作成する(空の会話を増やさない)
+                val id = conversationIdFlow.value
+                    ?: repository.createConversation().also { conversationIdFlow.value = it }
+                repository.sendMessage(id, text)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "sendMessage failed")
+                errorMessageFlow.value = "送信に失敗しました: ${e.message ?: "不明なエラー"}"
+            } finally {
+                isSendingFlow.value = false
+            }
         }
     }
 }
