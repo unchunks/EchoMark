@@ -1,11 +1,11 @@
 package com.unchunks.echomark.di
 
 import com.unchunks.echomark.domain.repository.BookmarkRepository
-import com.unchunks.echomark.domain.repository.BookmarkRepositoryImpl
+import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.domain.repository.ChatRepository
-import com.unchunks.echomark.domain.repository.ChatRepositoryImpl
+import com.unchunks.echomark.data.repository.ChatRepositoryImpl
 import com.unchunks.echomark.domain.repository.NotificationSettingsRepository
-import com.unchunks.echomark.domain.repository.NotificationSettingsRepositoryImpl
+import com.unchunks.echomark.data.repository.NotificationSettingsRepositoryImpl
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn

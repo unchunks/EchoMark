@@ -1,4 +1,4 @@
-package com.unchunks.echomark.domain.bookmark
+package com.unchunks.echomark.ui.bookmark
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

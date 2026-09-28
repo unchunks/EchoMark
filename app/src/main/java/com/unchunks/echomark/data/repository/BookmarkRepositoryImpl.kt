@@ -1,4 +1,4 @@
-package com.unchunks.echomark.domain.repository
+package com.unchunks.echomark.data.repository
 
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -12,6 +12,7 @@ import com.unchunks.echomark.data.local.objectbox.EmbeddingEntity_
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.worker.BookmarkAiProcessingWorker

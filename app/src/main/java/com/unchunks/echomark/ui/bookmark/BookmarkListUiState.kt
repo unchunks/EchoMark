@@ -1,4 +1,4 @@
-package com.unchunks.echomark.domain.bookmark
+package com.unchunks.echomark.ui.bookmark
 
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.Tag

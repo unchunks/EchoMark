@@ -1,4 +1,4 @@
-package com.unchunks.echomark.domain.repository
+package com.unchunks.echomark.data.repository
 
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.LearningItemDao
@@ -9,6 +9,8 @@ import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.objectbox.EmbeddingEntity_
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.LearningItem

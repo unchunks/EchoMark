@@ -1,4 +1,4 @@
-package com.unchunks.echomark.domain.repository
+package com.unchunks.echomark.data.repository
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import com.unchunks.echomark.domain.model.NotificationSettings
+import com.unchunks.echomark.domain.repository.NotificationSettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
