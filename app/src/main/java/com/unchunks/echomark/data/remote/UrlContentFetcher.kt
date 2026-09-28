@@ -5,7 +5,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -55,7 +54,7 @@ class UrlContentFetcher @Inject constructor(
                 mediaType?.charset()?.name(),
                 response.request.url.toString()
             )
-            return extract(document)
+            return HtmlContentExtractor.extract(document)
         }
     }
 
@@ -71,27 +70,8 @@ class UrlContentFetcher @Inject constructor(
         return out.toByteArray()
     }
 
-    private fun extract(document: Document): FetchedContent {
-        val title = (metaContent(document, "meta[property=og:title]") ?: document.title())
-            .trim().takeIf { it.isNotEmpty() }
-        val description = (metaContent(document, "meta[property=og:description]")
-            ?: metaContent(document, "meta[name=description]"))
-            ?.trim()?.takeIf { it.isNotEmpty() }
-
-        // ノイズ要素を除去してから本文を取り出す
-        document.select("script, style, noscript, nav, header, footer, aside, form, iframe, svg").remove()
-        val root = document.selectFirst("article") ?: document.selectFirst("main") ?: document.body()
-        val text = root?.text().orEmpty().trim().take(MAX_TEXT_CHARS)
-
-        return FetchedContent(title = title, description = description, text = text)
-    }
-
-    private fun metaContent(document: Document, selector: String): String? =
-        document.selectFirst(selector)?.attr("content")?.takeIf { it.isNotBlank() }
-
     companion object {
         private const val MAX_BODY_BYTES = 2 * 1024 * 1024
-        const val MAX_TEXT_CHARS = 5000
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) EchoMark/1.0"
     }

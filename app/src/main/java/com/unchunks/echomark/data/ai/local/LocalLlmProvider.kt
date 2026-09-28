@@ -15,8 +15,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,7 +64,7 @@ class LocalLlmProvider @Inject constructor(
 
     override suspend fun analyze(text: String): BookmarkAnalysis {
         val response = generate(buildAnalyzePrompt(text))
-        return parseAnalysis(response, text)
+        return AnalysisParser.parse(response, text)
     }
 
     override suspend fun chat(
@@ -127,51 +125,11 @@ class LocalLlmProvider @Inject constructor(
         return lines.joinToString("\n")
     }
 
-    /** LLM の出力から JSON を取り出して解析する。失敗時は入力テキストからフォールバックを作る。 */
-    private fun parseAnalysis(response: String, source: String): BookmarkAnalysis {
-        return try {
-            val start = response.indexOf('{')
-            val end = response.lastIndexOf('}')
-            require(start in 0 until end) { "JSON が見つからない" }
-            val json = JSONObject(response.substring(start, end + 1))
-
-            val summary = json.optString("summary").trim()
-            val tagsArray = json.optJSONArray("tags")
-            val tags = buildList {
-                if (tagsArray != null) {
-                    for (i in 0 until tagsArray.length()) {
-                        val tag = tagsArray.optString(i).trim().removePrefix("#")
-                        if (tag.isNotEmpty()) add(tag)
-                    }
-                }
-            }.distinct().take(MAX_TAGS)
-            val category = json.optString("category").trim().ifEmpty { DEFAULT_CATEGORY }
-
-            BookmarkAnalysis(
-                summary = summary.ifEmpty { fallbackSummary(source) },
-                tags = tags,
-                category = category
-            )
-        } catch (e: Exception) {
-            Timber.w(e, "LLM 出力の JSON 解析に失敗。フォールバックを使用")
-            BookmarkAnalysis(
-                summary = fallbackSummary(source),
-                tags = emptyList(),
-                category = DEFAULT_CATEGORY
-            )
-        }
-    }
-
-    private fun fallbackSummary(source: String): String = source.trim().take(FALLBACK_SUMMARY_CHARS)
-
     companion object {
         private const val MAX_TOKENS = 4096
         private const val MAX_INPUT_CHARS = 2000
         private const val MAX_CONTEXT_ITEMS = 5
         private const val MAX_HISTORY_ITEMS = 6
         private const val MAX_HISTORY_CHARS = 200
-        private const val MAX_TAGS = 5
-        private const val FALLBACK_SUMMARY_CHARS = 100
-        private const val DEFAULT_CATEGORY = "未分類"
     }
 }
