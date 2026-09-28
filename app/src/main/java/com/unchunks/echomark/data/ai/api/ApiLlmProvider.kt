@@ -7,7 +7,8 @@ import javax.inject.Inject
 
 class ApiLlmProvider @Inject constructor() : LlmProvider {
     override suspend fun analyze(text: String): BookmarkAnalysis {
-        // TODO: ClaudeAPI / Gemini API / ChatGPT API を呼び出す(オプトイン・キーは暗号化保存)
+        // TODO: ClaudeAPI / Gemini API / ChatGPT API を呼び出す(オプトイン)。
+        // TODO: API キーは EncryptedSharedPreferences / Android Keystore で暗号化保存する(DataStore に平文で置かない)
         return BookmarkAnalysis(
             summary = "[API AI仮実装] ${text.take(50)}",
             tags = listOf("仮タグ"),
