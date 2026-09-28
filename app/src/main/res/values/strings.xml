@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">EchoMark</string>
+    <string name="share_label">EchoMarkに保存</string>
 </resources>

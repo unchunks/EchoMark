@@ -21,6 +21,7 @@ import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /**
  * モデルファイルをダウンロードする。
@@ -67,7 +68,12 @@ class ModelDownloadWorker @AssistedInject constructor(
         val requestBuilder = Request.Builder().url(spec.downloadUrl)
         if (resumeFrom > 0) requestBuilder.header("Range", "bytes=$resumeFrom-")
 
-        okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
+        // 共通クライアントは callTimeout 15秒のため、大容量ダウンロード用にタイムアウトを上書きする
+        val downloadClient = okHttpClient.newBuilder()
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+        downloadClient.newCall(requestBuilder.build()).execute().use { response ->
             when {
                 response.code == 416 -> {
                     // 一時ファイルがサーバ側の内容と食い違っている。破棄してやり直す

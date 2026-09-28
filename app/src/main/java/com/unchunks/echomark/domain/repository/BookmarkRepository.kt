@@ -5,15 +5,21 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
 
+/** URLブックマーク保存の結果。isDuplicate=true なら既存のブックマークを再利用した */
+data class SaveResult(val id: Long, val isDuplicate: Boolean)
+
 interface BookmarkRepository {
     // Create / Save
     suspend fun saveBookmark(bookmark: Bookmark): Long
+    suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult
+    suspend fun saveBookmarkWithResult(bookmark: Bookmark): SaveResult
     suspend fun saveTags(bookmarkId: Long, tagNames: List<String>)
     suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String)
 
     // Update
     suspend fun updateSummary(id: Long, summary: String)
     suspend fun updateCategory(id: Long, category: String)
+    suspend fun updateTitleAndContent(id: Long, title: String, content: String?)
     suspend fun updateAiStatus(id: Long, status: AiStatus)
 
     // AI 処理

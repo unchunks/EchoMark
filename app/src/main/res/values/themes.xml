@@ -2,4 +2,12 @@
 <resources>
 
     <style name="Theme.EchoMark" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- 共有シート用: 背景を透過して下からシートを出す -->
+    <style name="Theme.EchoMark.Share" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
 </resources>

@@ -20,6 +20,20 @@ interface BookmarkDao {
     suspend fun insert(bookmark: BookmarkEntity): Long
 
 
+    // 競合時は何もせず -1 を返す(URL重複用。REPLACEだとタグ参照がカスケード削除されるため使わない)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(bookmark: BookmarkEntity): Long
+
+    @Query("SELECT * FROM bookmarks WHERE contentUri = :contentUri LIMIT 1")
+    suspend fun getByContentUri(contentUri: String): BookmarkEntity?
+
+    @Query("UPDATE bookmarks SET lastAccessedAt = :lastAccessedAt WHERE id = :id")
+    suspend fun updateLastAccessedAt(id: Long, lastAccessedAt: Long)
+
+    @Query("UPDATE bookmarks SET title = :title, content = :content WHERE id = :id")
+    suspend fun updateTitleAndContent(id: Long, title: String, content: String?)
+
+
     // 更新
     @Update
     suspend fun update(bookmark: BookmarkEntity)

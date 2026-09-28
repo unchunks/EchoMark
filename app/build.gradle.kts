@@ -86,6 +86,10 @@ dependencies {
     // Network
     implementation(libs.okhttp)
 
+    // ネットワーク・HTML解析(URL本文取得)
+    implementation(libs.okhttp)
+    implementation(libs.jsoup)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
