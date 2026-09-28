@@ -8,13 +8,16 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,13 +31,20 @@ class BookmarkViewModel @Inject constructor(
     private val searchQueryFlow = MutableStateFlow("")
     private val selectedTagIdFlow = MutableStateFlow<Long?>(null)
 
+    /** 入力が空なら即時、入力中は 300ms のデバウンスを掛けて検索実行を間引く */
+    @OptIn(FlowPreview::class)
+    private val debouncedQueryFlow: Flow<String> = searchQueryFlow
+        .debounce { if (it.isBlank()) 0L else SEARCH_DEBOUNCE_MS }
+        .distinctUntilChanged()
+
     private val bookmarksFlow: Flow<List<Bookmark>> =
-        combine(searchQueryFlow, selectedTagIdFlow) { query, tagId -> query to tagId }
+        combine(debouncedQueryFlow, selectedTagIdFlow) { query, tagId -> query to tagId }
             .flatMapLatest { (query, tagId) ->
                 when {
-                    tagId != null -> repository.observeBookmarksByTag(tagId)
-                    query.isNotBlank() -> repository.searchBookmarks(query)
-                    else -> repository.observeBookmarks()
+                    query.isBlank() && tagId != null -> repository.observeBookmarksByTag(tagId)
+                    query.isBlank() -> repository.observeBookmarks()
+                    // ハイブリッド検索。DB が変わったとき(削除・AI処理完了など)も再検索する
+                    else -> repository.observeBookmarks().mapLatest { repository.search(query, tagId) }
                 }
             }
 
@@ -54,9 +64,6 @@ class BookmarkViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5_000),
         BookmarkListUiState(isLoading = true))
 
-    private val _relatedBookmarks = MutableStateFlow<List<Bookmark>>(emptyList())
-    val relatedBookmarks: StateFlow<List<Bookmark>> = _relatedBookmarks
-
     fun onSearchQueryChange(query: String) {
         searchQueryFlow.value = query
     }
@@ -65,14 +72,13 @@ class BookmarkViewModel @Inject constructor(
         selectedTagIdFlow.value = tagId
     }
 
-    fun findRelated(bookmarkId: Long) {
-        viewModelScope.launch {
-            _relatedBookmarks.value = repository.getRelatedBookmarks(bookmarkId)
-        }
+    fun deleteBookmark(bookmark: Bookmark) {
+        viewModelScope.launch { repository.deleteBookmark(bookmark) }
     }
 
-    fun clearRelated() {
-        _relatedBookmarks.value = emptyList()
+    /** スワイプ削除の取り消し。同じ ID・タグで復元し、埋め込みを再生成する */
+    fun restoreBookmark(bookmark: Bookmark) {
+        viewModelScope.launch { repository.restoreBookmark(bookmark) }
     }
 
     /** テキストのブックマークを保存する。本文は任意。 */
@@ -99,5 +105,9 @@ class BookmarkViewModel @Inject constructor(
         viewModelScope.launch {
             onSaved(repository.saveUrlBookmark(url, title, memo))
         }
+    }
+
+    private companion object {
+        const val SEARCH_DEBOUNCE_MS = 300L
     }
 }

@@ -8,14 +8,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
+import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 
 /** ボトムバーに並ぶトップレベル画面。route は文字列ルート。 */
@@ -59,9 +62,22 @@ fun EchoMarkNavHost() {
             startDestination = TopLevelDestination.BOOKMARKS.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(TopLevelDestination.BOOKMARKS.route) { BookmarkListScreen() }
+            composable(TopLevelDestination.BOOKMARKS.route) {
+                BookmarkListScreen(
+                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) }
+                )
+            }
             composable(TopLevelDestination.CHAT.route) { ChatScreen() }
             composable(TopLevelDestination.SETTINGS.route) { SettingsScreen() }
+            composable(
+                route = Routes.BOOKMARK_DETAIL,
+                arguments = listOf(navArgument("bookmarkId") { type = NavType.LongType })
+            ) {
+                BookmarkDetailScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) }
+                )
+            }
         }
     }
 }
