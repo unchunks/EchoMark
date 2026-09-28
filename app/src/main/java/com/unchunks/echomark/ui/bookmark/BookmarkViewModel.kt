@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.bookmark
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -75,11 +76,11 @@ class BookmarkViewModel @Inject constructor(
     }
 
     /** テキストのブックマークを保存する。本文は任意。 */
-    fun saveTextBookmark(title: String, content: String?) {
+    fun saveTextBookmark(title: String, content: String?, onSaved: (SaveResult) -> Unit = {}) {
         if (title.isBlank()) return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            repository.saveBookmark(
+            val result = repository.saveBookmarkWithResult(
                 Bookmark(
                     type = BookmarkType.TEXT,
                     content = content?.takeIf { it.isNotBlank() },
@@ -88,6 +89,15 @@ class BookmarkViewModel @Inject constructor(
                     lastAccessedAt = now
                 )
             )
+            onSaved(result)
+        }
+    }
+
+    /** URLのブックマークを保存する。同一URLが保存済みなら既存を再利用する(SaveResult.isDuplicate)。 */
+    fun saveUrlBookmark(url: String, title: String?, memo: String?, onSaved: (SaveResult) -> Unit = {}) {
+        if (url.isBlank()) return
+        viewModelScope.launch {
+            onSaved(repository.saveUrlBookmark(url, title, memo))
         }
     }
 }
