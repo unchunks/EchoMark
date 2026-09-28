@@ -78,7 +78,6 @@ dependencies {
     ksp(libs.androidx.hilt.compiler)
 
     // AI
-    implementation(libs.tensorflow.lite)
     implementation(libs.mediapipe.tasks.text)
 
     // Testing
