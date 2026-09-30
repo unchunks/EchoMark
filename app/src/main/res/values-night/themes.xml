@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- ダークモードの起動直後(Compose 描画前)に白い画面が一瞬見えないよう、暗い親テーマにする -->
-    <style name="Theme.EchoMark" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.EchoMark" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
 </resources>

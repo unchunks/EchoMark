@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.EchoMark" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+      起動時のスプラッシュ(Android 12+ の OS 標準)はブランドのインディゴにアイコンを載せる。
+      設定の読み込みが終わるまで MainActivity で表示を保持する。
+    -->
+    <style name="Theme.EchoMark" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
 
     <!-- 共有シート用: 背景を透過して下からシートを出す -->
     <style name="Theme.EchoMark.Share" parent="android:Theme.Material.Light.NoActionBar">
