@@ -11,5 +11,6 @@ data class Bookmark(
     val category: String? = null,
     val createdAt: Long,
     val lastAccessedAt: Long,
+    val aiStatus: AiStatus = AiStatus.PENDING,
     val tags: List<String> = emptyList()
 )

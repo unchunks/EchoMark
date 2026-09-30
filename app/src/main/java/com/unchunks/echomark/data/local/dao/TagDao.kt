@@ -22,4 +22,7 @@ interface TagDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCrossRef(crossRef: BookmarkTagCrossRef)
+
+    @Query("DELETE FROM bookmark_tag_cross_ref WHERE bookmarkId = :bookmarkId AND tagId = :tagId")
+    suspend fun deleteCrossRef(bookmarkId: Long, tagId: Long)
 }

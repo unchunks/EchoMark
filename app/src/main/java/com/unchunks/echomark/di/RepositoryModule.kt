@@ -4,6 +4,8 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.data.repository.ChatRepositoryImpl
+import com.unchunks.echomark.data.repository.AppSettingsRepositoryImpl
+import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -22,4 +24,9 @@ abstract class RepositoryModule {
     abstract fun bindChatRepository(
         impl: ChatRepositoryImpl
     ): ChatRepository
+
+    @Binds
+    abstract fun bindAppSettingsRepository(
+        impl: AppSettingsRepositoryImpl
+    ): AppSettingsRepository
 }
