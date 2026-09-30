@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.unchunks.echomark.data.local.ALL_MIGRATIONS
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.DESTRUCTIVE_MIGRATION_FROM_VERSIONS
+import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
@@ -19,13 +20,16 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
+    /** DB ファイル名。設定画面のストレージ使用量の計算でも使う。 */
+    const val DATABASE_NAME = "echomark.db"
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
         return Room.databaseBuilder(
             context,
             AppDatabase::class.java,
-            "echomark.db"
+            DATABASE_NAME
         )
             // v6 以降は正式なマイグレーションでデータを保持する
             .addMigrations(*ALL_MIGRATIONS)
@@ -56,5 +60,10 @@ object DatabaseModule {
     @Provides
     fun provideCharMessageDao(database: AppDatabase): ChatMessageDao {
         return database.chatMessageDao()
+    }
+
+    @Provides
+    fun provideBackupDao(database: AppDatabase): BackupDao {
+        return database.backupDao()
     }
 }

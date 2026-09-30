@@ -8,6 +8,9 @@ object Routes {
     /** タグの管理(ブックマーク一覧のメニューから開くサブ画面) */
     const val TAGS = "tags"
 
+    /** 設定の「はじめにの案内をもう一度見る」から開くオンボーディング(初回起動時は NavHost の外で表示する)。 */
+    const val ONBOARDING = "settings/onboarding"
+
     const val BOOKMARK_DETAIL = "bookmark/{bookmarkId}"
     fun bookmarkDetail(id: Long) = "bookmark/$id"
 

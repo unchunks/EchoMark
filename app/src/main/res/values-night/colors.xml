@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ダークモードでは少し暗いインディゴ(T30)にして、まぶしさを抑える -->
+    <color name="splash_background">#FF313D8E</color>
+</resources>

@@ -13,6 +13,7 @@ import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.RediscoverSettings
+import com.unchunks.echomark.domain.repository.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -60,6 +61,27 @@ class AppSettingsRepositoryImpl @Inject constructor(
         )
     }
 
+    override val themeMode: Flow<ThemeMode> = data.map { prefs ->
+        prefs[KEY_THEME_MODE]?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
+            ?: ThemeMode.SYSTEM
+    }
+
+    override val dynamicColor: Flow<Boolean> = data.map { it[KEY_DYNAMIC_COLOR] ?: false }
+
+    override val onboardingCompleted: Flow<Boolean> = data.map { it[KEY_ONBOARDING_COMPLETED] ?: false }
+
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { it[KEY_THEME_MODE] = mode.name }
+    }
+
+    override suspend fun setDynamicColor(enabled: Boolean) {
+        dataStore.edit { it[KEY_DYNAMIC_COLOR] = enabled }
+    }
+
+    override suspend fun setOnboardingCompleted(completed: Boolean) {
+        dataStore.edit { it[KEY_ONBOARDING_COMPLETED] = completed }
+    }
+
     override suspend fun setLlmBackend(backend: LlmBackend) {
         dataStore.edit { it[KEY_LLM_BACKEND] = backend.name }
     }
@@ -99,6 +121,14 @@ class AppSettingsRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun resetToDefaults() {
+        dataStore.edit { prefs ->
+            val onboardingCompleted = prefs[KEY_ONBOARDING_COMPLETED]
+            prefs.clear()
+            if (onboardingCompleted != null) prefs[KEY_ONBOARDING_COMPLETED] = onboardingCompleted
+        }
+    }
+
     private companion object {
         val KEY_LLM_BACKEND = stringPreferencesKey("llm_backend")
         val KEY_API_PROVIDER = stringPreferencesKey("api_provider")
@@ -108,6 +138,9 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_REDISCOVER_HOUR = intPreferencesKey("rediscover_hour")
         val KEY_REDISCOVER_MINUTE = intPreferencesKey("rediscover_minute")
         val KEY_REDISCOVER_NOTIFIED = stringSetPreferencesKey("rediscover_notified")
+        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
     }
 }
 

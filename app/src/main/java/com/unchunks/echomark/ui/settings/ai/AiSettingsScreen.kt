@@ -1,5 +1,6 @@
 package com.unchunks.echomark.ui.settings.ai
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -31,8 +33,10 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,8 +45,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -52,7 +58,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -63,6 +69,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -78,15 +87,35 @@ import com.unchunks.echomark.data.ai.model.formatBytes
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.common.openUrl
+import com.unchunks.echomark.ui.components.SectionHeader
+import com.unchunks.echomark.ui.settings.SettingsItem
+import com.unchunks.echomark.ui.settings.SettingsNotice
+import com.unchunks.echomark.ui.settings.japaneseParagraph
+import com.unchunks.echomark.ui.settings.shortName
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
+/** AI 設定画面の操作。既定は何もしない(スクリーンショット用)。 */
+class AiSettingsActions(
+    val onBack: () -> Unit = {},
+    val onSelectBackend: (LlmBackend) -> Unit = {},
+    /** モデルファイルを選ぶ(ファイル選択画面は呼び出し側で開く) */
+    val onPickModel: () -> Unit = {},
+    val onCancelImport: () -> Unit = {},
+    val onDeleteModel: () -> Unit = {},
+    val onSelectProvider: (ApiProvider) -> Unit = {},
+    val onSetModel: (ApiProvider, String) -> Unit = { _, _ -> },
+    val onSaveKey: (ApiProvider, String) -> Unit = { _, _ -> },
+    val onClearKey: (ApiProvider) -> Unit = {},
+    val onTestConnection: (String) -> Unit = {},
+    val onReprocess: () -> Unit = {}
+)
+
 /**
  * AI 設定(実行場所・端末内モデルの取り込み・クラウド API のキーとモデル・再処理)。
- * 設定タブの「AI 設定」から開くサブ画面。
+ * 設定タブの「AI の設定」から開くサブ画面。表示は [AiSettingsContent]。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiSettingsScreen(
     onBack: () -> Unit,
@@ -110,16 +139,53 @@ fun AiSettingsScreen(
             viewModel.onImportResultShown()
         }
     }
+    // .task / .litertlm には標準の MIME タイプが無いため、全ファイルから選ばせて取り込み時に拡張子を検証する
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) viewModel.importModel(uri)
+    }
 
+    AiSettingsContent(
+        uiState = uiState,
+        connectionTest = connectionTest,
+        snackbarHostState = snackbarHostState,
+        actions = AiSettingsActions(
+            onBack = onBack,
+            onSelectBackend = viewModel::setBackend,
+            onPickModel = { picker.launch(arrayOf("*/*")) },
+            onCancelImport = viewModel::cancelImport,
+            onDeleteModel = viewModel::deleteModel,
+            onSelectProvider = viewModel::setApiProvider,
+            onSetModel = viewModel::setApiModel,
+            onSaveKey = viewModel::saveApiKey,
+            onClearKey = viewModel::clearApiKey,
+            onTestConnection = viewModel::testConnection,
+            onReprocess = viewModel::reprocessPending
+        )
+    )
+}
+
+/** AI 設定画面の中身。状態とコールバックを受け取るだけなので、スクリーンショットテストで描画できる。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AiSettingsContent(
+    uiState: AiSettingsUiState,
+    connectionTest: ConnectionTestState,
+    actions: AiSettingsActions,
+    modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
+) {
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text("AI 設定") },
+            LargeTopAppBar(
+                title = { Text("AI の設定") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = actions.onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
                     }
-                }
+                },
+                scrollBehavior = scrollBehavior
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -132,68 +198,103 @@ fun AiSettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 24.dp)
         ) {
+            StatusCard(uiState)
+
             SectionHeader("実行場所")
-            BackendSelector(selected = uiState.backend, onSelect = viewModel::setBackend)
+            BackendSelector(selected = uiState.backend, onSelect = actions.onSelectBackend)
             if (uiState.backend == LlmBackend.API) {
-                PrivacyNotice(uiState.apiProvider)
+                SettingsNotice(
+                    text = "ブックマークの本文・要約・チャットの質問が ${uiState.apiProvider.displayName} のサーバーに送信されます。" +
+                        "送信内容の扱いは各社の規約に従い、API の利用料金は各社のアカウントに請求されます。",
+                    icon = Icons.Outlined.Info
+                )
             }
 
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionDivider()
             SectionHeader("端末内モデル")
             LocalModelSection(
                 model = uiState.localModel,
                 importState = uiState.importState,
-                onImport = viewModel::importModel,
-                onCancelImport = viewModel::cancelImport,
-                onDelete = viewModel::deleteModel
+                isSelected = uiState.backend == LlmBackend.LOCAL,
+                onPickModel = actions.onPickModel,
+                onCancelImport = actions.onCancelImport,
+                onDelete = actions.onDeleteModel
             )
 
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionDivider()
             SectionHeader("クラウド API")
             ApiSection(
                 uiState = uiState,
                 connectionTest = connectionTest,
-                onSelectProvider = viewModel::setApiProvider,
-                onSetModel = viewModel::setApiModel,
-                onSaveKey = viewModel::saveApiKey,
-                onClearKey = viewModel::clearApiKey,
-                onTestConnection = viewModel::testConnection
+                onSelectProvider = actions.onSelectProvider,
+                onSetModel = actions.onSetModel,
+                onSaveKey = actions.onSaveKey,
+                onClearKey = actions.onClearKey,
+                onTestConnection = actions.onTestConnection
             )
 
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionDivider()
             SectionHeader("AI 処理")
-            ListItem(
-                headlineContent = { Text("失敗・準備待ちのブックマークを再処理") },
-                supportingContent = { Text("モデルの取り込みや API キーの設定後に、要約・タグ付けをやり直します") },
-                leadingContent = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
-                trailingContent = {
-                    OutlinedButton(onClick = viewModel::reprocessPending) { Text("再処理") }
-                }
+            SettingsItem(
+                title = "失敗・準備待ちを再処理",
+                icon = Icons.Outlined.Refresh,
+                summary = "モデルの取り込みや API キーの設定後に、要約・タグ付けをやり直します",
+                onClick = actions.onReprocess
             )
         }
     }
 }
 
 @Composable
-private fun SectionHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
-    )
+private fun SectionDivider() {
+    HorizontalDivider(Modifier.padding(top = 16.dp, bottom = 4.dp))
+}
+
+/** 画面の先頭で、今の設定で AI が使えるか・次に何をすればよいかを伝える。 */
+@Composable
+private fun StatusCard(uiState: AiSettingsUiState) {
+    val provider = uiState.apiProvider.shortName
+    val (ready, text) = when (uiState.backend) {
+        LlmBackend.LOCAL -> if (uiState.localModel != null) {
+            true to "端末内のモデルで動いています"
+        } else {
+            false to "モデルファイルを取り込むと使えます"
+        }
+        LlmBackend.API -> if (uiState.isKeyConfigured) {
+            true to "$provider の API で動いています"
+        } else {
+            false to "$provider の API キーを保存すると使えます"
+        }
+    }
+    val container = if (ready) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
+    val content = if (ready) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
+    Card(
+        colors = CardDefaults.cardColors(containerColor = container, contentColor = content),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(if (ready) Icons.Outlined.CheckCircle else Icons.Outlined.WarningAmber, contentDescription = null)
+            Text(text, style = MaterialTheme.typography.bodyLarge.japaneseParagraph())
+        }
+    }
 }
 
 @Composable
 private fun BackendSelector(selected: LlmBackend, onSelect: (LlmBackend) -> Unit) {
     Column(Modifier.selectableGroup()) {
-        BackendOption(
+        RadioItem(
             title = "端末内(オンデバイス)",
             description = "保存内容は端末の外に送信されません。モデルファイルの取り込みが必要です",
             selected = selected == LlmBackend.LOCAL,
             onClick = { onSelect(LlmBackend.LOCAL) }
         )
-        BackendOption(
+        RadioItem(
             title = "クラウド API",
             description = "Claude・Gemini・OpenAI の API を使います。高品質ですが、保存内容が提供元に送信されます",
             selected = selected == LlmBackend.API,
@@ -202,75 +303,59 @@ private fun BackendSelector(selected: LlmBackend, onSelect: (LlmBackend) -> Unit
     }
 }
 
+/** ラジオボタンの行。行全体をタップ対象にし、RadioButton 自体は onClick = null(TalkBack で二重に読まれない)。 */
 @Composable
-private fun BackendOption(title: String, description: String, selected: Boolean, onClick: () -> Unit) {
+private fun RadioItem(
+    title: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    trailingIcon: ImageVector? = null
+) {
     ListItem(
         headlineContent = { Text(title) },
-        supportingContent = { Text(description) },
-        // 行全体をタップ対象にし、RadioButton 自体は onClick = null(TalkBack で二重に読まれない)
+        supportingContent = {
+            Text(description, style = MaterialTheme.typography.bodyMedium.japaneseParagraph())
+        },
         leadingContent = { RadioButton(selected = selected, onClick = null) },
+        trailingContent = trailingIcon?.let {
+            { Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
     )
-}
-
-@Composable
-private fun PrivacyNotice(provider: ApiProvider) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-    ) {
-        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(
-                Icons.Outlined.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onTertiaryContainer
-            )
-            Text(
-                "ブックマークの本文・要約・チャットの質問が ${provider.displayName} のサーバーに送信されます。" +
-                    "送信内容の扱いは各社の規約に従います。API の利用料金は各社のアカウントに請求されます。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
-            )
-        }
-    }
 }
 
 @Composable
 private fun LocalModelSection(
     model: LocalModelInfo?,
     importState: ModelImportState,
-    onImport: (android.net.Uri) -> Unit,
+    isSelected: Boolean,
+    onPickModel: () -> Unit,
     onCancelImport: () -> Unit,
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf(false) }
-    // .task / .litertlm には標準の MIME タイプが無いため、全ファイルから選ばせて取り込み時に拡張子を検証する
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onImport(uri)
-    }
 
-    ListItem(
-        headlineContent = { Text(model?.displayName ?: "未取り込み") },
-        supportingContent = {
-            Text(
-                if (model == null) {
-                    "端末内で要約・チャットを行うには、モデルファイルを取り込んでください"
-                } else {
-                    "${formatBytes(model.sizeBytes)} ・ 取り込み: " +
-                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.importedAt))
-                }
-            )
+    SettingsItem(
+        title = model?.displayName ?: "未取り込み",
+        icon = Icons.Outlined.Memory,
+        iconTint = if (model != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        summary = if (model == null) {
+            if (isSelected) "端末内で要約・チャットを行うには、モデルファイルを取り込んでください" else "取り込むと、端末内でも AI を使えます"
+        } else {
+            "${formatBytes(model.sizeBytes)}・取り込み: " +
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.importedAt))
         },
-        leadingContent = { Icon(Icons.Outlined.Memory, contentDescription = null) },
-        trailingContent = {
-            if (model != null) {
+        trailing = if (model != null) {
+            {
                 IconButton(onClick = { showDeleteDialog = true }) {
                     Icon(Icons.Outlined.Delete, contentDescription = "モデルを削除")
                 }
             }
+        } else {
+            null
         }
     )
 
@@ -296,28 +381,33 @@ private fun LocalModelSection(
             else -> {
                 if (importState is ModelImportState.Failed) {
                     StatusLine(
-                        icon = { Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        icon = {
+                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        },
                         text = "取り込めませんでした: ${importState.error.userMessage}",
                         isError = true
                     )
                 }
-                Button(onClick = { picker.launch(arrayOf("*/*")) }) {
-                    Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(if (model == null) "  モデルファイルを取り込む" else "  別のモデルに入れ替える")
+                Button(onClick = onPickModel) {
+                    ButtonIcon(Icons.Outlined.UploadFile)
+                    Text(if (model == null) "モデルファイルを取り込む" else "別のモデルに入れ替える")
                 }
             }
         }
         Text(
             "入手方法: Hugging Face の litert-community で公開されている Gemma 3 1B IT" +
-                "(例: Gemma3-1B-IT の int4 版 .task)などを端末にダウンロードし、上のボタンで選んでください。\n" +
+                "(例: Gemma3-1B-IT の int4 版 .task)などを端末にダウンロードし、上のボタンで選んでください。" +
                 "Gemma のダウンロードには、Hugging Face へのログインと利用規約への同意が必要です。\n" +
                 "対応形式: .task / .litertlm",
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        TextButton(onClick = { openUrl(context, MODEL_GUIDE_URL) }) {
-            Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text("  Hugging Face(litert-community)を開く")
+        TextButton(
+            onClick = { openUrl(context, MODEL_GUIDE_URL) },
+            contentPadding = ButtonDefaults.TextButtonWithIconContentPadding
+        ) {
+            ButtonIcon(Icons.AutoMirrored.Outlined.OpenInNew)
+            Text("Hugging Face(litert-community)を開く")
         }
     }
 
@@ -325,12 +415,20 @@ private fun LocalModelSection(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("端末内モデルを削除しますか?") },
-            text = { Text("削除すると、端末内での要約・チャットは再度取り込むまで使えません。") },
+            text = {
+                Text(
+                    "削除すると、端末内での要約・チャットは再度取り込むまで使えません。",
+                    style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    onDelete()
-                }) { Text("削除") }
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除") }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("キャンセル") }
@@ -358,22 +456,13 @@ private fun ApiSection(
     // 提供元ごとの選択
     Column(Modifier.selectableGroup()) {
         ApiProvider.entries.forEach { option ->
-            ListItem(
-                headlineContent = { Text(option.displayName) },
-                supportingContent = {
-                    Text(if (option in uiState.configuredProviders) "API キー設定済み" else "API キー未設定")
-                },
-                leadingContent = { RadioButton(selected = option == provider, onClick = null) },
-                trailingContent = {
-                    if (option in uiState.configuredProviders) {
-                        Icon(Icons.Outlined.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                modifier = Modifier.selectable(
-                    selected = option == provider,
-                    onClick = { onSelectProvider(option) },
-                    role = Role.RadioButton
-                )
+            val configured = option in uiState.configuredProviders
+            RadioItem(
+                title = option.displayName,
+                description = if (configured) "API キー設定済み" else "API キー未設定",
+                selected = option == provider,
+                onClick = { onSelectProvider(option) },
+                trailingIcon = if (configured) Icons.Outlined.Key else null
             )
         }
     }
@@ -387,7 +476,7 @@ private fun ApiSection(
         modifier = Modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("モデル", style = MaterialTheme.typography.labelLarge)
+        FieldLabel("モデル")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             provider.presets.forEach { preset ->
                 FilterChip(
@@ -411,15 +500,26 @@ private fun ApiSection(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Text("API キー", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.size(4.dp))
+        FieldLabel("API キー")
         if (uiState.isKeyConfigured) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.size(8.dp))
                 Text(
                     "保存済み(暗号化して端末内に保存)",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
                 )
-                TextButton(onClick = { onClearKey(provider) }) { Text("削除") }
+                TextButton(
+                    onClick = { onClearKey(provider) },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除") }
             }
         }
         OutlinedTextField(
@@ -470,11 +570,25 @@ private fun ApiSection(
             ) { Text("接続テスト") }
         }
         ConnectionTestResult(connectionTest)
-        TextButton(onClick = { openUrl(context, provider.keyConsoleUrl) }) {
-            Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text("  ${provider.displayName} の API キーを取得")
+        TextButton(
+            onClick = { openUrl(context, provider.keyConsoleUrl) },
+            contentPadding = ButtonDefaults.TextButtonWithIconContentPadding
+        ) {
+            ButtonIcon(Icons.AutoMirrored.Outlined.OpenInNew)
+            Text("${provider.shortName} の API キーを取得")
         }
     }
+}
+
+@Composable
+private fun FieldLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun ButtonIcon(icon: ImageVector) {
+    Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
 }
 
 @Composable
@@ -503,7 +617,7 @@ private fun StatusLine(icon: @Composable () -> Unit, text: String, isError: Bool
         icon()
         Text(
             text,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.japaneseParagraph(),
             color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
         )
     }
