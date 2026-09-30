@@ -43,7 +43,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
-import com.unchunks.echomark.ui.common.displayLabel
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.ui.components.badgeLabel
 import com.unchunks.echomark.ui.common.extractDomain
 import kotlinx.coroutines.launch
 
@@ -233,7 +234,7 @@ private fun BookmarkListItem(bookmark: Bookmark, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-            bookmark.aiStatus.displayLabel()?.let {
+            bookmark.aiStatus.takeIf { it != AiStatus.DONE }?.badgeLabel()?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.labelSmall,

@@ -37,7 +37,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
-import com.unchunks.echomark.ui.common.displayLabel
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.ui.components.badgeLabel
 import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.echomark.ui.common.openUrl
 
@@ -90,10 +91,10 @@ fun BookmarkDetailScreen(
                 }
 
                 // AI ステータス(完了時は非表示)
-                bookmark.aiStatus.displayLabel()?.let {
+                bookmark.aiStatus.takeIf { it != AiStatus.DONE }?.badgeLabel()?.let {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "AI: $it",
+                        it,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.tertiary
                     )
