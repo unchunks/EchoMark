@@ -1,7 +1,24 @@
 package com.unchunks.echomark.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -9,31 +26,77 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.navigation.NavType
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
-import androidx.navigation.compose.rememberNavController
 import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.chat.ConversationListScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
+import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
-/** ボトムバーに並ぶトップレベル画面。route は文字列ルート。 */
-private enum class TopLevelDestination(val route: String, val label: String) {
-    BOOKMARKS("bookmarks", "ブックマーク"),
-    CHAT("chat", "チャット"),
-    SETTINGS("settings", "設定")
+/** ボトムバーに並ぶトップレベル画面。route は文字列ルート。選択中は塗りのアイコンにする。 */
+private enum class TopLevelDestination(
+    val route: String,
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
+) {
+    BOOKMARKS("bookmarks", "ブックマーク", Icons.Filled.Bookmarks, Icons.Outlined.Bookmarks),
+    CHAT("chat", "チャット", Icons.Filled.Forum, Icons.Outlined.Forum),
+    SETTINGS("settings", "設定", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
 private const val CHAT_NEW_ROUTE = "chat/new"
 
+private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
+
+/** トップレベル画面(ボトムバーを出す画面)か。起動直後で未確定(null)のときも出しておく */
+private fun NavDestination?.isTopLevel(): Boolean = this == null || route in topLevelRoutes
+
+// 画面遷移アニメーション。控えめに、タブ間はフェード、サブ画面は少しだけ横から入る
+private const val TRANSITION_MILLIS = 250
+
+private val fadeEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    fadeIn(tween(TRANSITION_MILLIS))
+}
+private val fadeExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    fadeOut(tween(TRANSITION_MILLIS))
+}
+private val subScreenEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    slideIntoContainer(
+        AnimatedContentTransitionScope.SlideDirection.Start,
+        animationSpec = tween(TRANSITION_MILLIS),
+        initialOffset = { it / 6 }
+    ) + fadeIn(tween(TRANSITION_MILLIS))
+}
+private val subScreenPopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    slideOutOfContainer(
+        AnimatedContentTransitionScope.SlideDirection.End,
+        animationSpec = tween(TRANSITION_MILLIS),
+        targetOffset = { it / 6 }
+    ) + fadeOut(tween(TRANSITION_MILLIS))
+}
+
+/**
+ * アプリ全体のナビゲーション。
+ * トップレベル画面ではボトムバーを出し、詳細・チャット個別などのサブ画面ではボトムバーを隠して全画面にする。
+ *
+ * インセット: この Scaffold がシステムバー(とボトムバー)の分の余白を付けて consumeWindowInsets するため、
+ * 各画面の中の Scaffold / TopAppBar / imePadding は残りの分だけを足す(二重の余白にならない)。
+ */
 @Composable
 fun EchoMarkNavHost() {
     val navController = rememberNavController()
@@ -42,27 +105,26 @@ fun EchoMarkNavHost() {
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                TopLevelDestination.entries.forEach { destination ->
-                    NavigationBarItem(
-                        // チャットは "chat/..." の子画面でもタブを選択状態にする
-                        selected = currentDestination?.hierarchy?.any {
-                            it.route == destination.route || it.route?.startsWith(destination.route + "/") == true
-                        } == true,
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                // スタックが積み上がらないよう、開始地点までを1つにまとめる
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
+            AnimatedVisibility(
+                visible = currentDestination.isTopLevel(),
+                enter = slideInVertically(tween(TRANSITION_MILLIS)) { it } + fadeIn(tween(TRANSITION_MILLIS)),
+                exit = slideOutVertically(tween(TRANSITION_MILLIS)) { it } + fadeOut(tween(TRANSITION_MILLIS))
+            ) {
+                EchoMarkNavigationBar(
+                    selectedRoute = TopLevelDestination.entries.firstOrNull { destination ->
+                        currentDestination?.hierarchy?.any { it.route == destination.route } == true
+                    }?.route,
+                    onNavigate = { route ->
+                        navController.navigate(route) {
+                            // スタックが積み上がらないよう、開始地点までを1つにまとめる
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
                             }
-                        },
-                        icon = {},
-                        label = { Text(destination.label) }
-                    )
-                }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
             }
         }
     ) { innerPadding ->
@@ -70,7 +132,11 @@ fun EchoMarkNavHost() {
             navController = navController,
             startDestination = TopLevelDestination.BOOKMARKS.route,
             // Scaffold が反映済みのインセットを消費し、画面側の imePadding との二重余白を防ぐ
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
+            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+            enterTransition = fadeEnter,
+            exitTransition = fadeExit,
+            popEnterTransition = fadeEnter,
+            popExitTransition = fadeExit
         ) {
             composable(TopLevelDestination.BOOKMARKS.route) {
                 BookmarkListScreen(
@@ -84,7 +150,11 @@ fun EchoMarkNavHost() {
                     onNewConversation = { navController.navigate(CHAT_NEW_ROUTE) }
                 )
             }
-            composable(CHAT_NEW_ROUTE) {
+            composable(
+                route = CHAT_NEW_ROUTE,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
                 ChatScreen(
                     onBack = { navController.popBackStack() },
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) }
@@ -92,7 +162,9 @@ fun EchoMarkNavHost() {
             }
             composable(
                 route = "chat/{${ChatViewModel.ARG_CONVERSATION_ID}}",
-                arguments = listOf(navArgument(ChatViewModel.ARG_CONVERSATION_ID) { type = NavType.LongType })
+                arguments = listOf(navArgument(ChatViewModel.ARG_CONVERSATION_ID) { type = NavType.LongType }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
             ) {
                 ChatScreen(
                     onBack = { navController.popBackStack() },
@@ -103,7 +175,9 @@ fun EchoMarkNavHost() {
             composable(
                 route = Routes.BOOKMARK_DETAIL,
                 arguments = listOf(navArgument("bookmarkId") { type = NavType.LongType }),
-                deepLinks = listOf(navDeepLink { uriPattern = Routes.BOOKMARK_DEEP_LINK })
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.BOOKMARK_DEEP_LINK }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
             ) {
                 BookmarkDetailScreen(
                     onBack = { navController.popBackStack() },
@@ -111,5 +185,42 @@ fun EchoMarkNavHost() {
                 )
             }
         }
+    }
+}
+
+/**
+ * ボトムバー。[selectedRoute] のタブを選択状態(塗りアイコン)にし、タップで [onNavigate] にルートを渡す。
+ * 状態を受け取るだけにしてあるので、スクリーンショットテストで単体描画できる。
+ */
+@Composable
+internal fun EchoMarkNavigationBar(
+    selectedRoute: String?,
+    onNavigate: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    NavigationBar(modifier = modifier) {
+        TopLevelDestination.entries.forEach { destination ->
+            val selected = destination.route == selectedRoute
+            NavigationBarItem(
+                selected = selected,
+                onClick = { onNavigate(destination.route) },
+                // ラベルを常に表示しているので、アイコン自体は読み上げない
+                icon = {
+                    Icon(
+                        imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
+                        contentDescription = null
+                    )
+                },
+                label = { Text(destination.label) }
+            )
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun EchoMarkNavigationBarPreview() {
+    EchoMarkTheme {
+        EchoMarkNavigationBar(selectedRoute = TopLevelDestination.BOOKMARKS.route, onNavigate = {})
     }
 }
