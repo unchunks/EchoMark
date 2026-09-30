@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.androidx.room)
     alias(libs.plugins.kotlin.legacy.kapt)
     alias(libs.plugins.objectbox)
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -42,11 +43,22 @@ android {
         unitTests {
             // SavedStateHandle 等が触る Android スタブで落ちないようにする
             isReturnDefaultValues = true
+            // Robolectric(スクリーンショットテスト等)でリソース・assets を読めるようにする
+            isIncludeAndroidResources = true
         }
     }
 
     androidResources {
         noCompress += "task"
+    }
+
+    // Room のマイグレーションテスト(Robolectric)で MigrationTestHelper がスキーマ JSON を assets から読めるようにする。
+    // JVM 単体テストは test ソースセットの assets を使わず、debug の統合済み assets を読むため debug に追加する
+    // (debug APK にだけ数十 KB の JSON が入る。release には入らない)
+    sourceSets {
+        getByName("debug") {
+            assets.directories.add("$projectDir/schemas")
+        }
     }
 }
 
@@ -69,6 +81,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    // アイコン一式(バージョンは Compose BOM で管理)。release の肥大化は R8 有効化で対処する
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
@@ -96,6 +109,10 @@ dependencies {
     // Network
     implementation(libs.okhttp)
 
+    // 画像読み込み(OG 画像のサムネイル)。通信は共通の OkHttpClient を使う(EchoMarkApplication)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+
     // ネットワーク・HTML解析(URL本文取得)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
@@ -106,6 +123,14 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver3)
     // android.jar のスタブ(org.json)は JVM テストで動かないため、実装を差し替える
     testImplementation(libs.org.json)
+    // スクリーンショットテスト(Robolectric + Roborazzi)。使い方は docs/screenshot-testing.md
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.androidx.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -114,6 +139,14 @@ dependencies {
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// Robolectric が JDK 17 以降で FileDescriptor 等の JDK 内部へアクセスできるようにする
+tasks.withType<Test>().configureEach {
+    jvmArgs(
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED"
+    )
 }
 
 // ObjectBoxのタスクをConfiguration Cacheの対象外にする

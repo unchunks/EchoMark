@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -24,5 +25,12 @@ data class BookmarkEntity (
     val category: String? = null,
     val createdAt: Long,
     val lastAccessedAt: Long,
-    val aiStatus: AiStatus = AiStatus.PENDING
+    val aiStatus: AiStatus = AiStatus.PENDING,
+    // v7 で追加。ALTER TABLE で足した列とスキーマを一致させるため、既定値を明示する
+    val imageUrl: String? = null,
+    val siteName: String? = null,
+    @ColumnInfo(defaultValue = "0")
+    val isFavorite: Boolean = false,
+    @ColumnInfo(defaultValue = "0")
+    val isArchived: Boolean = false
 )

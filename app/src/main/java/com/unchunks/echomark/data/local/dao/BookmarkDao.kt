@@ -47,6 +47,15 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET aiStatus = :status WHERE id = :id")
     suspend fun updateAiStatus(id: Long, status: AiStatus)
 
+    @Query("UPDATE bookmarks SET isFavorite = :isFavorite WHERE id = :id")
+    suspend fun updateFavorite(id: Long, isFavorite: Boolean)
+
+    @Query("UPDATE bookmarks SET isArchived = :isArchived WHERE id = :id")
+    suspend fun updateArchived(id: Long, isArchived: Boolean)
+
+    @Query("UPDATE bookmarks SET imageUrl = :imageUrl, siteName = :siteName WHERE id = :id")
+    suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?)
+
     /** AI再処理用: 要約を消して指定ステータスに戻す */
     @Query("UPDATE bookmarks SET summary = NULL, aiStatus = :status WHERE id = :id")
     suspend fun resetAiResult(id: Long, status: AiStatus)
@@ -91,6 +100,34 @@ interface BookmarkDao {
     @Transaction
     @Query("SELECT * FROM bookmarks ORDER BY createdAt DESC")
     fun getAllWithTags(): Flow<List<BookmarkWithTags>>
+
+    /**
+     * 一覧用の観測クエリ(絞り込み・並べ替えつき)。
+     * :archived はアーカイブ状態で絞る(NULL なら絞らない)、:favoriteOnly が true ならお気に入りだけ、
+     * :tagId が非NULLならそのタグを持つものだけ。:sortOrder は BookmarkSortOrder の name。
+     * 並べ替えは CASE で切り替え、該当しない CASE は NULL になって順序に影響しない。同順位は新しい順。
+     */
+    @Transaction
+    @Query("""
+        SELECT * FROM bookmarks
+        WHERE (:archived IS NULL OR isArchived = :archived)
+        AND (:favoriteOnly = 0 OR isFavorite = 1)
+        AND (:tagId IS NULL OR id IN (
+            SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId = :tagId
+        ))
+        ORDER BY
+            CASE WHEN :sortOrder = 'OLDEST' THEN createdAt END ASC,
+            CASE WHEN :sortOrder = 'RECENTLY_OPENED' THEN lastAccessedAt END DESC,
+            CASE WHEN :sortOrder = 'TITLE' THEN title END COLLATE NOCASE ASC,
+            createdAt DESC,
+            id DESC
+    """)
+    fun observeFiltered(
+        archived: Boolean?,
+        favoriteOnly: Boolean,
+        tagId: Long?,
+        sortOrder: String
+    ): Flow<List<BookmarkWithTags>>
 
     @Transaction
     @Query("SELECT * FROM bookmarks WHERE id = :id")

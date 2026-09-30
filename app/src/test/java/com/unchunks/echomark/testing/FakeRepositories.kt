@@ -2,6 +2,8 @@ package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
@@ -50,6 +52,44 @@ class FakeBookmarkRepository : BookmarkRepository {
     }
 
     override fun observeAllTags(): Flow<List<Tag>> = tags
+
+    /** DAO のクエリと同じ規則で絞り込み・並べ替えする(タグは tags に tagId の文字列を入れて表す)。 */
+    override fun observeBookmarks(
+        filter: BookmarkFilter,
+        sortOrder: BookmarkSortOrder,
+        tagId: Long?
+    ): Flow<List<Bookmark>> = bookmarks.map { list ->
+        list
+            .filter {
+                when (filter) {
+                    BookmarkFilter.ACTIVE -> !it.isArchived
+                    BookmarkFilter.ARCHIVED -> it.isArchived
+                    BookmarkFilter.FAVORITES -> it.isFavorite && !it.isArchived
+                }
+            }
+            .filter { tagId == null || tagId.toString() in it.tags }
+            .sortedWith(
+                when (sortOrder) {
+                    BookmarkSortOrder.NEWEST -> compareByDescending<Bookmark> { it.createdAt }
+                    BookmarkSortOrder.OLDEST -> compareBy<Bookmark> { it.createdAt }
+                    BookmarkSortOrder.RECENTLY_OPENED -> compareByDescending<Bookmark> { it.lastAccessedAt }
+                    BookmarkSortOrder.TITLE -> compareBy<Bookmark, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
+                }.thenByDescending { it.createdAt }.thenByDescending { it.id }
+            )
+    }
+
+    override suspend fun setFavorite(id: Long, isFavorite: Boolean) =
+        updateBookmark(id) { it.copy(isFavorite = isFavorite) }
+
+    override suspend fun setArchived(id: Long, isArchived: Boolean) =
+        updateBookmark(id) { it.copy(isArchived = isArchived) }
+
+    override suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?) =
+        updateBookmark(id) { it.copy(imageUrl = imageUrl, siteName = siteName) }
+
+    private fun updateBookmark(id: Long, transform: (Bookmark) -> Bookmark) {
+        bookmarks.value = bookmarks.value.map { if (it.id == id) transform(it) else it }
+    }
 
     override suspend fun deleteBookmark(bookmark: Bookmark) {
         deleted += bookmark

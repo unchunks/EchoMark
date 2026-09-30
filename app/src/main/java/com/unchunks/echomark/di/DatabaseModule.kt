@@ -2,7 +2,9 @@ package com.unchunks.echomark.di
 
 import android.content.Context
 import androidx.room.Room
+import com.unchunks.echomark.data.local.ALL_MIGRATIONS
 import com.unchunks.echomark.data.local.AppDatabase
+import com.unchunks.echomark.data.local.DESTRUCTIVE_MIGRATION_FROM_VERSIONS
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
@@ -25,7 +27,14 @@ object DatabaseModule {
             AppDatabase::class.java,
             "echomark.db"
         )
-            .fallbackToDestructiveMigration(dropAllTables = true) // TODO: リリーズ時に消す
+            // v6 以降は正式なマイグレーションでデータを保持する
+            .addMigrations(*ALL_MIGRATIONS)
+            // 開発初期(v1〜5)からの更新とダウングレードだけは、データを作り直す
+            .fallbackToDestructiveMigrationFrom(
+                dropAllTables = true,
+                *DESTRUCTIVE_MIGRATION_FROM_VERSIONS
+            )
+            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
             .build()
     }
 

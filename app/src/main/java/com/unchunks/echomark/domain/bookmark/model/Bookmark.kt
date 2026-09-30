@@ -12,5 +12,12 @@ data class Bookmark(
     val createdAt: Long,
     val lastAccessedAt: Long,
     val aiStatus: AiStatus = AiStatus.PENDING,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    /** リンク先の OG 画像 URL(取得できなければ null) */
+    val imageUrl: String? = null,
+    /** リンク先のサイト名(og:site_name など。取得できなければ null) */
+    val siteName: String? = null,
+    val isFavorite: Boolean = false,
+    /** アーカイブ済み(通常の一覧には出さない) */
+    val isArchived: Boolean = false
 )
