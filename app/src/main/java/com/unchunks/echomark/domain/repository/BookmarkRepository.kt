@@ -34,6 +34,11 @@ interface BookmarkRepository {
     suspend fun reprocess(id: Long)
     /** モデル未取得で待機中(WAITING_MODEL)のブックマークの AI 処理を再度キューに積む。 */
     suspend fun enqueueWaitingModelProcessing()
+    /**
+     * 失敗(FAILED)・準備待ち(WAITING_MODEL)のブックマークの AI 処理をまとめてやり直す。
+     * API キーの設定後などに使う。キューに積んだ件数を返す。
+     */
+    suspend fun enqueueFailedAndWaitingProcessing(): Int
 
     // Delete
     suspend fun deleteBookmark(bookmark: Bookmark)

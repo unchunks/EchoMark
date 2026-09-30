@@ -156,6 +156,17 @@ class BookmarkRepositoryImpl @Inject constructor(
             }
         }
 
+    override suspend fun enqueueFailedAndWaitingProcessing(): Int =
+        withContext(dispatcherProvider.io) {
+            val ids = bookmarkDao.getIdsByAiStatus(AiStatus.FAILED) +
+                bookmarkDao.getIdsByAiStatus(AiStatus.WAITING_MODEL)
+            ids.distinct().forEach { id ->
+                bookmarkDao.updateAiStatus(id, AiStatus.PENDING)
+                enqueueAiProcessing(id)
+            }
+            ids.distinct().size
+        }
+
     override suspend fun reprocess(id: Long) =
         withContext(dispatcherProvider.io) {
             bookmarkDao.resetAiResult(id, AiStatus.PENDING)

@@ -24,6 +24,7 @@ import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.chat.ConversationListScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
+import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
 
 /** ボトムバーに並ぶトップレベル画面。route は文字列ルート。 */
 private enum class TopLevelDestination(val route: String, val label: String) {
@@ -99,7 +100,12 @@ fun EchoMarkNavHost() {
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )
             }
-            composable(TopLevelDestination.SETTINGS.route) { SettingsScreen() }
+            composable(TopLevelDestination.SETTINGS.route) {
+                SettingsScreen(onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) })
+            }
+            composable(Routes.AI_SETTINGS) {
+                AiSettingsScreen(onBack = { navController.popBackStack() })
+            }
             composable(
                 route = Routes.BOOKMARK_DETAIL,
                 arguments = listOf(navArgument("bookmarkId") { type = NavType.LongType }),
