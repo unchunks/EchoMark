@@ -19,6 +19,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,9 +57,10 @@ fun ChatScreen(
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.messages.size - 1)
+    LaunchedEffect(uiState.messages.size, uiState.streamingText != null) {
+        val lastIndex = uiState.messages.size - 1 + if (uiState.isSending) 1 else 0
+        if (lastIndex >= 0) {
+            listState.animateScrollToItem(lastIndex)
         }
     }
 
@@ -83,8 +85,14 @@ fun ChatScreen(
                     onOpenBookmark = onOpenBookmark
                 )
             }
+            // 生成中の回答。最初の文字が届くまではインジケーターを出す
+            val streaming = uiState.streamingText
             if (uiState.isSending) {
-                item { CircularProgressIndicator(modifier = Modifier.padding(8.dp)) }
+                if (streaming.isNullOrEmpty()) {
+                    item { CircularProgressIndicator(modifier = Modifier.padding(8.dp)) }
+                } else {
+                    item(key = "streaming") { StreamingBubble(text = streaming) }
+                }
             }
         }
 
@@ -110,11 +118,17 @@ fun ChatScreen(
                 enabled = !uiState.isSending
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Button(
-                onClick = { viewModel.sendMessage(input); input = "" },
-                enabled = !uiState.isSending && input.isNotBlank()
-            ) {
-                Text("送信")
+            if (uiState.isSending) {
+                OutlinedButton(onClick = viewModel::stopGenerating) {
+                    Text("停止")
+                }
+            } else {
+                Button(
+                    onClick = { viewModel.sendMessage(input); input = "" },
+                    enabled = input.isNotBlank()
+                ) {
+                    Text("送信")
+                }
             }
         }
     }
@@ -167,6 +181,20 @@ private fun ChatBubble(
                     )
                 }
             }
+        }
+    }
+}
+
+/** 生成途中の回答。保存前なので引用チップは出さない。 */
+@Composable
+private fun StreamingBubble(text: String) {
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Text(text = text, modifier = Modifier.padding(12.dp))
         }
     }
 }

@@ -4,11 +4,14 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.provider.ModelNotAvailableException
+import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
+import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.ChatRepository
+import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,7 +36,11 @@ class ChatViewModel @Inject constructor(
     private val conversationIdFlow: StateFlow<Long?> =
         savedStateHandle.getStateFlow<Long?>(ARG_CONVERSATION_ID, null)
     private val isSendingFlow = MutableStateFlow(false)
+    private val streamingTextFlow = MutableStateFlow<String?>(null)
     private val errorMessageFlow = MutableStateFlow<String?>(null)
+
+    /** 生成中の送信処理。停止ボタンでキャンセルする。 */
+    private var sendJob: Job? = null
 
     // メッセージ本文と、引用チップ用のブックマークタイトルをまとめて解決する
     private val messagesWithTitles = conversationIdFlow.flatMapLatest { id ->
@@ -47,45 +54,62 @@ class ChatViewModel @Inject constructor(
     val uiState: StateFlow<ChatUiState> = combine(
         messagesWithTitles,
         isSendingFlow,
+        streamingTextFlow,
         errorMessageFlow
-    ) { (messages, titles), sending, error ->
+    ) { (messages, titles), sending, streaming, error ->
         ChatUiState(
             messages = messages,
             citationTitles = titles,
             isSending = sending,
+            streamingText = streaming,
             errorMessage = error
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     fun sendMessage(text: String) {
         if (text.isBlank() || isSendingFlow.value) return
-        viewModelScope.launch {
-            isSendingFlow.value = true
-            errorMessageFlow.value = null
+        isSendingFlow.value = true
+        errorMessageFlow.value = null
+        sendJob = viewModelScope.launch {
             try {
                 // 会話は最初の送信時に遅延作成する(空の会話を増やさない)
                 val id = conversationIdFlow.value
                     ?: repository.createConversation().also { savedStateHandle[ARG_CONVERSATION_ID] = it }
-                repository.sendMessage(id, text)
+                streamingTextFlow.value = ""
+                repository.sendMessageStream(id, text).collect { event ->
+                    when (event) {
+                        is ChatStreamEvent.Started -> Unit
+                        is ChatStreamEvent.Delta -> streamingTextFlow.value = event.textSoFar
+                        is ChatStreamEvent.Completed -> streamingTextFlow.value = null
+                        is ChatStreamEvent.Failed -> {
+                            Timber.w(event.error, "sendMessageStream failed")
+                            errorMessageFlow.value = event.error.toLlmUserMessage(SEND_FAILED_PREFIX)
+                        }
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: ModelNotAvailableException) {
-                Timber.w(e, "LLM model not available")
-                errorMessageFlow.value = MODEL_NOT_AVAILABLE_MESSAGE
             } catch (e: Exception) {
                 Timber.e(e, "sendMessage failed")
-                errorMessageFlow.value = "送信に失敗しました: ${e.message ?: "不明なエラー"}"
+                errorMessageFlow.value = e.toLlmUserMessage(SEND_FAILED_PREFIX)
             } finally {
+                streamingTextFlow.value = null
                 isSendingFlow.value = false
             }
         }
+    }
+
+    /** 生成を止める。途中までの回答は「(停止)」付きで保存される。 */
+    fun stopGenerating() {
+        sendJob?.cancel()
     }
 
     companion object {
         /** ナビゲーション引数(と SavedStateHandle)のキー。 */
         const val ARG_CONVERSATION_ID = "conversationId"
 
-        const val MODEL_NOT_AVAILABLE_MESSAGE =
-            "AIモデルが未ダウンロードです。設定からダウンロードしてください"
+        const val MODEL_NOT_AVAILABLE_MESSAGE = MODEL_NOT_AVAILABLE_USER_MESSAGE
+
+        private const val SEND_FAILED_PREFIX = "送信に失敗しました"
     }
 }

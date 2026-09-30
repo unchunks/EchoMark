@@ -8,9 +8,11 @@ import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
+import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 
 fun testBookmark(
@@ -109,6 +111,19 @@ open class FakeChatRepository : ChatRepository {
     override suspend fun sendMessage(conversationId: Long, userMessage: String) {
         sent += conversationId to userMessage
         sendFailure?.let { throw it }
+    }
+
+    /** 既定: sendFailure があれば Failed、無ければ Started → Delta → Completed を流す。 */
+    override fun sendMessageStream(conversationId: Long, userMessage: String): Flow<ChatStreamEvent> = flow {
+        sent += conversationId to userMessage
+        val failure = sendFailure
+        if (failure != null) {
+            emit(ChatStreamEvent.Failed(failure))
+            return@flow
+        }
+        emit(ChatStreamEvent.Started(emptyList()))
+        emit(ChatStreamEvent.Delta("回答"))
+        emit(ChatStreamEvent.Completed(1L))
     }
 
     override suspend fun getBookmarkTitles(ids: List<Long>): Map<Long, String> = emptyMap()
