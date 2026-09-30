@@ -148,7 +148,8 @@ fun EchoMarkNavHost() {
             composable(TopLevelDestination.CHAT.route) {
                 ConversationListScreen(
                     onOpenConversation = { id -> navController.navigate("chat/$id") },
-                    onNewConversation = { navController.navigate(CHAT_NEW_ROUTE) }
+                    onNewConversation = { navController.navigate(CHAT_NEW_ROUTE) },
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
             composable(
@@ -158,7 +159,21 @@ fun EchoMarkNavHost() {
             ) {
                 ChatScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) }
+                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
+                )
+            }
+            // ブックマーク詳細の「AIに質問」から開く、そのブックマークを必ず文脈に含める新規チャット
+            composable(
+                route = Routes.CHAT_NEW_ABOUT_BOOKMARK,
+                arguments = listOf(navArgument(Routes.ARG_ABOUT_BOOKMARK_ID) { type = NavType.LongType }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                ChatScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
             composable(
@@ -169,7 +184,8 @@ fun EchoMarkNavHost() {
             ) {
                 ChatScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) }
+                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
             composable(TopLevelDestination.SETTINGS.route) {
