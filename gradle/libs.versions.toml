@@ -25,6 +25,7 @@ jsoup = "1.23.2"
 coroutines = "1.10.2"
 orgJson = "20250107"
 robolectric = "4.17"
+coil = "3.6.3"
 roborazzi = "1.76.0"
 
 [libraries]
@@ -63,6 +64,8 @@ org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 mediapipe-tasks-text = { group = "com.google.mediapipe", name = "tasks-text", version.ref = "mediapipeTasksText" }
 mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeTasksGenai" }
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
 roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }

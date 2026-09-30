@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
@@ -24,8 +25,11 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ThemeScreenshotTest {
 
+    @get:Rule
+    val screenshot = ScreenshotRule()
+
     @Test
-    fun colorRoles() = captureLightDark("theme_color_roles") {
+    fun colorRoles() = screenshot.captureLightDark("theme_color_roles") {
         val c = MaterialTheme.colorScheme
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Swatch("primary", c.primary, c.onPrimary)
@@ -48,7 +52,7 @@ class ThemeScreenshotTest {
     }
 
     @Test
-    fun typography() = captureLightDark("theme_typography") {
+    fun typography() = screenshot.captureLightDark("theme_typography") {
         val t = MaterialTheme.typography
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("見出し headlineSmall", style = t.headlineSmall)

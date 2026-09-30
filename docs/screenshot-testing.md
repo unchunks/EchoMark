@@ -30,17 +30,21 @@
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class FooScreenshotTest {
+    @get:Rule
+    val screenshot = ScreenshotRule()
+
     @Test
-    fun foo() = captureLightDark("foo") {
+    fun foo() = screenshot.captureLightDark("foo") {
         FooContent(state = FooUiState(...), onClick = {})
     }
 }
 ```
 
-- `captureLightDark(name, widthDp = 400) { ... }`(`ScreenshotSupport.kt`)が、ブランド配色のライト/ダーク両方で描画して保存する。
+- `ScreenshotRule.captureLightDark(name, widthDp = 400) { ... }`(`ScreenshotSupport.kt`)が、ブランド配色のライト/ダーク両方で描画して保存する。1テストにつき1回だけ呼べる。
+- Compose の時計は手動で進めている(`autoAdvance = false`)。プログレス表示などの無限アニメーションがあると、自動で進める設定ではアイドル待ちが終わらずテストが止まるため。
 - Hilt・ViewModel は使えない。画面は「UI 状態とコールバックを受け取るだけの Composable」(例: `XxxScreen(viewModel)` の中身を `XxxContent(uiState, onXxx)` に分ける)を用意して、それを撮る。
-- 相対日時などは `nowMillis` を固定値で渡し、実行日によって画像が変わらないようにする。
-- ネットワーク画像(Coil)は読み込まれない。プレースホルダーの見た目が撮られる。
+- 相対日時などは `nowMillis` を固定値で渡し、実行日によって画像が変わらないようにする(サンプルデータは `ui/components/PreviewSamples.kt`)。
+- ネットワーク画像(Coil)は通信せず、単色の仮画像で描かれる(`LocalAsyncImagePreviewHandler`)。
 
 ## 設定
 

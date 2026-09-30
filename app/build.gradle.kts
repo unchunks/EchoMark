@@ -107,6 +107,10 @@ dependencies {
     // Network
     implementation(libs.okhttp)
 
+    // 画像読み込み(OG 画像のサムネイル)。通信は共通の OkHttpClient を使う(EchoMarkApplication)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+
     // ネットワーク・HTML解析(URL本文取得)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
