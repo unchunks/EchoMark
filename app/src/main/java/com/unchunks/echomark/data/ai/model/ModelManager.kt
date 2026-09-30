@@ -1,134 +1,249 @@
 package com.unchunks.echomark.data.ai.model
 
 import android.content.Context
-import androidx.work.BackoffPolicy
-import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
-import androidx.work.workDataOf
+import android.net.Uri
+import android.os.storage.StorageManager
+import android.provider.OpenableColumns
 import com.unchunks.echomark.di.DispatcherProvider
-import com.unchunks.echomark.worker.ModelDownloadWorker
+import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
-import java.util.concurrent.TimeUnit
+import java.io.FileOutputStream
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** モデル1つ分のダウンロード状態。 */
-sealed interface ModelState {
-    data object NotDownloaded : ModelState
-    /** Wi-Fi 接続待ちなど、ダウンロード開始前の待機中 */
-    data object Queued : ModelState
-    data class Downloading(val percent: Int) : ModelState
-    data object Available : ModelState
-    data object Failed : ModelState
-}
-
 /**
- * モデルファイルの保存場所・存在確認・ダウンロード状態を一元管理する。
- * ファイルは `filesDir/models/` に置く。
+ * オンデバイス LLM のモデルファイルを管理する。
+ * ユーザーが端末内のファイル(SAF で選んだ .task / .litertlm)を `filesDir/models/` へコピーして取り込む。
+ * モデルは1つだけ保持し、取り込み直すと置き換える。
  */
 @Singleton
 class ModelManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val workManager: WorkManager,
+    private val bookmarkRepository: BookmarkRepository,
     dispatcherProvider: DispatcherProvider
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
 
-    private val _states = MutableStateFlow(
-        ModelSpecs.all.associate { it.id to initialState(it) }
-    )
-
-    /** モデル ID -> 状態。 */
-    val states: StateFlow<Map<String, ModelState>> = _states.asStateFlow()
-
-    init {
-        ModelSpecs.all.forEach { spec ->
-            scope.launch {
-                workManager.getWorkInfosForUniqueWorkFlow(workName(spec)).collect { infos ->
-                    val state = resolveState(spec, infos)
-                    _states.update { it + (spec.id to state) }
-                }
-            }
-        }
-    }
-
     private val modelsDir: File
         get() = File(context.filesDir, "models").also { it.mkdirs() }
 
-    /** 完成したモデルファイル(存在するとは限らない)。 */
-    fun file(spec: ModelSpec): File = File(modelsDir, spec.fileName)
+    private val metadataFile: File get() = File(modelsDir, METADATA_FILE_NAME)
 
-    /** ダウンロード途中の一時ファイル。再開(Range)に使う。 */
-    fun partFile(spec: ModelSpec): File = File(modelsDir, spec.fileName + ".part")
+    private val _installedModel = MutableStateFlow(loadMetadata())
 
-    fun isAvailable(spec: ModelSpec): Boolean {
-        val f = file(spec)
-        if (!f.isFile || f.length() == 0L) return false
-        return spec.sizeBytes <= 0L || f.length() == spec.sizeBytes
+    /** 取り込み済みのモデル。未取り込みなら null。 */
+    val installedModel: StateFlow<LocalModelInfo?> = _installedModel.asStateFlow()
+
+    private val _importState = MutableStateFlow<ModelImportState>(ModelImportState.Idle)
+    val importState: StateFlow<ModelImportState> = _importState.asStateFlow()
+
+    private var importJob: Job? = null
+
+    /** 推論に使うモデルファイル。未取り込み・ファイル欠損なら null。 */
+    fun modelFile(): File? {
+        val info = _installedModel.value ?: return null
+        return File(modelsDir, info.fileName).takeIf { it.isFile && it.length() > 0 }
     }
 
-    /** Wi-Fi(従量課金でない回線)接続時にダウンロードを開始する。 */
-    fun startDownload(spec: ModelSpec) {
-        if (isAvailable(spec)) return
-        val request = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
-            .setInputData(workDataOf(ModelDownloadWorker.KEY_MODEL_ID to spec.id))
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.UNMETERED)
-                    .build()
-            )
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-            .build()
-        workManager.enqueueUniqueWork(workName(spec), ExistingWorkPolicy.KEEP, request)
+    fun isAvailable(): Boolean = modelFile() != null
+
+    /**
+     * [uri] のファイルを取り込む(アプリのスコープで実行し、画面を離れても続く)。
+     * 進捗・結果は [importState] で通知する。取り込み中なら何もしない。
+     */
+    fun startImport(uri: Uri) {
+        if (importJob?.isActive == true) return
+        importJob = scope.launch { importInternal(uri) }
     }
 
-    fun cancelDownload(spec: ModelSpec) {
-        workManager.cancelUniqueWork(workName(spec))
+    /** 取り込みを中止する。途中まで書いた一時ファイルは削除する。 */
+    fun cancelImport() {
+        importJob?.cancel()
     }
 
-    /** ダウンロードを止め、モデルファイルと一時ファイルを削除する。 */
-    fun delete(spec: ModelSpec) {
-        workManager.cancelUniqueWork(workName(spec))
+    /** 成功・失敗の表示が済んだら呼ぶ。 */
+    fun clearImportResult() {
+        if (_importState.value !is ModelImportState.Copying) _importState.value = ModelImportState.Idle
+    }
+
+    /** 取り込んだモデルを削除する。 */
+    fun deleteModel() {
         scope.launch {
-            file(spec).delete()
-            partFile(spec).delete()
-            Timber.d("モデルを削除: ${spec.id}")
-            _states.update { it + (spec.id to ModelState.NotDownloaded) }
+            _installedModel.value?.let { File(modelsDir, it.fileName).delete() }
+            metadataFile.delete()
+            _installedModel.value = null
+            Timber.d("オンデバイスモデルを削除")
         }
     }
 
-    private fun initialState(spec: ModelSpec): ModelState =
-        if (isAvailable(spec)) ModelState.Available else ModelState.NotDownloaded
+    private suspend fun importInternal(uri: Uri) {
+        val part = File(modelsDir, PART_FILE_NAME)
+        try {
+            val (displayName, size) = queryNameAndSize(uri)
+            ModelImportValidator.validate(displayName, size, allocatableBytes())?.let {
+                _importState.value = ModelImportState.Failed(it)
+                return
+            }
+            val extension = ModelImportValidator.supportedExtension(displayName)!!
 
-    private fun resolveState(spec: ModelSpec, infos: List<WorkInfo>): ModelState {
-        if (isAvailable(spec)) return ModelState.Available
-        val active = infos.firstOrNull { !it.state.isFinished }
-        if (active != null) {
-            return when (active.state) {
-                WorkInfo.State.RUNNING ->
-                    ModelState.Downloading(active.progress.getInt(ModelDownloadWorker.KEY_PROGRESS, 0))
-                else -> ModelState.Queued
+            _importState.value = ModelImportState.Copying(0L, size)
+            part.delete()
+            val copied = copyWithProgress(uri, part, size)
+            if (copied == 0L) {
+                part.delete()
+                _importState.value = ModelImportState.Failed(ModelImportError.EmptyFile)
+                return
+            }
+
+            // 旧モデルを消してから置き換える(拡張子が変わる場合もあるため固定名 + 拡張子で保存)
+            val fileName = MODEL_FILE_BASE_NAME + extension
+            _installedModel.value?.let { File(modelsDir, it.fileName).delete() }
+            val dest = File(modelsDir, fileName)
+            dest.delete()
+            if (!part.renameTo(dest)) throw IOException("rename failed")
+
+            val info = LocalModelInfo(
+                fileName = fileName,
+                displayName = displayName,
+                sizeBytes = copied,
+                importedAt = System.currentTimeMillis()
+            )
+            saveMetadata(info)
+            _installedModel.value = info
+            _importState.value = ModelImportState.Succeeded(info)
+            Timber.i("オンデバイスモデルを取り込み: ${info.displayName} (${info.sizeBytes} bytes)")
+
+            // モデル待ちだったブックマークの AI 処理を再開する
+            bookmarkRepository.enqueueWaitingModelProcessing()
+        } catch (e: CancellationException) {
+            part.delete()
+            _importState.value = ModelImportState.Idle
+            throw e
+        } catch (e: IOException) {
+            Timber.w(e, "モデルの取り込みに失敗")
+            part.delete()
+            val usable = allocatableBytes()
+            _importState.value = ModelImportState.Failed(
+                // 書き込み中の容量不足(サイズ不明のファイルなど)
+                if (usable < ModelImportValidator.STORAGE_MARGIN_BYTES) {
+                    ModelImportError.InsufficientStorage(ModelImportValidator.STORAGE_MARGIN_BYTES, usable)
+                } else {
+                    ModelImportError.ReadFailed
+                }
+            )
+        } catch (e: SecurityException) {
+            // 選択後に権限が失効した場合など
+            Timber.w(e, "モデルファイルへのアクセスが拒否された")
+            part.delete()
+            _importState.value = ModelImportState.Failed(ModelImportError.ReadFailed)
+        }
+    }
+
+    /** 保存先に確保できる容量。消去可能なキャッシュ分も含めて見積もる。 */
+    private fun allocatableBytes(): Long {
+        val dir = modelsDir
+        return try {
+            val storageManager = context.getSystemService(StorageManager::class.java)
+            storageManager.getAllocatableBytes(storageManager.getUuidForPath(dir))
+        } catch (e: IOException) {
+            dir.usableSpace
+        }
+    }
+
+    /** 表示名とサイズ(不明なら -1)。 */
+    private fun queryNameAndSize(uri: Uri): Pair<String, Long> {
+        var name: String? = null
+        var size = -1L
+        context.contentResolver.query(
+            uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
+                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
             }
         }
-        return if (infos.any { it.state == WorkInfo.State.FAILED }) {
-            ModelState.Failed
+        return (name ?: uri.lastPathSegment.orEmpty()) to size
+    }
+
+    private suspend fun copyWithProgress(uri: Uri, dest: File, totalBytes: Long): Long {
+        val input = context.contentResolver.openInputStream(uri) ?: throw IOException("openInputStream returned null")
+        var copied = 0L
+        var lastReported = 0L
+        input.use { src ->
+            FileOutputStream(dest).use { out ->
+                val buffer = ByteArray(BUFFER_SIZE)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val read = src.read(buffer)
+                    if (read < 0) break
+                    out.write(buffer, 0, read)
+                    copied += read
+                    // 状態更新が多すぎないよう、一定量ごとに通知する
+                    if (copied - lastReported >= PROGRESS_STEP_BYTES) {
+                        lastReported = copied
+                        _importState.value = ModelImportState.Copying(copied, totalBytes)
+                    }
+                }
+                out.fd.sync()
+            }
+        }
+        _importState.value = ModelImportState.Copying(copied, totalBytes)
+        return copied
+    }
+
+    private fun loadMetadata(): LocalModelInfo? = try {
+        val file = metadataFile
+        if (!file.isFile) {
+            null
         } else {
-            ModelState.NotDownloaded
+            val json = JSONObject(file.readText())
+            LocalModelInfo(
+                fileName = json.getString("fileName"),
+                displayName = json.getString("displayName"),
+                sizeBytes = json.getLong("sizeBytes"),
+                importedAt = json.getLong("importedAt")
+            ).takeIf { File(modelsDir, it.fileName).isFile }
+        }
+    } catch (e: Exception) {
+        Timber.w(e, "モデル情報の読み込みに失敗")
+        null
+    }
+
+    private fun saveMetadata(info: LocalModelInfo) {
+        val json = JSONObject()
+            .put("fileName", info.fileName)
+            .put("displayName", info.displayName)
+            .put("sizeBytes", info.sizeBytes)
+            .put("importedAt", info.importedAt)
+        val tmp = File(modelsDir, "$METADATA_FILE_NAME.tmp")
+        tmp.writeText(json.toString())
+        if (!tmp.renameTo(metadataFile)) {
+            metadataFile.writeText(json.toString())
+            tmp.delete()
         }
     }
 
-    private fun workName(spec: ModelSpec) = "model_download_${spec.id}"
+    private companion object {
+        const val MODEL_FILE_BASE_NAME = "local_llm"
+        const val METADATA_FILE_NAME = "local_llm.json"
+        const val PART_FILE_NAME = "import.part"
+        const val BUFFER_SIZE = 256 * 1024
+        const val PROGRESS_STEP_BYTES = 8L * 1024 * 1024
+    }
 }

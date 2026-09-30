@@ -19,7 +19,7 @@ workManager = "2.11.2"
 timber = "5.0.1"
 datastore = "1.2.1"
 mediapipeTasksText = "1.0.0"
-mediapipeTasksGenai = "0.10.27"
+mediapipeTasksGenai = "0.10.35"
 okhttp = "5.5.0"
 jsoup = "1.23.2"
 coroutines = "1.10.2"
@@ -30,6 +30,7 @@ anthropicJava = "2.66.0"
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }

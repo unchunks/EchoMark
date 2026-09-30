@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,7 +19,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -35,7 +40,6 @@ import com.unchunks.echomark.domain.repository.RediscoverSettings
 import java.time.DayOfWeek
 import java.time.format.TextStyle
 import java.util.Locale
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -45,13 +49,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.unchunks.echomark.data.ai.model.ModelState
 
 @Composable
 fun SettingsScreen(
+    onOpenAiSettings: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val models by viewModel.models.collectAsState(initial = emptyList())
     val llmBackend by viewModel.llmBackend.collectAsState()
     val rediscover by viewModel.rediscover.collectAsState()
 
@@ -59,46 +62,21 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("AIモデル", style = MaterialTheme.typography.titleLarge)
-        Text(
-            "要約・タグ付け・チャットにはオンデバイスのモデルを使います。ダウンロードは Wi-Fi 接続時に行われます。",
-            style = MaterialTheme.typography.bodySmall
+        // AI の実行場所・モデル・API キーは専用のサブ画面で設定する
+        ListItem(
+            headlineContent = { Text("AI 設定") },
+            supportingContent = {
+                Text(
+                    when (llmBackend) {
+                        LlmBackend.LOCAL -> "実行場所: 端末内"
+                        LlmBackend.API -> "実行場所: クラウド API"
+                    }
+                )
+            },
+            leadingContent = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
+            trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) },
+            modifier = Modifier.clickable(onClick = onOpenAiSettings)
         )
-
-        models.forEach { item ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(item.spec.displayName, style = MaterialTheme.typography.titleMedium)
-                Text(statusLabel(item.state), style = MaterialTheme.typography.bodyMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    when (item.state) {
-                        ModelState.NotDownloaded, ModelState.Failed ->
-                            Button(onClick = { viewModel.download(item.spec) }) {
-                                Text("ダウンロード")
-                            }
-                        ModelState.Queued, is ModelState.Downloading ->
-                            OutlinedButton(onClick = { viewModel.cancel(item.spec) }) {
-                                Text("キャンセル")
-                            }
-                        ModelState.Available ->
-                            OutlinedButton(onClick = { viewModel.delete(item.spec) }) {
-                                Text("削除")
-                            }
-                    }
-                    // 途中まで取得したファイルも消したい場合など、ダウンロード中でも削除できるようにする
-                    if (item.state is ModelState.Downloading || item.state == ModelState.Queued) {
-                        OutlinedButton(onClick = { viewModel.delete(item.spec) }) {
-                            Text("削除")
-                        }
-                    }
-                }
-            }
-        }
-
-        HorizontalDivider()
-        LlmBackendSection(selected = llmBackend, onSelect = viewModel::setLlmBackend)
 
         HorizontalDivider()
         RediscoverSection(
@@ -106,28 +84,6 @@ fun SettingsScreen(
             onEnabledChange = viewModel::setRediscoverEnabled,
             onScheduleChange = viewModel::setRediscoverSchedule
         )
-    }
-}
-
-/** 「AIの実行場所」。API は準備中のため選択不可。 */
-@Composable
-private fun LlmBackendSection(selected: LlmBackend, onSelect: (LlmBackend) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("AIの実行場所", style = MaterialTheme.typography.titleLarge)
-        Text(
-            "既定は端末内(ローカル)での実行です。データは端末の外に送信されません。",
-            style = MaterialTheme.typography.bodySmall
-        )
-        BackendRow("ローカル", selected == LlmBackend.LOCAL, enabled = true) { onSelect(LlmBackend.LOCAL) }
-        BackendRow("API(準備中)", selected == LlmBackend.API, enabled = false) { onSelect(LlmBackend.API) }
-    }
-}
-
-@Composable
-private fun BackendRow(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = selected, onClick = onClick, enabled = enabled)
-        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -232,12 +188,4 @@ private fun RediscoverSection(
             text = { TimePicker(state = timeState) }
         )
     }
-}
-
-private fun statusLabel(state: ModelState): String = when (state) {
-    ModelState.NotDownloaded -> "未ダウンロード"
-    ModelState.Queued -> "ダウンロード待機中(Wi-Fi 接続待ち)"
-    is ModelState.Downloading -> "ダウンロード中 ${state.percent}%"
-    ModelState.Available -> "利用可能"
-    ModelState.Failed -> "ダウンロードに失敗しました"
 }
