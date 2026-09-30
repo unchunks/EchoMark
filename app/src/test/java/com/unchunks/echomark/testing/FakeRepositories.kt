@@ -7,7 +7,10 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.repository.AiSetupRepository
+import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
@@ -135,19 +138,39 @@ class FakeBookmarkRepository : BookmarkRepository {
 open class FakeChatRepository : ChatRepository {
     val messages = MutableStateFlow<List<ChatMessage>>(emptyList())
 
+    val previews = MutableStateFlow<List<ConversationPreview>>(emptyList())
+    val conversation = MutableStateFlow<Conversation?>(null)
+
+    /** getBookmarks / getRecentBookmarks が返すブックマーク(新しい順)。 */
+    var bookmarks: List<Bookmark> = emptyList()
+
     var createdConversationId = 42L
     var createCalls = 0
+    val createdTitles = mutableListOf<String?>()
     val sent = mutableListOf<Pair<Long, String>>()
+
+    /** sendMessageStream の呼び出し(固定したブックマーク・再試行かどうかを含む)。 */
+    data class SendCall(val conversationId: Long, val text: String, val pinnedBookmarkId: Long?, val isRetry: Boolean)
+    val sendCalls = mutableListOf<SendCall>()
+
+    val renamed = mutableListOf<Pair<Long, String>>()
+    val deletedIds = mutableListOf<Long>()
+    val restored = mutableListOf<Pair<Conversation, List<ChatMessage>>>()
 
     /** 非 null なら sendMessage がこの例外を投げる。 */
     var sendFailure: Throwable? = null
 
-    override suspend fun createConversation(): Long {
+    override suspend fun createConversation(title: String?): Long {
         createCalls++
+        createdTitles += title
         return createdConversationId
     }
 
     override fun observeMessages(conversationId: Long): Flow<List<ChatMessage>> = messages
+
+    override fun observeConversation(conversationId: Long): Flow<Conversation?> = conversation
+
+    override fun observeConversationPreviews(): Flow<List<ConversationPreview>> = previews
 
     override suspend fun sendMessage(conversationId: Long, userMessage: String) {
         sent += conversationId to userMessage
@@ -155,8 +178,14 @@ open class FakeChatRepository : ChatRepository {
     }
 
     /** 既定: sendFailure があれば Failed、無ければ Started → Delta → Completed を流す。 */
-    override fun sendMessageStream(conversationId: Long, userMessage: String): Flow<ChatStreamEvent> = flow {
+    override fun sendMessageStream(
+        conversationId: Long,
+        userMessage: String,
+        pinnedBookmarkId: Long?,
+        isRetry: Boolean
+    ): Flow<ChatStreamEvent> = flow {
         sent += conversationId to userMessage
+        sendCalls += SendCall(conversationId, userMessage, pinnedBookmarkId, isRetry)
         val failure = sendFailure
         if (failure != null) {
             emit(ChatStreamEvent.Failed(failure))
@@ -167,9 +196,31 @@ open class FakeChatRepository : ChatRepository {
         emit(ChatStreamEvent.Completed(1L))
     }
 
-    override suspend fun getBookmarkTitles(ids: List<Long>): Map<Long, String> = emptyMap()
+    override suspend fun getBookmarks(ids: List<Long>): Map<Long, Bookmark> =
+        bookmarks.filter { it.id in ids }.associateBy { it.id }
+
+    override suspend fun getRecentBookmarks(limit: Int): List<Bookmark> = bookmarks.take(limit)
+
+    override suspend fun renameConversation(conversationId: Long, title: String) {
+        renamed += conversationId to title
+    }
+
+    override suspend fun deleteConversation(conversationId: Long) {
+        deletedIds += conversationId
+        previews.value = previews.value.filterNot { it.conversation.id == conversationId }
+    }
+
+    override suspend fun restoreConversation(conversation: Conversation, messages: List<ChatMessage>) {
+        restored += conversation to messages
+        previews.value = (previews.value + ConversationPreview(conversation))
+            .sortedByDescending { it.conversation.updatedAt }
+    }
 
     override fun observeConversations(): Flow<List<Conversation>> = TODO("not used")
-    override suspend fun renameConversation(conversationId: Long, title: String) = TODO("not used")
-    override suspend fun deleteConversation(conversationId: Long) = TODO("not used")
+}
+
+/** AI の準備状態の Fake。 */
+class FakeAiSetupRepository(initial: AiSetupState = AiSetupState.READY) : AiSetupRepository {
+    val state = MutableStateFlow(initial)
+    override val setupState: Flow<AiSetupState> = state
 }

@@ -7,6 +7,7 @@ import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.mapper.toDomain
+import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -14,7 +15,10 @@ import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.provider.LlmException
@@ -23,6 +27,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -40,16 +45,29 @@ class ChatRepositoryImpl @Inject constructor(
     private val dispatcherProvider: DispatcherProvider
 ) : ChatRepository {
 
-    override suspend fun createConversation(): Long =
+    override suspend fun createConversation(title: String?): Long =
         withContext(dispatcherProvider.io) {
             val now = System.currentTimeMillis()
+            val fixedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
             conversationDao.insert(
-                ConversationEntity(title = "新しいチャット", createdAt = now, updatedAt = now)
+                ConversationEntity(
+                    title = fixedTitle ?: DEFAULT_TITLE,
+                    // 呼び出し側が決めたタイトルは、最初の発言からの自動タイトルで上書きしない
+                    isTitleManuallySet = fixedTitle != null,
+                    createdAt = now,
+                    updatedAt = now
+                )
             )
         }
 
     override fun observeConversations(): Flow<List<Conversation>> =
         conversationDao.getAll().map { list -> list.map { it.toDomain() } }
+
+    override fun observeConversationPreviews(): Flow<List<ConversationPreview>> =
+        conversationDao.observeAllWithLastMessage().map { list -> list.map { it.toDomain() } }
+
+    override fun observeConversation(conversationId: Long): Flow<Conversation?> =
+        conversationDao.observeById(conversationId).map { it?.toDomain() }
 
     override fun observeMessages(conversationId: Long): Flow<List<ChatMessage>> =
         chatMessageDao.observeMessages(conversationId).map { list -> list.map { it.toDomain() } }
@@ -65,9 +83,14 @@ class ChatRepositoryImpl @Inject constructor(
             saveAssistantMessage(conversationId, answer, prepared.referencedIds)
         }
 
-    override fun sendMessageStream(conversationId: Long, userMessage: String): Flow<ChatStreamEvent> = flow {
+    override fun sendMessageStream(
+        conversationId: Long,
+        userMessage: String,
+        pinnedBookmarkId: Long?,
+        isRetry: Boolean
+    ): Flow<ChatStreamEvent> = flow {
         val prepared = try {
-            prepare(conversationId, userMessage)
+            prepare(conversationId, userMessage, pinnedBookmarkId, isRetry)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -120,27 +143,46 @@ class ChatRepositoryImpl @Inject constructor(
     }.flowOn(dispatcherProvider.io)
 
     /** 送信前の準備: 履歴の取得、ユーザー発言の保存、文脈(関連ブックマーク)の検索。 */
-    private suspend fun prepare(conversationId: Long, userMessage: String): PreparedChat {
-        // 0. 今回の発言を保存する前に、直近の会話履歴を取得しておく(今回分を含めないため)
-        val history = chatMessageDao.getRecentMessages(conversationId, RagSupport.HISTORY_LIMIT)
+    private suspend fun prepare(
+        conversationId: Long,
+        userMessage: String,
+        pinnedBookmarkId: Long? = null,
+        isRetry: Boolean = false
+    ): PreparedChat {
+        // 0. 今回の発言を保存する前に、直近の会話履歴を取得しておく(今回分を含めないため)。
+        //    再試行で、失敗した同じ発言が最後に残っているなら、それを履歴から外して使い回す(二重に保存しない)
+        val recent = chatMessageDao.getRecentMessages(conversationId, RagSupport.HISTORY_LIMIT + 1)
+        val last = recent.lastOrNull()
+        val reuseLastUserMessage = isRetry && last?.role == ChatRole.USER && last.content == userMessage
+        val history = (if (reuseLastUserMessage) recent.dropLast(1) else recent)
+            .takeLast(RagSupport.HISTORY_LIMIT)
             .map { it.toDomain() }
 
         // 1. ユーザーの発言を保存
         val userTime = System.currentTimeMillis()
-        chatMessageDao.insert(
-            ChatMessageEntity(
-                conversationId = conversationId,
-                role = ChatRole.USER,
-                content = userMessage,
-                createdAt = userTime
+        if (!reuseLastUserMessage) {
+            chatMessageDao.insert(
+                ChatMessageEntity(
+                    conversationId = conversationId,
+                    role = ChatRole.USER,
+                    content = userMessage,
+                    createdAt = userTime
+                )
             )
-        )
+        }
         conversationDao.touch(conversationId, userTime)
 
-        // 2〜3. 関連ブックマークを検索(削除済み等で取得できなかったものは除き、近い順を保つ)
-        val usedBookmarks = findRelevantBookmarks(userMessage)
+        // 2〜3. 関連ブックマークを検索(削除済み等で取得できなかったものは除き、近い順を保つ)。
+        //    質問の対象が固定されていれば、それを必ず先頭に含める
+        val pinned = pinnedBookmarkId?.let { bookmarkRepository.getBookmarksByIds(listOf(it)).firstOrNull() }
+        val searched = findRelevantBookmarks(RagSupport.searchQueryFor(userMessage, pinned?.title))
+        val usedBookmarks = RagSupport.pinFirst(pinned, searched, idOf = { it.id })
         val context = usedBookmarks.mapIndexed { i, b ->
-            RagSupport.formatContextEntry(i + 1, b.title, b.summary ?: b.content)
+            if (b.id == pinned?.id) {
+                RagSupport.formatPinnedContextEntry(i + 1, b.title, b.summary, b.content)
+            } else {
+                RagSupport.formatContextEntry(i + 1, b.title, b.summary ?: b.content)
+            }
         }
         return PreparedChat(history, context, usedBookmarks.map { it.id })
     }
@@ -200,9 +242,20 @@ class ChatRepositoryImpl @Inject constructor(
             conversationDao.deleteById(conversationId)
         }
 
-    override suspend fun getBookmarkTitles(ids: List<Long>): Map<Long, String> =
+    override suspend fun restoreConversation(conversation: Conversation, messages: List<ChatMessage>): Unit =
+        withContext(dispatcherProvider.io) {
+            conversationDao.insert(conversation.toEntity())
+            if (messages.isNotEmpty()) chatMessageDao.insertAll(messages.map { it.toEntity() })
+        }
+
+    override suspend fun getBookmarks(ids: List<Long>): Map<Long, Bookmark> =
         if (ids.isEmpty()) emptyMap()
-        else bookmarkRepository.getBookmarksByIds(ids).associate { it.id to it.title }
+        else bookmarkRepository.getBookmarksByIds(ids).associateBy { it.id }
+
+    override suspend fun getRecentBookmarks(limit: Int): List<Bookmark> =
+        bookmarkRepository.observeBookmarks(BookmarkFilter.ACTIVE, BookmarkSortOrder.NEWEST)
+            .first()
+            .take(limit)
 
     private class PreparedChat(
         val history: List<ChatMessage>,
@@ -213,5 +266,8 @@ class ChatRepositoryImpl @Inject constructor(
     companion object {
         /** 生成を途中で止めた回答の末尾に付ける印。 */
         const val STOPPED_SUFFIX = "\n\n(停止)"
+
+        /** 最初の発言が来るまでの会話タイトル。 */
+        const val DEFAULT_TITLE = "新しいチャット"
     }
 }

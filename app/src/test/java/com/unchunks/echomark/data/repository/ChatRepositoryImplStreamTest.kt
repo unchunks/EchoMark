@@ -5,6 +5,10 @@ import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.ConversationWithLastMessage
+import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.chat.RagSupport
+import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
@@ -33,6 +37,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,8 +45,19 @@ class ChatRepositoryImplStreamTest {
 
     private val messageDao = FakeChatMessageDao()
     private val conversationDao = FakeConversationDao()
-    private val bookmarkRepository = FakeBookmarkRepository().apply {
+    private val fakeBookmarks = FakeBookmarkRepository().apply {
         bookmarks.value = listOf(testBookmark(id = 5, title = "Kotlin 入門"))
+    }
+
+    /** true なら検索(キーワード)がクエリに関係なく全件を返す(固定ブックマークとの重複を試すため)。 */
+    private var searchReturnsAll = false
+
+    private val bookmarkRepository: BookmarkRepository = object : BookmarkRepository by fakeBookmarks {
+        override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> =
+            fakeBookmarks.bookmarks.value.filter { it.id in ids }
+
+        override suspend fun search(query: String, tagId: Long?): List<Bookmark> =
+            if (searchReturnsAll) fakeBookmarks.bookmarks.value else fakeBookmarks.search(query, tagId)
     }
 
     /** 埋め込みモデルが無い環境(assets 未同梱)を再現する。 */
@@ -129,6 +145,88 @@ class ChatRepositoryImplStreamTest {
         assertEquals("途中まで" + ChatRepositoryImpl.STOPPED_SUFFIX, saved[1].content)
     }
 
+    /** 渡された文脈・履歴を記録する LLM。 */
+    private class RecordingLlm(private val answer: String = "回答", var failure: Throwable? = null) : LlmProvider {
+        var lastContext: List<String> = emptyList()
+        var lastHistory: List<ChatMessage> = emptyList()
+
+        override suspend fun analyze(text: String): BookmarkAnalysis = TODO("not used")
+        override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>) =
+            TODO("not used")
+
+        override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> =
+            flow {
+                lastContext = context
+                lastHistory = history
+                failure?.let { throw it }
+                emit(answer)
+            }
+    }
+
+    @Test
+    fun 固定したブックマークは検索結果より先頭に入り_重複しない() = runBlocking {
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 5, title = "Kotlin 入門"),
+            testBookmark(id = 7, title = "Compose メモ").copy(summary = "Compose の要約", content = "本文です")
+        )
+        searchReturnsAll = true
+        val llm = RecordingLlm()
+
+        val events = repository(llm).sendMessageStream(1L, "要約して", pinnedBookmarkId = 7L).toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(7L, 5L)), events.first())
+        assertEquals(2, llm.lastContext.size)
+        assertTrue(llm.lastContext[0].startsWith("[1] ${RagSupport.PINNED_MARK} Compose メモ: Compose の要約"))
+        assertTrue(llm.lastContext[0].contains("本文です"))
+        assertTrue(llm.lastContext[1].startsWith("[2] Kotlin 入門"))
+        assertEquals("7,5", messageDao.all.value.last().referencedBookmarkIds)
+    }
+
+    @Test
+    fun 固定したブックマークが削除済みなら通常の検索だけで答える() = runBlocking {
+        val events = repository(RecordingLlm()).sendMessageStream(1L, "Kotlin", pinnedBookmarkId = 99L).toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events.first())
+    }
+
+    @Test
+    fun 再試行では失敗した同じ発言を使い回し_二重に保存しない() = runBlocking {
+        val llm = RecordingLlm(failure = LlmException.Network())
+        val repo = repository(llm)
+        repo.sendMessageStream(1L, "質問").toList()
+        assertEquals(listOf("質問"), messageDao.all.value.map { it.content })
+
+        llm.failure = null
+        val events = repo.sendMessageStream(1L, "質問", isRetry = true).toList()
+
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+        assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), messageDao.all.value.map { it.role })
+        // 履歴には今回の質問を含めない
+        assertTrue(llm.lastHistory.isEmpty())
+    }
+
+    @Test
+    fun 再試行でも最後の発言が違えば新しく保存する() = runBlocking {
+        val repo = repository(RecordingLlm())
+        repo.sendMessageStream(1L, "最初").toList()
+
+        repo.sendMessageStream(1L, "次の質問", isRetry = true).toList()
+
+        assertEquals(listOf("最初", "回答", "次の質問", "回答"), messageDao.all.value.map { it.content })
+    }
+
+    @Test
+    fun タイトルを指定して作った会話は自動タイトルで上書きしない設定になる() = runBlocking {
+        val repo = repository(RecordingLlm())
+        repo.createConversation("Compose メモについて")
+        repo.createConversation()
+
+        assertEquals("Compose メモについて", conversationDao.inserted[0].title)
+        assertTrue(conversationDao.inserted[0].isTitleManuallySet)
+        assertEquals(ChatRepositoryImpl.DEFAULT_TITLE, conversationDao.inserted[1].title)
+        assertFalse(conversationDao.inserted[1].isTitleManuallySet)
+    }
+
     /**
      * ObjectBox(ネイティブライブラリ)に依存するため JVM では生成できない。
      * このテストは埋め込み無しの経路だけを通り、ベクトル検索は呼ばれないので未初期化のインスタンスで足りる。
@@ -151,6 +249,10 @@ private class FakeChatMessageDao : ChatMessageDao {
         return id
     }
 
+    override suspend fun insertAll(messages: List<ChatMessageEntity>) {
+        all.value = all.value + messages
+    }
+
     override fun observeMessages(conversationId: Long): Flow<List<ChatMessageEntity>> = all
 
     override suspend fun getRecentMessages(conversationId: Long, limit: Int): List<ChatMessageEntity> =
@@ -162,10 +264,17 @@ private class FakeChatMessageDao : ChatMessageDao {
 
 private class FakeConversationDao : ConversationDao {
     var autoTitle: String? = null
+    val inserted = mutableListOf<ConversationEntity>()
 
-    override suspend fun insert(conversation: ConversationEntity): Long = 1L
+    override suspend fun insert(conversation: ConversationEntity): Long {
+        inserted += conversation
+        return 1L
+    }
     override suspend fun getById(id: Long): ConversationEntity? = null
+    override fun observeById(id: Long): Flow<ConversationEntity?> = MutableStateFlow(null)
     override fun getAll(): Flow<List<ConversationEntity>> = MutableStateFlow(emptyList())
+    override fun observeAllWithLastMessage(): Flow<List<ConversationWithLastMessage>> =
+        MutableStateFlow(emptyList())
     override suspend fun touch(id: Long, updatedAt: Long) = Unit
     override suspend fun updateAutoTitle(id: Long, title: String, updatedAt: Long) {
         autoTitle = title
