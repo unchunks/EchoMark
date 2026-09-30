@@ -40,6 +40,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
+import com.unchunks.echomark.ui.bookmark.BookmarkViewModel
+import com.unchunks.echomark.ui.tags.TagManagementScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.chat.ConversationListScreen
@@ -141,7 +143,24 @@ fun EchoMarkNavHost() {
         ) {
             composable(TopLevelDestination.BOOKMARKS.route) {
                 BookmarkListScreen(
-                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) }
+                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
+                    onOpenTagManagement = { navController.navigate(Routes.TAGS) }
+                )
+            }
+            // タグ管理。タグをタップしたら、一覧の SavedStateHandle にタグ ID を渡して一覧へ戻る
+            composable(
+                route = Routes.TAGS,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                TagManagementScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenTag = { tagId ->
+                        val bookmarksRoute = TopLevelDestination.BOOKMARKS.route
+                        runCatching { navController.getBackStackEntry(bookmarksRoute) }.getOrNull()
+                            ?.savedStateHandle?.set(BookmarkViewModel.KEY_SELECT_TAG_ID, tagId)
+                        navController.popBackStack(bookmarksRoute, inclusive = false)
+                    }
                 )
             }
             // チャットタブ = 会話一覧。"chat/new" は初回送信時に会話を作成、"chat/{conversationId}" は再開
