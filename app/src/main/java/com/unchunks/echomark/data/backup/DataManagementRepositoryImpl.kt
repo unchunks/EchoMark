@@ -1,7 +1,7 @@
 package com.unchunks.echomark.data.backup
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -49,7 +49,7 @@ class DataManagementRepositoryImpl @Inject constructor(
         val data = backupDao.snapshot(exportedAt = System.currentTimeMillis())
         try {
             // "wt": 既存ファイルを選んだ場合も中身を切り詰めて上書きする
-            val output = context.contentResolver.openOutputStream(Uri.parse(uri), "wt")
+            val output = context.contentResolver.openOutputStream(uri.toUri(), "wt")
                 ?: throw IOException("openOutputStream returned null")
             output.bufferedWriter(Charsets.UTF_8).use { BackupJson.write(data, it) }
         } catch (e: IOException) {
@@ -70,7 +70,7 @@ class DataManagementRepositoryImpl @Inject constructor(
 
     override suspend fun importBackup(uri: String): BackupImportSummary = withContext(dispatcherProvider.io) {
         val text = try {
-            val input = context.contentResolver.openInputStream(Uri.parse(uri))
+            val input = context.contentResolver.openInputStream(uri.toUri())
                 ?: throw IOException("openInputStream returned null")
             input.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } catch (e: IOException) {
