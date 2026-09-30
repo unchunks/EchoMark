@@ -19,6 +19,8 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
@@ -191,6 +193,21 @@ class BookmarkRepositoryImpl @Inject constructor(
             bookmarkDao.updateLastAccessedAt(id, System.currentTimeMillis())
         }
 
+    override suspend fun setFavorite(id: Long, isFavorite: Boolean) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateFavorite(id, isFavorite)
+        }
+
+    override suspend fun setArchived(id: Long, isArchived: Boolean) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateArchived(id, isArchived)
+        }
+
+    override suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateLinkMetadata(id, imageUrl, siteName)
+        }
+
     override suspend fun updateTitleAndContent(id: Long, title: String, content: String?) =
         withContext(dispatcherProvider.io) {
             bookmarkDao.updateTitleAndContent(id, title, content)
@@ -266,6 +283,20 @@ class BookmarkRepositoryImpl @Inject constructor(
     override fun observeBookmark(id: Long): Flow<Bookmark?> =
         bookmarkDao.observeByIdWithTags(id)
             .map { it?.toDomain() }
+            .flowOn(dispatcherProvider.io)
+
+    override fun observeBookmarks(
+        filter: BookmarkFilter,
+        sortOrder: BookmarkSortOrder,
+        tagId: Long?
+    ): Flow<List<Bookmark>> =
+        bookmarkDao.observeFiltered(
+            archived = filter == BookmarkFilter.ARCHIVED,
+            favoriteOnly = filter == BookmarkFilter.FAVORITES,
+            tagId = tagId,
+            sortOrder = sortOrder.name
+        )
+            .map { list -> list.map { it.toDomain() } }
             .flowOn(dispatcherProvider.io)
 
     override suspend fun search(query: String, tagId: Long?): List<Bookmark> =

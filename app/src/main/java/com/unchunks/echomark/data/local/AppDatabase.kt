@@ -19,7 +19,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
         BookmarkEntity::class, TagEntity::class, BookmarkTagCrossRef::class,
         ConversationEntity::class, ChatMessageEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)

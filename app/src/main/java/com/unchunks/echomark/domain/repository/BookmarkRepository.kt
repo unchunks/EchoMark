@@ -2,6 +2,8 @@ package com.unchunks.echomark.domain.repository
 
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
 
@@ -28,6 +30,10 @@ interface BookmarkRepository {
     suspend fun removeTag(bookmarkId: Long, tagName: String)
     /** 詳細画面を開いたときに lastAccessedAt を現在時刻に更新する。 */
     suspend fun markAccessed(id: Long)
+    suspend fun setFavorite(id: Long, isFavorite: Boolean)
+    suspend fun setArchived(id: Long, isArchived: Boolean)
+    /** リンク先から取得した OG 画像 URL・サイト名を保存する(取得できなかった項目は null)。 */
+    suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?)
 
     // AI 処理
     /** 要約をクリアして AI 処理(要約・タグ・埋め込み)をやり直す。 */
@@ -52,6 +58,17 @@ interface BookmarkRepository {
     fun observeBookmarksByTag(tagId: Long): Flow<List<Bookmark>>
     fun observeAllTags(): Flow<List<Tag>>
     fun observeBookmark(id: Long): Flow<Bookmark?>
+
+    /**
+     * 一覧用の観測。[filter] で通常/アーカイブ/お気に入りを切り替え、[sortOrder] で並べ替える。
+     * [tagId] が非NULLならそのタグを持つものに絞る。
+     * (既存の [observeBookmarks] はアーカイブも含めた全件を新しい順で返す)
+     */
+    fun observeBookmarks(
+        filter: BookmarkFilter,
+        sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST,
+        tagId: Long? = null
+    ): Flow<List<Bookmark>>
 
     /**
      * ハイブリッド検索。キーワード(LIKE)とベクトル類似の結果を RRF で統合して返す。

@@ -51,6 +51,15 @@ android {
     androidResources {
         noCompress += "task"
     }
+
+    // Room のマイグレーションテスト(Robolectric)で MigrationTestHelper がスキーマ JSON を assets から読めるようにする。
+    // JVM 単体テストは test ソースセットの assets を使わず、debug の統合済み assets を読むため debug に追加する
+    // (debug APK にだけ数十 KB の JSON が入る。release には入らない)
+    sourceSets {
+        getByName("debug") {
+            assets.directories.add("$projectDir/schemas")
+        }
+    }
 }
 
 room {
@@ -115,6 +124,7 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.androidx.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
