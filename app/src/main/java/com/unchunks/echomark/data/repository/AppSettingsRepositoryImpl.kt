@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -37,6 +38,17 @@ class AppSettingsRepositoryImpl @Inject constructor(
             ?: LlmBackend.LOCAL
     }
 
+    override val apiProvider: Flow<ApiProvider> = data.map { prefs ->
+        prefs[KEY_API_PROVIDER]?.let { name -> ApiProvider.entries.firstOrNull { it.name == name } }
+            ?: ApiProvider.CLAUDE
+    }
+
+    override val apiModels: Flow<Map<ApiProvider, String>> = data.map { prefs ->
+        ApiProvider.entries.associateWith { provider ->
+            prefs[apiModelKey(provider)]?.takeIf { it.isNotBlank() } ?: provider.defaultModel
+        }
+    }
+
     override val rediscoverSettings: Flow<RediscoverSettings> = data.map { prefs ->
         val defaults = RediscoverSettings()
         RediscoverSettings(
@@ -50,6 +62,17 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setLlmBackend(backend: LlmBackend) {
         dataStore.edit { it[KEY_LLM_BACKEND] = backend.name }
+    }
+
+    override suspend fun setApiProvider(provider: ApiProvider) {
+        dataStore.edit { it[KEY_API_PROVIDER] = provider.name }
+    }
+
+    override suspend fun setApiModel(provider: ApiProvider, modelId: String) {
+        val trimmed = modelId.trim()
+        dataStore.edit {
+            if (trimmed.isEmpty()) it.remove(apiModelKey(provider)) else it[apiModelKey(provider)] = trimmed
+        }
     }
 
     override suspend fun setRediscoverEnabled(enabled: Boolean) {
@@ -78,6 +101,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     private companion object {
         val KEY_LLM_BACKEND = stringPreferencesKey("llm_backend")
+        val KEY_API_PROVIDER = stringPreferencesKey("api_provider")
+        fun apiModelKey(provider: ApiProvider) = stringPreferencesKey("api_model_${provider.name.lowercase()}")
         val KEY_REDISCOVER_ENABLED = booleanPreferencesKey("rediscover_enabled")
         val KEY_REDISCOVER_DAY = intPreferencesKey("rediscover_day_of_week")
         val KEY_REDISCOVER_HOUR = intPreferencesKey("rediscover_hour")
