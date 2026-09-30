@@ -52,7 +52,8 @@ class ModelDownloadWorker @AssistedInject constructor(
             }
         }
 
-        if (result is Result.Success) {
+        // Result.Success は WorkManager 内部 API(RestrictedApi)のため、ファイルの有無で成功を判定する
+        if (modelManager.isAvailable(spec)) {
             // モデル待ちだったブックマークの AI 処理を再開する
             bookmarkRepository.enqueueWaitingModelProcessing()
         }
