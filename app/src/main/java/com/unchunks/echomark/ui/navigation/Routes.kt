@@ -5,6 +5,9 @@ object Routes {
     /** 設定タブ内の AI 設定サブ画面。"settings/..." なのでボトムバーは設定タブが選択状態になる。 */
     const val AI_SETTINGS = "settings/ai"
 
+    /** 設定の「はじめにの案内をもう一度見る」から開くオンボーディング(初回起動時は NavHost の外で表示する)。 */
+    const val ONBOARDING = "settings/onboarding"
+
     const val BOOKMARK_DETAIL = "bookmark/{bookmarkId}"
     fun bookmarkDetail(id: Long) = "bookmark/$id"
 

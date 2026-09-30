@@ -13,7 +13,13 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import com.unchunks.echomark.ui.navigation.EchoMarkNavHost
+import com.unchunks.echomark.ui.navigation.LaunchTarget
+import com.unchunks.echomark.ui.onboarding.OnboardingExit
+import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -26,8 +32,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         keepSplashUntilReady()
         enableEdgeToEdge()
+        // アプリショートカットから開いた画面。回転などで作り直したときは、開き済みなので読まない
+        val shortcutTarget = if (savedInstanceState == null) LaunchTarget.fromIntent(intent) else null
         setContent {
             val uiState by viewModel.uiState.collectAsState()
+            var launchTarget by rememberSaveable { mutableStateOf(shortcutTarget) }
             // 設定の読み込み前は何も描かない(スプラッシュが出ている)
             val ready = uiState as? MainUiState.Ready ?: return@setContent
             val darkTheme = ready.themeMode.isDark(isSystemInDarkTheme())
@@ -42,7 +51,19 @@ class MainActivity : ComponentActivity() {
             }
 
             EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor) {
-                EchoMarkNavHost()
+                if (ready.onboardingCompleted) {
+                    EchoMarkNavHost(
+                        launchTarget = launchTarget,
+                        onLaunchTargetHandled = { launchTarget = null }
+                    )
+                } else {
+                    // 初回だけ、ボトムバーのない全画面で案内する。完了が保存されると一覧に切り替わる
+                    OnboardingScreen(
+                        onFinish = { exit ->
+                            if (exit == OnboardingExit.AI_SETTINGS) launchTarget = LaunchTarget.AI_SETTINGS
+                        }
+                    )
+                }
             }
         }
     }

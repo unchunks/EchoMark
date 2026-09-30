@@ -24,6 +24,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -44,9 +45,12 @@ import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.chat.ConversationListScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
+import com.unchunks.echomark.ui.onboarding.OnboardingExit
+import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
+import kotlinx.coroutines.flow.first
 
 /** ボトムバーに並ぶトップレベル画面。route は文字列ルート。選択中は塗りのアイコンにする。 */
 private enum class TopLevelDestination(
@@ -97,12 +101,35 @@ private val subScreenPopExit: AnimatedContentTransitionScope<NavBackStackEntry>.
  *
  * インセット: この Scaffold がシステムバー(とボトムバー)の分の余白を付けて consumeWindowInsets するため、
  * 各画面の中の Scaffold / TopAppBar / imePadding は残りの分だけを足す(二重の余白にならない)。
+ *
+ * @param launchTarget 起動直後に開く画面(アプリショートカット・オンボーディングの続き)。開いたら [onLaunchTargetHandled] を呼ぶ
  */
 @Composable
-fun EchoMarkNavHost() {
+fun EchoMarkNavHost(
+    launchTarget: LaunchTarget? = null,
+    onLaunchTargetHandled: () -> Unit = {}
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
+
+    // 一覧の上に積んで開くので、戻ると一覧に戻る(チャット・AI 設定はそれぞれのタブを経由する)
+    LaunchedEffect(launchTarget) {
+        if (launchTarget == null) return@LaunchedEffect
+        // NavHost がグラフを設定し、開始画面を表示するまで待つ(それより前の navigate は失敗する)
+        navController.currentBackStackEntryFlow.first()
+        when (launchTarget) {
+            LaunchTarget.NEW_CHAT -> {
+                navController.navigate(TopLevelDestination.CHAT.route)
+                navController.navigate(CHAT_NEW_ROUTE)
+            }
+            LaunchTarget.AI_SETTINGS -> {
+                navController.navigate(TopLevelDestination.SETTINGS.route)
+                navController.navigate(Routes.AI_SETTINGS)
+            }
+        }
+        onLaunchTargetHandled()
+    }
 
     Scaffold(
         bottomBar = {
@@ -173,7 +200,22 @@ fun EchoMarkNavHost() {
                 )
             }
             composable(TopLevelDestination.SETTINGS.route) {
-                SettingsScreen(onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) })
+                SettingsScreen(
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
+                    onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) }
+                )
+            }
+            composable(
+                route = Routes.ONBOARDING,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                OnboardingScreen(
+                    onFinish = { exit ->
+                        navController.popBackStack()
+                        if (exit == OnboardingExit.AI_SETTINGS) navController.navigate(Routes.AI_SETTINGS)
+                    }
+                )
             }
             composable(Routes.AI_SETTINGS) {
                 AiSettingsScreen(onBack = { navController.popBackStack() })
