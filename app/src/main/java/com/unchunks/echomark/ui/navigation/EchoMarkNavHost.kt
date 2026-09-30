@@ -187,7 +187,9 @@ fun EchoMarkNavHost() {
             ) {
                 BookmarkDetailScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) }
+                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
+                    onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
         }
