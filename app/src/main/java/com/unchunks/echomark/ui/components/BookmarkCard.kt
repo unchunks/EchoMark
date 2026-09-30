@@ -1,6 +1,7 @@
 package com.unchunks.echomark.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,7 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -56,6 +59,7 @@ private const val MAX_VISIBLE_TAGS = 3
  *
  * @param onToggleFavorite 渡すと右上にお気に入りの星ボタンを出す。null ならお気に入りのときだけ小さな星を表示する
  * @param nowMillis 相対日時の基準時刻。プレビューやスクリーンショットでは固定値を渡す
+ * @param onLongClick 渡すと長押しできる(操作メニューを出す用)。[onLongClickLabel] は TalkBack で読み上げる操作名
  */
 @Composable
 fun BookmarkCard(
@@ -63,78 +67,107 @@ fun BookmarkCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onToggleFavorite: (() -> Unit)? = null,
-    nowMillis: Long = System.currentTimeMillis()
+    nowMillis: Long = System.currentTimeMillis(),
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null
 ) {
     val domain = bookmark.displaySource()
-    Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                BookmarkThumbnail(bookmark = bookmark, domain = domain, size = 72.dp)
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    SourceLine(
-                        source = domain,
-                        relativeTime = formatRelativeTime(bookmark.createdAt, nowMillis),
-                        showFavoriteMark = onToggleFavorite == null && bookmark.isFavorite
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = bookmark.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (onToggleFavorite != null) {
-                    FavoriteButton(isFavorite = bookmark.isFavorite, onClick = onToggleFavorite)
-                } else {
-                    Spacer(Modifier.width(8.dp))
-                }
-            }
+    val colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    if (onLongClick == null) {
+        Card(onClick = onClick, modifier = modifier.fillMaxWidth(), colors = colors) {
+            BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis)
+        }
+    } else {
+        val haptics = LocalHapticFeedback.current
+        Card(
+            modifier = modifier
+                .fillMaxWidth()
+                .clip(CardDefaults.shape)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    },
+                    onLongClickLabel = onLongClickLabel
+                ),
+            colors = colors
+        ) {
+            BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis)
+        }
+    }
+}
 
-            val summary = bookmark.summary
-            if (!summary.isNullOrBlank()) {
-                Spacer(Modifier.height(8.dp))
+@Composable
+private fun BookmarkCardBody(
+    bookmark: Bookmark,
+    domain: String,
+    onToggleFavorite: (() -> Unit)?,
+    nowMillis: Long
+) {
+    Column(modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            BookmarkThumbnail(bookmark = bookmark, domain = domain, size = 72.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                SourceLine(
+                    source = domain,
+                    relativeTime = formatRelativeTime(bookmark.createdAt, nowMillis),
+                    showFavoriteMark = onToggleFavorite == null && bookmark.isFavorite
+                )
+                Spacer(Modifier.height(2.dp))
                 Text(
-                    text = summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = bookmark.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(end = 8.dp)
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+            if (onToggleFavorite != null) {
+                FavoriteButton(isFavorite = bookmark.isFavorite, onClick = onToggleFavorite)
+            } else {
+                Spacer(Modifier.width(8.dp))
+            }
+        }
 
-            // 完了済み(DONE)は要約が見えていれば十分なのでバッジを出さない
-            val showStatus = bookmark.aiStatus != AiStatus.DONE
-            if (bookmark.tags.isNotEmpty() || showStatus) {
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.padding(end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (showStatus) AiStatusBadge(bookmark.aiStatus)
-                    val visibleTags = bookmark.tags.take(MAX_VISIBLE_TAGS)
-                    visibleTags.forEachIndexed { index, tag ->
-                        // 最後のタグだけ残り幅に合わせて縮める(前のタグは本来の幅で表示する)
-                        val chipModifier =
-                            if (index == visibleTags.lastIndex) Modifier.weight(1f, fill = false) else Modifier
-                        TagChip(name = tag, modifier = chipModifier)
-                    }
-                    val hidden = bookmark.tags.size - MAX_VISIBLE_TAGS
-                    if (hidden > 0) {
-                        Text(
-                            text = "+$hidden",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+        val summary = bookmark.summary
+        if (!summary.isNullOrBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+        }
+
+        // 完了済み(DONE)は要約が見えていれば十分なのでバッジを出さない
+        val showStatus = bookmark.aiStatus != AiStatus.DONE
+        if (bookmark.tags.isNotEmpty() || showStatus) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.padding(end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (showStatus) AiStatusBadge(bookmark.aiStatus)
+                val visibleTags = bookmark.tags.take(MAX_VISIBLE_TAGS)
+                visibleTags.forEachIndexed { index, tag ->
+                    // 最後のタグだけ残り幅に合わせて縮める(前のタグは本来の幅で表示する)
+                    val chipModifier =
+                        if (index == visibleTags.lastIndex) Modifier.weight(1f, fill = false) else Modifier
+                    TagChip(name = tag, modifier = chipModifier)
+                }
+                val hidden = bookmark.tags.size - MAX_VISIBLE_TAGS
+                if (hidden > 0) {
+                    Text(
+                        text = "+$hidden",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -142,7 +175,7 @@ fun BookmarkCard(
 }
 
 /** サイト名 > URL のドメイン > 種類名 の順で「どこから来たか」を返す */
-private fun Bookmark.displaySource(): String =
+internal fun Bookmark.displaySource(): String =
     siteName?.takeIf { it.isNotBlank() }
         ?: contentUri?.let { extractDomain(it) }
         ?: type.displayName()

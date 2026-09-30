@@ -70,4 +70,30 @@ class RediscoverSelectorTest {
         val result = RediscoverSelector.select(candidates, emptyMap(), now, staleDays = 7, limit = 1)
         assertEquals(listOf(1L), result.map { it.id })
     }
+
+    @Test
+    fun 今日の再発見は十四日以上開いていないアーカイブ以外から選ぶ() {
+        val candidates = listOf(
+            testBookmark(1, lastAccessedAt = daysAgo(13)),
+            testBookmark(2, lastAccessedAt = daysAgo(14)),
+            testBookmark(3, lastAccessedAt = daysAgo(50)).copy(isArchived = true)
+        )
+        val result = RediscoverSelector.pickDaily(candidates, now, dayIndex = 0)
+        assertEquals(listOf(2L), result.map { it.id })
+    }
+
+    @Test
+    fun 今日の再発見は同じ日なら同じ顔ぶれで日が変わると入れ替わる() {
+        val candidates = (1L..7L).map { testBookmark(it, lastAccessedAt = daysAgo(100 - it)) }
+
+        val day0 = RediscoverSelector.pickDaily(candidates, now, dayIndex = 0).map { it.id }
+        val day0Again = RediscoverSelector.pickDaily(candidates.shuffled(), now, dayIndex = 0).map { it.id }
+        val day1 = RediscoverSelector.pickDaily(candidates, now, dayIndex = 1).map { it.id }
+
+        assertEquals(listOf(1L, 2L, 3L), day0)
+        assertEquals(day0, day0Again)
+        assertEquals(listOf(4L, 5L, 6L), day1)
+        // 末尾で折り返す
+        assertEquals(listOf(7L, 1L, 2L), RediscoverSelector.pickDaily(candidates, now, dayIndex = 2).map { it.id })
+    }
 }

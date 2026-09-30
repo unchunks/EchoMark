@@ -30,4 +30,29 @@ object RediscoverSelector {
             .sortedBy { it.lastAccessedAt }
             .take(limit)
     }
+
+    /** 一覧上部の「今日の再発見」で、しばらく開いていないとみなす日数(通知より短め) */
+    const val IN_APP_STALE_DAYS = 14L
+
+    /**
+     * 一覧上部の「今日の再発見」に出すブックマークを選ぶ。
+     * [IN_APP_STALE_DAYS] 日以上開いていない、アーカイブしていないものから、日付ごとに決まった [limit] 件を返す
+     * (同じ日は何度開いても同じ顔ぶれ、日が変わると入れ替わる)。
+     * @param dayIndex 日付の通し番号(例: エポック日)。これで候補の並びを回す
+     */
+    fun pickDaily(
+        candidates: List<Bookmark>,
+        now: Long,
+        dayIndex: Long,
+        staleDays: Long = IN_APP_STALE_DAYS,
+        limit: Int = MAX_ITEMS
+    ): List<Bookmark> {
+        val staleMs = TimeUnit.DAYS.toMillis(staleDays)
+        val pool = candidates
+            .filter { !it.isArchived && now - it.lastAccessedAt >= staleMs }
+            .sortedWith(compareBy<Bookmark> { it.lastAccessedAt }.thenBy { it.id })
+        if (pool.size <= limit) return pool
+        val offset = Math.floorMod(dayIndex * limit, pool.size.toLong()).toInt()
+        return (pool.drop(offset) + pool.take(offset)).take(limit)
+    }
 }
