@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.androidx.room)
     alias(libs.plugins.kotlin.legacy.kapt)
     alias(libs.plugins.objectbox)
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -42,6 +43,8 @@ android {
         unitTests {
             // SavedStateHandle 等が触る Android スタブで落ちないようにする
             isReturnDefaultValues = true
+            // Robolectric(スクリーンショットテスト等)でリソース・assets を読めるようにする
+            isIncludeAndroidResources = true
         }
     }
 
@@ -105,6 +108,13 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver3)
     // android.jar のスタブ(org.json)は JVM テストで動かないため、実装を差し替える
     testImplementation(libs.org.json)
+    // スクリーンショットテスト(Robolectric + Roborazzi)。使い方は docs/screenshot-testing.md
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -113,6 +123,14 @@ dependencies {
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// Robolectric が JDK 17 以降で FileDescriptor 等の JDK 内部へアクセスできるようにする
+tasks.withType<Test>().configureEach {
+    jvmArgs(
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED"
+    )
 }
 
 // ObjectBoxのタスクをConfiguration Cacheの対象外にする

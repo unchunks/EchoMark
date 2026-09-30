@@ -24,6 +24,8 @@ okhttp = "5.5.0"
 jsoup = "1.23.2"
 coroutines = "1.10.2"
 orgJson = "20250107"
+robolectric = "4.17"
+roborazzi = "1.76.0"
 
 [libraries]
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -60,6 +62,9 @@ org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 mediapipe-tasks-text = { group = "com.google.mediapipe", name = "tasks-text", version.ref = "mediapipeTasksText" }
 mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeTasksGenai" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -69,3 +74,4 @@ hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-legacy-kapt = { id = "com.android.legacy-kapt", version.ref = "agp" }
 objectbox = { id = "io.objectbox", version.ref = "objectbox" }
+roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
