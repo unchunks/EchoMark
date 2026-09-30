@@ -9,15 +9,15 @@ import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.RediscoverSettings
+import com.unchunks.echomark.domain.repository.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.security.GeneralSecurityException
 import java.time.DayOfWeek
 
-/** 設定の Fake。AI 関連だけを保持する。 */
+/** 設定の Fake。AI・表示・オンボーディング・再発見通知の設定を保持する。 */
 class FakeAppSettingsRepository(
     backend: LlmBackend = LlmBackend.LOCAL,
     provider: ApiProvider = ApiProvider.CLAUDE
@@ -29,7 +29,16 @@ class FakeAppSettingsRepository(
     override val llmBackend: Flow<LlmBackend> = backendFlow
     override val apiProvider: Flow<ApiProvider> = providerFlow
     override val apiModels: Flow<Map<ApiProvider, String>> = modelsFlow
-    override val rediscoverSettings: Flow<RediscoverSettings> = flowOf(RediscoverSettings())
+    val rediscoverFlow = MutableStateFlow(RediscoverSettings())
+    val themeModeFlow = MutableStateFlow(ThemeMode.SYSTEM)
+    val dynamicColorFlow = MutableStateFlow(false)
+    val onboardingCompletedFlow = MutableStateFlow(false)
+    var resetCalls = 0
+
+    override val rediscoverSettings: Flow<RediscoverSettings> = rediscoverFlow
+    override val themeMode: Flow<ThemeMode> = themeModeFlow
+    override val dynamicColor: Flow<Boolean> = dynamicColorFlow
+    override val onboardingCompleted: Flow<Boolean> = onboardingCompletedFlow
 
     override suspend fun setLlmBackend(backend: LlmBackend) { backendFlow.value = backend }
     override suspend fun setApiProvider(provider: ApiProvider) { providerFlow.value = provider }
@@ -37,8 +46,24 @@ class FakeAppSettingsRepository(
         modelsFlow.value = modelsFlow.value + (provider to modelId.ifBlank { provider.defaultModel })
     }
 
-    override suspend fun setRediscoverEnabled(enabled: Boolean) = TODO("not used")
-    override suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int) = TODO("not used")
+    override suspend fun setThemeMode(mode: ThemeMode) { themeModeFlow.value = mode }
+    override suspend fun setDynamicColor(enabled: Boolean) { dynamicColorFlow.value = enabled }
+    override suspend fun setOnboardingCompleted(completed: Boolean) { onboardingCompletedFlow.value = completed }
+    override suspend fun setRediscoverEnabled(enabled: Boolean) {
+        rediscoverFlow.value = rediscoverFlow.value.copy(enabled = enabled)
+    }
+    override suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int) {
+        rediscoverFlow.value = rediscoverFlow.value.copy(dayOfWeek = dayOfWeek, hour = hour, minute = minute)
+    }
+    override suspend fun resetToDefaults() {
+        resetCalls++
+        backendFlow.value = LlmBackend.LOCAL
+        providerFlow.value = ApiProvider.CLAUDE
+        modelsFlow.value = ApiProvider.entries.associateWith { it.defaultModel }
+        rediscoverFlow.value = RediscoverSettings()
+        themeModeFlow.value = ThemeMode.SYSTEM
+        dynamicColorFlow.value = false
+    }
     override suspend fun getRediscoverNotified(): Map<Long, Long> = TODO("not used")
     override suspend fun recordRediscoverNotified(ids: List<Long>, notifiedAt: Long) = TODO("not used")
 }
