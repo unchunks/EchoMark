@@ -11,4 +11,9 @@ object Routes {
     /** 通知タップなど外部からの起動用ディープリンク。MainActivity の intent-filter と一致させること。 */
     const val BOOKMARK_DEEP_LINK = "echomark://bookmark/{bookmarkId}"
     fun bookmarkDeepLink(id: Long) = "echomark://bookmark/$id"
+
+    /** 特定のブックマークについて質問する新規チャット(詳細画面の「AIに質問」から開く)。 */
+    const val ARG_ABOUT_BOOKMARK_ID = "aboutBookmarkId"
+    const val CHAT_NEW_ABOUT_BOOKMARK = "chat/new/about/{$ARG_ABOUT_BOOKMARK_ID}"
+    fun chatAboutBookmark(bookmarkId: Long) = "chat/new/about/$bookmarkId"
 }
