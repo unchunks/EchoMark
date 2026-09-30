@@ -58,6 +58,15 @@ class LauncherIconScreenshotTest {
             }
         }
     }
+
+    /** アプリショートカット(新しいチャット・AI の設定)のアイコン */
+    @Test
+    fun shortcutIcons() = screenshot.captureLightDark("shortcut_icons") {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Image(painterResource(R.drawable.ic_shortcut_chat), null, Modifier.size(48.dp))
+            Image(painterResource(R.drawable.ic_shortcut_ai), null, Modifier.size(48.dp))
+        }
+    }
 }
 
 // 実機と同じく、108dp の層の中央 72dp だけがマスクで見える(外周は視差効果用の余白)
