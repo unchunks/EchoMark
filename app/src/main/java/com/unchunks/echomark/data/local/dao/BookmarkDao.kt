@@ -66,6 +66,11 @@ interface BookmarkDao {
     suspend fun delete(bookmark: BookmarkEntity)
 
 
+    /** 保存済みブックマークの総数(アーカイブも含む)。一覧の「初回の空状態」の判定に使う */
+    @Query("SELECT COUNT(*) FROM bookmarks")
+    fun observeCount(): Flow<Int>
+
+
     // IDの取得
     @Query("SELECT id FROM bookmarks")
     suspend fun getAllIds(): List<Long>
