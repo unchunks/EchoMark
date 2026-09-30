@@ -1,13 +1,17 @@
 package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.data.security.SecretCipher
+import com.unchunks.echomark.domain.model.BookmarkAnalysis
+import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.security.GeneralSecurityException
@@ -45,6 +49,23 @@ class FakeApiKeyRepository(initial: Map<ApiProvider, String> = emptyMap()) : Api
     override suspend fun getKey(provider: ApiProvider): String? = keys.value[provider]
     override suspend fun setKey(provider: ApiProvider, apiKey: String) { keys.value = keys.value + (provider to apiKey) }
     override suspend fun clearKey(provider: ApiProvider) { keys.value = keys.value - provider }
+}
+
+/** chatStream で [chunks] を順に流す LLM。[failure] があれば途中で投げる。 */
+class FakeLlmProvider(
+    var chunks: List<String> = listOf("こんにちは", "、世界"),
+    var failure: Throwable? = null
+) : LlmProvider {
+    override suspend fun analyze(text: String): BookmarkAnalysis = BookmarkAnalysis("要約", emptyList(), "その他")
+
+    override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =
+        chunks.joinToString("")
+
+    override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> =
+        flow {
+            chunks.forEach { emit(it) }
+            failure?.let { throw it }
+        }
 }
 
 /** 可逆だが平文とは異なるバイト列にする暗号の Fake(Keystore は JVM テストで使えない)。 */

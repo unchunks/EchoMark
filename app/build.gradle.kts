@@ -89,6 +89,8 @@ dependencies {
     // AI
     implementation(libs.mediapipe.tasks.text)
     implementation(libs.mediapipe.tasks.genai)
+    // Claude API 公式 SDK
+    implementation(libs.anthropic.java)
 
     // Network
     implementation(libs.okhttp)
