@@ -69,6 +69,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    // アイコン一式(バージョンは Compose BOM で管理)。release の肥大化は R8 有効化で対処する
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
     // Hilt
