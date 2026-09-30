@@ -15,6 +15,10 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
+import com.unchunks.echomark.domain.model.TagWithCount
+import com.unchunks.echomark.domain.repository.BookmarkSearchResult
+import com.unchunks.echomark.domain.repository.TagRenameResult
+import com.unchunks.echomark.domain.repository.TagRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -105,34 +109,115 @@ class FakeBookmarkRepository : BookmarkRepository {
     }
 
     override suspend fun saveBookmarkWithResult(bookmark: Bookmark): SaveResult {
-        val id = bookmarks.value.size + 1L
+        val id = (bookmarks.value.maxOfOrNull { it.id } ?: 0L) + 1L
         bookmarks.value = bookmarks.value + bookmark.copy(id = id)
         return SaveResult(id, isDuplicate = false)
+    }
+
+    /** 同じ URL が既にあれば重複として既存の ID を返す(実装と同じ規則)。 */
+    override suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult {
+        val trimmed = url.trim()
+        savedUrls += Triple(trimmed, title, memo)
+        bookmarks.value.firstOrNull { it.contentUri == trimmed }?.let { return SaveResult(it.id, isDuplicate = true) }
+        return saveBookmarkWithResult(
+            Bookmark(
+                type = BookmarkType.URL,
+                contentUri = trimmed,
+                content = memo?.takeIf { it.isNotBlank() },
+                title = title?.takeIf { it.isNotBlank() } ?: trimmed,
+                createdAt = 0L,
+                lastAccessedAt = 0L
+            )
+        )
     }
 
     override suspend fun getStaleBookmarks(threshold: Long, limit: Int): List<Bookmark> =
         bookmarks.value.filter { it.lastAccessedAt <= threshold }.sortedBy { it.lastAccessedAt }.take(limit)
 
+    /** searchWithDetails の「意味検索が使えたか」。 */
+    var semanticAvailable = true
+    /** searchWithDetails で「意味だけで見つかった」扱いにする ID。 */
+    var semanticOnlyIds: Set<Long> = emptySet()
+    val savedUrls = mutableListOf<Triple<String, String?, String?>>()
+    val accessedIds = mutableListOf<Long>()
+    val reprocessedIds = mutableListOf<Long>()
+    var related: List<Bookmark> = emptyList()
+
+    override suspend fun searchWithDetails(query: String, tagId: Long?): BookmarkSearchResult {
+        searchCalls += query to tagId
+        val hits = bookmarks.value.filter {
+            it.title.contains(query) || it.id in semanticOnlyIds
+        }.filter { tagId == null || tagId.toString() in it.tags }
+        return BookmarkSearchResult(hits, semanticAvailable, semanticOnlyIds.intersect(hits.map { it.id }.toSet()))
+    }
+
+    override fun observeBookmarkCount(): Flow<Int> = bookmarks.map { it.size }
+
+    override fun observeBookmark(id: Long): Flow<Bookmark?> = bookmarks.map { list -> list.firstOrNull { it.id == id } }
+
+    override suspend fun getBookmarkById(id: Long): Bookmark? = bookmarks.value.firstOrNull { it.id == id }
+
+    override suspend fun markAccessed(id: Long) {
+        accessedIds += id
+    }
+
+    override suspend fun reprocess(id: Long) {
+        reprocessedIds += id
+        updateBookmark(id) { it.copy(aiStatus = AiStatus.PENDING, summary = null) }
+    }
+
+    override suspend fun updateTitleAndContent(id: Long, title: String, content: String?) =
+        updateBookmark(id) { it.copy(title = title, content = content) }
+
+    override suspend fun addTag(bookmarkId: Long, tagName: String) =
+        updateBookmark(bookmarkId) { if (tagName in it.tags) it else it.copy(tags = it.tags + tagName) }
+
+    override suspend fun removeTag(bookmarkId: Long, tagName: String) =
+        updateBookmark(bookmarkId) { it.copy(tags = it.tags - tagName) }
+
+    override suspend fun getRelatedBookmarks(bookmarkId: Long, limit: Int): List<Bookmark> = related.take(limit)
+
     override suspend fun saveBookmark(bookmark: Bookmark): Long = TODO("not used")
-    override suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult = TODO("not used")
     override suspend fun saveTags(bookmarkId: Long, tagNames: List<String>) = TODO("not used")
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String) = TODO("not used")
     override suspend fun updateSummary(id: Long, summary: String) = TODO("not used")
     override suspend fun updateCategory(id: Long, category: String) = TODO("not used")
-    override suspend fun updateTitleAndContent(id: Long, title: String, content: String?) = TODO("not used")
     override suspend fun updateAiStatus(id: Long, status: AiStatus) = TODO("not used")
-    override suspend fun addTag(bookmarkId: Long, tagName: String) = TODO("not used")
-    override suspend fun removeTag(bookmarkId: Long, tagName: String) = TODO("not used")
-    override suspend fun markAccessed(id: Long) = TODO("not used")
-    override suspend fun reprocess(id: Long) = TODO("not used")
     override suspend fun enqueueWaitingModelProcessing() = TODO("not used")
     override suspend fun enqueueFailedAndWaitingProcessing(): Int = TODO("not used")
-    override suspend fun getBookmarkById(id: Long): Bookmark? = TODO("not used")
     override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> = TODO("not used")
     override suspend fun getAllBookmarkIds(): List<Long> = TODO("not used")
-    override suspend fun getRelatedBookmarks(bookmarkId: Long, limit: Int): List<Bookmark> = TODO("not used")
     override suspend fun getEmbeddingModelVersion(bookmarkId: Long): String? = TODO("not used")
-    override fun observeBookmark(id: Long): Flow<Bookmark?> = TODO("not used")
+}
+
+/** タグ管理のフェイク。統合・削除は tags の中だけで表す。 */
+class FakeTagRepository : TagRepository {
+    val tags = MutableStateFlow<List<TagWithCount>>(emptyList())
+    val deletedIds = mutableListOf<Long>()
+
+    override fun observeTagsWithCount(): Flow<List<TagWithCount>> = tags
+
+    override suspend fun renameTag(tagId: Long, newName: String): TagRenameResult {
+        val name = newName.trim()
+        val current = tags.value.firstOrNull { it.id == tagId } ?: return TagRenameResult.Invalid
+        if (name.isEmpty()) return TagRenameResult.Invalid
+        if (current.name == name) return TagRenameResult.Unchanged
+        val existing = tags.value.firstOrNull { it.name == name }
+        return if (existing == null) {
+            tags.value = tags.value.map { if (it.id == tagId) it.copy(name = name) else it }
+            TagRenameResult.Renamed(tagId)
+        } else {
+            tags.value = tags.value
+                .filterNot { it.id == tagId }
+                .map { if (it.id == existing.id) it.copy(bookmarkCount = it.bookmarkCount + current.bookmarkCount) else it }
+            TagRenameResult.Merged(existing.id)
+        }
+    }
+
+    override suspend fun deleteTag(tagId: Long) {
+        deletedIds += tagId
+        tags.value = tags.value.filterNot { it.id == tagId }
+    }
 }
 
 open class FakeChatRepository : ChatRepository {

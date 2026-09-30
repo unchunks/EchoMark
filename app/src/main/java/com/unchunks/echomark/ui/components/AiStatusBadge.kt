@@ -29,13 +29,26 @@ import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
-/** AI 状態バッジに表示する文言。一覧・詳細など画面をまたいで同じ言い方にする。 */
+/**
+ * AI 状態の短い文言。バッジ・一覧・詳細など画面をまたいで必ずこれを使い、同じ言い方にする。
+ * WAITING_MODEL はローカルモデル未取り込み・API キー未設定のどちらでもなるため、原因を限定しない言い方にする。
+ */
 fun AiStatus.badgeLabel(): String = when (this) {
     AiStatus.PENDING -> "AI処理待ち"
     AiStatus.PROCESSING -> "AI処理中…"
     AiStatus.DONE -> "AI要約済み"
     AiStatus.FAILED -> "AI処理に失敗"
-    AiStatus.WAITING_MODEL -> "モデル待ち"
+    AiStatus.WAITING_MODEL -> "AIの準備待ち"
+}
+
+/** 詳細画面などで状態の理由・次の行動を伝える説明文。完了(DONE)は説明不要なので null。 */
+fun AiStatus.statusDescription(): String? = when (this) {
+    AiStatus.PENDING -> "まもなく AI が要約とタグ付けを始めます。"
+    AiStatus.PROCESSING -> "AI が内容を読んで、要約とタグを作っています。"
+    AiStatus.DONE -> null
+    AiStatus.FAILED -> "AI の処理に失敗しました。通信状況や AI の設定を確認して、もう一度お試しください。"
+    AiStatus.WAITING_MODEL ->
+        "AI を使う準備ができていません。AI 設定で端末内モデルを取り込むか、API キーを設定すると自動で処理します。"
 }
 
 /**

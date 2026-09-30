@@ -15,7 +15,11 @@ import javax.inject.Singleton
 data class FetchedContent(
     val title: String?,
     val description: String?,
-    val text: String
+    val text: String,
+    /** OG 画像の絶対 URL(http/https のみ。無ければ null) */
+    val imageUrl: String? = null,
+    /** サイト名(og:site_name など。無ければ null) */
+    val siteName: String? = null
 )
 
 /** OkHttp + Jsoup で Web ページのタイトル・概要・本文を取得する */

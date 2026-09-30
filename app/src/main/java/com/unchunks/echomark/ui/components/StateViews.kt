@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -139,6 +140,12 @@ fun ErrorState(
     }
 }
 
+/** 見出し向けの折り返し(行長をそろえる)に、日本語の文節単位の改行を組み合わせたもの */
+private val PhraseHeadingLineBreak = LineBreak.Heading.copy(wordBreak = LineBreak.WordBreak.Phrase)
+
+/** 文節単位の改行は文字列のロケールで決まるため、端末の言語設定によらず日本語として扱う(UI は日本語のみ) */
+private val JapaneseLocaleList = LocaleList("ja-JP")
+
 @Composable
 private fun StateLayout(
     modifier: Modifier,
@@ -159,10 +166,11 @@ private fun StateLayout(
         ) {
             illustration()
             Spacer(Modifier.height(20.dp))
-            // 中央寄せの短文は、文節で折り返して行の長さをそろえる(1文字だけの行を作らない)
+            // 中央寄せの短文は、行の長さをそろえ、日本語は文節の切れ目で折り返す
+            // (「ブックマー/ク」のように単語の途中で改行しない。文節単位の折り返しは Android 13 以降で有効)
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge.copy(lineBreak = LineBreak.Heading),
+                style = MaterialTheme.typography.titleLarge.copy(lineBreak = PhraseHeadingLineBreak, localeList = JapaneseLocaleList),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.semantics { heading() }
@@ -171,7 +179,7 @@ private fun StateLayout(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = description,
-                    style = MaterialTheme.typography.bodyMedium.copy(lineBreak = LineBreak.Heading),
+                    style = MaterialTheme.typography.bodyMedium.copy(lineBreak = PhraseHeadingLineBreak, localeList = JapaneseLocaleList),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()

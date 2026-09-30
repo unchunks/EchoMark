@@ -116,4 +116,70 @@ class HtmlContentExtractorTest {
         assertTrue(result.text.isEmpty())
         assertFalse(result.text.contains("null"))
     }
+
+    @Test
+    fun og画像とサイト名を取り出す() {
+        val result = extract(
+            """
+            <html><head>
+              <meta property="og:image" content="https://cdn.example.com/og.png">
+              <meta property="og:site_name" content=" Example Blog ">
+            </head><body></body></html>
+            """.trimIndent()
+        )
+        assertEquals("https://cdn.example.com/og.png", result.imageUrl)
+        assertEquals("Example Blog", result.siteName)
+    }
+
+    @Test
+    fun 相対URLのog画像はページのURLを基準に絶対化する() {
+        val document = Jsoup.parse(
+            """<html><head><meta property="og:image" content="/img/cover.jpg"></head></html>""",
+            "https://www.example.com/articles/1"
+        )
+        val result = HtmlContentExtractor.extract(document)
+        assertEquals("https://www.example.com/img/cover.jpg", result.imageUrl)
+    }
+
+    @Test
+    fun og画像が無ければtwitter画像を使いsecure_urlを優先する() {
+        val twitter = extract(
+            """<html><head><meta name="twitter:image" content="https://example.com/tw.png"></head></html>"""
+        )
+        assertEquals("https://example.com/tw.png", twitter.imageUrl)
+
+        val secure = extract(
+            """
+            <html><head>
+              <meta property="og:image" content="http://example.com/a.png">
+              <meta property="og:image:secure_url" content="https://example.com/a.png">
+            </head></html>
+            """.trimIndent()
+        )
+        assertEquals("https://example.com/a.png", secure.imageUrl)
+    }
+
+    @Test
+    fun 基準の無い相対URLやdata画像は使わずサイト名はapplication_nameで補う() {
+        val result = extract(
+            """
+            <html><head>
+              <meta property="og:image" content="data:image/png;base64,AAAA">
+              <meta name="application-name" content="アプリ名">
+            </head></html>
+            """.trimIndent()
+        )
+        assertNull(result.imageUrl)
+        assertEquals("アプリ名", result.siteName)
+
+        val relative = extract("""<html><head><meta property="og:image" content="img/a.png"></head></html>""")
+        assertNull(relative.imageUrl)
+    }
+
+    @Test
+    fun og画像もサイト名も無ければnull() {
+        val result = extract("<html><head><title>T</title></head><body>本文</body></html>")
+        assertNull(result.imageUrl)
+        assertNull(result.siteName)
+    }
 }

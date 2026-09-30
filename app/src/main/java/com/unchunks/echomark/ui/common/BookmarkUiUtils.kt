@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.Bookmark
 
 /** URLからドメイン(www.除去)を取り出す。取れなければURLをそのまま返す */
 fun extractDomain(url: String): String =
@@ -20,10 +20,22 @@ fun openUrl(context: Context, url: String) {
     }
 }
 
-/** 表示すべき AI ステータスの文言。完了(DONE)なら表示不要なので null */
-fun AiStatus.displayLabel(): String? = when (this) {
-    AiStatus.PENDING, AiStatus.PROCESSING -> "処理中"
-    AiStatus.WAITING_MODEL -> "モデル待ち"
-    AiStatus.FAILED -> "失敗"
-    AiStatus.DONE -> null
+/** 共有メニューでブックマークを送る。URL があれば「タイトル + URL」、無ければ本文(メモ)を送る */
+fun shareBookmark(context: Context, bookmark: Bookmark) {
+    val text = bookmark.contentUri?.let { "${bookmark.title}\n$it" }
+        ?: listOfNotNull(bookmark.title, bookmark.content?.takeIf { it.isNotBlank() }).joinToString("\n\n")
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, bookmark.title)
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    try {
+        context.startActivity(Intent.createChooser(send, "共有"))
+    } catch (e: ActivityNotFoundException) {
+        Toast.makeText(context, "共有できるアプリがありません", Toast.LENGTH_SHORT).show()
+    }
 }
+
+/** Snackbar などに出す短いタイトル(長ければ切って「…」) */
+fun Bookmark.shortTitle(maxLength: Int = 20): String =
+    if (title.length <= maxLength) title else title.take(maxLength) + "…"

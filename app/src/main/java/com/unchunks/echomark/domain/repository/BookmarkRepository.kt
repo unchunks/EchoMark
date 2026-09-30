@@ -10,6 +10,17 @@ import kotlinx.coroutines.flow.Flow
 /** URLブックマーク保存の結果。isDuplicate=true なら既存のブックマークを再利用した */
 data class SaveResult(val id: Long, val isDuplicate: Boolean)
 
+/**
+ * ハイブリッド検索の結果(一覧画面の表示用)。
+ * @param semanticAvailable 意味(ベクトル)検索が使えたか。埋め込みモデルが使えずキーワードのみのときは false
+ * @param semanticOnlyIds キーワードには一致せず、意味が近いことで見つかったブックマークの ID
+ */
+data class BookmarkSearchResult(
+    val bookmarks: List<Bookmark>,
+    val semanticAvailable: Boolean,
+    val semanticOnlyIds: Set<Long> = emptySet()
+)
+
 interface BookmarkRepository {
     // Create / Save
     suspend fun saveBookmark(bookmark: Bookmark): Long
@@ -80,4 +91,10 @@ interface BookmarkRepository {
      * tagId が非NULLならそのタグを持つものに絞る(AND)。埋め込みが使えない場合はキーワードのみ。
      */
     suspend fun search(query: String, tagId: Long?): List<Bookmark>
+
+    /** [search] と同じ検索をして、意味検索が使えたか・意味だけで見つかったものも返す。 */
+    suspend fun searchWithDetails(query: String, tagId: Long?): BookmarkSearchResult
+
+    /** 保存済みブックマークの総数(アーカイブも含む)。 */
+    fun observeBookmarkCount(): Flow<Int>
 }

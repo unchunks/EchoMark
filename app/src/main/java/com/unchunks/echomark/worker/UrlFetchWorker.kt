@@ -11,7 +11,7 @@ import dagger.assisted.AssistedInject
 import timber.log.Timber
 
 /**
- * URLブックマークのページ本文を取得して title / content に反映する。
+ * URLブックマークのページ本文を取得して title / content に反映し、OG 画像・サイト名を保存する。
  * 後続の AI 処理をブロックしないよう、失敗しても Result.success() を返す。
  */
 @HiltWorker
@@ -57,6 +57,12 @@ class UrlFetchWorker @AssistedInject constructor(
         }
 
         repository.updateTitleAndContent(bookmarkId, newTitle, newContent)
+        // 取れなかった項目は既存の値を残す(再取得で消さない)
+        repository.updateLinkMetadata(
+            bookmarkId,
+            imageUrl = fetched.imageUrl ?: bookmark.imageUrl,
+            siteName = fetched.siteName ?: bookmark.siteName
+        )
         return Result.success()
     }
 

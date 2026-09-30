@@ -17,6 +17,7 @@ import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.SaveResult
+import com.unchunks.echomark.domain.repository.BookmarkSearchResult
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
@@ -311,12 +312,18 @@ class BookmarkRepositoryImpl @Inject constructor(
             .flowOn(dispatcherProvider.io)
 
     override suspend fun search(query: String, tagId: Long?): List<Bookmark> =
+        searchWithDetails(query, tagId).bookmarks
+
+    override fun observeBookmarkCount(): Flow<Int> =
+        bookmarkDao.observeCount().flowOn(dispatcherProvider.io)
+
+    override suspend fun searchWithDetails(query: String, tagId: Long?): BookmarkSearchResult =
         withContext(dispatcherProvider.io) {
             val q = query.trim()
 
             // キーワード検索(タイトル・要約・本文・タグ名)。createdAt 降順
             val keyword = bookmarkDao.searchByKeyword(escapeLike(q), tagId).map { it.toDomain() }
-            if (q.isEmpty()) return@withContext keyword
+            if (q.isEmpty()) return@withContext BookmarkSearchResult(keyword, semanticAvailable = false)
 
             // ベクトル検索。モデル未取得などで失敗したらキーワードのみにフォールバックする
             val semantic = try {
@@ -332,12 +339,18 @@ class BookmarkRepositoryImpl @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Timber.w(e, "ベクトル検索に失敗したためキーワード検索のみ実行")
-                emptyList()
+                null
             }
 
-            val all = (keyword + semantic).associateBy { it.id }
-            RankFusion.fuse(listOf(keyword.map { it.id }, semantic.map { it.id }))
-                .mapNotNull { all[it] }
+            val semanticList = semantic.orEmpty()
+            val all = (keyword + semanticList).associateBy { it.id }
+            val keywordIds = keyword.map { it.id }.toSet()
+            BookmarkSearchResult(
+                bookmarks = RankFusion.fuse(listOf(keyword.map { it.id }, semanticList.map { it.id }))
+                    .mapNotNull { all[it] },
+                semanticAvailable = semantic != null,
+                semanticOnlyIds = semanticList.map { it.id }.filterNot { it in keywordIds }.toSet()
+            )
         }
 
     /** LIKE のワイルドカード(% _)とエスケープ文字自体を無効化する(DAO側は ESCAPE バックスラッシュ)。 */
