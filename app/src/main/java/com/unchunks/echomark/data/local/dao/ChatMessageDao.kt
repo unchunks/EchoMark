@@ -11,6 +11,6 @@ interface ChatMessageDao {
     @Insert
     suspend fun insert(message: ChatMessageEntity): Long
 
-    @Query("SELECT * FROM chat_messages WHERE learningItemId = :learningItemId ORDER BY createdAt ASC")
-    fun observeMessages(learningItemId: Long): Flow<List<ChatMessageEntity>>
+    @Query("SELECT * FROM chat_messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
+    fun observeMessages(conversationId: Long): Flow<List<ChatMessageEntity>>
 }

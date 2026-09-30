@@ -5,7 +5,7 @@ import androidx.room.Room
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
-import com.unchunks.echomark.data.local.dao.LearningItemDao
+import com.unchunks.echomark.data.local.dao.ConversationDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import dagger.Module
 import dagger.Provides
@@ -40,8 +40,8 @@ object DatabaseModule {
     }
 
     @Provides
-    fun provideLearningItemDao(database: AppDatabase): LearningItemDao {
-        return database.learningItemDao()
+    fun provideConversationDao(database: AppDatabase): ConversationDao {
+        return database.conversationDao()
     }
 
     @Provides
