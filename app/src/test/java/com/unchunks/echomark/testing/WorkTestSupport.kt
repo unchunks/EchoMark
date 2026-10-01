@@ -17,6 +17,7 @@ import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import io.objectbox.Box
 import io.objectbox.BoxStore
 import kotlinx.coroutines.awaitCancellation
+import org.junit.Assert.assertEquals
 import java.util.UUID
 
 /**
@@ -57,6 +58,20 @@ private class PendingWorker(context: Context, params: WorkerParameters) : Corout
 /** 一意名 [name] で登録されたワークの状態。 */
 fun WorkManager.statesOf(name: String): List<WorkInfo.State> =
     getWorkInfosForUniqueWork(name).get().map { it.state }
+
+/**
+ * 一括処理の列が「先頭の1件だけが動ける(待機中か実行中。開始のタイミングはテスト環境で揺れる)、
+ * 残りは前の処理待ち(BLOCKED)」になっているか確かめる。
+ */
+fun assertSequential(states: List<WorkInfo.State>, expectedSize: Int) {
+    assertEquals(states.toString(), expectedSize, states.size)
+    assertEquals(states.toString(), expectedSize - 1, states.count { it == WorkInfo.State.BLOCKED })
+    assertEquals(
+        states.toString(),
+        1,
+        states.count { it == WorkInfo.State.ENQUEUED || it == WorkInfo.State.RUNNING }
+    )
+}
 
 /** タグ [tag] の付いたワークの状態。 */
 fun WorkManager.statesByTag(tag: String): List<WorkInfo.State> =

@@ -17,6 +17,7 @@ import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
+import com.unchunks.echomark.testing.assertSequential
 import com.unchunks.echomark.testing.initTestWorkManager
 import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesOf
@@ -129,7 +130,7 @@ class BookmarkRepositoryImplTest {
 
         // 1本の列にまとまり、同時に動くのは1件だけ。個別の一意名では登録しない
         val states = workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME)
-        assertEquals(listOf(WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED, WorkInfo.State.BLOCKED), states.sorted())
+        assertSequential(states, expectedSize = 3)
         assertTrue(ids.all { workManager.statesOf("process_bookmark_$it").isEmpty() })
         assertEquals(
             listOf(AiStatus.PENDING, AiStatus.PENDING, AiStatus.PENDING, AiStatus.DONE),

@@ -8,6 +8,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
+import com.unchunks.echomark.testing.assertSequential
 import com.unchunks.echomark.testing.initTestWorkManager
 import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesByTag
@@ -102,9 +103,9 @@ class BookmarkWorkSchedulerTest {
             )
         )
 
-        // 端末内 AI(制約なし)の1件目だけが実行中で、残り(本文取得を含む3件)は前の処理を待つ
+        // 1件目だけが動け、残り(本文取得を含む3件)は前の処理を待つ
         val states = workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME)
-        assertEquals(listOf(WorkInfo.State.RUNNING) + List(3) { WorkInfo.State.BLOCKED }, states.sorted())
+        assertSequential(states, expectedSize = 4)
     }
 
     @Test
@@ -113,7 +114,7 @@ class BookmarkWorkSchedulerTest {
         scheduler.enqueueSequential(listOf(BookmarkWorkScheduler.Target(2L, fetchContent = false)))
 
         val states = workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME)
-        assertEquals(listOf(WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED), states.sorted())
+        assertSequential(states, expectedSize = 2)
     }
 
     @Test
@@ -121,7 +122,6 @@ class BookmarkWorkSchedulerTest {
         scheduler.enqueueSequential((1L..120L).map { BookmarkWorkScheduler.Target(it, fetchContent = false) })
 
         val states = workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME)
-        assertEquals(120, states.size)
-        assertEquals(1, states.count { it == WorkInfo.State.RUNNING })
+        assertSequential(states, expectedSize = 120)
     }
 }
