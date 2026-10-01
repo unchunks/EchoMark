@@ -1,9 +1,10 @@
 package com.unchunks.echomark.data.security
 
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
-import java.security.GeneralSecurityException
 import java.security.KeyStore
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -30,15 +31,25 @@ class KeystoreSecretCipher @Inject constructor() : SecretCipher {
     }
 
     override fun decrypt(data: ByteArray): ByteArray {
-        if (data.isEmpty()) throw GeneralSecurityException("empty payload")
+        if (data.isEmpty()) throw UnrecoverableSecretException("empty payload")
         val ivLength = data[0].toInt()
-        if (ivLength <= 0 || data.size <= 1 + ivLength) throw GeneralSecurityException("invalid payload")
+        if (ivLength <= 0 || data.size <= 1 + ivLength) throw UnrecoverableSecretException("invalid payload")
         val iv = data.copyOfRange(1, 1 + ivLength)
         val encrypted = data.copyOfRange(1 + ivLength, data.size)
-        val key = loadKey() ?: throw GeneralSecurityException("key not found")
+        // 端末の移行・バックアップ復元・鍵の失効では、鍵が無い・使えなくなる。やり直しても復号できない
+        val key = loadKey() ?: throw UnrecoverableSecretException("key not found")
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_LENGTH_BITS, iv))
-        return cipher.doFinal(encrypted)
+        try {
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_LENGTH_BITS, iv))
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            throw UnrecoverableSecretException("key permanently invalidated", e)
+        }
+        return try {
+            cipher.doFinal(encrypted)
+        } catch (e: AEADBadTagException) {
+            // 別の鍵で暗号化された・データが壊れている
+            throw UnrecoverableSecretException("authentication tag mismatch", e)
+        }
     }
 
     private fun loadKey(): SecretKey? {

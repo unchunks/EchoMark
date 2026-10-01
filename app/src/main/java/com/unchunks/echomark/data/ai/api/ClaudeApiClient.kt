@@ -47,8 +47,10 @@ import javax.inject.Singleton
 @Singleton
 class ClaudeApiClient internal constructor(
     private val dispatcherProvider: DispatcherProvider,
-    private val baseUrl: String?,
-    private val maxRetries: Int
+    baseUrl: String?,
+    maxRetries: Int,
+    /** キーから SDK クライアントを作る(テストで差し替える) */
+    private val clientFactory: (apiKey: String) -> AnthropicClient = { newClient(it, baseUrl, maxRetries) }
 ) : ApiLlmClient {
 
     @Inject
@@ -56,19 +58,16 @@ class ClaudeApiClient internal constructor(
 
     override val provider = ApiProvider.CLAUDE
 
-    /** キーごとに SDK クライアント(内部に OkHttp の接続プールを持つ)を使い回す。 */
-    private val cachedClient = AtomicReference<Pair<String, AnthropicClient>?>(null)
+    private val lock = Any()
 
-    private fun clientFor(apiKey: String): AnthropicClient {
-        cachedClient.get()?.let { (key, client) -> if (key == apiKey) return client }
-        val client = AnthropicOkHttpClient.builder()
-            .apiKey(apiKey)
-            .apply { if (baseUrl != null) baseUrl(baseUrl) }
-            .maxRetries(maxRetries)
-            .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
-            .build()
-        cachedClient.getAndSet(apiKey to client)?.second?.close()
-        return client
+    /** 保存済みのキーの SDK クライアント(内部に OkHttp の接続プールを持つ)を使い回す。[lock] で守る。 */
+    private var cachedClient: Pair<String, AnthropicClient>? = null
+
+    private fun clientFor(apiKey: String): AnthropicClient = synchronized(lock) {
+        cachedClient?.let { (key, client) -> if (key == apiKey) return client }
+        // キーが変わったら作り直す。古いクライアントは別の呼び出し(ストリーミング中のチャットなど)が
+        // 使っている可能性があるため閉じない(OkHttp の接続・スレッドはアイドルになれば解放される)
+        clientFactory(apiKey).also { cachedClient = apiKey to it }
     }
 
     override suspend fun complete(request: ApiRequest, credentials: ApiCredentials): String {
@@ -77,7 +76,17 @@ class ClaudeApiClient internal constructor(
             // SDK クライアントの生成(初回)は重いため IO で行う。
             // 非同期クライアントの Future は、コルーチンのキャンセルで取り消される
             withContext(dispatcherProvider.io) {
-                clientFor(credentials.apiKey).async().beta().messages().create(params).await()
+                if (request.purpose == ApiPurpose.CONNECTION_TEST) {
+                    // 接続テストは入力中のキーを使うことがあるため、使い回すクライアントを置き換えない
+                    val client = clientFactory(credentials.apiKey)
+                    try {
+                        client.async().beta().messages().create(params).await()
+                    } finally {
+                        client.close()
+                    }
+                } else {
+                    clientFor(credentials.apiKey).async().beta().messages().create(params).await()
+                }
             }
         }
         // 拒否時は content が空・不完全なことがあるため、stop_reason を先に確認する
@@ -186,6 +195,14 @@ class ClaudeApiClient internal constructor(
     companion object {
         private const val DEFAULT_MAX_RETRIES = 2
         private const val TIMEOUT_SECONDS = 300L
+
+        internal fun newClient(apiKey: String, baseUrl: String?, maxRetries: Int): AnthropicClient =
+            AnthropicOkHttpClient.builder()
+                .apiKey(apiKey)
+                .apply { if (baseUrl != null) baseUrl(baseUrl) }
+                .maxRetries(maxRetries)
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .build()
         private const val FALLBACK_SEPARATOR = "\n\n"
 
         /** Haiku 4.5 以前は effort 非対応(送ると 400)。 */

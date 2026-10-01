@@ -16,7 +16,6 @@ import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -52,14 +51,16 @@ class LocalLlmProvider @Inject constructor(
     private val dispatcherProvider: DispatcherProvider
 ) : LlmProvider {
 
-    /** 読み込み済みのエンジンと、その元になったモデル。 */
+    /** 読み込み済みのエンジンと、その元になったモデル。[inferenceMutex] を持っている間だけ読み書きする。 */
     private var loaded: Pair<LocalModelInfo, LlmInference>? = null
-    private val initMutex = Mutex()
 
-    // LlmInference は同時に複数の生成を実行できないため直列化する
+    // LlmInference は同時に複数の生成を実行できないため直列化する。
+    // エンジンの作成・破棄も同じロックの中で行い、生成中のエンジンを別のコルーチンが閉じないようにする
+    // (取り込み直し・削除の直後に閉じると、ネイティブ資源の解放後に使ってしまう)
     private val inferenceMutex = Mutex()
 
-    private suspend fun ensureInitialized(): Pair<LocalModelInfo, LlmInference> = initMutex.withLock {
+    /** 現在のモデルのエンジン。必ず [inferenceMutex] を持った状態で呼ぶ。 */
+    private fun engineLocked(): Pair<LocalModelInfo, LlmInference> {
         val model = modelManager.installedModel.value
         val file = modelManager.modelFile()
         if (model == null || file == null) {
@@ -68,13 +69,14 @@ class LocalLlmProvider @Inject constructor(
             loaded = null
             throw ModelNotAvailableException()
         }
-        loaded?.let { if (it.first == model) return@withLock it }
+        loaded?.let { if (it.first == model) return it }
         loaded?.second?.close()
+        loaded = null
         val options = LlmInferenceOptions.builder()
             .setModelPath(file.absolutePath)
             .setMaxTokens(MAX_TOKENS)
             .build()
-        (model to LlmInference.createFromOptions(context, options)).also { loaded = it }
+        return (model to LlmInference.createFromOptions(context, options)).also { loaded = it }
     }
 
     /**
@@ -90,8 +92,8 @@ class LocalLlmProvider @Inject constructor(
 
     private suspend fun generate(prompt: String): String =
         withContext(dispatcherProvider.default) {
-            val (model, engine) = ensureInitialized()
             inferenceMutex.withLock {
+                val (model, engine) = engineLocked()
                 newSession(model, engine).use { session ->
                     session.addQueryChunk(prompt)
                     session.generateResponse()
@@ -119,8 +121,8 @@ class LocalLlmProvider @Inject constructor(
         history: List<ChatMessage>
     ): Flow<String> = callbackFlow {
         val prompt = buildChatPrompt(userMessage, context, history)
-        val (model, engine) = ensureInitialized()
         inferenceMutex.withLock {
+            val (model, engine) = engineLocked()
             newSession(model, engine).use { session ->
                 session.addQueryChunk(prompt)
                 val finished = AtomicBoolean(false)
@@ -162,36 +164,17 @@ class LocalLlmProvider @Inject constructor(
         AiPrompts.analyzeInput(text, MAX_INPUT_CHARS)
     ).joinToString("\n")
 
-    // context は呼び出し側で "[n] タイトル: 要約" に整形済み(番号は呼び出し側の付番をそのまま使う)
-    // Gemma にはシステムロールが無いため、指示・文脈・履歴を1つのユーザーターンにまとめる
+    // 指示・文脈・履歴・質問を、MAX_TOKENS に収まる文字数の予算で組み立てる
     private fun buildChatPrompt(
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>
-    ): String {
-        val historyLines = history.takeLast(MAX_HISTORY_ITEMS).map {
-            val speaker = if (it.role == ChatRole.USER) "ユーザー" else "アシスタント"
-            "$speaker: ${it.content.take(MAX_HISTORY_CHARS)}"
-        }
-        val lines = buildList {
-            add(AiPrompts.chatInstructions(context.take(MAX_CONTEXT_ITEMS)))
-            if (historyLines.isNotEmpty()) {
-                add("")
-                add("これまでの会話:")
-                addAll(historyLines)
-            }
-            add("")
-            add("質問: $userMessage")
-        }
-        return lines.joinToString("\n")
-    }
+    ): String = LocalChatPrompt.build(userMessage, context, history)
 
     companion object {
+        /** 入力と出力の合計トークン数の上限。プロンプトの文字数の予算は LocalChatPrompt を参照 */
         private const val MAX_TOKENS = 4096
         private const val MAX_INPUT_CHARS = 2000
-        private const val MAX_CONTEXT_ITEMS = 5
-        private const val MAX_HISTORY_ITEMS = 6
-        private const val MAX_HISTORY_CHARS = 200
 
         /** Gemma の対話形式(https://ai.google.dev/gemma/docs/core/prompt-structure)。 */
         private val GEMMA_TEMPLATES: PromptTemplates = PromptTemplates.builder()

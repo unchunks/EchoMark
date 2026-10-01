@@ -34,6 +34,26 @@ interface TagDao {
     @Query("DELETE FROM bookmark_tag_cross_ref WHERE bookmarkId = :bookmarkId AND tagId = :tagId")
     suspend fun deleteCrossRef(bookmarkId: Long, tagId: Long)
 
+    @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE id = :bookmarkId)")
+    suspend fun bookmarkExists(bookmarkId: Long): Boolean
+
+    /**
+     * ブックマークにタグを付ける(無いタグは作る)。ブックマークが無ければ何もせず false を返す。
+     * 存在確認とタグ・紐付けの書き込みを1つのトランザクションで行い、AI 処理中に削除されても
+     * どこにも紐付かないタグを残さない(紐付けの外部キー違反で落ちることもない)。
+     */
+    @Transaction
+    suspend fun addTagsToBookmark(bookmarkId: Long, tagNames: List<String>): Boolean {
+        if (!bookmarkExists(bookmarkId)) return false
+        tagNames.forEach { name ->
+            val tagId = insertTag(TagEntity(name = name)).takeIf { it != -1L }
+                ?: getTagByName(name)?.id
+                ?: return@forEach
+            insertCrossRef(BookmarkTagCrossRef(bookmarkId, tagId))
+        }
+        return true
+    }
+
     /** タグごとの件数つき一覧。件数 0 のタグも含める(名前の昇順、大文字小文字は区別しない)。 */
     @Query("""
         SELECT t.id AS id, t.name AS name, COUNT(r.bookmarkId) AS bookmarkCount

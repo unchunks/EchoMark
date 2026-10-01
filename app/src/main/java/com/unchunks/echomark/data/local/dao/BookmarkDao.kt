@@ -79,6 +79,9 @@ interface BookmarkDao {
     @Query("SELECT id FROM bookmarks WHERE aiStatus = :status")
     suspend fun getIdsByAiStatus(status: AiStatus): List<Long>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE id = :id)")
+    suspend fun exists(id: Long): Boolean
+
 
     // ブックマークの取得
     @Query("SELECT * FROM bookmarks WHERE id = :id")
