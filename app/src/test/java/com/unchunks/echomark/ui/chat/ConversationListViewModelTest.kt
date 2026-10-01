@@ -9,7 +9,10 @@ import com.unchunks.echomark.testing.FakeAiSetupRepository
 import com.unchunks.echomark.testing.FakeChatRepository
 import com.unchunks.echomark.testing.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -27,6 +30,12 @@ class ConversationListViewModelTest {
 
     private val repository = FakeChatRepository()
     private val aiSetup = FakeAiSetupRepository()
+
+    private fun TestScope.collectDeletedEvents(viewModel: ConversationListViewModel): MutableList<ConversationPreview> {
+        val events = mutableListOf<ConversationPreview>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.deletedEvents.toList(events) }
+        return events
+    }
 
     private fun preview(id: Long, updatedAt: Long = id) = ConversationPreview(
         conversation = Conversation(id = id, title = "会話$id", createdAt = 0L, updatedAt = updatedAt),
@@ -50,7 +59,7 @@ class ConversationListViewModelTest {
     }
 
     @Test
-    fun 削除すると取り消し用に控え_元に戻すとメッセージごと復元する() = runTest {
+    fun 削除すると取り消しの知らせを出し_元に戻すとメッセージごと復元する() = runTest {
         val target = preview(1)
         val messages = listOf(
             ChatMessage(id = 10, conversationId = 1, role = ChatRole.USER, content = "q", createdAt = 1),
@@ -60,18 +69,37 @@ class ConversationListViewModelTest {
         repository.messages.value = messages
         val viewModel = ConversationListViewModel(repository, aiSetup)
         backgroundScope.launch { viewModel.uiState.collect {} }
+        val events = collectDeletedEvents(viewModel)
 
         viewModel.delete(target)
         advanceUntilIdle()
         assertEquals(listOf(1L), repository.deletedIds)
-        assertEquals(target, viewModel.uiState.value.recentlyDeleted)
+        assertEquals(listOf(target), events)
         assertTrue(viewModel.uiState.value.conversations.isEmpty())
 
-        viewModel.undoDelete()
+        viewModel.undoDelete(target.conversation.id)
         advanceUntilIdle()
         assertEquals(listOf(target.conversation to messages), repository.restored)
-        assertNull(viewModel.uiState.value.recentlyDeleted)
         assertEquals(listOf(1L), viewModel.uiState.value.conversations.map { it.conversation.id })
+    }
+
+    @Test
+    fun 削除の知らせは一度きりで_画面に戻って購読し直しても再送しない() = runTest {
+        val target = preview(1)
+        repository.previews.value = listOf(target)
+        val viewModel = ConversationListViewModel(repository, aiSetup)
+        val first = mutableListOf<ConversationPreview>()
+        val firstJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.deletedEvents.toList(first) }
+
+        viewModel.delete(target)
+        advanceUntilIdle()
+        assertEquals(listOf(target), first)
+
+        // Snackbar の表示中に別の画面へ移り(購読が止まり)、戻ってきた
+        firstJob.cancel()
+        val second = collectDeletedEvents(viewModel)
+        advanceUntilIdle()
+        assertTrue(second.isEmpty())
     }
 
     @Test
@@ -79,16 +107,34 @@ class ConversationListViewModelTest {
         val target = preview(1)
         repository.previews.value = listOf(target)
         val viewModel = ConversationListViewModel(repository, aiSetup)
-        backgroundScope.launch { viewModel.uiState.collect {} }
         viewModel.delete(target)
         advanceUntilIdle()
 
-        viewModel.clearRecentlyDeleted()
-        viewModel.undoDelete()
+        viewModel.clearRecentlyDeleted(target.conversation.id)
+        viewModel.undoDelete(target.conversation.id)
         advanceUntilIdle()
 
-        assertNull(viewModel.uiState.value.recentlyDeleted)
         assertTrue(repository.restored.isEmpty())
+    }
+
+    @Test
+    fun 続けて削除したとき前のSnackbarが閉じても後の会話は元に戻せる() = runTest {
+        val first = preview(1)
+        val second = preview(2)
+        repository.previews.value = listOf(second, first)
+        val viewModel = ConversationListViewModel(repository, aiSetup)
+        viewModel.delete(first)
+        advanceUntilIdle()
+        viewModel.delete(second)
+        advanceUntilIdle()
+
+        // 前の Snackbar は新しい Snackbar に置き換えられて閉じる
+        viewModel.clearRecentlyDeleted(first.conversation.id)
+        viewModel.undoDelete(first.conversation.id)
+        viewModel.undoDelete(second.conversation.id)
+        advanceUntilIdle()
+
+        assertEquals(listOf(second.conversation), repository.restored.map { it.first })
     }
 
     @Test

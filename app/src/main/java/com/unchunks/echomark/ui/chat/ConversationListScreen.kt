@@ -41,10 +41,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxDefaults
+import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,6 +67,7 @@ import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.ui.common.formatRelativeTime
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState
+import kotlinx.coroutines.launch
 
 /**
  * 会話の一覧(チャットタブのトップ)。ViewModel をつなぐ薄いラッパー。見た目は [ConversationListContent]。
@@ -83,16 +85,21 @@ fun ConversationListScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 削除したら「元に戻す」を出す。閉じたら取り消し用の控えを捨てる
-    val deleted = uiState.recentlyDeleted
-    LaunchedEffect(deleted) {
-        if (deleted == null) return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
-            message = "「${deleted.conversation.title}」を削除しました",
-            actionLabel = "元に戻す",
-            duration = SnackbarDuration.Long
-        )
-        if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete() else viewModel.clearRecentlyDeleted()
+    // 削除したら「元に戻す」を出す。閉じたら取り消し用の控えを捨てる。
+    // 知らせは一度きり(画面を離れて戻っても、古い「元に戻す」を出し直さない)
+    LaunchedEffect(viewModel, snackbarHostState) {
+        viewModel.deletedEvents.collect { deleted ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch {
+                val id = deleted.conversation.id
+                val result = snackbarHostState.showSnackbar(
+                    message = "「${deleted.conversation.title}」を削除しました",
+                    actionLabel = "元に戻す",
+                    duration = SnackbarDuration.Long
+                )
+                if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete(id) else viewModel.clearRecentlyDeleted(id)
+            }
+        }
     }
 
     ConversationListContent(
@@ -213,7 +220,12 @@ private fun SwipeToDeleteConversation(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val dismissState = rememberSwipeToDismissBoxState()
+    val threshold = SwipeToDismissBoxDefaults.positionalThreshold
+    // rememberSwipeToDismissBoxState は状態を保存するため、削除を取り消して同じ key の行が戻ると
+    // スワイプ済み(画面外)のまま表示される。保存しない state にして、戻った行は元の位置から始める
+    val dismissState = remember(preview.conversation.id) {
+        SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, threshold)
+    }
     SwipeToDismissBox(
         state = dismissState,
         modifier = modifier,
