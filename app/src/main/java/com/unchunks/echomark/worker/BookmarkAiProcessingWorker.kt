@@ -34,7 +34,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
         val bookmarkId = inputData.getLong(KEY_BOOKMARK_ID, -1L)
         if (bookmarkId == -1L) return Result.failure()
 
-        val bookmark = repository.getBookmarkById(bookmarkId) ?: return Result.failure()
+        // 削除済みなら何もしない(処理すべきものが無いだけなので成功で終える)
+        val bookmark = repository.getBookmarkById(bookmarkId) ?: return Result.success()
 
         if (runAttemptCount >= MAX_ATTEMPTS) {
             repository.updateAiStatus(bookmarkId, AiStatus.FAILED)

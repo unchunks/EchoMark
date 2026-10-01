@@ -131,6 +131,8 @@ dependencies {
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.androidx.room.testing)
+    // WorkManager のテスト用実装(WorkManagerTestInitHelper)。ワークの登録・取り消しの確認に使う
+    testImplementation(libs.work.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

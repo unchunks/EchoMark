@@ -20,6 +20,7 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.DataOperationException
 import com.unchunks.echomark.domain.repository.StorageUsage
+import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import com.unchunks.echomark.worker.RediscoverDigestScheduler
 import com.unchunks.echomark.worker.ReembedAllWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -42,6 +43,7 @@ class DataManagementRepositoryImpl @Inject constructor(
     private val bookmarkRepository: BookmarkRepository,
     private val appSettings: AppSettingsRepository,
     private val apiKeyRepository: ApiKeyRepository,
+    private val workScheduler: BookmarkWorkScheduler,
     private val dispatcherProvider: DispatcherProvider
 ) : DataManagementRepository {
 
@@ -128,6 +130,9 @@ class DataManagementRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteAllData(resetSettings: Boolean) = withContext(dispatcherProvider.io) {
+        // 処理待ち・実行中の本文取得・AI 処理・埋め込みの作り直しを止める(削除後にクラウドへ送ったり、書き込んだりしない)
+        workScheduler.cancelAll()
+        workManager.cancelUniqueWork(ReembedAllWorker.WORK_NAME)
         backupDao.deleteAll()
         vectorSearch.deleteAll()
         if (resetSettings) {

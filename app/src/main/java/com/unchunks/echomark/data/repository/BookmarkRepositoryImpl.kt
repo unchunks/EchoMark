@@ -1,16 +1,7 @@
 package com.unchunks.echomark.data.repository
 
-import androidx.work.BackoffPolicy
-import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.TagDao
-import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
-import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.mapper.toEntity
@@ -26,15 +17,13 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.search.RankFusion
-import com.unchunks.echomark.worker.BookmarkAiProcessingWorker
-import com.unchunks.echomark.worker.UrlFetchWorker
+import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.collections.map
 
@@ -43,7 +32,7 @@ class BookmarkRepositoryImpl @Inject constructor(
     private val tagDao: TagDao,
     private val vectorSearch: VectorSearchDataSource,
     private val dispatcherProvider: DispatcherProvider,
-    private val workManager: WorkManager,
+    private val workScheduler: BookmarkWorkScheduler,
     private val embeddingProvider: EmbeddingProvider
 ) : BookmarkRepository {
 
@@ -87,53 +76,32 @@ class BookmarkRepositoryImpl @Inject constructor(
         )
     }
 
-    private fun buildAiRequest(bookmarkId: Long) =
-        OneTimeWorkRequestBuilder<BookmarkAiProcessingWorker>()
-            .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-            .build()
-
-    /** AI処理のみを実行する(本文取得済み・モデル待ちからの再開など) */
+    /** AI処理のみを実行する(本文取得済み・モデル待ちからの再開など)。同じブックマークの処理は置き換える */
     private fun enqueueAiProcessing(bookmarkId: Long) {
-        workManager.enqueue(buildAiRequest(bookmarkId))
+        workScheduler.enqueue(bookmarkId, fetchContent = false)
     }
 
     /** URLは「本文取得 → AI処理」のチェーン、それ以外はAI処理のみを実行する */
     private fun enqueueProcessing(bookmarkId: Long, type: BookmarkType) {
-        val inputData = workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId)
-        val aiRequest = buildAiRequest(bookmarkId)
-
-        if (type == BookmarkType.URL) {
-            val fetchRequest = OneTimeWorkRequestBuilder<UrlFetchWorker>()
-                .setInputData(inputData)
-                .setConstraints(
-                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-                )
-                .build()
-            workManager
-                .beginUniqueWork("process_bookmark_$bookmarkId", ExistingWorkPolicy.REPLACE, fetchRequest)
-                .then(aiRequest)
-                .enqueue()
-        } else {
-            enqueueAiProcessing(bookmarkId)
-        }
+        workScheduler.enqueue(bookmarkId, fetchContent = type == BookmarkType.URL)
     }
 
-    override suspend fun saveTags(bookmarkId: Long, tagNames: List<String>) =
+    override suspend fun saveTags(bookmarkId: Long, tagNames: List<String>) {
         withContext(dispatcherProvider.io) {
-            tagNames.forEach { name ->
-                val tagId = getOrCreateTagId(name)
-                tagDao.insertCrossRef(BookmarkTagCrossRef(bookmarkId, tagId))
+            // AI 処理中に削除されたブックマークには付けない(孤児タグ・外部キー違反を防ぐ)
+            if (!tagDao.addTagsToBookmark(bookmarkId, tagNames)) {
+                Timber.i("削除済みのブックマークのためタグを保存しない: id=$bookmarkId")
             }
         }
-    private suspend fun getOrCreateTagId(name: String): Long {
-        val insertedId = tagDao.insertTag(TagEntity(name = name))
-        return if (insertedId != -1L) insertedId else tagDao.getTagByName(name)?.id ?: -1L
     }
 
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String): Unit =
         withContext(dispatcherProvider.io) {
+            // 削除済みのブックマークのベクトルを残さない。ObjectBox と Room は同じトランザクションにできないため、
+            // 書き込みの後にも確かめ、その間に削除されていたら消す
+            if (!bookmarkDao.exists(bookmarkId)) return@withContext
             vectorSearch.upsert(bookmarkId, vector, modelVersion)
+            if (!bookmarkDao.exists(bookmarkId)) vectorSearch.deleteByBookmarkId(bookmarkId)
         }
 
     override suspend fun updateSummary(id: Long, summary: String) =
@@ -180,10 +148,7 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             // 同じ ID で挿入し直す(削除済みなので競合しない)。ベクトルは削除時に消えているため再生成する
             bookmarkDao.insert(bookmark.copy(aiStatus = AiStatus.PENDING).toEntity())
-            bookmark.tags.forEach { name ->
-                val tagId = getOrCreateTagId(name)
-                tagDao.insertCrossRef(BookmarkTagCrossRef(bookmark.id, tagId))
-            }
+            tagDao.addTagsToBookmark(bookmark.id, bookmark.tags)
             enqueueAiProcessing(bookmark.id)
         }
     }
@@ -229,6 +194,8 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun deleteBookmark(bookmark: Bookmark) =
         withContext(dispatcherProvider.io) {
+            // 処理待ち・実行中の本文取得・AI 処理を止める(削除後にクラウドへ送ったり、書き込んだりしない)
+            workScheduler.cancel(bookmark.id)
             bookmarkDao.delete(bookmark.toEntity())
             // ObjectBox側の埋め込みも削除する(孤児ベクトルを残さない)
             vectorSearch.deleteByBookmarkId(bookmark.id)
