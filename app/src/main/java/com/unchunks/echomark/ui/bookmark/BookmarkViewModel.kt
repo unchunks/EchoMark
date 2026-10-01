@@ -71,9 +71,13 @@ class BookmarkViewModel @Inject constructor(
     private val rediscoverFlow = MutableStateFlow<List<Bookmark>>(emptyList())
 
     private val messageChannel = Channel<BookmarkListMessage>(Channel.BUFFERED)
+    private val addSheetRequestChannel = Channel<Unit>(Channel.CONFLATED)
 
     /** Snackbar で知らせる出来事。画面が表示されている間に1回ずつ受け取る */
     val messages: Flow<BookmarkListMessage> = messageChannel.receiveAsFlow()
+
+    /** 追加シートを開く要求(ショートカット・ウィジェットの「URL を追加」から起動したとき)。画面が1回ずつ受け取る */
+    val addSheetRequests: Flow<Unit> = addSheetRequestChannel.receiveAsFlow()
 
     /** 入力が空なら即時、入力中は 300ms のデバウンスを掛けて検索実行を間引く */
     @OptIn(FlowPreview::class)
@@ -163,6 +167,17 @@ class BookmarkViewModel @Inject constructor(
                     controlsFlow.update { it.copy(tagId = tagId, searchActive = false) }
                     searchQueryFlow.value = ""
                     savedStateHandle[KEY_SELECT_TAG_ID] = NO_TAG
+                }
+            }
+        }
+        // ショートカット・ウィジェットから起動したとき、追加シートや検索モードを開く
+        viewModelScope.launch {
+            savedStateHandle.getStateFlow<String?>(KEY_LAUNCH_ACTION, null).collect { name ->
+                val action = ListLaunchAction.entries.firstOrNull { it.name == name } ?: return@collect
+                savedStateHandle[KEY_LAUNCH_ACTION] = null
+                when (action) {
+                    ListLaunchAction.ADD_BOOKMARK -> addSheetRequestChannel.send(Unit)
+                    ListLaunchAction.SEARCH -> onSearchActiveChange(true)
                 }
             }
         }
@@ -326,10 +341,22 @@ class BookmarkViewModel @Inject constructor(
         const val KEY_SELECT_TAG_ID = "selectTagId"
         private const val NO_TAG = -1L
 
+        /** 起動直後の操作([ListLaunchAction] の name)を、一覧の SavedStateHandle に入れるキー */
+        const val KEY_LAUNCH_ACTION = "launchAction"
+
         /** 本文の1行目からタイトルを作る(長すぎれば切って「…」) */
         internal fun deriveTitle(text: String): String {
             val firstLine = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
             return if (firstLine.length <= DERIVED_TITLE_MAX) firstLine else firstLine.take(DERIVED_TITLE_MAX) + "…"
         }
     }
+}
+
+/** ショートカット・ウィジェットから一覧を開いたときに行う操作。 */
+enum class ListLaunchAction {
+    /** 追加シートを開く */
+    ADD_BOOKMARK,
+
+    /** 検索モードにする */
+    SEARCH
 }

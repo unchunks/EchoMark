@@ -40,7 +40,7 @@
                     android:scheme="echomark" />
             </intent-filter>
 
-            <!-- ランチャーのアイコン長押しで出るショートカット(新しいチャット・AI の設定) -->
+            <!-- ランチャーのアイコン長押しで出るショートカット(URL を追加・検索・新しいチャット・AI の設定) -->
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
@@ -62,6 +62,20 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- ホーム画面ウィジェット「EchoMark 再発見」(Jetpack Glance) -->
+        <receiver
+            android:name=".ui.widget.RediscoverWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_rediscover_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/rediscover_widget_info" />
+        </receiver>
 
         <provider
             android:name="androidx.startup.InitializationProvider"

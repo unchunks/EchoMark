@@ -45,7 +45,7 @@ class ChatRepositoryImpl @Inject constructor(
     private val dispatcherProvider: DispatcherProvider
 ) : ChatRepository {
 
-    override suspend fun createConversation(title: String?): Long =
+    override suspend fun createConversation(title: String?, aboutBookmarkId: Long?): Long =
         withContext(dispatcherProvider.io) {
             val now = System.currentTimeMillis()
             val fixedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
@@ -55,7 +55,8 @@ class ChatRepositoryImpl @Inject constructor(
                     // 呼び出し側が決めたタイトルは、最初の発言からの自動タイトルで上書きしない
                     isTitleManuallySet = fixedTitle != null,
                     createdAt = now,
-                    updatedAt = now
+                    updatedAt = now,
+                    aboutBookmarkId = aboutBookmarkId
                 )
             )
         }

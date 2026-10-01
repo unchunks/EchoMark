@@ -29,8 +29,9 @@ interface ChatRepository {
     /**
      * 会話を作る。[title] を渡すとそのタイトルで固定し、最初の発言からの自動タイトルで上書きしない
      * (「このブックマークについて質問」でブックマーク名を使うときなど)。
+     * @param aboutBookmarkId 「このブックマークについて質問」の対象。会話に保存し、開き直したときも固定する
      */
-    suspend fun createConversation(title: String? = null): Long
+    suspend fun createConversation(title: String? = null, aboutBookmarkId: Long? = null): Long
     fun observeConversations(): Flow<List<Conversation>>
 
     /** 会話一覧用。最終更新の新しい順に、最後のメッセージを添えて流す。 */

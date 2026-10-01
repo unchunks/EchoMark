@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
@@ -264,6 +265,7 @@ private fun ConversationCard(
     var menuExpanded by remember { mutableStateOf(false) }
     val conversation = preview.conversation
     val excerpt = conversationExcerpt(preview)
+    val aboutTitle = preview.aboutBookmarkTitle
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = MaterialTheme.shapes.medium,
@@ -292,7 +294,8 @@ private fun ConversationCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Outlined.ChatBubbleOutline,
+                    // 「このブックマークについて質問」の会話はブックマークのアイコンで見分けられるようにする
+                    if (aboutTitle != null) Icons.Outlined.BookmarkBorder else Icons.Outlined.ChatBubbleOutline,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(20.dp)
@@ -315,6 +318,10 @@ private fun ConversationCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
+                }
+                if (aboutTitle != null) {
+                    Spacer(Modifier.height(2.dp))
+                    AboutBookmarkLabel(bookmarkTitle = aboutTitle)
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -343,6 +350,35 @@ private fun ConversationCard(
                 }
             }
         }
+    }
+}
+
+/** 会話カードに出す「〇〇について」の小さな表示(質問の対象のブックマーク)。 */
+@Composable
+private fun AboutBookmarkLabel(bookmarkTitle: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Outlined.BookmarkBorder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(Modifier.width(4.dp))
+        // 長いタイトルを省略しても「について」は残るよう、2つに分けて描く
+        Text(
+            text = "「${bookmarkTitle.trim()}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        Text(
+            text = "」について",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1
+        )
     }
 }
 
