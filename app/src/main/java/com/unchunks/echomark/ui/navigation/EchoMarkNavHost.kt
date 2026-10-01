@@ -9,7 +9,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmarks
@@ -22,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -104,8 +107,7 @@ private val subScreenPopExit: AnimatedContentTransitionScope<NavBackStackEntry>.
  * アプリ全体のナビゲーション。
  * トップレベル画面ではボトムバーを出し、詳細・チャット個別などのサブ画面ではボトムバーを隠して全画面にする。
  *
- * インセット: この Scaffold がシステムバー(とボトムバー)の分の余白を付けて consumeWindowInsets するため、
- * 各画面の中の Scaffold / TopAppBar / imePadding は残りの分だけを足す(二重の余白にならない)。
+ * インセットの扱いは [EchoMarkAppScaffold] を参照。
  *
  * @param launchTarget 起動直後に開く画面(アプリショートカット・オンボーディングの続き)。開いたら [onLaunchTargetHandled] を呼ぶ
  */
@@ -126,36 +128,26 @@ fun EchoMarkNavHost(
         onLaunchTargetHandled()
     }
 
-    Scaffold(
-        bottomBar = {
-            AnimatedVisibility(
-                visible = currentDestination.isTopLevel(),
-                enter = slideInVertically(tween(TRANSITION_MILLIS)) { it } + fadeIn(tween(TRANSITION_MILLIS)),
-                exit = slideOutVertically(tween(TRANSITION_MILLIS)) { it } + fadeOut(tween(TRANSITION_MILLIS))
-            ) {
-                EchoMarkNavigationBar(
-                    selectedRoute = TopLevelDestination.entries.firstOrNull { destination ->
-                        currentDestination?.hierarchy?.any { it.route == destination.route } == true
-                    }?.route,
-                    onNavigate = { route ->
-                        navController.navigate(route) {
-                            // スタックが積み上がらないよう、開始地点までを1つにまとめる
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                )
+    EchoMarkAppScaffold(
+        showBottomBar = currentDestination.isTopLevel(),
+        selectedRoute = TopLevelDestination.entries.firstOrNull { destination ->
+            currentDestination?.hierarchy?.any { it.route == destination.route } == true
+        }?.route,
+        onNavigate = { route ->
+            navController.navigate(route) {
+                // スタックが積み上がらないよう、開始地点までを1つにまとめる
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
             }
         }
-    ) { innerPadding ->
+    ) { contentModifier ->
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.BOOKMARKS.route,
-            // Scaffold が反映済みのインセットを消費し、画面側の imePadding との二重余白を防ぐ
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+            modifier = contentModifier,
             enterTransition = fadeEnter,
             exitTransition = fadeExit,
             popEnterTransition = fadeEnter,
@@ -259,6 +251,40 @@ fun EchoMarkNavHost(
                 )
             }
         }
+    }
+}
+
+/**
+ * アプリ全体の枠。トップレベル画面ではボトムバーを出し、サブ画面では隠す。
+ *
+ * インセット: 左右と下(ナビゲーションバー・ボトムバー)の分だけ余白を付けて consumeWindowInsets する。
+ * 上(ステータスバー)は消費せず、各画面の TopAppBar(既定の windowInsets)が自分の背景色で受け持つ。
+ * ここで上まで消費すると、ステータスバーの帯がこの Scaffold の背景のままになり、スクロールで色が変わる
+ * TopAppBar とつながらない。各画面の imePadding は、ここで消費した下の分を差し引いた残りだけを足す。
+ *
+ * @param content 画面本体。渡す Modifier(余白とインセットの消費)を付けて表示すること
+ */
+@Composable
+internal fun EchoMarkAppScaffold(
+    showBottomBar: Boolean,
+    selectedRoute: String?,
+    onNavigate: (String) -> Unit,
+    content: @Composable (Modifier) -> Unit
+) {
+    Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+        bottomBar = {
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = slideInVertically(tween(TRANSITION_MILLIS)) { it } + fadeIn(tween(TRANSITION_MILLIS)),
+                exit = slideOutVertically(tween(TRANSITION_MILLIS)) { it } + fadeOut(tween(TRANSITION_MILLIS))
+            ) {
+                EchoMarkNavigationBar(selectedRoute = selectedRoute, onNavigate = onNavigate)
+            }
+        }
+    ) { innerPadding ->
+        content(Modifier.padding(innerPadding).consumeWindowInsets(innerPadding))
     }
 }
 
