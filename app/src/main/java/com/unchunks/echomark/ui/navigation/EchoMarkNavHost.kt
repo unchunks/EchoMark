@@ -29,6 +29,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
@@ -172,8 +175,8 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 TagManagementScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenTag = { tagId -> navController.returnToBookmarkListWithTag(tagId) }
+                    onBack = navController.popBackAction(),
+                    onOpenTag = dropUnlessResumedWith { tagId: Long -> navController.returnToBookmarkListWithTag(tagId) }
                 )
             }
             // チャットタブ = 会話一覧。"chat/new" は初回送信時に会話を作成、"chat/{conversationId}" は再開
@@ -190,7 +193,7 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 ChatScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
@@ -203,7 +206,7 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 ChatScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
@@ -215,7 +218,7 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 ChatScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
@@ -232,14 +235,14 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 OnboardingScreen(
-                    onFinish = { exit ->
+                    onFinish = dropUnlessResumedWith { exit: OnboardingExit ->
                         navController.popBackStack()
                         if (exit == OnboardingExit.AI_SETTINGS) navController.navigate(Routes.AI_SETTINGS)
                     }
                 )
             }
             composable(Routes.AI_SETTINGS) {
-                AiSettingsScreen(onBack = { navController.popBackStack() })
+                AiSettingsScreen(onBack = navController.popBackAction())
             }
             composable(
                 route = Routes.BOOKMARK_DETAIL,
@@ -249,7 +252,7 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 BookmarkDetailScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
@@ -257,6 +260,20 @@ fun EchoMarkNavHost(
             }
         }
     }
+}
+
+/**
+ * サブ画面の「戻る」。画面が操作可能(RESUMED)なときだけ戻る。
+ * 素早く2回押したときや遷移アニメーション中の2回目を無視し、開始画面まで pop して何も表示されなくなるのを防ぐ。
+ */
+@Composable
+internal fun NavController.popBackAction(): () -> Unit = dropUnlessResumed { popBackStack() }
+
+/** 引数つきの操作を、画面が操作可能(RESUMED)なときだけ行う([dropUnlessResumed] の引数つき版) */
+@Composable
+internal fun <T> dropUnlessResumedWith(block: (T) -> Unit): (T) -> Unit {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    return { value -> if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) block(value) }
 }
 
 /**
