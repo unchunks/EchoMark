@@ -34,11 +34,11 @@ class BookmarkWorkScheduler @Inject constructor(
      * 同じブックマークの登録済み・実行中の処理は取り消して置き換える。
      */
     suspend fun enqueue(bookmarkId: Long, fetchContent: Boolean) {
-        val requests = requestsFor(Target(bookmarkId, fetchContent), aiConstraints())
-        workManager
-            .beginUniqueWork(uniqueWorkName(bookmarkId), ExistingWorkPolicy.REPLACE, requests.first())
-            .let { continuation -> requests.drop(1).fold(continuation) { chain, request -> chain.then(request) } }
-            .enqueue()
+        enqueueChain(
+            uniqueWorkName(bookmarkId),
+            ExistingWorkPolicy.REPLACE,
+            requestsFor(Target(bookmarkId, fetchContent), aiConstraints())
+        )
     }
 
     /**
@@ -51,11 +51,11 @@ class BookmarkWorkScheduler @Inject constructor(
         val constraints = aiConstraints()
         // 1回の登録で長い列を作りすぎないよう、区切って後ろに続けていく
         targets.chunked(SEQUENTIAL_CHUNK_SIZE).forEach { chunk ->
-            val requests = chunk.flatMap { requestsFor(it, constraints) }
-            workManager
-                .beginUniqueWork(BULK_WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, requests.first())
-                .let { continuation -> requests.drop(1).fold(continuation) { chain, request -> chain.then(request) } }
-                .enqueue()
+            enqueueChain(
+                BULK_WORK_NAME,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                chunk.flatMap { requestsFor(it, constraints) }
+            )
         }
     }
 
@@ -67,6 +67,15 @@ class BookmarkWorkScheduler @Inject constructor(
     /** このクラスで登録したすべての処理(一括の列も含む)を取り消す。全データ削除時に呼ぶ。 */
     fun cancelAll() {
         workManager.cancelAllWorkByTag(TAG)
+    }
+
+    /** [requests] を順番に(前の処理が終わってから次を)実行する列として、一意名 [name] で登録する。 */
+    private fun enqueueChain(name: String, policy: ExistingWorkPolicy, requests: List<OneTimeWorkRequest>) {
+        var continuation = workManager.beginUniqueWork(name, policy, requests.first())
+        for (request in requests.drop(1)) {
+            continuation = continuation.then(request)
+        }
+        continuation.enqueue()
     }
 
     private fun requestsFor(target: Target, aiConstraints: Constraints): List<OneTimeWorkRequest> =
