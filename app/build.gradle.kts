@@ -25,9 +25,16 @@ android {
 
     buildTypes {
         release {
-            optimization {
-                enable = false
-            }
+            // R8 によるコードの縮小・難読化・最適化とリソースの縮小。
+            // (AGP 9 の optimization { enable = true } は android.r8.gradual.support(実験的フラグ)が必須のため、安定版の DSL を使う)
+            // アプリ固有の keep ルールは src/main/keepRules/*.keep に置く(AGP が自動で R8 に渡す)。
+            // ライブラリ同梱の consumer rules も自動で合流する
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            // TODO: リリース用の署名鍵(keystore)を用意したら signingConfigs に release を追加して差し替える。
+            //  それまでは端末へ入れて動作確認できるよう debug 署名で仮に署名する(ストア配布には使えない)
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
