@@ -1,10 +1,13 @@
 package com.unchunks.echomark.data.ai.api
 
+import com.anthropic.client.AnthropicClient
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -206,5 +209,69 @@ class ClaudeApiClientTest {
         } catch (e: LlmException.Refused) {
             assertEquals(listOf("途中"), received)
         }
+    }
+
+    /** 作ったクライアントを記録するクライアント工場(閉じたかどうかも見る)。 */
+    private inner class RecordingFactory : (String) -> AnthropicClient {
+        val created = mutableListOf<Pair<String, TrackingClient>>()
+        override fun invoke(apiKey: String): AnthropicClient = synchronized(this) {
+            TrackingClient(ClaudeApiClient.newClient(apiKey, server.url("/").toString(), maxRetries = 0))
+                .also { created += apiKey to it }
+        }
+    }
+
+    private class TrackingClient(private val delegate: AnthropicClient) : AnthropicClient by delegate {
+        @Volatile var closed = false
+        override fun close() {
+            closed = true
+            delegate.close()
+        }
+    }
+
+    private fun clientWith(factory: RecordingFactory) =
+        ClaudeApiClient(TestDispatcherProvider(Dispatchers.IO), server.url("/").toString(), 0, factory)
+
+    @Test
+    fun 接続テストは使い回すクライアントを置き換えず_使い終わったら閉じる() = runBlocking {
+        val factory = RecordingFactory()
+        val client = clientWith(factory)
+        repeat(3) { server.enqueue(jsonResponse(messageJson("OK"))) }
+
+        client.complete(analyzeRequest, credentials)
+        client.complete(
+            analyzeRequest.copy(purpose = ApiPurpose.CONNECTION_TEST),
+            ApiCredentials("sk-ant-other-key", "claude-opus-5-5")
+        )
+        client.complete(analyzeRequest, credentials)
+
+        assertEquals(listOf("sk-ant-test-key", "sk-ant-other-key"), factory.created.map { it.first })
+        assertFalse(factory.created[0].second.closed)
+        assertTrue(factory.created[1].second.closed)
+    }
+
+    @Test
+    fun キーが変わっても使用中かもしれない古いクライアントは閉じない() = runBlocking {
+        val factory = RecordingFactory()
+        val client = clientWith(factory)
+        repeat(2) { server.enqueue(jsonResponse(messageJson("OK"))) }
+
+        client.complete(analyzeRequest, credentials)
+        client.complete(analyzeRequest, ApiCredentials("sk-ant-new-key", "claude-opus-5-5"))
+
+        assertEquals(2, factory.created.size)
+        assertTrue(factory.created.none { it.second.closed })
+    }
+
+    @Test
+    fun 同時に呼んでもクライアントは1つだけ作る() = runBlocking {
+        val factory = RecordingFactory()
+        val client = clientWith(factory)
+        repeat(16) { server.enqueue(jsonResponse(messageJson("OK"))) }
+
+        coroutineScope {
+            repeat(16) { launch(Dispatchers.IO) { client.complete(analyzeRequest, credentials) } }
+        }
+
+        assertEquals(1, factory.created.size)
     }
 }
