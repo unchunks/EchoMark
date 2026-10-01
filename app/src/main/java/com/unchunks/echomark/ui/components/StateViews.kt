@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkAdd
@@ -154,11 +156,15 @@ private fun StateLayout(
     description: String?,
     action: @Composable () -> Unit
 ) {
-    Box(
+    // 横向きや文字が大きいときに画面に収まらなくても、ボタンまでスクロールで届くようにする。
+    // 収まるときは中央に置く(verticalScroll は中身に画面の高さを最小値として渡すので、Center で中央寄せになる)
+    Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 32.dp, vertical = 24.dp),
-        contentAlignment = Alignment.Center
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Column(
             modifier = Modifier.widthIn(max = 360.dp),

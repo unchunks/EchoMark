@@ -249,6 +249,13 @@ fun BookmarkListContent(
 
     BackHandler(enabled = uiState.isSearchActive) { callbacks.onSearchActiveChange(false) }
 
+    // 絞り込み・検索の切り替えや空状態への切り替えで、スクロールで隠れたトップバーを戻す
+    // (空状態はスクロールできないことが多く、そのままだとトップバーが隠れたままになる)
+    val showingList = !uiState.isLoading && uiState.errorMessage == null && uiState.emptyKind == ListEmptyKind.NONE
+    LaunchedEffect(uiState.filter, uiState.selectedTagId, uiState.isSearchActive, showingList) {
+        scrollBehavior.state.heightOffset = 0f
+    }
+
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -371,7 +378,8 @@ private fun ListTopBar(
     var sortMenuOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
     TopAppBar(
-        title = { Text("ブックマーク") },
+        // 文字が大きいときも単語の途中で折り返さず、1行に収めて省略する
+        title = { Text("ブックマーク", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         scrollBehavior = scrollBehavior,
         actions = {
             IconButton(onClick = onSearchClick) {

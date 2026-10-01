@@ -133,7 +133,7 @@ fun ConversationListContent(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("チャット") }) },
+        topBar = { TopAppBar(title = { Text("チャット", maxLines = 1, overflow = TextOverflow.Ellipsis) }) },
         floatingActionButton = {
             if (!isEmpty && !uiState.isLoading) {
                 ExtendedFloatingActionButton(
