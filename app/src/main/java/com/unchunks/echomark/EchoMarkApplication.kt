@@ -14,6 +14,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
 import com.unchunks.echomark.worker.ReembedAllWorker
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
@@ -27,6 +28,7 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
     @Inject lateinit var workManager: WorkManager
     // 画像を初めて読み込むまで生成しないよう Lazy で受け取る
     @Inject lateinit var okHttpClient: Lazy<OkHttpClient>
+    @Inject lateinit var rediscoverWidgetUpdater: RediscoverWidgetUpdater
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -37,6 +39,8 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
         super.onCreate()
 
         createNotificationChannels()
+        // ブックマークの保存・削除・閲覧に合わせて、ホーム画面ウィジェットを描き直す
+        rediscoverWidgetUpdater.start()
 
         workManager.enqueueUniqueWork(
             ReembedAllWorker.WORK_NAME,

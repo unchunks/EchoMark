@@ -2,4 +2,10 @@
 <resources>
     <!-- ダークモードでは少し暗いインディゴ(T30)にして、まぶしさを抑える -->
     <color name="splash_background">#FF313D8E</color>
+    <!-- ウィジェット選択画面のプレビュー(ブランド配色のダーク) -->
+    <color name="widget_preview_background">#FF434659</color>
+    <color name="widget_preview_item">#FF121318</color>
+    <color name="widget_preview_primary">#FFBAC3FF</color>
+    <color name="widget_preview_on_surface">#FFE4E1E9</color>
+    <color name="widget_preview_on_surface_variant">#FFC7C5D0</color>
 </resources>
