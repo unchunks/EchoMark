@@ -1,26 +1,48 @@
+@file:Suppress("DEPRECATION")
+
 package com.unchunks.echomark.data.ai.local
 
 import android.content.Context
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession.LlmInferenceSessionOptions
+import com.google.mediapipe.tasks.genai.llminference.ProgressListener
+import com.google.mediapipe.tasks.genai.llminference.PromptTemplates
+import com.unchunks.echomark.data.ai.AiPrompts
+import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelManager
-import com.unchunks.echomark.data.ai.model.ModelSpecs
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
 
 /**
- * MediaPipe LLM Inference (Gemma) によるローカル LLM。
- * モデルは [ModelManager] が管理するファイルを使い、初回利用時に遅延初期化する。
+ * MediaPipe LLM Inference (Gemma 等) によるローカル LLM。
+ * モデルは [ModelManager] で取り込んだファイルを使い、初回利用時に遅延初期化する。
+ * 取り込み直し・削除を検知したらエンジンを作り直す。
+ *
+ * 注意: tasks-genai 0.10.35 で LLM Inference API は非推奨(保守のみ)になった。
+ * 公式の移行先は LiteRT-LM。移行するまで非推奨警告をファイル単位で抑制する。
  */
 @Singleton
 class LocalLlmProvider @Inject constructor(
@@ -29,37 +51,54 @@ class LocalLlmProvider @Inject constructor(
     private val dispatcherProvider: DispatcherProvider
 ) : LlmProvider {
 
-    private val spec = ModelSpecs.GEMMA_LLM
+    /** 読み込み済みのエンジンと、その元になったモデル。[inferenceMutex] を持っている間だけ読み書きする。 */
+    private var loaded: Pair<LocalModelInfo, LlmInference>? = null
 
-    private var llmInference: LlmInference? = null
-    private val initMutex = Mutex()
-
-    // LlmInference は同時に複数の生成を実行できないため直列化する
+    // LlmInference は同時に複数の生成を実行できないため直列化する。
+    // エンジンの作成・破棄も同じロックの中で行い、生成中のエンジンを別のコルーチンが閉じないようにする
+    // (取り込み直し・削除の直後に閉じると、ネイティブ資源の解放後に使ってしまう)
     private val inferenceMutex = Mutex()
 
-    private suspend fun ensureInitialized(): LlmInference {
-        llmInference?.let { if (modelManager.isAvailable(spec)) return it }
-        return initMutex.withLock {
-            if (!modelManager.isAvailable(spec)) {
-                // モデルが削除された場合は保持しているエンジンも破棄する
-                llmInference?.close()
-                llmInference = null
-                throw ModelNotAvailableException()
-            }
-            llmInference ?: run {
-                val options = LlmInferenceOptions.builder()
-                    .setModelPath(modelManager.file(spec).absolutePath)
-                    .setMaxTokens(MAX_TOKENS)
-                    .build()
-                LlmInference.createFromOptions(context, options).also { llmInference = it }
-            }
+    /** 現在のモデルのエンジン。必ず [inferenceMutex] を持った状態で呼ぶ。 */
+    private fun engineLocked(): Pair<LocalModelInfo, LlmInference> {
+        val model = modelManager.installedModel.value
+        val file = modelManager.modelFile()
+        if (model == null || file == null) {
+            // モデルが削除された場合は保持しているエンジンも破棄する
+            loaded?.second?.close()
+            loaded = null
+            throw ModelNotAvailableException()
         }
+        loaded?.let { if (it.first == model) return it }
+        loaded?.second?.close()
+        loaded = null
+        val options = LlmInferenceOptions.builder()
+            .setModelPath(file.absolutePath)
+            .setMaxTokens(MAX_TOKENS)
+            .build()
+        return (model to LlmInference.createFromOptions(context, options)).also { loaded = it }
+    }
+
+    /**
+     * 1回の生成ごとにセッションを作る(会話履歴はプロンプトに含めるため、セッションに状態を持たせない)。
+     * Gemma 系はチャットテンプレートを明示し、ユーザーターン/モデルターンの区切りを正しく付ける。
+     */
+    private fun newSession(model: LocalModelInfo, engine: LlmInference): LlmInferenceSession {
+        val options = LlmInferenceSessionOptions.builder()
+            .apply { if (model.isGemma) setPromptTemplates(GEMMA_TEMPLATES) }
+            .build()
+        return LlmInferenceSession.createFromOptions(engine, options)
     }
 
     private suspend fun generate(prompt: String): String =
         withContext(dispatcherProvider.default) {
-            val engine = ensureInitialized()
-            inferenceMutex.withLock { engine.generateResponse(prompt) }
+            inferenceMutex.withLock {
+                val (model, engine) = engineLocked()
+                newSession(model, engine).use { session ->
+                    session.addQueryChunk(prompt)
+                    session.generateResponse()
+                }
+            }
         }
 
     override suspend fun analyze(text: String): BookmarkAnalysis {
@@ -75,61 +114,76 @@ class LocalLlmProvider @Inject constructor(
         return generate(buildChatPrompt(userMessage, context, history)).trim()
     }
 
-    // 注意: 本文を埋め込むため trimIndent は使わず、行の連結で組み立てる
+    /** generateResponseAsync の部分結果(増分)を流す。収集側のキャンセルで生成を中断する。 */
+    override fun chatStream(
+        userMessage: String,
+        context: List<String>,
+        history: List<ChatMessage>
+    ): Flow<String> = callbackFlow {
+        val prompt = buildChatPrompt(userMessage, context, history)
+        inferenceMutex.withLock {
+            val (model, engine) = engineLocked()
+            newSession(model, engine).use { session ->
+                session.addQueryChunk(prompt)
+                val finished = AtomicBoolean(false)
+                val future = session.generateResponseAsync(ProgressListener<String> { partial, done ->
+                    if (partial.isNotEmpty()) trySend(partial)
+                    if (done) {
+                        finished.set(true)
+                        channel.close()
+                    }
+                })
+                future.addListener({
+                    try {
+                        future.get()
+                    } catch (e: ExecutionException) {
+                        close(e.cause ?: e)
+                    } catch (e: Exception) {
+                        close(e)
+                    }
+                }, Runnable::run)
+                try {
+                    awaitClose()
+                } finally {
+                    // 途中で止められた場合は生成を中断し、終わるのを待ってからセッションを閉じる
+                    if (!finished.get() && !future.isDone) runCatching { session.cancelGenerateResponseAsync() }
+                    withContext(NonCancellable) { future.awaitDone() }
+                }
+            }
+        }
+    }.buffer(Channel.UNLIMITED).flowOn(dispatcherProvider.default)
+
+    private suspend fun ListenableFuture<*>.awaitDone() {
+        if (isDone) return
+        suspendCancellableCoroutine { cont -> addListener({ cont.resume(Unit) }, Runnable::run) }
+    }
+
     private fun buildAnalyzePrompt(text: String): String = listOf(
-        "あなたはブックマーク整理アシスタントです。次の保存内容を分析し、JSONのみを出力してください。",
-        "説明文やコードブロックは出力しないでください。",
+        AiPrompts.ANALYZE_INSTRUCTIONS,
         "",
-        "出力形式:",
-        """{"summary": "100文字以内の日本語の要約", "tags": ["タグ1", "タグ2", "タグ3"], "category": "カテゴリ名1つ"}""",
-        "",
-        "ルール:",
-        "- summary は日本語で簡潔に。",
-        "- tags は内容を表す短い単語を最大5個。",
-        "- category は「技術」「ニュース」「レシピ」「学習」「仕事」「趣味」「その他」のように短い1語。",
-        "",
-        "保存内容:",
-        text.take(MAX_INPUT_CHARS)
+        AiPrompts.analyzeInput(text, MAX_INPUT_CHARS)
     ).joinToString("\n")
 
-    // context は呼び出し側で "[n] タイトル: 要約" に整形済み(番号は呼び出し側の付番をそのまま使う)
+    // 指示・文脈・履歴・質問を、MAX_TOKENS に収まる文字数の予算で組み立てる
     private fun buildChatPrompt(
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>
-    ): String {
-        val snippets = context.take(MAX_CONTEXT_ITEMS)
-        val historyLines = history.takeLast(MAX_HISTORY_ITEMS).map {
-            val speaker = if (it.role == ChatRole.USER) "ユーザー" else "アシスタント"
-            "$speaker: ${it.content.take(MAX_HISTORY_CHARS)}"
-        }
-        val lines = buildList {
-            add("あなたはユーザーの保存したブックマークに答えるアシスタントです。")
-            if (snippets.isEmpty()) {
-                add("関連する保存内容は見つかりませんでした。その旨を伝えたうえで、分かる範囲で簡潔に日本語で答えてください。")
-            } else {
-                add("以下の保存内容だけを根拠に、質問へ日本語で簡潔に答えてください。")
-                add("根拠がない場合は、分からないと答えてください。参照した番号を [1] のように示してください。")
-                add("")
-                add("保存内容:")
-                snippets.forEach { add(it); add("") }
-            }
-            if (historyLines.isNotEmpty()) {
-                add("")
-                add("これまでの会話:")
-                addAll(historyLines)
-            }
-            add("")
-            add("質問: $userMessage")
-        }
-        return lines.joinToString("\n")
-    }
+    ): String = LocalChatPrompt.build(userMessage, context, history)
 
     companion object {
+        /** 入力と出力の合計トークン数の上限。プロンプトの文字数の予算は LocalChatPrompt を参照 */
         private const val MAX_TOKENS = 4096
         private const val MAX_INPUT_CHARS = 2000
-        private const val MAX_CONTEXT_ITEMS = 5
-        private const val MAX_HISTORY_ITEMS = 6
-        private const val MAX_HISTORY_CHARS = 200
+
+        /** Gemma の対話形式(https://ai.google.dev/gemma/docs/core/prompt-structure)。 */
+        private val GEMMA_TEMPLATES: PromptTemplates = PromptTemplates.builder()
+            .setUserPrefix("<start_of_turn>user\n")
+            .setUserSuffix("<end_of_turn>\n")
+            .setModelPrefix("<start_of_turn>model\n")
+            .setModelSuffix("<end_of_turn>\n")
+            .setSystemPrefix("")
+            .setSystemSuffix("")
+            .build()
     }
 }

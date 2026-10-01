@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
@@ -19,7 +20,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
         BookmarkEntity::class, TagEntity::class, BookmarkTagCrossRef::class,
         ConversationEntity::class, ChatMessageEntity::class
     ],
-    version = 6,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -28,4 +29,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun conversationDao(): ConversationDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun backupDao(): BackupDao
 }

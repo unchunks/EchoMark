@@ -7,19 +7,15 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 fun BookmarkEntity.toDomain(): Bookmark = Bookmark(
     id = id, type = type, content = content, contentUri = contentUri,
     title = title, summary = summary, category = category,
-    createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus
+    createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus,
+    imageUrl = imageUrl, siteName = siteName, isFavorite = isFavorite, isArchived = isArchived
 )
 
 fun Bookmark.toEntity(): BookmarkEntity = BookmarkEntity(
     id = id, type = type, content = content, contentUri = contentUri,
     title = title, summary = summary, category = category,
-    createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus
+    createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus,
+    imageUrl = imageUrl, siteName = siteName, isFavorite = isFavorite, isArchived = isArchived
 )
 
-fun BookmarkWithTags.toDomain(): Bookmark = Bookmark(
-    id = bookmark.id, type = bookmark.type, content = bookmark.content,
-    contentUri = bookmark.contentUri, title = bookmark.title, summary = bookmark.summary,
-    category = bookmark.category, createdAt = bookmark.createdAt,
-    lastAccessedAt = bookmark.lastAccessedAt, aiStatus = bookmark.aiStatus,
-    tags = tags.map { it.name }
-)
+fun BookmarkWithTags.toDomain(): Bookmark = bookmark.toDomain().copy(tags = tags.map { it.name })

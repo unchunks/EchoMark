@@ -4,4 +4,19 @@
     <string name="notification_channel_rediscover">再発見ダイジェスト</string>
     <string name="notification_channel_rediscover_desc">しばらく開いていないブックマークをお知らせします</string>
     <string name="rediscover_notification_title">こんなブックマーク、忘れていませんか?</string>
+    <!-- ランチャーのアプリショートカット(res/xml/shortcuts.xml) -->
+    <string name="shortcut_new_chat_short">新しいチャット</string>
+    <string name="shortcut_new_chat_long">保存したブックマークについて質問する</string>
+    <string name="shortcut_ai_settings_short">AI の設定</string>
+    <string name="shortcut_ai_settings_long">AI のモデルと API キーを設定する</string>
+    <string name="shortcut_add_bookmark_short">URL を追加</string>
+    <string name="shortcut_add_bookmark_long">URL やメモをブックマークに保存する</string>
+    <string name="shortcut_search_short">検索</string>
+    <string name="shortcut_search_long">保存したブックマークを検索する</string>
+    <!-- ホーム画面ウィジェット(ui/widget/RediscoverWidget.kt) -->
+    <string name="widget_rediscover_label">EchoMark 再発見</string>
+    <string name="widget_rediscover_description">しばらく開いていないブックマークを、毎日入れ替えてホーム画面に表示します</string>
+    <string name="widget_rediscover_title">再発見</string>
+    <string name="widget_rediscover_preview_item_title">Jetpack Compose のパフォーマンス入門</string>
+    <string name="widget_rediscover_preview_item_source">developer.android.com</string>
 </resources>

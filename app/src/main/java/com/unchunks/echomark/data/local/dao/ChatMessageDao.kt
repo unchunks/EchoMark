@@ -12,6 +12,10 @@ interface ChatMessageDao {
     @Insert
     suspend fun insert(message: ChatMessageEntity): Long
 
+    /** 削除の取り消し用。ID を保ったまま戻す。 */
+    @Insert
+    suspend fun insertAll(messages: List<ChatMessageEntity>)
+
     @Query("SELECT * FROM chat_messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
     fun observeMessages(conversationId: Long): Flow<List<ChatMessageEntity>>
 

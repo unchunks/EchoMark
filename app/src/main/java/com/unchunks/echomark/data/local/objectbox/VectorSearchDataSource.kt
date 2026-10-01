@@ -60,6 +60,11 @@ class VectorSearchDataSource @Inject constructor(
         }
     }
 
+    /** すべての埋め込みを削除する(全データ削除用)。 */
+    fun deleteAll() {
+        embeddingBox.removeAll()
+    }
+
     /** bookmarkId に紐づく埋め込みを削除する。 */
     fun deleteByBookmarkId(bookmarkId: Long) {
         val query = embeddingBox.query(EmbeddingEntity_.bookmarkId.equal(bookmarkId)).build()

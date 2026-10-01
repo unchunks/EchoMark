@@ -1,5 +1,6 @@
 package com.unchunks.echomark.domain.provider
 
+/** embed* はモデルが使えないとき [EmbeddingUnavailableException] を投げる。 */
 interface EmbeddingProvider {
     val dimensions: Int
     val modelVersion: String

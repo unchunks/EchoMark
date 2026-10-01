@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.ConversationWithLastMessage
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -14,8 +15,30 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE id = :id")
     suspend fun getById(id: Long): ConversationEntity?
 
+    @Query("SELECT * FROM conversations WHERE id = :id")
+    fun observeById(id: Long): Flow<ConversationEntity?>
+
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
     fun getAll(): Flow<List<ConversationEntity>>
+
+    /**
+     * 会話一覧用。最終更新の新しい順に、各会話の最後のメッセージと質問の対象のブックマーク名を添えて返す。
+     * スキーマを変えずに済むよう、相関サブクエリで最新の1件を引く(chat_messages.conversationId に索引あり)。
+     * 対象のブックマークが削除済みなら aboutBookmarkTitle は null になる。
+     */
+    @Query(
+        """
+        SELECT c.*,
+            (SELECT m.content FROM chat_messages m WHERE m.conversationId = c.id
+                ORDER BY m.createdAt DESC, m.id DESC LIMIT 1) AS lastMessage,
+            (SELECT m.role FROM chat_messages m WHERE m.conversationId = c.id
+                ORDER BY m.createdAt DESC, m.id DESC LIMIT 1) AS lastMessageRole,
+            (SELECT b.title FROM bookmarks b WHERE b.id = c.aboutBookmarkId) AS aboutBookmarkTitle
+        FROM conversations c
+        ORDER BY c.updatedAt DESC
+        """
+    )
+    fun observeAllWithLastMessage(): Flow<List<ConversationWithLastMessage>>
 
     /** 最終更新時刻だけを更新する(メッセージ追加のたびに呼ぶ)。 */
     @Query("UPDATE conversations SET updatedAt = :updatedAt WHERE id = :id")

@@ -9,15 +9,27 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.crossfade
+import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
 import com.unchunks.echomark.worker.ReembedAllWorker
+import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
+import okhttp3.OkHttpClient
+import timber.log.Timber
 import javax.inject.Inject
 
 @HiltAndroidApp
-class EchoMarkApplication : Application(), Configuration.Provider {
+class EchoMarkApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
 
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var workManager: WorkManager
+    // 画像を初めて読み込むまで生成しないよう Lazy で受け取る
+    @Inject lateinit var okHttpClient: Lazy<OkHttpClient>
+    @Inject lateinit var rediscoverWidgetUpdater: RediscoverWidgetUpdater
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -27,7 +39,12 @@ class EchoMarkApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
+        // ログは debug ビルドだけ Logcat に出す(release では本文や URL を残さない)
+        if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+
         createNotificationChannels()
+        // ブックマークの保存・削除・閲覧に合わせて、ホーム画面ウィジェットを描き直す
+        rediscoverWidgetUpdater.start()
 
         workManager.enqueueUniqueWork(
             ReembedAllWorker.WORK_NAME,
@@ -42,6 +59,13 @@ class EchoMarkApplication : Application(), Configuration.Provider {
                 .build()
         )
     }
+
+    /** Coil の画像読み込み。通信は NetworkModule の共通 OkHttpClient を使う。 */
+    override fun newImageLoader(context: PlatformContext): ImageLoader =
+        ImageLoader.Builder(context)
+            .components { add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient.get() })) }
+            .crossfade(true)
+            .build()
 
     /** 通知チャンネルを作成する(既存なら何もしない)。 */
     private fun createNotificationChannels() {
