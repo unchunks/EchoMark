@@ -19,3 +19,5 @@ local.properties
 /.claude/worktrees/
 # ObjectBox のビルド時バックアップ
 /app/objectbox-models/*.bak
+# ObjectBox がテスト実行時に展開するネイティブライブラリ
+/app/objectbox-jni-*.dll
