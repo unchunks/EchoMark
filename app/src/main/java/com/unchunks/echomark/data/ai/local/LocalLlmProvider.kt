@@ -51,14 +51,16 @@ class LocalLlmProvider @Inject constructor(
     private val dispatcherProvider: DispatcherProvider
 ) : LlmProvider {
 
-    /** 読み込み済みのエンジンと、その元になったモデル。 */
+    /** 読み込み済みのエンジンと、その元になったモデル。[inferenceMutex] を持っている間だけ読み書きする。 */
     private var loaded: Pair<LocalModelInfo, LlmInference>? = null
-    private val initMutex = Mutex()
 
-    // LlmInference は同時に複数の生成を実行できないため直列化する
+    // LlmInference は同時に複数の生成を実行できないため直列化する。
+    // エンジンの作成・破棄も同じロックの中で行い、生成中のエンジンを別のコルーチンが閉じないようにする
+    // (取り込み直し・削除の直後に閉じると、ネイティブ資源の解放後に使ってしまう)
     private val inferenceMutex = Mutex()
 
-    private suspend fun ensureInitialized(): Pair<LocalModelInfo, LlmInference> = initMutex.withLock {
+    /** 現在のモデルのエンジン。必ず [inferenceMutex] を持った状態で呼ぶ。 */
+    private fun engineLocked(): Pair<LocalModelInfo, LlmInference> {
         val model = modelManager.installedModel.value
         val file = modelManager.modelFile()
         if (model == null || file == null) {
@@ -67,13 +69,14 @@ class LocalLlmProvider @Inject constructor(
             loaded = null
             throw ModelNotAvailableException()
         }
-        loaded?.let { if (it.first == model) return@withLock it }
+        loaded?.let { if (it.first == model) return it }
         loaded?.second?.close()
+        loaded = null
         val options = LlmInferenceOptions.builder()
             .setModelPath(file.absolutePath)
             .setMaxTokens(MAX_TOKENS)
             .build()
-        (model to LlmInference.createFromOptions(context, options)).also { loaded = it }
+        return (model to LlmInference.createFromOptions(context, options)).also { loaded = it }
     }
 
     /**
@@ -89,8 +92,8 @@ class LocalLlmProvider @Inject constructor(
 
     private suspend fun generate(prompt: String): String =
         withContext(dispatcherProvider.default) {
-            val (model, engine) = ensureInitialized()
             inferenceMutex.withLock {
+                val (model, engine) = engineLocked()
                 newSession(model, engine).use { session ->
                     session.addQueryChunk(prompt)
                     session.generateResponse()
@@ -118,8 +121,8 @@ class LocalLlmProvider @Inject constructor(
         history: List<ChatMessage>
     ): Flow<String> = callbackFlow {
         val prompt = buildChatPrompt(userMessage, context, history)
-        val (model, engine) = ensureInitialized()
         inferenceMutex.withLock {
+            val (model, engine) = engineLocked()
             newSession(model, engine).use { session ->
                 session.addQueryChunk(prompt)
                 val finished = AtomicBoolean(false)
