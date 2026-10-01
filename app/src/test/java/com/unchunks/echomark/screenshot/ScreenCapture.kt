@@ -11,9 +11,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import coil3.ColorImage
 import coil3.annotation.ExperimentalCoilApi
@@ -26,12 +28,15 @@ import com.unchunks.echomark.ui.theme.EchoMarkTheme
  * 画面全体(Scaffold を含む)を、スマートフォンの画面サイズの枠に入れてライト/ダークで撮る。
  * 部品用の [ScreenshotRule.captureLightDark] と違い、周囲の余白を付けず、高さも固定する。
  * 1テストにつき1回だけ呼べる。
+ *
+ * @param fontScale 端末の文字サイズ設定(アクセシビリティの確認用。2.0 = 最大級)
  */
 @OptIn(ExperimentalCoilApi::class)
 fun ScreenshotRule.captureScreenLightDark(
     name: String,
     widthDp: Int = DEFAULT_WIDTH_DP,
     heightDp: Int = SCREEN_HEIGHT_DP,
+    fontScale: Float = 1f,
     content: @Composable () -> Unit
 ) {
     var dark by mutableStateOf(false)
@@ -39,7 +44,8 @@ fun ScreenshotRule.captureScreenLightDark(
     composeRule.setContent {
         CompositionLocalProvider(
             LocalInspectionMode provides true,
-            LocalAsyncImagePreviewHandler provides ScreenFakeImageHandler
+            LocalAsyncImagePreviewHandler provides ScreenFakeImageHandler,
+            LocalDensity provides Density(LocalDensity.current.density, fontScale)
         ) {
             EchoMarkTheme(darkTheme = dark, dynamicColor = false) {
                 Surface(
