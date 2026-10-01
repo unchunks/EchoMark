@@ -9,4 +9,10 @@
     <color name="white">#FFFFFFFF</color>
     <!-- スプラッシュ画面の背景(ブランドのインディゴ T40)。ダークでは values-night の T30 -->
     <color name="splash_background">#FF4A55A7</color>
+    <!-- ウィジェット選択画面のプレビュー(layout/widget_rediscover_preview.xml)。ブランド配色のライト。ダークは values-night -->
+    <color name="widget_preview_background">#FFE0E1F9</color>
+    <color name="widget_preview_item">#FFFBF8FF</color>
+    <color name="widget_preview_primary">#FF4A55A7</color>
+    <color name="widget_preview_on_surface">#FF1B1B21</color>
+    <color name="widget_preview_on_surface_variant">#FF46464F</color>
 </resources>

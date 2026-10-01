@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -48,8 +50,8 @@ class ChatViewModel @Inject constructor(
     private val conversationIdFlow: StateFlow<Long?> =
         savedStateHandle.getStateFlow<Long?>(ARG_CONVERSATION_ID, null)
 
-    /** 「このブックマークについて質問」の対象("chat/new/about/{id}" の引数)。 */
-    private val aboutBookmarkId: Long? = savedStateHandle.get<Long>(Routes.ARG_ABOUT_BOOKMARK_ID)
+    /** 「このブックマークについて質問」で新しく始めるときの対象("chat/new/about/{id}" の引数)。 */
+    private val navAboutBookmarkId: Long? = savedStateHandle.get<Long>(Routes.ARG_ABOUT_BOOKMARK_ID)
 
     private val isSendingFlow = MutableStateFlow(false)
     private val streamingTextFlow = MutableStateFlow<String?>(null)
@@ -59,28 +61,40 @@ class ChatViewModel @Inject constructor(
     /** 生成中の送信処理。停止ボタンでキャンセルする。 */
     private var sendJob: Job? = null
 
-    /** 対象のブックマーク(削除済みなら null)。 */
-    private val aboutBookmarkFlow: Flow<Bookmark?> =
-        if (aboutBookmarkId == null) flowOf(null)
-        else flow { emit(repository.getBookmarks(listOf(aboutBookmarkId))[aboutBookmarkId]) }
-
-    private val suggestionsFlow: Flow<List<String>> =
-        if (aboutBookmarkId != null) flowOf(ChatSuggestions.forBookmark)
-        else flow {
-            emit(ChatSuggestions.forLibrary(emptyList()))
-            val recent = try {
-                repository.getRecentBookmarks(SUGGESTION_SOURCE_LIMIT)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Timber.w(e, "質問の例の元になるブックマークを取得できなかった")
-                emptyList()
-            }
-            emit(ChatSuggestions.forLibrary(recent))
-        }
-
     private val conversationFlow: Flow<Conversation?> = conversationIdFlow.flatMapLatest { id ->
         if (id == null) flowOf(null) else repository.observeConversation(id)
+    }
+
+    /**
+     * 質問の対象のブックマーク ID。新しく始めるときはナビゲーション引数、
+     * 既存の会話(会話一覧から開き直したとき)は会話に保存した ID を使う。
+     */
+    private val aboutBookmarkIdFlow: Flow<Long?> =
+        if (navAboutBookmarkId != null) flowOf(navAboutBookmarkId)
+        else conversationFlow.map { it?.aboutBookmarkId }.distinctUntilChanged()
+
+    /** 対象のブックマーク(通常の会話、または対象が削除済みなら null)。 */
+    private val aboutBookmarkFlow: Flow<Bookmark?> = aboutBookmarkIdFlow.flatMapLatest { id ->
+        if (id == null) flowOf(null) else flow { emit(repository.getBookmarks(listOf(id))[id]) }
+    }
+
+    /** 対象のブックマークがあればそれ向け、無ければ(削除済みを含む)保存済みのタグから作る質問の例。 */
+    private val suggestionsFlow: Flow<List<String>> = aboutBookmarkFlow
+        .map { it != null }
+        .distinctUntilChanged()
+        .flatMapLatest { isAbout -> if (isAbout) flowOf(ChatSuggestions.forBookmark) else librarySuggestions() }
+
+    private fun librarySuggestions(): Flow<List<String>> = flow {
+        emit(ChatSuggestions.forLibrary(emptyList()))
+        val recent = try {
+            repository.getRecentBookmarks(SUGGESTION_SOURCE_LIMIT)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "質問の例の元になるブックマークを取得できなかった")
+            emptyList()
+        }
+        emit(ChatSuggestions.forLibrary(recent))
     }
 
     /** メッセージ本文と引用カード用のブックマーク。読み込み中は null。 */
@@ -150,12 +164,16 @@ class ChatViewModel @Inject constructor(
         sendJob = viewModelScope.launch {
             try {
                 // 会話は最初の送信時に遅延作成する(空の会話を増やさない)。
-                // ブックマークについての質問なら、そのブックマーク名を既定のタイトルにする
+                // ブックマークについての質問なら、そのブックマーク名を既定のタイトルにし、対象を会話に保存する。
+                // 対象が削除済みなら通常の会話として扱う
+                val about = resolveAboutBookmark()
                 val id = conversationIdFlow.value
-                    ?: repository.createConversation(defaultTitle())
-                        .also { savedStateHandle[ARG_CONVERSATION_ID] = it }
+                    ?: repository.createConversation(
+                        title = about?.let { RagSupport.aboutBookmarkTitle(it.title) },
+                        aboutBookmarkId = about?.id
+                    ).also { savedStateHandle[ARG_CONVERSATION_ID] = it }
                 streamingTextFlow.value = ""
-                repository.sendMessageStream(id, text, aboutBookmarkId, isRetry).collect { event ->
+                repository.sendMessageStream(id, text, about?.id, isRetry).collect { event ->
                     when (event) {
                         is ChatStreamEvent.Started ->
                             pendingReferenceCountFlow.value = event.referencedBookmarkIds.size
@@ -180,10 +198,12 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private suspend fun defaultTitle(): String? {
-        val id = aboutBookmarkId ?: return null
-        val bookmark = repository.getBookmarks(listOf(id))[id] ?: return null
-        return RagSupport.aboutBookmarkTitle(bookmark.title)
+    /** 送信時点の質問の対象(通常の会話・削除済みなら null)。 */
+    private suspend fun resolveAboutBookmark(): Bookmark? {
+        val id = navAboutBookmarkId
+            ?: conversationIdFlow.value?.let { repository.observeConversation(it).first()?.aboutBookmarkId }
+            ?: return null
+        return repository.getBookmarks(listOf(id))[id]
     }
 
     /** 生成を止める。途中までの回答は「(停止)」付きで保存される。 */

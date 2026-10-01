@@ -42,6 +42,7 @@ import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
 import com.unchunks.echomark.ui.bookmark.BookmarkViewModel
+import com.unchunks.echomark.ui.bookmark.ListLaunchAction
 import com.unchunks.echomark.ui.tags.TagManagementScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
@@ -115,12 +116,24 @@ fun EchoMarkNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
-    // 一覧の上に積んで開くので、戻ると一覧に戻る(チャット・AI 設定はそれぞれのタブを経由する)
+    // 一覧の上に積んで開くので、戻ると一覧に戻る(チャット・AI 設定はそれぞれのタブを経由する)。
+    // URL を追加・検索は一覧そのものの上でシート・検索モードを開く
     LaunchedEffect(launchTarget) {
         if (launchTarget == null) return@LaunchedEffect
         // NavHost がグラフを設定し、開始画面を表示するまで待つ(それより前の navigate は失敗する)
         navController.currentBackStackEntryFlow.first()
         when (launchTarget) {
+            // 一覧(開始画面)の ViewModel に、追加シート・検索モードを開くよう伝える
+            LaunchTarget.ADD_BOOKMARK, LaunchTarget.SEARCH -> {
+                val action = if (launchTarget == LaunchTarget.ADD_BOOKMARK) {
+                    ListLaunchAction.ADD_BOOKMARK
+                } else {
+                    ListLaunchAction.SEARCH
+                }
+                navController.popBackStack(TopLevelDestination.BOOKMARKS.route, inclusive = false)
+                runCatching { navController.getBackStackEntry(TopLevelDestination.BOOKMARKS.route) }.getOrNull()
+                    ?.savedStateHandle?.set(BookmarkViewModel.KEY_LAUNCH_ACTION, action.name)
+            }
             LaunchTarget.NEW_CHAT -> {
                 navController.navigate(TopLevelDestination.CHAT.route)
                 navController.navigate(CHAT_NEW_ROUTE)

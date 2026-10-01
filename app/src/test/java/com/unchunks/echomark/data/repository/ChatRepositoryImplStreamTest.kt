@@ -227,6 +227,16 @@ class ChatRepositoryImplStreamTest {
         assertFalse(conversationDao.inserted[1].isTitleManuallySet)
     }
 
+    @Test
+    fun 質問の対象を指定して作った会話はその対象を保存する() = runBlocking {
+        val repo = repository(RecordingLlm())
+        repo.createConversation("Compose メモについて", aboutBookmarkId = 7L)
+        repo.createConversation()
+
+        assertEquals(7L, conversationDao.inserted[0].aboutBookmarkId)
+        assertEquals(null, conversationDao.inserted[1].aboutBookmarkId)
+    }
+
     /**
      * ObjectBox(ネイティブライブラリ)に依存するため JVM では生成できない。
      * このテストは埋め込み無しの経路だけを通り、ベクトル検索は呼ばれないので未初期化のインスタンスで足りる。

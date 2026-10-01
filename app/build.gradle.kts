@@ -113,6 +113,10 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
+    // ホーム画面ウィジェット(Jetpack Glance)
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
+
     // ネットワーク・HTML解析(URL本文取得)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
@@ -131,6 +135,7 @@ dependencies {
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.androidx.glance.appwidget.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
