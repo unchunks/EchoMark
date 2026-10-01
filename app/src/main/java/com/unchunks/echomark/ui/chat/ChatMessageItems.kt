@@ -45,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -62,15 +63,20 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.ui.components.BookmarkThumbnail
 
-/** 長押しでコピーできるようにする(TalkBack ではカスタムアクション「コピー」)。 */
+/**
+ * 長押しでコピーできるようにする(TalkBack ではカスタムアクション「コピー」)。
+ * 呼び出し側は描き直すたびに新しいラムダを渡すため、ラムダをキーにすると(ストリーミング中など)長押しの途中で
+ * ジェスチャーの検出がやり直しになる。検出は続けたまま、最新のラムダを呼ぶ。
+ */
 @Composable
 private fun Modifier.copyOnLongPress(onCopy: () -> Unit): Modifier {
     val haptics = LocalHapticFeedback.current
+    val currentOnCopy by rememberUpdatedState(onCopy)
     return this
-        .pointerInput(onCopy) {
+        .pointerInput(Unit) {
             detectTapGestures(onLongPress = {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                onCopy()
+                currentOnCopy()
             })
         }
         .semantics { customActions = listOf(CustomAccessibilityAction("コピー") { onCopy(); true }) }
