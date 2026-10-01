@@ -27,8 +27,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.objectbox.BoxStore
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -74,7 +76,9 @@ class DataManagementRepositoryImpl @Inject constructor(
         val text = try {
             val input = context.contentResolver.openInputStream(uri.toUri())
                 ?: throw IOException("openInputStream returned null")
-            input.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            input.use { readBackupText(it, MAX_BACKUP_BYTES) }
+        } catch (e: BackupFormatException) {
+            throw DataOperationException(e.message ?: "バックアップを読み込めませんでした", e)
         } catch (e: IOException) {
             Timber.w(e, "バックアップの読み込みに失敗")
             throw DataOperationException("ファイルを読み込めませんでした", e)
@@ -143,4 +147,27 @@ class DataManagementRepositoryImpl @Inject constructor(
         }
         Timber.i("全データを削除 (resetSettings=$resetSettings)")
     }
+}
+
+/**
+ * 読み込むバックアップの大きさの上限。全体を文字列にしてから JSON として解析するため、
+ * メモリに収まる大きさに抑える(ブックマーク数千件分の本文を含めても足りる大きさ)。
+ */
+internal const val MAX_BACKUP_BYTES: Long = 32L * 1024 * 1024
+
+/** [input] を UTF-8 の文字列として読む。[maxBytes] を超えたら読むのをやめて [BackupFormatException]。 */
+internal fun readBackupText(input: InputStream, maxBytes: Long): String {
+    val out = ByteArrayOutputStream()
+    val buffer = ByteArray(64 * 1024)
+    var total = 0L
+    while (true) {
+        val read = input.read(buffer)
+        if (read < 0) break
+        total += read
+        if (total > maxBytes) {
+            throw BackupFormatException("ファイルが大きすぎます(上限 ${maxBytes / (1024 * 1024)}MB)。EchoMark のバックアップファイルか確認してください")
+        }
+        out.write(buffer, 0, read)
+    }
+    return out.toString(Charsets.UTF_8.name())
 }

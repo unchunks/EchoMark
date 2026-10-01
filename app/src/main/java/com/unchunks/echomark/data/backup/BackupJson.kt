@@ -169,11 +169,14 @@ object BackupJson {
         val type = enumOrNull<BookmarkType>(optString("type")) ?: return null
         val title = stringOrNull("title") ?: return null
         val createdAt = longOrNull("createdAt") ?: return null
+        val contentUri = stringOrNull("contentUri")?.takeIf { it.isNotBlank() }
+        // URL はブラウザで開く・本文を取得するため、http/https 以外(intent:, file:, content: など)は受け付けない
+        if (type == BookmarkType.URL && (contentUri == null || !isWebUrl(contentUri))) return null
         return BookmarkEntity(
             id = longOrNull("id") ?: return null,
             type = type,
             content = stringOrNull("content"),
-            contentUri = stringOrNull("contentUri")?.takeIf { it.isNotBlank() },
+            contentUri = contentUri,
             title = title,
             summary = stringOrNull("summary"),
             category = stringOrNull("category"),
@@ -181,7 +184,8 @@ object BackupJson {
             lastAccessedAt = longOrNull("lastAccessedAt") ?: createdAt,
             // 未知の状態(将来の版で増えた場合など)は「AI の準備待ち」として再処理の対象にする
             aiStatus = enumOrNull<AiStatus>(optString("aiStatus")) ?: AiStatus.WAITING_MODEL,
-            imageUrl = stringOrNull("imageUrl"),
+            // OG 画像は読み込むため http/https だけを残す(不正なら画像なしにする)
+            imageUrl = stringOrNull("imageUrl")?.takeIf { isWebUrl(it) },
             siteName = stringOrNull("siteName"),
             isFavorite = optBoolean("isFavorite", false),
             isArchived = optBoolean("isArchived", false)
@@ -237,6 +241,10 @@ object BackupJson {
 
     private inline fun <reified T : Enum<T>> enumOrNull(name: String): T? =
         enumValues<T>().firstOrNull { it.name == name }
+
+    private val WEB_URL = Regex("^https?://[^\\s/?#]+.*", RegexOption.IGNORE_CASE)
+
+    private fun isWebUrl(value: String): Boolean = WEB_URL.matches(value)
 }
 
 /** ChatMessageEntity.referencedBookmarkIds(カンマ区切り)を ID の一覧にする。 */

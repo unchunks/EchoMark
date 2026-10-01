@@ -122,6 +122,47 @@ class BackupJsonTest {
     }
 
     @Test
+    fun URLとOG画像はhttpとhttpsだけを受け付ける() {
+        val text = """
+            {"format":"echomark-backup","version":1,"exportedAt":1,
+             "bookmarks":[
+               {"id":1,"type":"URL","contentUri":"HTTPS://example.com/a","title":"ok","createdAt":10,
+                "imageUrl":"http://example.com/og.png"},
+               {"id":2,"type":"URL","contentUri":"intent://scan/#Intent;scheme=zxing;end","title":"intent","createdAt":10},
+               {"id":3,"type":"URL","contentUri":"file:///data/data/com.unchunks.echomark/databases/echomark.db","title":"file","createdAt":10},
+               {"id":4,"type":"URL","contentUri":"javascript:alert(1)","title":"js","createdAt":10},
+               {"id":5,"type":"URL","contentUri":"content://com.example.provider/secret","title":"content","createdAt":10},
+               {"id":6,"type":"URL","contentUri":"https://example.com/b","title":"画像だけ不正","createdAt":10,
+                "imageUrl":"content://com.example.provider/image"},
+               {"id":7,"type":"URL","contentUri":"https://example.com/c","title":"画像がfile","createdAt":10,
+                "imageUrl":"file:///sdcard/a.png"}
+             ]}
+        """.trimIndent()
+        val decoded = BackupJson.decode(text)
+
+        // URL として開けないもの・端末内を指すものは読み飛ばす
+        assertEquals(listOf(1L, 6L, 7L), decoded.data.bookmarks.map { it.id })
+        assertEquals(4, decoded.invalidRecords)
+        assertEquals("http://example.com/og.png", decoded.data.bookmarks[0].imageUrl)
+        // OG 画像だけが不正なら、画像を捨ててブックマークは残す
+        assertNull(decoded.data.bookmarks[1].imageUrl)
+        assertNull(decoded.data.bookmarks[2].imageUrl)
+    }
+
+    @Test
+    fun URLのないURL型は読み飛ばす() {
+        val text = """
+            {"format":"echomark-backup","version":1,"exportedAt":1,
+             "bookmarks":[{"id":1,"type":"URL","title":"URLなし","createdAt":10}]}
+        """.trimIndent()
+
+        val decoded = BackupJson.decode(text)
+
+        assertTrue(decoded.data.bookmarks.isEmpty())
+        assertEquals(1, decoded.invalidRecords)
+    }
+
+    @Test
     fun 引用IDの変換() {
         assertEquals(listOf(1L, 22L), parseReferencedIds("1, 22,x"))
         assertEquals(emptyList<Long>(), parseReferencedIds(null))
