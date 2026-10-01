@@ -127,6 +127,11 @@ fun BookmarkListScreen(
     var actionTarget by remember { mutableStateOf<Bookmark?>(null) }
     val currentOnOpenBookmark by rememberUpdatedState(onOpenBookmark)
 
+    // ショートカット・ウィジェットの「URL を追加」から起動したら追加シートを開く
+    LaunchedEffect(viewModel) {
+        viewModel.addSheetRequests.collect { showAddSheet = true }
+    }
+
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.messages.collect { message ->
             // 新しい知らせを優先する(前の Snackbar は閉じる)。表示待ちで次の知らせを止めないよう別コルーチンで出す

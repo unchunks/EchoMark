@@ -9,4 +9,8 @@
     <string name="shortcut_new_chat_long">保存したブックマークについて質問する</string>
     <string name="shortcut_ai_settings_short">AI の設定</string>
     <string name="shortcut_ai_settings_long">AI のモデルと API キーを設定する</string>
+    <string name="shortcut_add_bookmark_short">URL を追加</string>
+    <string name="shortcut_add_bookmark_long">URL やメモをブックマークに保存する</string>
+    <string name="shortcut_search_short">検索</string>
+    <string name="shortcut_search_long">保存したブックマークを検索する</string>
 </resources>

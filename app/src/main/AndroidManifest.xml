@@ -40,7 +40,7 @@
                     android:scheme="echomark" />
             </intent-filter>
 
-            <!-- ランチャーのアイコン長押しで出るショートカット(新しいチャット・AI の設定) -->
+            <!-- ランチャーのアイコン長押しで出るショートカット(URL を追加・検索・新しいチャット・AI の設定) -->
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
