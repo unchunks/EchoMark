@@ -8,8 +8,11 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
+import com.unchunks.echomark.data.mapper.toEntity
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.embeddingBox
@@ -53,7 +56,7 @@ class BookmarkRepositoryImplTest {
             tagDao = db.tagDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
-            workScheduler = BookmarkWorkScheduler(workManager),
+            workScheduler = BookmarkWorkScheduler(workManager, FakeAppSettingsRepository()),
             embeddingProvider = FakeEmbeddingProvider()
         )
     }
@@ -101,6 +104,24 @@ class BookmarkRepositoryImplTest {
         repository.reprocess(id)
 
         assertEquals(1, unfinished("process_bookmark_$id").size)
+    }
+
+    @Test
+    fun 失敗と準備待ちの一括再処理は1件ずつ順番に処理する() = runBlocking {
+        val ids = listOf(AiStatus.FAILED, AiStatus.WAITING_MODEL, AiStatus.FAILED, AiStatus.DONE).map { status ->
+            db.bookmarkDao().insert(textBookmark().copy(aiStatus = status).toEntity())
+        }
+
+        assertEquals(3, repository.enqueueFailedAndWaitingProcessing())
+
+        // 1本の列にまとまり、同時に動くのは1件だけ。個別の一意名では登録しない
+        val states = workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME)
+        assertEquals(listOf(WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED, WorkInfo.State.BLOCKED), states.sorted())
+        assertTrue(ids.all { workManager.statesOf("process_bookmark_$it").isEmpty() })
+        assertEquals(
+            listOf(AiStatus.PENDING, AiStatus.PENDING, AiStatus.PENDING, AiStatus.DONE),
+            ids.map { repository.getBookmarkById(it)!!.aiStatus }
+        )
     }
 
     @Test

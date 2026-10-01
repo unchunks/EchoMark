@@ -77,13 +77,19 @@ class BookmarkRepositoryImpl @Inject constructor(
     }
 
     /** AI処理のみを実行する(本文取得済み・モデル待ちからの再開など)。同じブックマークの処理は置き換える */
-    private fun enqueueAiProcessing(bookmarkId: Long) {
+    private suspend fun enqueueAiProcessing(bookmarkId: Long) {
         workScheduler.enqueue(bookmarkId, fetchContent = false)
     }
 
     /** URLは「本文取得 → AI処理」のチェーン、それ以外はAI処理のみを実行する */
-    private fun enqueueProcessing(bookmarkId: Long, type: BookmarkType) {
+    private suspend fun enqueueProcessing(bookmarkId: Long, type: BookmarkType) {
         workScheduler.enqueue(bookmarkId, fetchContent = type == BookmarkType.URL)
+    }
+
+    /** 状態を「処理待ち」に戻し、1件ずつ順番に処理する列に積む(一括の再処理。同時に API を呼びすぎない) */
+    private suspend fun enqueueSequentialProcessing(ids: List<Long>) {
+        ids.forEach { bookmarkDao.updateAiStatus(it, AiStatus.PENDING) }
+        workScheduler.enqueueSequential(ids.map { BookmarkWorkScheduler.Target(it, fetchContent = false) })
     }
 
     override suspend fun saveTags(bookmarkId: Long, tagNames: List<String>) {
@@ -121,21 +127,15 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun enqueueWaitingModelProcessing() =
         withContext(dispatcherProvider.io) {
-            bookmarkDao.getIdsByAiStatus(AiStatus.WAITING_MODEL).forEach { id ->
-                bookmarkDao.updateAiStatus(id, AiStatus.PENDING)
-                enqueueAiProcessing(id)
-            }
+            enqueueSequentialProcessing(bookmarkDao.getIdsByAiStatus(AiStatus.WAITING_MODEL))
         }
 
     override suspend fun enqueueFailedAndWaitingProcessing(): Int =
         withContext(dispatcherProvider.io) {
-            val ids = bookmarkDao.getIdsByAiStatus(AiStatus.FAILED) +
-                bookmarkDao.getIdsByAiStatus(AiStatus.WAITING_MODEL)
-            ids.distinct().forEach { id ->
-                bookmarkDao.updateAiStatus(id, AiStatus.PENDING)
-                enqueueAiProcessing(id)
-            }
-            ids.distinct().size
+            val ids = (bookmarkDao.getIdsByAiStatus(AiStatus.FAILED) +
+                bookmarkDao.getIdsByAiStatus(AiStatus.WAITING_MODEL)).distinct()
+            enqueueSequentialProcessing(ids)
+            ids.size
         }
 
     override suspend fun reprocess(id: Long) =

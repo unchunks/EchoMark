@@ -48,7 +48,7 @@ class DataManagementRepositoryImplTest {
         workManager = initTestWorkManager(context)
         val dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
         val vectorSearch = VectorSearchDataSource(boxStore.embeddingBox())
-        val scheduler = BookmarkWorkScheduler(workManager)
+        val scheduler = BookmarkWorkScheduler(workManager, FakeAppSettingsRepository())
         bookmarkRepository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
