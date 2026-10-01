@@ -21,6 +21,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ネイティブライブラリ(MediaPipe / ObjectBox など)を入れる ABI。
+        // 実機は arm64-v8a、エミュレータ用に x86_64。32bit(armeabi-v7a / x86)は対象外にする
+        // (ネイティブライブラリが ABI ごとに 50〜80MB あり、全 ABI 同梱だと APK が 4 倍近くになるため)
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -56,7 +63,17 @@ android {
     }
 
     androidResources {
+        // MediaPipe はモデル(assets の .task)を AssetFileDescriptor 経由でファイルとして直接読むため、無圧縮で格納する
         noCompress += "task"
+    }
+
+    packaging {
+        jniLibs {
+            // tasks-text に同梱される生成 AI 系テキストタスク(TextProofreader / TextSummarizer)専用のネイティブライブラリ。
+            // このアプリが使う TextEmbedder は tasks-core の libmediapipe_tasks_jni.so を読み込み、これは読み込まない
+            // (System.loadLibrary("mediapipe_tasks_textgenai_jni") を呼ぶのは上記2クラスだけ)
+            excludes += "**/libmediapipe_tasks_textgenai_jni.so"
+        }
     }
 
     // Room のマイグレーションテスト(Robolectric)で MigrationTestHelper がスキーマ JSON を assets から読めるようにする。
