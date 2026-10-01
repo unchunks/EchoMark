@@ -20,6 +20,16 @@ class LaunchTargetTest {
         // res/xml/shortcuts.xml の値と一致していること
         assertEquals(LaunchTarget.NEW_CHAT, LaunchTarget.fromIntent(intentWith("new_chat")))
         assertEquals(LaunchTarget.AI_SETTINGS, LaunchTarget.fromIntent(intentWith("ai_settings")))
+        assertEquals(LaunchTarget.ADD_BOOKMARK, LaunchTarget.fromIntent(intentWith("add_bookmark")))
+        assertEquals(LaunchTarget.SEARCH, LaunchTarget.fromIntent(intentWith("search")))
+    }
+
+    @Test
+    fun putIntoで付けたextraはfromIntentで読み戻せる() {
+        LaunchTarget.entries.forEach { target ->
+            val intent = LaunchTarget.putInto(Intent(Intent.ACTION_VIEW), target)
+            assertEquals(target, LaunchTarget.fromIntent(intent))
+        }
     }
 
     @Test

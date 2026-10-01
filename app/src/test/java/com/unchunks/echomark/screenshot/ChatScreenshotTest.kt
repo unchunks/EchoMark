@@ -116,6 +116,18 @@ class ChatScreenshotTest {
         )
     }
 
+    /** 会話一覧から開き直した「このブックマークについて質問」の会話(対象は会話に保存されている)。 */
+    @Test
+    fun aboutBookmarkResumed() = captureScreen("chat_about_bookmark_resumed") {
+        Chat(
+            conversationState.copy(
+                title = "Jetpack Compose のパフォーマンスについて",
+                aboutBookmark = PreviewSamples.urlBookmark,
+                suggestions = ChatSuggestions.forBookmark
+            )
+        )
+    }
+
     @Test
     fun conversation() = captureScreen("chat_conversation") {
         Chat(conversationState)
@@ -191,6 +203,17 @@ class ChatScreenshotTest {
             ),
             lastMessage = "情報を編集するとはどういうこと？",
             lastMessageRole = ChatRole.USER
+        ),
+        ConversationPreview(
+            conversation = Conversation(
+                id = 4, title = "あとで試したいこと",
+                isTitleManuallySet = true,
+                createdAt = now - 4 * 24 * 60 * minute, updatedAt = now - 3 * 24 * 60 * minute,
+                aboutBookmarkId = PreviewSamples.urlBookmark.id
+            ),
+            lastMessage = "記事の手順を、今のプロジェクトに当てはめると…",
+            lastMessageRole = ChatRole.ASSISTANT,
+            aboutBookmarkTitle = PreviewSamples.urlBookmark.title
         ),
         ConversationPreview(
             conversation = Conversation(

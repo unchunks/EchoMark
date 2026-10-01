@@ -59,10 +59,12 @@ class LauncherIconScreenshotTest {
         }
     }
 
-    /** アプリショートカット(新しいチャット・AI の設定)のアイコン */
+    /** アプリショートカット(URL を追加・検索・新しいチャット・AI の設定)のアイコン */
     @Test
     fun shortcutIcons() = screenshot.captureLightDark("shortcut_icons") {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Image(painterResource(R.drawable.ic_shortcut_add), null, Modifier.size(48.dp))
+            Image(painterResource(R.drawable.ic_shortcut_search), null, Modifier.size(48.dp))
             Image(painterResource(R.drawable.ic_shortcut_chat), null, Modifier.size(48.dp))
             Image(painterResource(R.drawable.ic_shortcut_ai), null, Modifier.size(48.dp))
         }

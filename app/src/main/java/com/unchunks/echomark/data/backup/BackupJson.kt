@@ -35,17 +35,22 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 1):
+ * 形式(version 2):
  * ```
- * { "format": "echomark-backup", "version": 1, "exportedAt": 1700000000000,
+ * { "format": "echomark-backup", "version": 2, "exportedAt": 1700000000000,
  *   "bookmarks": [ {全列} ], "tags": [ {id, name} ], "bookmarkTags": [ {bookmarkId, tagId} ],
- *   "conversations": [ {全列} ], "messages": [ {全列。referencedBookmarkIds は数値の配列} ] }
+ *   "conversations": [ {全列。aboutBookmarkId は通常の会話なら省略} ],
+ *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
+ *
+ * 版の履歴(古い版もそのまま読み込める):
+ * - 1: 最初の形式
+ * - 2: 会話に aboutBookmarkId(「このブックマークについて質問」の対象)を追加。1 では全て通常の会話として読む
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 1
+    const val CURRENT_VERSION = 2
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -154,6 +159,7 @@ object BackupJson {
         .putNullable("summary", summary)
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
+        .apply { aboutBookmarkId?.let { put("aboutBookmarkId", it) } }
 
     private fun ChatMessageEntity.toJson() = JSONObject()
         .put("id", id)
@@ -206,7 +212,9 @@ object BackupJson {
             isTitleManuallySet = optBoolean("isTitleManuallySet", false),
             summary = stringOrNull("summary"),
             createdAt = createdAt,
-            updatedAt = longOrNull("updatedAt") ?: createdAt
+            updatedAt = longOrNull("updatedAt") ?: createdAt,
+            // version 1 には無い(通常の会話として読む)
+            aboutBookmarkId = longOrNull("aboutBookmarkId")
         )
     }
 

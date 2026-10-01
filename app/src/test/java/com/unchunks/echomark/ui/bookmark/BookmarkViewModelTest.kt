@@ -398,4 +398,43 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
         assertTrue(viewModel.uiState.value.rediscover.isEmpty())
     }
+
+    @Test
+    fun 起動直後の操作が検索なら検索モードを開き_キーは消す() = runTest {
+        savedStateHandle[BookmarkViewModel.KEY_LAUNCH_ACTION] = ListLaunchAction.SEARCH.name
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isSearchActive)
+        assertEquals(null, savedStateHandle.get<String>(BookmarkViewModel.KEY_LAUNCH_ACTION))
+    }
+
+    @Test
+    fun 起動直後の操作が追加なら追加シートを開く要求を1回だけ出す() = runTest {
+        val viewModel = createViewModel()
+        start(viewModel)
+        val requests = mutableListOf<Unit>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.addSheetRequests.toList(requests) }
+        advanceUntilIdle()
+        assertTrue(requests.isEmpty())
+
+        // 一覧の表示後に届いた場合(NavHost から SavedStateHandle に入れる)
+        savedStateHandle[BookmarkViewModel.KEY_LAUNCH_ACTION] = ListLaunchAction.ADD_BOOKMARK.name
+        advanceUntilIdle()
+
+        assertEquals(1, requests.size)
+        assertFalse(viewModel.uiState.value.isSearchActive)
+        assertEquals(null, savedStateHandle.get<String>(BookmarkViewModel.KEY_LAUNCH_ACTION))
+    }
+
+    @Test
+    fun 未知の起動操作は無視する() = runTest {
+        savedStateHandle[BookmarkViewModel.KEY_LAUNCH_ACTION] = "UNKNOWN"
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isSearchActive)
+    }
 }

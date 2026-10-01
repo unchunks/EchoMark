@@ -310,7 +310,79 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf<String?>("Compose のヒントについて"), repository.createdTitles)
+        assertEquals(listOf<Long?>(7L), repository.createdAboutBookmarkIds)
         assertEquals(7L, repository.sendCalls.single().pinnedBookmarkId)
+    }
+
+    @Test
+    fun 通常の会話は対象なしで作られる() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("hi")
+        advanceUntilIdle()
+
+        assertEquals(listOf<Long?>(null), repository.createdAboutBookmarkIds)
+        assertNull(repository.sendCalls.single().pinnedBookmarkId)
+    }
+
+    @Test
+    fun 会話一覧から開き直すと保存した対象を固定する() = runTest {
+        repository.bookmarks = listOf(testBookmark(id = 7L, title = "Compose のヒント"))
+        repository.conversation.value = Conversation(
+            id = 9L, title = "Compose のヒントについて", isTitleManuallySet = true,
+            createdAt = 0L, updatedAt = 0L, aboutBookmarkId = 7L
+        )
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 9L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(7L, state.aboutBookmark?.id)
+        assertEquals(ChatSuggestions.forBookmark, state.suggestions)
+
+        viewModel.sendMessage("続きを教えて")
+        advanceUntilIdle()
+
+        assertEquals(0, repository.createCalls)
+        assertEquals(FakeChatRepository.SendCall(9L, "続きを教えて", 7L, isRetry = false), repository.sendCalls.single())
+    }
+
+    @Test
+    fun 保存した対象が削除済みなら通常の会話として扱う() = runTest {
+        repository.bookmarks = listOf(testBookmark(id = 1L).copy(tags = listOf("Kotlin")))
+        repository.conversation.value = Conversation(
+            id = 9L, title = "消えた記事について", isTitleManuallySet = true,
+            createdAt = 0L, updatedAt = 0L, aboutBookmarkId = 7L
+        )
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 9L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNull(state.aboutBookmark)
+        assertEquals(ChatSuggestions.forLibrary(repository.bookmarks), state.suggestions)
+
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+
+        assertNull(repository.sendCalls.single().pinnedBookmarkId)
+    }
+
+    @Test
+    fun 対象のブックマークが削除済みなら新しい会話も通常の会話として作る() = runTest {
+        val viewModel = createViewModel(SavedStateHandle(mapOf(Routes.ARG_ABOUT_BOOKMARK_ID to 7L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.aboutBookmark)
+
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+
+        assertEquals(listOf<String?>(null), repository.createdTitles)
+        assertEquals(listOf<Long?>(null), repository.createdAboutBookmarkIds)
+        assertNull(repository.sendCalls.single().pinnedBookmarkId)
     }
 
     @Test
