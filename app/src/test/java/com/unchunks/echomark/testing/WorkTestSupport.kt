@@ -40,6 +40,15 @@ fun initTestWorkManager(context: Context): WorkManager {
     return WorkManager.getInstance(context)
 }
 
+/**
+ * テスト用の WorkManager を片付ける。実行中のままのワーカーを止めてから DB を閉じ、
+ * 後のテストに例外(閉じた DB への書き込み)が漏れないようにする。
+ */
+fun tearDownTestWorkManager(workManager: WorkManager) {
+    workManager.cancelAllWork().result.get()
+    WorkManagerTestInitHelper.closeWorkDatabase()
+}
+
 /** 取り消されるまで終わらないワーカー。 */
 private class PendingWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = awaitCancellation()

@@ -9,9 +9,11 @@ import androidx.work.WorkManager
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.initTestWorkManager
+import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesByTag
 import com.unchunks.echomark.testing.statesOf
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -30,6 +32,9 @@ class BookmarkWorkSchedulerTest {
         workManager = initTestWorkManager(ApplicationProvider.getApplicationContext<Context>())
         scheduler = BookmarkWorkScheduler(workManager, settings)
     }
+
+    @After
+    fun tearDown() = tearDownTestWorkManager(workManager)
 
     private fun unfinished(id: Long) =
         workManager.statesOf(BookmarkWorkScheduler.uniqueWorkName(id)).filterNot { it.isFinished }

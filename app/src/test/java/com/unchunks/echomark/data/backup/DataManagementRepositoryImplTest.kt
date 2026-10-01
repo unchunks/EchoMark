@@ -17,6 +17,7 @@ import com.unchunks.echomark.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
 import com.unchunks.echomark.testing.initTestWorkManager
+import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesByTag
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import io.objectbox.BoxStore
@@ -74,6 +75,7 @@ class DataManagementRepositoryImplTest {
 
     @After
     fun tearDown() {
+        tearDownTestWorkManager(workManager)
         db.close()
         boxStore.close()
     }

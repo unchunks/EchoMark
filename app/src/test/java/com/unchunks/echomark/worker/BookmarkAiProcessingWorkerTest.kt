@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.ListenableWorker
+import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
@@ -29,6 +30,7 @@ import com.unchunks.echomark.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
 import com.unchunks.echomark.testing.initTestWorkManager
+import com.unchunks.echomark.testing.tearDownTestWorkManager
 import io.objectbox.BoxStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -46,6 +48,7 @@ class BookmarkAiProcessingWorkerTest {
     private lateinit var context: Context
     private lateinit var db: AppDatabase
     private lateinit var boxStore: BoxStore
+    private lateinit var workManager: WorkManager
     private lateinit var repository: BookmarkRepositoryImpl
     private val llm = ScriptedLlmProvider()
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
@@ -55,18 +58,20 @@ class BookmarkAiProcessingWorkerTest {
         context = ApplicationProvider.getApplicationContext()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         boxStore = inMemoryBoxStore()
+        workManager = initTestWorkManager(context)
         repository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
             vectorSearch = VectorSearchDataSource(boxStore.embeddingBox()),
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
-            workScheduler = BookmarkWorkScheduler(initTestWorkManager(context), settings),
+            workScheduler = BookmarkWorkScheduler(workManager, settings),
             embeddingProvider = FakeEmbeddingProvider()
         )
     }
 
     @After
     fun tearDown() {
+        tearDownTestWorkManager(workManager)
         db.close()
         boxStore.close()
     }
