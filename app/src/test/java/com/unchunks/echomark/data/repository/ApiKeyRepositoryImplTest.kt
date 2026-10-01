@@ -2,7 +2,9 @@ package com.unchunks.echomark.data.repository
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.testing.FakeSecretCipher
 import com.unchunks.echomark.testing.TestDispatcherProvider
@@ -18,6 +20,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.KeyStoreException
+import java.security.ProviderException
+import javax.crypto.AEADBadTagException
 
 class ApiKeyRepositoryImplTest {
 
@@ -63,6 +68,45 @@ class ApiKeyRepositoryImplTest {
 
         assertNull(repository.getKey(ApiProvider.CLAUDE))
         assertTrue(repository.configuredProviders.first().isEmpty())
+    }
+
+    @Test
+    fun 認証タグが合わないキーは破棄する() = runBlocking {
+        repository.setKey(ApiProvider.CLAUDE, "sk-ant-x")
+        cipher.decryptFailure = AEADBadTagException("tag mismatch")
+
+        assertNull(repository.getKey(ApiProvider.CLAUDE))
+        assertTrue(repository.configuredProviders.first().isEmpty())
+    }
+
+    @Test
+    fun Base64として壊れている値は破棄する() = runBlocking {
+        dataStore.edit { it[stringPreferencesKey("api_key_openai")] = "%%% not base64 %%%" }
+
+        assertNull(repository.getKey(ApiProvider.OPENAI))
+        assertTrue(repository.configuredProviders.first().isEmpty())
+    }
+
+    @Test
+    fun Keystoreの一時的なエラーではキーを消さない() = runBlocking {
+        repository.setKey(ApiProvider.GEMINI, "AIza-key")
+        cipher.decryptFailure = ProviderException("Keystore operation failed")
+
+        assertNull(repository.getKey(ApiProvider.GEMINI))
+        assertEquals(setOf(ApiProvider.GEMINI), repository.configuredProviders.first())
+
+        // 回復すれば同じキーをそのまま使える
+        cipher.decryptFailure = null
+        assertEquals("AIza-key", repository.getKey(ApiProvider.GEMINI))
+    }
+
+    @Test
+    fun 鍵の読み込みの失敗ではキーを消さない() = runBlocking {
+        repository.setKey(ApiProvider.CLAUDE, "sk-ant-y")
+        cipher.decryptFailure = KeyStoreException("keystore locked")
+
+        assertNull(repository.getKey(ApiProvider.CLAUDE))
+        assertEquals(setOf(ApiProvider.CLAUDE), repository.configuredProviders.first())
     }
 }
 

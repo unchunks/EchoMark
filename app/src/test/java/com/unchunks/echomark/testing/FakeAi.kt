@@ -1,6 +1,7 @@
 package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.data.security.SecretCipher
+import com.unchunks.echomark.data.security.UnrecoverableSecretException
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.ApiProvider
@@ -14,7 +15,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import java.security.GeneralSecurityException
 import java.time.DayOfWeek
 
 /** 設定の Fake。AI・表示・オンボーディング・再発見通知の設定を保持する。 */
@@ -95,13 +95,18 @@ class FakeLlmProvider(
 
 /** 可逆だが平文とは異なるバイト列にする暗号の Fake(Keystore は JVM テストで使えない)。 */
 class FakeSecretCipher : SecretCipher {
+    /** true なら鍵が失われたときと同じく、復号できない([UnrecoverableSecretException])。 */
     var failDecrypt = false
+
+    /** 復号で投げる例外(Keystore の一時的なエラーなどの再現用)。 */
+    var decryptFailure: Exception? = null
 
     override fun encrypt(plain: ByteArray): ByteArray = MAGIC + plain.map { (it.toInt() xor 0x5A).toByte() }
 
     override fun decrypt(data: ByteArray): ByteArray {
+        decryptFailure?.let { throw it }
         if (failDecrypt || !data.take(MAGIC.size).toByteArray().contentEquals(MAGIC)) {
-            throw GeneralSecurityException("cannot decrypt")
+            throw UnrecoverableSecretException("cannot decrypt")
         }
         return data.drop(MAGIC.size).map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
     }
