@@ -101,7 +101,7 @@ class DataManagementRepositoryImpl @Inject constructor(
                     .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
                     .build()
             )
-            // 書き出し時に処理待ちだったもの(準備待ちに変換済み)の要約・タグ付けを再開する
+            // 書き出し時に処理待ちだったもの(準備待ちに変換済み)の要約・タグ付けを再開する。本文が未取得の URL は本文の取得から
             bookmarkRepository.enqueueWaitingModelProcessing()
         }
 

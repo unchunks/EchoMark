@@ -76,9 +76,12 @@ class BookmarkRepositoryImpl @Inject constructor(
         )
     }
 
-    /** AI処理のみを実行する(本文取得済み・モデル待ちからの再開など)。同じブックマークの処理は置き換える */
-    private suspend fun enqueueAiProcessing(bookmarkId: Long) {
-        workScheduler.enqueue(bookmarkId, fetchContent = false)
+    /**
+     * 処理をやり直す(再処理・復元・モデル待ちからの再開など)。同じブックマークの処理は置き換える。
+     * 本文が未取得の URL は「本文取得 → AI処理」、それ以外は AI 処理のみ
+     */
+    private suspend fun enqueueReprocessing(bookmarkId: Long, type: BookmarkType, content: String?) {
+        workScheduler.enqueue(bookmarkId, fetchContent = needsContentFetch(type, content))
     }
 
     /** URLは「本文取得 → AI処理」のチェーン、それ以外はAI処理のみを実行する */
@@ -88,9 +91,19 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     /** 状態を「処理待ち」に戻し、1件ずつ順番に処理する列に積む(一括の再処理。同時に API を呼びすぎない) */
     private suspend fun enqueueSequentialProcessing(ids: List<Long>) {
-        ids.forEach { bookmarkDao.updateAiStatus(it, AiStatus.PENDING) }
-        workScheduler.enqueueSequential(ids.map { BookmarkWorkScheduler.Target(it, fetchContent = false) })
+        val targets = ids.chunked(ID_QUERY_CHUNK_SIZE).flatMap { chunk ->
+            bookmarkDao.getByIds(chunk).map { BookmarkWorkScheduler.Target(it.id, needsContentFetch(it.type, it.content)) }
+        }
+        targets.forEach { bookmarkDao.updateAiStatus(it.bookmarkId, AiStatus.PENDING) }
+        workScheduler.enqueueSequential(targets)
     }
+
+    /**
+     * 本文を取得してから AI 処理すべきか。保存時に取得できなかった・バックアップから本文未取得のまま読み込んだ URL は、
+     * そのままでは URL の文字列だけを要約してしまうため、本文の取得からやり直す
+     */
+    private fun needsContentFetch(type: BookmarkType, content: String?): Boolean =
+        type == BookmarkType.URL && content.isNullOrBlank()
 
     override suspend fun saveTags(bookmarkId: Long, tagNames: List<String>) {
         withContext(dispatcherProvider.io) {
@@ -140,8 +153,9 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun reprocess(id: Long) =
         withContext(dispatcherProvider.io) {
+            val bookmark = bookmarkDao.getById(id) ?: return@withContext
             bookmarkDao.resetAiResult(id, AiStatus.PENDING)
-            enqueueAiProcessing(id)
+            enqueueReprocessing(id, bookmark.type, bookmark.content)
         }
 
     override suspend fun restoreBookmark(bookmark: Bookmark) {
@@ -149,7 +163,7 @@ class BookmarkRepositoryImpl @Inject constructor(
             // 同じ ID で挿入し直す(削除済みなので競合しない)。ベクトルは削除時に消えているため再生成する
             bookmarkDao.insert(bookmark.copy(aiStatus = AiStatus.PENDING).toEntity())
             tagDao.addTagsToBookmark(bookmark.id, bookmark.tags)
-            enqueueAiProcessing(bookmark.id)
+            enqueueReprocessing(bookmark.id, bookmark.type, bookmark.content)
         }
     }
 
@@ -325,6 +339,9 @@ class BookmarkRepositoryImpl @Inject constructor(
         s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private companion object {
+        /** ID の一覧で問い合わせるときの1回あたりの件数(SQLite の変数の上限より十分小さく) */
+        const val ID_QUERY_CHUNK_SIZE = 500
+
         /** ベクトル検索で取得する上位件数 */
         const val VECTOR_TOP_K = 20
 

@@ -73,6 +73,17 @@ class BookmarkRepositoryImplTest {
 
     private fun unfinished(name: String) = workManager.statesOf(name).filterNot { it.isFinished }
 
+    private fun urlBookmark(content: String?, status: AiStatus) = Bookmark(
+        type = BookmarkType.URL, content = content, contentUri = "https://example.com/${content.hashCode()}",
+        title = "https://example.com", createdAt = 1L, lastAccessedAt = 1L, aiStatus = status
+    )
+
+    /** 一意名 [name] で登録されたワークの種類(ワーカーのクラスの単純名)を、登録順に関係なく数える。 */
+    private fun workerKinds(name: String): Map<String, Int> =
+        workManager.getWorkInfosForUniqueWork(name).get()
+            .map { info -> info.tags.first { it.startsWith("com.unchunks") }.substringAfterLast('.') }
+            .groupingBy { it }.eachCount()
+
     @Test
     fun URLを保存すると本文取得とAI処理が一意名で登録される() = runBlocking {
         val id = repository.saveUrlBookmark("https://example.com/a", null, null).id
@@ -122,6 +133,41 @@ class BookmarkRepositoryImplTest {
             listOf(AiStatus.PENDING, AiStatus.PENDING, AiStatus.PENDING, AiStatus.DONE),
             ids.map { repository.getBookmarkById(it)!!.aiStatus }
         )
+    }
+
+    @Test
+    fun 本文が未取得のURLは再開時に本文取得から行う() = runBlocking {
+        // バックアップの読み込みで「処理待ち(本文未取得)」が準備待ちとして入った場合など
+        db.bookmarkDao().insert(urlBookmark(content = null, status = AiStatus.WAITING_MODEL).toEntity())
+        db.bookmarkDao().insert(urlBookmark(content = "取得済みの本文", status = AiStatus.WAITING_MODEL).toEntity())
+
+        repository.enqueueWaitingModelProcessing()
+
+        assertEquals(
+            mapOf("UrlFetchWorker" to 1, "BookmarkAiProcessingWorker" to 2),
+            workerKinds(BookmarkWorkScheduler.BULK_WORK_NAME)
+        )
+    }
+
+    @Test
+    fun 本文が未取得のURLの再処理は本文取得から行う() = runBlocking {
+        val id = db.bookmarkDao().insert(urlBookmark(content = " ", status = AiStatus.FAILED).toEntity())
+
+        repository.reprocess(id)
+
+        assertEquals(
+            mapOf("UrlFetchWorker" to 1, "BookmarkAiProcessingWorker" to 1),
+            workerKinds("process_bookmark_$id")
+        )
+    }
+
+    @Test
+    fun 本文があるURLの再処理はAI処理のみ() = runBlocking {
+        val id = db.bookmarkDao().insert(urlBookmark(content = "本文", status = AiStatus.DONE).toEntity())
+
+        repository.reprocess(id)
+
+        assertEquals(mapOf("BookmarkAiProcessingWorker" to 1), workerKinds("process_bookmark_$id"))
     }
 
     @Test
