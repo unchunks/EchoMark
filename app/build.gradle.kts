@@ -21,13 +21,27 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ネイティブライブラリ(MediaPipe / ObjectBox など)を入れる ABI。
+        // 実機は arm64-v8a、エミュレータ用に x86_64。32bit(armeabi-v7a / x86)は対象外にする
+        // (ネイティブライブラリが ABI ごとに 50〜80MB あり、全 ABI 同梱だと APK が 4 倍近くになるため)
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
         release {
-            optimization {
-                enable = false
-            }
+            // R8 によるコードの縮小・難読化・最適化とリソースの縮小。
+            // (AGP 9 の optimization { enable = true } は android.r8.gradual.support(実験的フラグ)が必須のため、安定版の DSL を使う)
+            // アプリ固有の keep ルールは src/main/keepRules/*.keep に置く(AGP が自動で R8 に渡す)。
+            // ライブラリ同梱の consumer rules も自動で合流する
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            // TODO: リリース用の署名鍵(keystore)を用意したら signingConfigs に release を追加して差し替える。
+            //  それまでは端末へ入れて動作確認できるよう debug 署名で仮に署名する(ストア配布には使えない)
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -49,7 +63,17 @@ android {
     }
 
     androidResources {
+        // MediaPipe はモデル(assets の .task)を AssetFileDescriptor 経由でファイルとして直接読むため、無圧縮で格納する
         noCompress += "task"
+    }
+
+    packaging {
+        jniLibs {
+            // tasks-text に同梱される生成 AI 系テキストタスク(TextProofreader / TextSummarizer)専用のネイティブライブラリ。
+            // このアプリが使う TextEmbedder は tasks-core の libmediapipe_tasks_jni.so を読み込み、これは読み込まない
+            // (System.loadLibrary("mediapipe_tasks_textgenai_jni") を呼ぶのは上記2クラスだけ)
+            excludes += "**/libmediapipe_tasks_textgenai_jni.so"
+        }
     }
 
     // Room のマイグレーションテスト(Robolectric)で MigrationTestHelper がスキーマ JSON を assets から読めるようにする。
@@ -157,4 +181,16 @@ tasks.withType<Test>().configureEach {
 // ObjectBoxのタスクをConfiguration Cacheの対象外にする
 tasks.matching { it.name.contains("objectbox", ignoreCase = true) }.configureEach {
     notCompatibleWithConfigurationCache("ObjectBox plugin is not yet fully compatible with Configuration Cache")
+}
+
+// ObjectBox の注釈処理(kapt)は debug / release で同じ app/objectbox-models/default.json を読み書きする。
+// assembleDebug と assembleRelease を同時に実行すると両方の kapt が並行に走り、Windows では
+// default.json の置き換え(.bak 作成)に失敗してビルドが落ちるため、kapt の注釈処理を1つずつ実行させる
+abstract class ObjectBoxModelFileLock : BuildService<BuildServiceParameters.None>
+
+val objectBoxModelFileLock = gradle.sharedServices.registerIfAbsent("objectBoxModelFileLock", ObjectBoxModelFileLock::class) {
+    maxParallelUsages.set(1)
+}
+tasks.matching { it.name.startsWith("kapt") && !it.name.startsWith("kaptGenerateStubs") }.configureEach {
+    usesService(objectBoxModelFileLock)
 }

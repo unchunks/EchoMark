@@ -3,9 +3,9 @@ package com.unchunks.echomark.worker
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.net.toUri
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -58,7 +58,7 @@ class RediscoverDigestWorker @AssistedInject constructor(
         val first = picked.first()
         val tapIntent = Intent(
             Intent.ACTION_VIEW,
-            Uri.parse(Routes.bookmarkDeepLink(first.id)),
+            Routes.bookmarkDeepLink(first.id).toUri(),
             context,
             MainActivity::class.java
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
