@@ -92,6 +92,59 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate7To8_existingConversationsBecomeNormal() {
+        helper.createDatabase(7).apply {
+            execSQL(
+                """
+                INSERT INTO conversations (id, title, isTitleManuallySet, summary, createdAt, updatedAt)
+                VALUES (1, '既存の会話', 1, NULL, 100, 200)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val connection = helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8))
+
+        connection.prepare("SELECT title, aboutBookmarkId FROM conversations WHERE id = 1").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("既存の会話", stmt.getText(0))
+            assertTrue(stmt.isNull(1))
+        }
+        connection.close()
+    }
+
+    @Test
+    fun migrate6To8_roomOpensWithAppMigrations() = runTest {
+        helper.createDatabase(6).apply {
+            insertV6Bookmark()
+            execSQL(
+                """
+                INSERT INTO conversations (id, title, isTitleManuallySet, summary, createdAt, updatedAt)
+                VALUES (1, '既存の会話', 0, NULL, 100, 200)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val room = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            AppDatabase::class.java,
+            TEST_DB
+        )
+            .addMigrations(*ALL_MIGRATIONS)
+            .build()
+
+        try {
+            val conversation = room.conversationDao().getById(1)
+            assertNotNull(conversation)
+            assertEquals("既存の会話", conversation!!.title)
+            assertNull(conversation.aboutBookmarkId)
+        } finally {
+            room.close()
+        }
+    }
+
     private fun SQLiteConnection.insertV6Bookmark() {
         execSQL(
             """

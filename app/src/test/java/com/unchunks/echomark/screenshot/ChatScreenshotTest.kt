@@ -194,6 +194,17 @@ class ChatScreenshotTest {
         ),
         ConversationPreview(
             conversation = Conversation(
+                id = 4, title = "あとで試したいこと",
+                isTitleManuallySet = true,
+                createdAt = now - 4 * 24 * 60 * minute, updatedAt = now - 3 * 24 * 60 * minute,
+                aboutBookmarkId = PreviewSamples.urlBookmark.id
+            ),
+            lastMessage = "記事の手順を、今のプロジェクトに当てはめると…",
+            lastMessageRole = ChatRole.ASSISTANT,
+            aboutBookmarkTitle = PreviewSamples.urlBookmark.title
+        ),
+        ConversationPreview(
+            conversation = Conversation(
                 id = 3, title = "新しいチャット",
                 createdAt = now - 40 * 24 * 60 * minute, updatedAt = now - 40 * 24 * 60 * minute
             )

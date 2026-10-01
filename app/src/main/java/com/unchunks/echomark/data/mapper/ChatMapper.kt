@@ -10,7 +10,7 @@ import com.unchunks.echomark.domain.model.ConversationPreview
 
 fun ConversationEntity.toDomain() = Conversation(
     id = id, title = title, isTitleManuallySet = isTitleManuallySet,
-    summary = summary, createdAt = createdAt, updatedAt = updatedAt
+    summary = summary, createdAt = createdAt, updatedAt = updatedAt, aboutBookmarkId = aboutBookmarkId
 )
 
 fun ChatMessageEntity.toDomain() = ChatMessage(
@@ -23,13 +23,14 @@ fun ChatMessageEntity.toDomain() = ChatMessage(
 fun ConversationWithLastMessage.toDomain() = ConversationPreview(
     conversation = conversation.toDomain(),
     lastMessage = lastMessage,
-    lastMessageRole = lastMessageRole
+    lastMessageRole = lastMessageRole,
+    aboutBookmarkTitle = aboutBookmarkTitle
 )
 
 // 削除の取り消しで、同じ ID のまま書き戻すために使う
 fun Conversation.toEntity() = ConversationEntity(
     id = id, title = title, isTitleManuallySet = isTitleManuallySet,
-    summary = summary, createdAt = createdAt, updatedAt = updatedAt
+    summary = summary, createdAt = createdAt, updatedAt = updatedAt, aboutBookmarkId = aboutBookmarkId
 )
 
 fun ChatMessage.toEntity() = ChatMessageEntity(

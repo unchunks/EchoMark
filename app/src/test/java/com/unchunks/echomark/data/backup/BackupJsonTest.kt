@@ -35,7 +35,8 @@ class BackupJsonTest {
         tags = listOf(TagEntity(10, "kotlin"), TagEntity(11, "android")),
         bookmarkTags = listOf(BookmarkTagCrossRef(1, 10), BookmarkTagCrossRef(1, 11)),
         conversations = listOf(
-            ConversationEntity(id = 5, title = "質問", isTitleManuallySet = true, summary = null, createdAt = 400, updatedAt = 500)
+            ConversationEntity(id = 5, title = "質問", isTitleManuallySet = true, summary = null, createdAt = 400, updatedAt = 500),
+            ConversationEntity(id = 6, title = "記事Aについて", isTitleManuallySet = true, createdAt = 600, updatedAt = 700, aboutBookmarkId = 1)
         ),
         messages = listOf(
             ChatMessageEntity(id = 7, conversationId = 5, role = ChatRole.USER, content = "Aは?", createdAt = 401),
@@ -119,6 +120,32 @@ class BackupJsonTest {
         assertNull(first.content)
         assertEquals(AiStatus.WAITING_MODEL, first.aiStatus)
         assertEquals(AiStatus.WAITING_MODEL, decoded.data.bookmarks[1].aiStatus)
+    }
+
+    @Test
+    fun 通常の会話はaboutBookmarkIdを書き出さない() {
+        val conversations = JSONObject(BackupJson.encode(sample)).getJSONArray("conversations")
+        assertFalse(conversations.getJSONObject(0).has("aboutBookmarkId"))
+        assertEquals(1L, conversations.getJSONObject(1).getLong("aboutBookmarkId"))
+    }
+
+    @Test
+    fun version1の形式も読み込め_会話は通常の会話になる() {
+        val text = """
+            {"format":"echomark-backup","version":1,"exportedAt":1,
+             "bookmarks":[{"id":1,"type":"URL","contentUri":"https://a","title":"記事","createdAt":10}],
+             "tags":[],"bookmarkTags":[],
+             "conversations":[{"id":3,"title":"会話","isTitleManuallySet":false,"createdAt":20,"updatedAt":30}],
+             "messages":[{"id":1,"conversationId":3,"role":"USER","content":"q","referencedBookmarkIds":[],"createdAt":21}]}
+        """.trimIndent()
+        val decoded = BackupJson.decode(text)
+
+        assertEquals(0, decoded.invalidRecords)
+        assertEquals(
+            listOf(ConversationEntity(id = 3, title = "会話", createdAt = 20, updatedAt = 30, aboutBookmarkId = null)),
+            decoded.data.conversations
+        )
+        assertEquals(1, decoded.data.messages.size)
     }
 
     @Test

@@ -108,6 +108,36 @@ class BackupDaoTest {
     }
 
     @Test
+    fun 会話の質問の対象は新しいIDに付け替え_バックアップに無ければ通常の会話にする() = runTest {
+        // 既存: https://a (新しい DB では ID 1)
+        dao.merge(backup(bookmarks = listOf(urlBookmark(1, "https://a"))))
+
+        dao.merge(
+            backup(
+                bookmarks = listOf(urlBookmark(50, "https://a"), urlBookmark(51, "https://new")),
+                conversations = listOf(
+                    ConversationEntity(1, "aについて", createdAt = 1, updatedAt = 1, aboutBookmarkId = 50),
+                    ConversationEntity(2, "newについて", createdAt = 2, updatedAt = 2, aboutBookmarkId = 51),
+                    ConversationEntity(3, "消えたものについて", createdAt = 3, updatedAt = 3, aboutBookmarkId = 999),
+                    ConversationEntity(4, "通常", createdAt = 4, updatedAt = 4)
+                )
+            )
+        )
+
+        val exported = dao.snapshot(0)
+        val idOf = exported.bookmarks.associate { it.contentUri to it.id }
+        assertEquals(
+            mapOf(
+                "aについて" to idOf["https://a"],
+                "newについて" to idOf["https://new"],
+                "消えたものについて" to null,
+                "通常" to null
+            ),
+            exported.conversations.associate { it.title to it.aboutBookmarkId }
+        )
+    }
+
+    @Test
     fun 同じ内容のテキストと同じ会話はスキップし_同名タグは再利用する() = runTest {
         val text = BookmarkEntity(
             id = 1, type = BookmarkType.TEXT, content = "memo", title = "メモ", createdAt = 1, lastAccessedAt = 1

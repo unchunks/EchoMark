@@ -99,7 +99,8 @@ abstract class BackupDao {
      * - ブックマーク: 同じ URL があればスキップ。ID は振り直す。処理待ち・処理中だったものは「AI の準備待ち」にする
      *   (書き出し元の処理キューは引き継がれないため。読み込み後に再処理する)
      * - タグ・紐付け: 追加したブックマークの分だけ、同名のタグに付け替える(無ければ作る)
-     * - 会話・メッセージ: 同じ会話があればスキップ。メッセージの引用は新しいブックマーク ID に付け替える
+     * - 会話・メッセージ: 同じ会話があればスキップ。メッセージの引用と会話の質問の対象(aboutBookmarkId)は
+     *   新しいブックマーク ID に付け替える(対象がバックアップに無ければ通常の会話にする)
      */
     @Transaction
     open suspend fun merge(data: BackupData): BackupMergeResult {
@@ -151,7 +152,9 @@ abstract class BackupDao {
                 conversationsSkipped++
                 continue
             }
-            conversationIds[conversation.id] = insertConversation(conversation.copy(id = 0))
+            conversationIds[conversation.id] = insertConversation(
+                conversation.copy(id = 0, aboutBookmarkId = conversation.aboutBookmarkId?.let { bookmarkIds[it] })
+            )
         }
 
         var messagesAdded = 0

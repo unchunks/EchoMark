@@ -232,6 +232,8 @@ open class FakeChatRepository : ChatRepository {
     var createdConversationId = 42L
     var createCalls = 0
     val createdTitles = mutableListOf<String?>()
+    /** createConversation に渡された「このブックマークについて質問」の対象。 */
+    val createdAboutBookmarkIds = mutableListOf<Long?>()
     val sent = mutableListOf<Pair<Long, String>>()
 
     /** sendMessageStream の呼び出し(固定したブックマーク・再試行かどうかを含む)。 */
@@ -245,9 +247,10 @@ open class FakeChatRepository : ChatRepository {
     /** 非 null なら sendMessage がこの例外を投げる。 */
     var sendFailure: Throwable? = null
 
-    override suspend fun createConversation(title: String?): Long {
+    override suspend fun createConversation(title: String?, aboutBookmarkId: Long?): Long {
         createCalls++
         createdTitles += title
+        createdAboutBookmarkIds += aboutBookmarkId
         return createdConversationId
     }
 
