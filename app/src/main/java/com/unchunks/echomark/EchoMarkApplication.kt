@@ -19,6 +19,7 @@ import com.unchunks.echomark.worker.ReembedAllWorker
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
 import okhttp3.OkHttpClient
+import timber.log.Timber
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -37,6 +38,9 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
 
     override fun onCreate() {
         super.onCreate()
+
+        // ログは debug ビルドだけ Logcat に出す(release では本文や URL を残さない)
+        if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
 
         createNotificationChannels()
         // ブックマークの保存・削除・閲覧に合わせて、ホーム画面ウィジェットを描き直す
