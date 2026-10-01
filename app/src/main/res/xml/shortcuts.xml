@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ランチャーのアイコン長押しで出るショートカット。
+  extra の値は LaunchTarget.intentValue と、targetPackage は applicationId と一致させること。
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_add"
+        android:shortcutId="add_bookmark"
+        android:shortcutLongLabel="@string/shortcut_add_bookmark_long"
+        android:shortcutShortLabel="@string/shortcut_add_bookmark_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.unchunks.echomark.MainActivity"
+            android:targetPackage="com.unchunks.echomark">
+            <extra
+                android:name="com.unchunks.echomark.extra.LAUNCH_TARGET"
+                android:value="add_bookmark" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_search"
+        android:shortcutId="search"
+        android:shortcutLongLabel="@string/shortcut_search_long"
+        android:shortcutShortLabel="@string/shortcut_search_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.unchunks.echomark.MainActivity"
+            android:targetPackage="com.unchunks.echomark">
+            <extra
+                android:name="com.unchunks.echomark.extra.LAUNCH_TARGET"
+                android:value="search" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_chat"
+        android:shortcutId="new_chat"
+        android:shortcutLongLabel="@string/shortcut_new_chat_long"
+        android:shortcutShortLabel="@string/shortcut_new_chat_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.unchunks.echomark.MainActivity"
+            android:targetPackage="com.unchunks.echomark">
+            <extra
+                android:name="com.unchunks.echomark.extra.LAUNCH_TARGET"
+                android:value="new_chat" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_ai"
+        android:shortcutId="ai_settings"
+        android:shortcutLongLabel="@string/shortcut_ai_settings_long"
+        android:shortcutShortLabel="@string/shortcut_ai_settings_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.unchunks.echomark.MainActivity"
+            android:targetPackage="com.unchunks.echomark">
+            <extra
+                android:name="com.unchunks.echomark.extra.LAUNCH_TARGET"
+                android:value="ai_settings" />
+        </intent>
+    </shortcut>
+</shortcuts>

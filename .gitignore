@@ -13,6 +13,11 @@
 .externalNativeBuild
 .cxx
 local.properties
-/app/src/main/assets/all-minilm-l6-v2/
-/app/src/main/assets/multilingual-e5-small/
 /app/src/main/assets/embeddinggemma-300m/
+
+# Claude Code のサブエージェント用 worktree
+/.claude/worktrees/
+# ObjectBox のビルド時バックアップ
+/app/objectbox-models/*.bak
+# ObjectBox がテスト実行時に展開するネイティブライブラリ
+/app/objectbox-jni-*.dll

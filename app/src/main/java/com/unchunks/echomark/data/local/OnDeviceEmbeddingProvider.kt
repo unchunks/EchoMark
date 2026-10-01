@@ -7,10 +7,12 @@ import com.google.mediapipe.tasks.text.textembedder.TextEmbedder.TextEmbedderOpt
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder.TextFormatContext
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
+import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,6 +28,11 @@ class OnDeviceEmbeddingProvider @Inject constructor(
     private var textEmbedder: TextEmbedder? = null
     private val initMutex = Mutex()
 
+    // TODO: EmbeddingGemma を assets 同梱から ModelManager 管理(ダウンロード)へ移行する
+    /**
+     * @throws EmbeddingUnavailableException モデル(assets)が無いなどで初期化できないとき。
+     *   呼び出し側は埋め込みをスキップし、検索はキーワードのみにフォールバックする
+     */
     private suspend fun ensureInitialized(): TextEmbedder {
         textEmbedder?.let { return it }
         return initMutex.withLock {
@@ -36,7 +43,13 @@ class OnDeviceEmbeddingProvider @Inject constructor(
                 val options = TextEmbedderOptions.builder()
                     .setBaseOptions(baseOptions)
                     .build()
-                TextEmbedder.createFromOptions(context, options).also { textEmbedder = it }
+                try {
+                    TextEmbedder.createFromOptions(context, options).also { textEmbedder = it }
+                } catch (e: Exception) {
+                    // assets 未同梱(gitignore 対象)の開発ビルドなどで発生する
+                    Timber.w(e, "埋め込みモデルの初期化に失敗")
+                    throw EmbeddingUnavailableException(e)
+                }
             }
         }
     }
