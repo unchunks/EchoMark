@@ -55,6 +55,13 @@
     boolean equals(java.lang.Object);
 }
 
+# ---- Jetpack Glance(ホーム画面ウィジェット) ----
+# glance-appwidget 同梱のルール(proto のフィールド、ActionCallback)と、マニフェスト由来の
+# Receiver の keep で動作上は足りる。ただし GlanceAppWidgetManager は GlanceAppWidget のクラス名
+# (getCanonicalName)を DataStore に保存して getGlanceIds() の照合に使うため、難読化名がビルドごとに
+# 変わるとアップデート直後に既存ウィジェットが見つからず更新が飛ばされうる。名前だけ固定する
+-keepnames class * extends androidx.glance.appwidget.GlanceAppWidget
+
 # ---- Flogger(MediaPipe が使用) ----
 # MediaPipe が使う Flogger は、ログ出力の実装(DefaultPlatform)を
 # DefaultPlatform.class.getDeclaredConstructor().newInstance() で生成する。R8 はこの形を解析できるが、
