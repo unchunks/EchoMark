@@ -1,6 +1,9 @@
 package com.unchunks.echomark.ui.detail
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -12,12 +15,16 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -50,8 +57,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
-import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -80,11 +85,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil3.compose.AsyncImage
@@ -145,6 +156,14 @@ fun BookmarkDetailScreen(
                             duration = SnackbarDuration.Long
                         )
                         if (result == SnackbarResult.ActionPerformed) viewModel.reprocess()
+                    }
+                    is BookmarkDetailMessage.TagRemoved -> {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "タグ「${message.name}」を外しました",
+                            actionLabel = "元に戻す",
+                            duration = SnackbarDuration.Long
+                        )
+                        if (result == SnackbarResult.ActionPerformed) viewModel.addTag(message.name)
                     }
                     BookmarkDetailMessage.ReprocessStarted -> snackbarHostState.showSnackbar("AI で処理し直しています…")
                     is BookmarkDetailMessage.Failed -> snackbarHostState.showSnackbar(message.message)
@@ -362,6 +381,9 @@ private fun DetailBody(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // キーボードの分だけ表示範囲を縮め、タグの入力欄がキーボードに隠れないようにする
+            // (スクロールより前に付ける。入力中の欄は表示範囲に収まるよう自動でスクロールされる)
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(contentPadding)
             .padding(bottom = 24.dp)
@@ -477,23 +499,63 @@ private fun SourceAndDate(bookmark: Bookmark, nowMillis: Long) {
 @Composable
 private fun PrimaryActions(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
     val url = bookmark.contentUri
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+    AdaptiveButtonRow(modifier = Modifier.fillMaxWidth()) {
         if (url != null) {
-            Button(onClick = { callbacks.onOpenInBrowser(url) }, modifier = Modifier.weight(1f)) {
+            Button(onClick = { callbacks.onOpenInBrowser(url) }) {
                 Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text("ブラウザで開く", maxLines = 1)
+                Text("ブラウザで開く", textAlign = TextAlign.Center)
             }
         }
-        FilledTonalButton(onClick = { callbacks.onAskAi(bookmark.id) }, modifier = Modifier.weight(1f)) {
+        FilledTonalButton(onClick = { callbacks.onAskAi(bookmark.id) }) {
             Icon(Icons.Outlined.QuestionAnswer, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text("AIに質問", maxLines = 1)
+            Text("AIに質問", textAlign = TextAlign.Center)
+        }
+    }
+}
+
+/**
+ * ボタンを同じ幅で横に並べる。文字サイズを大きくしているなどで、どれかの文字が等分の幅に収まらないときは、
+ * 文字を切らずに幅いっぱいのボタンを縦に積む。
+ */
+@Composable
+private fun AdaptiveButtonRow(
+    modifier: Modifier = Modifier,
+    spacing: Dp = 8.dp,
+    content: @Composable () -> Unit
+) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        if (measurables.isEmpty()) return@Layout layout(0, 0) {}
+        val spacingPx = spacing.roundToPx()
+        val width = constraints.maxWidth
+        val count = measurables.size
+        val cellWidth = (width - spacingPx * (count - 1)) / count
+        val fitsInRow = measurables.all { it.maxIntrinsicWidth(Constraints.Infinity) <= cellWidth }
+        if (fitsInRow) {
+            val placeables = measurables.map { it.measure(Constraints.fixedWidth(cellWidth)) }
+            val height = placeables.maxOf { it.height }
+            layout(width, height) {
+                placeables.forEachIndexed { index, placeable ->
+                    placeable.placeRelative(index * (cellWidth + spacingPx), (height - placeable.height) / 2)
+                }
+            }
+        } else {
+            val placeables = measurables.map { it.measure(Constraints.fixedWidth(width)) }
+            val height = placeables.sumOf { it.height } + spacingPx * (count - 1)
+            layout(width, height) {
+                var y = 0
+                placeables.forEach { placeable ->
+                    placeable.placeRelative(0, y)
+                    y += placeable.height + spacingPx
+                }
+            }
         }
     }
 }
 
 /** AI 要約(完了時)か、AI の状態と次の行動(処理中・失敗・準備待ち) */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
     val summary = bookmark.summary
@@ -564,7 +626,11 @@ private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
                 }
                 AiStatus.FAILED -> {
                     Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 文字が大きいときは折り返して次の行に並べる(ボタンの文字を切らない)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Button(onClick = callbacks.onReprocess) {
                             Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
@@ -575,7 +641,10 @@ private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
                 }
                 AiStatus.WAITING_MODEL -> {
                     Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Button(onClick = callbacks.onOpenAiSettings) {
                             Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
@@ -590,7 +659,7 @@ private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
     }
 }
 
-/** タグ: × で外し、入力欄で追加(既存タグを候補に出す) */
+/** タグ: × で外し(取り消せる)、入力欄で追加(既存タグを候補に出す) */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagSection(
@@ -619,18 +688,7 @@ private fun TagSection(
     } else {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             tags.forEach { tag ->
-                InputChip(
-                    selected = false,
-                    onClick = { onRemoveTag(tag) },
-                    label = { Text("#$tag", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    trailingIcon = {
-                        Icon(
-                            Icons.Outlined.Close,
-                            contentDescription = "タグ「$tag」を外す",
-                            modifier = Modifier.size(InputChipDefaults.IconSize)
-                        )
-                    }
-                )
+                RemovableTagChip(name = tag, onRemove = { onRemoveTag(tag) })
             }
         }
     }
@@ -661,6 +719,50 @@ private fun TagSection(
                         input = ""
                     },
                     label = { Text("#$name", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 付いているタグ。外せるのは × だけにする(チップ本体を押しても外れない。誤って触れて消えるのを防ぐ)。
+ * × は見た目 32dp だが、タッチは周囲を含めて 48dp まで受け付ける(Compose の最小タッチ領域)。
+ */
+@Composable
+private fun RemovableTagChip(name: String, onRemove: () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 32.dp)
+                .padding(start = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "#$name",
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                // 長いタグ名は省略して、× が画面の外に出ないようにする
+                modifier = Modifier.widthIn(max = TAG_CHIP_LABEL_MAX_WIDTH)
+            )
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = onRemove)
+                    .semantics { contentDescription = "タグ「$name」を外す" },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Outlined.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
@@ -711,6 +813,8 @@ private fun DetailSectionTitle(text: String, modifier: Modifier = Modifier) {
 }
 
 private const val COLLAPSED_LINES = 6
+
+private val TAG_CHIP_LABEL_MAX_WIDTH = 220.dp
 
 private val DATE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d H:mm")
 

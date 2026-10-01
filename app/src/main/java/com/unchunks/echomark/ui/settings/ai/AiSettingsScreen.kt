@@ -60,7 +60,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,12 +85,15 @@ import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.formatBytes
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.ui.common.MessageSnackbarEffect
 import com.unchunks.echomark.ui.common.openUrl
 import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.settings.SettingsItem
 import com.unchunks.echomark.ui.settings.SettingsNotice
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import com.unchunks.echomark.ui.settings.shortName
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -123,22 +125,17 @@ fun AiSettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val connectionTest by viewModel.connectionTest.collectAsState()
-    val message by viewModel.message.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(message) {
-        message?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.onMessageShown()
-        }
+    MessageSnackbarEffect(viewModel.message, snackbarHostState, onShown = viewModel::onMessageShown)
+    // 取り込みの完了も一度きりの知らせとして出す(表示前に結果を消し、画面に戻ったときに出し直さない)
+    val importedMessages = remember(viewModel) {
+        viewModel.uiState
+            .map { (it.importState as? ModelImportState.Succeeded)?.model?.displayName }
+            .distinctUntilChanged()
+            .map { name -> name?.let { "「$it」を取り込みました" } }
     }
-    val importState = uiState.importState
-    LaunchedEffect(importState) {
-        if (importState is ModelImportState.Succeeded) {
-            snackbarHostState.showSnackbar("「${importState.model.displayName}」を取り込みました")
-            viewModel.onImportResultShown()
-        }
-    }
+    MessageSnackbarEffect(importedMessages, snackbarHostState, onShown = viewModel::onImportResultShown)
     // .task / .litertlm には標準の MIME タイプが無いため、全ファイルから選ばせて取り込み時に拡張子を検証する
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) viewModel.importModel(uri)
@@ -471,6 +468,7 @@ private fun ApiSection(
     var keyInput by remember(provider) { mutableStateOf("") }
     var keyVisible by remember(provider) { mutableStateOf(false) }
     var modelInput by remember(provider, uiState.selectedModel) { mutableStateOf(uiState.selectedModel) }
+    var showClearKeyDialog by remember(provider) { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.padding(horizontal = 16.dp),
@@ -517,7 +515,7 @@ private fun ApiSection(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    onClick = { onClearKey(provider) },
+                    onClick = { showClearKeyDialog = true },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("削除") }
             }
@@ -578,6 +576,40 @@ private fun ApiSection(
             Text("${provider.shortName} の API キーを取得")
         }
     }
+
+    if (showClearKeyDialog) {
+        ClearApiKeyDialog(
+            provider = provider,
+            onConfirm = {
+                showClearKeyDialog = false
+                onClearKey(provider)
+            },
+            onDismiss = { showClearKeyDialog = false }
+        )
+    }
+}
+
+/** API キーの削除の確認。キーは端末内にしか無いため、消すと入力し直すまで API を使えない */
+@Composable
+internal fun ClearApiKeyDialog(provider: ApiProvider, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
+        title = { Text("${provider.shortName} の API キーを削除しますか?") },
+        text = {
+            Text(
+                "削除すると、キーを入力し直すまで ${provider.shortName} の API は使えません。",
+                style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) { Text("削除") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
 }
 
 @Composable

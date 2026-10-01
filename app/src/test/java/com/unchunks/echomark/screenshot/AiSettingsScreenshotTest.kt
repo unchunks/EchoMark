@@ -14,6 +14,7 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.settings.ai.AiSettingsActions
 import com.unchunks.echomark.ui.settings.ai.AiSettingsContent
 import com.unchunks.echomark.ui.settings.ai.AiSettingsUiState
+import com.unchunks.echomark.ui.settings.ai.ClearApiKeyDialog
 import com.unchunks.echomark.ui.settings.ai.ConnectionTestState
 import org.junit.After
 import org.junit.Before
@@ -90,6 +91,12 @@ class AiSettingsScreenshotTest {
             ),
             connectionTest = ConnectionTestState.Success(ApiProvider.CLAUDE)
         )
+    }
+
+    /** API キーの削除の確認 */
+    @Test
+    fun clearKeyDialog() = screenshot.captureDialogLightDark("ai_settings_dialog_clear_key") {
+        ClearApiKeyDialog(provider = ApiProvider.CLAUDE, onConfirm = {}, onDismiss = {})
     }
 
     /** クラウド API・キー未設定・接続失敗、モデル取り込み失敗 */

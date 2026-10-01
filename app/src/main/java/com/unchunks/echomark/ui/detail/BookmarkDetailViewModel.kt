@@ -42,6 +42,9 @@ sealed interface BookmarkDetailMessage {
     /** タイトル・本文を編集した(AI の再処理を提案する) */
     data object Edited : BookmarkDetailMessage
 
+    /** タグを外した(元に戻せる) */
+    data class TagRemoved(val name: String) : BookmarkDetailMessage
+
     /** AI の再処理を始めた */
     data object ReprocessStarted : BookmarkDetailMessage
 
@@ -105,8 +108,12 @@ class BookmarkDetailViewModel @Inject constructor(
         viewModelScope.launch { repository.addTag(bookmarkId, trimmed) }
     }
 
+    /** タグを外す。Snackbar の「元に戻す」で [addTag] し直せるよう知らせる */
     fun removeTag(name: String) {
-        viewModelScope.launch { repository.removeTag(bookmarkId, name) }
+        viewModelScope.launch {
+            repository.removeTag(bookmarkId, name)
+            messageChannel.send(BookmarkDetailMessage.TagRemoved(name))
+        }
     }
 
     fun toggleFavorite() {

@@ -84,6 +84,23 @@ class BookmarkDetailViewModelTest {
     }
 
     @Test
+    fun タグを外すと取り消しのメッセージを出し_元に戻すと付け直す() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1).copy(tags = listOf("Kotlin", "Android")))
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.removeTag("Kotlin")
+        advanceUntilIdle()
+        assertEquals(listOf("Android"), viewModel.uiState.value.bookmark?.tags)
+        assertEquals(listOf<BookmarkDetailMessage>(BookmarkDetailMessage.TagRemoved("Kotlin")), messages)
+
+        viewModel.addTag("Kotlin")
+        advanceUntilIdle()
+        assertEquals(setOf("Kotlin", "Android"), viewModel.uiState.value.bookmark?.tags?.toSet())
+    }
+
+    @Test
     fun お気に入りとアーカイブを切り替えアーカイブは取り消しのメッセージを出す() = runTest {
         repository.bookmarks.value = listOf(testBookmark(1))
         val viewModel = createViewModel()

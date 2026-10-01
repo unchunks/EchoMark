@@ -129,8 +129,8 @@ fun ChatScreen(
 /**
  * 会話画面の中身。状態とコールバックを受け取るだけなので、スクリーンショットテストで描画できる。
  *
- * インセット: 親の Scaffold(EchoMarkNavHost)がシステムバーの分を付けて consumeWindowInsets 済みのため、
- * ここの Scaffold・TopAppBar は追加の余白を付けず、imePadding は「キーボード高 - 消費済みの分」だけを足す。
+ * インセット: 親の Scaffold(EchoMarkAppScaffold)が左右と下(ナビゲーションバー)の分を付けて consumeWindowInsets 済み。
+ * 上(ステータスバー)は TopAppBar が受け持ち、imePadding は「キーボード高 - 消費済みの分」だけを足す。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

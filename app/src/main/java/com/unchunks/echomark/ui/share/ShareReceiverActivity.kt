@@ -1,13 +1,16 @@
 package com.unchunks.echomark.ui.share
 
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,6 +61,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.unchunks.echomark.MainUiState
+import com.unchunks.echomark.MainViewModel
+import com.unchunks.echomark.isDark
 import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -67,6 +74,9 @@ import kotlinx.coroutines.delay
 class ShareReceiverActivity : ComponentActivity() {
 
     private val viewModel: ShareViewModel by viewModels()
+
+    /** テーマ設定の読み込み(アプリ本体と同じ) */
+    private val appViewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -80,7 +90,19 @@ class ShareReceiverActivity : ComponentActivity() {
         }
 
         setContent {
-            EchoMarkTheme {
+            // アプリのテーマ設定(ライト/ダーク・ダイナミックカラー)に合わせる。読み込み前(ほんの一瞬)は何も描かない
+            val appState by appViewModel.uiState.collectAsState()
+            val ready = appState as? MainUiState.Ready ?: return@setContent
+            val darkTheme = ready.themeMode.isDark(isSystemInDarkTheme())
+            // ナビゲーションバーのアイコン色も、端末ではなくアプリのテーマに合わせる
+            DisposableEffect(darkTheme) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { darkTheme },
+                    navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { darkTheme }
+                )
+                onDispose {}
+            }
+            EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor) {
                 val status by viewModel.status.collectAsState()
                 // 保存できたら、シート内で結果を短く見せてから閉じる
                 LaunchedEffect(status) {

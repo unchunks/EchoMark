@@ -249,6 +249,13 @@ fun BookmarkListContent(
 
     BackHandler(enabled = uiState.isSearchActive) { callbacks.onSearchActiveChange(false) }
 
+    // 絞り込み・検索の切り替えや空状態への切り替えで、スクロールで隠れたトップバーを戻す
+    // (空状態はスクロールできないことが多く、そのままだとトップバーが隠れたままになる)
+    val showingList = !uiState.isLoading && uiState.errorMessage == null && uiState.emptyKind == ListEmptyKind.NONE
+    LaunchedEffect(uiState.filter, uiState.selectedTagId, uiState.isSearchActive, showingList) {
+        scrollBehavior.state.heightOffset = 0f
+    }
+
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -335,10 +342,13 @@ private fun BookmarkList(
             }
         }
         items(uiState.bookmarks, key = { it.id }, contentType = { "bookmark" }) { bookmark ->
+            val onArchiveToggle = { callbacks.onSetArchived(bookmark, !bookmark.isArchived) }
+            val onDelete = { callbacks.onDelete(bookmark) }
+            val archiveLabel = if (bookmark.isArchived) "アーカイブから戻す" else "アーカイブ"
             SwipeableBookmarkItem(
                 bookmark = bookmark,
-                onArchiveToggle = { callbacks.onSetArchived(bookmark, !bookmark.isArchived) },
-                onDelete = { callbacks.onDelete(bookmark) },
+                onArchiveToggle = onArchiveToggle,
+                onDelete = onDelete,
                 modifier = Modifier
                     .animateItem()
                     .padding(horizontal = 16.dp)
@@ -351,7 +361,15 @@ private fun BookmarkList(
                         onToggleFavorite = { callbacks.onToggleFavorite(bookmark) },
                         onLongClick = { callbacks.onLongPress(bookmark) },
                         onLongClickLabel = "操作メニューを開く",
-                        nowMillis = nowMillis
+                        nowMillis = nowMillis,
+                        // スワイプできない人向けに、同じ操作を TalkBack のカスタムアクションにも出す。
+                        // TalkBack がフォーカスするのはカード(クリックできるノード)なので、カードに付ける
+                        modifier = Modifier.semantics {
+                            customActions = listOf(
+                                CustomAccessibilityAction(archiveLabel) { onArchiveToggle(); true },
+                                CustomAccessibilityAction("削除") { onDelete(); true }
+                            )
+                        }
                     )
                 }
             }
@@ -371,7 +389,8 @@ private fun ListTopBar(
     var sortMenuOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
     TopAppBar(
-        title = { Text("ブックマーク") },
+        // 文字が大きいときも単語の途中で折り返さず、1行に収めて省略する
+        title = { Text("ブックマーク", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         scrollBehavior = scrollBehavior,
         actions = {
             IconButton(onClick = onSearchClick) {
@@ -643,7 +662,7 @@ private fun rediscoverCaption(bookmark: Bookmark, nowMillis: Long): String =
 
 /**
  * 右へスワイプでアーカイブ(アーカイブ済みなら戻す)、左へスワイプで削除。どちらも Snackbar で取り消せる。
- * スワイプできない人向けに、同じ操作を TalkBack のカスタムアクションにも出す。
+ * 同じ操作の TalkBack のカスタムアクションは、中のカードに付ける([BookmarkList])。
  */
 @Composable
 private fun SwipeableBookmarkItem(
@@ -658,15 +677,9 @@ private fun SwipeableBookmarkItem(
     val state = remember(bookmark.id, bookmark.isArchived) {
         SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, threshold)
     }
-    val archiveLabel = if (bookmark.isArchived) "アーカイブから戻す" else "アーカイブ"
     SwipeToDismissBox(
         state = state,
-        modifier = modifier.semantics {
-            customActions = listOf(
-                CustomAccessibilityAction(archiveLabel) { onArchiveToggle(); true },
-                CustomAccessibilityAction("削除") { onDelete(); true }
-            )
-        },
+        modifier = modifier,
         backgroundContent = { SwipeBackground(state.dismissDirection, bookmark.isArchived) },
         onDismiss = { direction ->
             when (direction) {

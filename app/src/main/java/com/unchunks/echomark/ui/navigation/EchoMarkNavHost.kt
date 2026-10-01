@@ -9,7 +9,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmarks
@@ -22,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,7 +32,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -40,8 +47,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
-import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
-import com.unchunks.echomark.ui.bookmark.BookmarkViewModel
 import com.unchunks.echomark.ui.bookmark.ListLaunchAction
 import com.unchunks.echomark.ui.tags.TagManagementScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
@@ -62,12 +67,12 @@ private enum class TopLevelDestination(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
-    BOOKMARKS("bookmarks", "ブックマーク", Icons.Filled.Bookmarks, Icons.Outlined.Bookmarks),
+    BOOKMARKS(BOOKMARKS_ROUTE, "ブックマーク", Icons.Filled.Bookmarks, Icons.Outlined.Bookmarks),
     CHAT("chat", "チャット", Icons.Filled.Forum, Icons.Outlined.Forum),
     SETTINGS("settings", "設定", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
-private const val CHAT_NEW_ROUTE = "chat/new"
+internal const val CHAT_NEW_ROUTE = "chat/new"
 
 private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
 
@@ -102,8 +107,7 @@ private val subScreenPopExit: AnimatedContentTransitionScope<NavBackStackEntry>.
  * アプリ全体のナビゲーション。
  * トップレベル画面ではボトムバーを出し、詳細・チャット個別などのサブ画面ではボトムバーを隠して全画面にする。
  *
- * インセット: この Scaffold がシステムバー(とボトムバー)の分の余白を付けて consumeWindowInsets するため、
- * 各画面の中の Scaffold / TopAppBar / imePadding は残りの分だけを足す(二重の余白にならない)。
+ * インセットの扱いは [EchoMarkAppScaffold] を参照。
  *
  * @param launchTarget 起動直後に開く画面(アプリショートカット・オンボーディングの続き)。開いたら [onLaunchTargetHandled] を呼ぶ
  */
@@ -116,91 +120,55 @@ fun EchoMarkNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
-    // 一覧の上に積んで開くので、戻ると一覧に戻る(チャット・AI 設定はそれぞれのタブを経由する)。
-    // URL を追加・検索は一覧そのものの上でシート・検索モードを開く
     LaunchedEffect(launchTarget) {
         if (launchTarget == null) return@LaunchedEffect
         // NavHost がグラフを設定し、開始画面を表示するまで待つ(それより前の navigate は失敗する)
         navController.currentBackStackEntryFlow.first()
-        when (launchTarget) {
-            // 一覧(開始画面)の ViewModel に、追加シート・検索モードを開くよう伝える
-            LaunchTarget.ADD_BOOKMARK, LaunchTarget.SEARCH -> {
-                val action = if (launchTarget == LaunchTarget.ADD_BOOKMARK) {
-                    ListLaunchAction.ADD_BOOKMARK
-                } else {
-                    ListLaunchAction.SEARCH
-                }
-                navController.popBackStack(TopLevelDestination.BOOKMARKS.route, inclusive = false)
-                runCatching { navController.getBackStackEntry(TopLevelDestination.BOOKMARKS.route) }.getOrNull()
-                    ?.savedStateHandle?.set(BookmarkViewModel.KEY_LAUNCH_ACTION, action.name)
-            }
-            LaunchTarget.NEW_CHAT -> {
-                navController.navigate(TopLevelDestination.CHAT.route)
-                navController.navigate(CHAT_NEW_ROUTE)
-            }
-            LaunchTarget.AI_SETTINGS -> {
-                navController.navigate(TopLevelDestination.SETTINGS.route)
-                navController.navigate(Routes.AI_SETTINGS)
-            }
-        }
+        navController.openLaunchTarget(launchTarget)
         onLaunchTargetHandled()
     }
 
-    Scaffold(
-        bottomBar = {
-            AnimatedVisibility(
-                visible = currentDestination.isTopLevel(),
-                enter = slideInVertically(tween(TRANSITION_MILLIS)) { it } + fadeIn(tween(TRANSITION_MILLIS)),
-                exit = slideOutVertically(tween(TRANSITION_MILLIS)) { it } + fadeOut(tween(TRANSITION_MILLIS))
-            ) {
-                EchoMarkNavigationBar(
-                    selectedRoute = TopLevelDestination.entries.firstOrNull { destination ->
-                        currentDestination?.hierarchy?.any { it.route == destination.route } == true
-                    }?.route,
-                    onNavigate = { route ->
-                        navController.navigate(route) {
-                            // スタックが積み上がらないよう、開始地点までを1つにまとめる
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                )
+    EchoMarkAppScaffold(
+        showBottomBar = currentDestination.isTopLevel(),
+        selectedRoute = TopLevelDestination.entries.firstOrNull { destination ->
+            currentDestination?.hierarchy?.any { it.route == destination.route } == true
+        }?.route,
+        onNavigate = { route ->
+            navController.navigate(route) {
+                // スタックが積み上がらないよう、開始地点までを1つにまとめる
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
             }
         }
-    ) { innerPadding ->
+    ) { contentModifier ->
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.BOOKMARKS.route,
-            // Scaffold が反映済みのインセットを消費し、画面側の imePadding との二重余白を防ぐ
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+            modifier = contentModifier,
             enterTransition = fadeEnter,
             exitTransition = fadeExit,
             popEnterTransition = fadeEnter,
             popExitTransition = fadeExit
         ) {
-            composable(TopLevelDestination.BOOKMARKS.route) {
-                BookmarkListScreen(
+            composable(TopLevelDestination.BOOKMARKS.route) { entry ->
+                BookmarkListDestination(
+                    entry = entry,
                     onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
                     onOpenTagManagement = { navController.navigate(Routes.TAGS) }
                 )
             }
-            // タグ管理。タグをタップしたら、一覧の SavedStateHandle にタグ ID を渡して一覧へ戻る
+            // タグ管理。タグをタップしたら、そのタグで絞り込んだ一覧へ戻る
             composable(
                 route = Routes.TAGS,
                 enterTransition = subScreenEnter,
                 popExitTransition = subScreenPopExit
             ) {
                 TagManagementScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenTag = { tagId ->
-                        val bookmarksRoute = TopLevelDestination.BOOKMARKS.route
-                        runCatching { navController.getBackStackEntry(bookmarksRoute) }.getOrNull()
-                            ?.savedStateHandle?.set(BookmarkViewModel.KEY_SELECT_TAG_ID, tagId)
-                        navController.popBackStack(bookmarksRoute, inclusive = false)
-                    }
+                    onBack = navController.popBackAction(),
+                    onOpenTag = dropUnlessResumedWith { tagId: Long -> navController.returnToBookmarkListWithTag(tagId) }
                 )
             }
             // チャットタブ = 会話一覧。"chat/new" は初回送信時に会話を作成、"chat/{conversationId}" は再開
@@ -217,7 +185,7 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 ChatScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
@@ -230,7 +198,7 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 ChatScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
@@ -242,7 +210,7 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 ChatScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
@@ -259,14 +227,14 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 OnboardingScreen(
-                    onFinish = { exit ->
+                    onFinish = dropUnlessResumedWith { exit: OnboardingExit ->
                         navController.popBackStack()
                         if (exit == OnboardingExit.AI_SETTINGS) navController.navigate(Routes.AI_SETTINGS)
                     }
                 )
             }
             composable(Routes.AI_SETTINGS) {
-                AiSettingsScreen(onBack = { navController.popBackStack() })
+                AiSettingsScreen(onBack = navController.popBackAction())
             }
             composable(
                 route = Routes.BOOKMARK_DETAIL,
@@ -276,12 +244,79 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 BookmarkDetailScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
+        }
+    }
+}
+
+/**
+ * アプリ全体の枠。トップレベル画面ではボトムバーを出し、サブ画面では隠す。
+ *
+ * インセット: 左右と下(ナビゲーションバー・ボトムバー)の分だけ余白を付けて consumeWindowInsets する。
+ * 上(ステータスバー)は消費せず、各画面の TopAppBar(既定の windowInsets)が自分の背景色で受け持つ。
+ * ここで上まで消費すると、ステータスバーの帯がこの Scaffold の背景のままになり、スクロールで色が変わる
+ * TopAppBar とつながらない。各画面の imePadding は、ここで消費した下の分を差し引いた残りだけを足す。
+ *
+ * @param content 画面本体。渡す Modifier(余白とインセットの消費)を付けて表示すること
+ */
+@Composable
+internal fun EchoMarkAppScaffold(
+    showBottomBar: Boolean,
+    selectedRoute: String?,
+    onNavigate: (String) -> Unit,
+    content: @Composable (Modifier) -> Unit
+) {
+    Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
+            .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+        bottomBar = {
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = slideInVertically(tween(TRANSITION_MILLIS)) { it } + fadeIn(tween(TRANSITION_MILLIS)),
+                exit = slideOutVertically(tween(TRANSITION_MILLIS)) { it } + fadeOut(tween(TRANSITION_MILLIS))
+            ) {
+                EchoMarkNavigationBar(selectedRoute = selectedRoute, onNavigate = onNavigate)
+            }
+        }
+    ) { innerPadding ->
+        content(Modifier.padding(innerPadding).consumeWindowInsets(innerPadding))
+    }
+}
+
+/**
+ * サブ画面の「戻る」。画面が操作可能(RESUMED)なときだけ戻る。
+ * 素早く2回押したときや遷移アニメーション中の2回目を無視し、開始画面まで pop して何も表示されなくなるのを防ぐ。
+ */
+@Composable
+internal fun NavController.popBackAction(): () -> Unit = dropUnlessResumed { popBackStack() }
+
+/** 引数つきの操作を、画面が操作可能(RESUMED)なときだけ行う([dropUnlessResumed] の引数つき版) */
+@Composable
+internal fun <T> dropUnlessResumedWith(block: (T) -> Unit): (T) -> Unit {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    return { value -> if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) block(value) }
+}
+
+/**
+ * 起動直後に [target] の画面を開く。一覧の上に積んで開くので、戻ると一覧に戻る
+ * (チャット・AI 設定はそれぞれのタブを経由する)。URL を追加・検索は一覧そのものの上でシート・検索モードを開く。
+ */
+internal fun NavController.openLaunchTarget(target: LaunchTarget) {
+    when (target) {
+        LaunchTarget.ADD_BOOKMARK -> openBookmarkListWith(ListLaunchAction.ADD_BOOKMARK)
+        LaunchTarget.SEARCH -> openBookmarkListWith(ListLaunchAction.SEARCH)
+        LaunchTarget.NEW_CHAT -> {
+            navigate(TopLevelDestination.CHAT.route)
+            navigate(CHAT_NEW_ROUTE)
+        }
+        LaunchTarget.AI_SETTINGS -> {
+            navigate(TopLevelDestination.SETTINGS.route)
+            navigate(Routes.AI_SETTINGS)
         }
     }
 }

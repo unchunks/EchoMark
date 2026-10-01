@@ -36,7 +36,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Placeable
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -50,8 +54,13 @@ import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.echomark.ui.common.formatRelativeTime
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
-/** カードに表示するタグの最大数。残りは「+N」で示す */
+/** カードに表示するタグの最大数。残り(と幅に収まらなかった分)は「+N」で示す */
 private const val MAX_VISIBLE_TAGS = 3
+
+private val TAG_SPACING = 6.dp
+
+/** 1つもタグが収まらないとき、先頭のタグを省略表示してでも出す最小の幅 */
+private val MIN_SHRUNK_TAG_WIDTH = 56.dp
 
 /**
  * ブックマーク一覧の1件分のカード。
@@ -148,30 +157,79 @@ private fun BookmarkCardBody(
         val showStatus = bookmark.aiStatus != AiStatus.DONE
         if (bookmark.tags.isNotEmpty() || showStatus) {
             Spacer(Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.padding(end = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (showStatus) AiStatusBadge(bookmark.aiStatus)
-                val visibleTags = bookmark.tags.take(MAX_VISIBLE_TAGS)
-                visibleTags.forEachIndexed { index, tag ->
-                    // 最後のタグだけ残り幅に合わせて縮める(前のタグは本来の幅で表示する)
-                    val chipModifier =
-                        if (index == visibleTags.lastIndex) Modifier.weight(1f, fill = false) else Modifier
-                    TagChip(name = tag, modifier = chipModifier)
-                }
-                val hidden = bookmark.tags.size - MAX_VISIBLE_TAGS
-                if (hidden > 0) {
-                    Text(
-                        text = "+$hidden",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            TagLine(
+                status = bookmark.aiStatus.takeIf { showStatus },
+                tags = bookmark.tags,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+        }
+    }
+}
+
+/**
+ * AI の状態とタグを1行に並べる。収まるタグだけを先頭から出し、出せなかった分は「+N」にまとめる
+ * (タグが幅 0 に潰れたり、「+N」が縦に割れたりしない)。1つも収まらないときは、先頭のタグを省略表示で入れる。
+ */
+@Composable
+private fun TagLine(status: AiStatus?, tags: List<String>, modifier: Modifier = Modifier) {
+    SubcomposeLayout(modifier) { constraints ->
+        val spacing = TAG_SPACING.roundToPx()
+        val available = constraints.maxWidth
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        // 同じ枠を1回の測定で2度組み立てないよう、測った結果を覚えておく
+        val measured = mutableMapOf<Any, Placeable>()
+        fun measure(slot: Any, maxWidth: Int = available, content: @Composable () -> Unit): Placeable =
+            measured.getOrPut(slot) {
+                subcompose(slot, content).first().measure(loose.copy(maxWidth = maxWidth.coerceAtLeast(0)))
+            }
+        fun rowWidth(items: List<Placeable>): Int =
+            items.sumOf { it.width } + spacing * (items.size - 1).coerceAtLeast(0)
+        fun more(hidden: Int): Placeable? =
+            if (hidden > 0) measure("more_$hidden") { MoreTagsLabel(hidden) } else null
+
+        val badge = status?.let { measure("badge") { AiStatusBadge(it) } }
+        val candidates = tags.take(MAX_VISIBLE_TAGS)
+        val chips = candidates.mapIndexed { index, tag -> measure("tag_$index") { TagChip(name = tag) } }
+
+        var shown = chips.size
+        var items: List<Placeable>
+        while (true) {
+            items = listOfNotNull(badge) + chips.take(shown) + listOfNotNull(more(tags.size - shown))
+            if (shown == 0 || rowWidth(items) <= available) break
+            shown--
+        }
+        if (shown == 0 && tags.isNotEmpty()) {
+            val moreLabel = more(tags.size - 1)
+            val fixed = listOfNotNull(badge, moreLabel)
+            val remaining = available - rowWidth(fixed) - if (fixed.isEmpty()) 0 else spacing
+            if (remaining >= MIN_SHRUNK_TAG_WIDTH.roundToPx()) {
+                val chip = measure("tag_0_shrunk", maxWidth = remaining) { TagChip(name = tags.first()) }
+                items = listOfNotNull(badge, chip, moreLabel)
+            }
+        }
+
+        val height = items.maxOfOrNull { it.height } ?: 0
+        layout(rowWidth(items).coerceAtMost(available), height) {
+            var x = 0
+            items.forEach { placeable ->
+                placeable.placeRelative(x, (height - placeable.height) / 2)
+                x += placeable.width + spacing
             }
         }
     }
+}
+
+/** 表示しきれなかったタグの数 */
+@Composable
+private fun MoreTagsLabel(hidden: Int) {
+    Text(
+        text = "+$hidden",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier.semantics { contentDescription = "ほか${hidden}件のタグ" }
+    )
 }
 
 /** サイト名 > URL のドメイン > 種類名 の順で「どこから来たか」を返す */
