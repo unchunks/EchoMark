@@ -182,3 +182,15 @@ tasks.withType<Test>().configureEach {
 tasks.matching { it.name.contains("objectbox", ignoreCase = true) }.configureEach {
     notCompatibleWithConfigurationCache("ObjectBox plugin is not yet fully compatible with Configuration Cache")
 }
+
+// ObjectBox の注釈処理(kapt)は debug / release で同じ app/objectbox-models/default.json を読み書きする。
+// assembleDebug と assembleRelease を同時に実行すると両方の kapt が並行に走り、Windows では
+// default.json の置き換え(.bak 作成)に失敗してビルドが落ちるため、kapt の注釈処理を1つずつ実行させる
+abstract class ObjectBoxModelFileLock : BuildService<BuildServiceParameters.None>
+
+val objectBoxModelFileLock = gradle.sharedServices.registerIfAbsent("objectBoxModelFileLock", ObjectBoxModelFileLock::class) {
+    maxParallelUsages.set(1)
+}
+tasks.matching { it.name.startsWith("kapt") && !it.name.startsWith("kaptGenerateStubs") }.configureEach {
+    usesService(objectBoxModelFileLock)
+}
