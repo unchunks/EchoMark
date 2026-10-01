@@ -116,6 +116,18 @@ class ChatScreenshotTest {
         )
     }
 
+    /** 会話一覧から開き直した「このブックマークについて質問」の会話(対象は会話に保存されている)。 */
+    @Test
+    fun aboutBookmarkResumed() = captureScreen("chat_about_bookmark_resumed") {
+        Chat(
+            conversationState.copy(
+                title = "Jetpack Compose のパフォーマンスについて",
+                aboutBookmark = PreviewSamples.urlBookmark,
+                suggestions = ChatSuggestions.forBookmark
+            )
+        )
+    }
+
     @Test
     fun conversation() = captureScreen("chat_conversation") {
         Chat(conversationState)
