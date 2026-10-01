@@ -21,7 +21,8 @@ class UrlContentFetcherTest {
     fun setUp() {
         server = MockWebServer()
         server.start()
-        fetcher = UrlContentFetcher(OkHttpClient(), TestDispatcherProvider(Dispatchers.Unconfined))
+        // テストのサーバーはローカル(127.0.0.1)にあるため、アドレスの制限を外して内容の処理を確かめる
+        fetcher = UrlContentFetcher(OkHttpClient(), TestDispatcherProvider(Dispatchers.Unconfined)) { true }
     }
 
     @After
@@ -74,5 +75,41 @@ class UrlContentFetcherTest {
         val result = fetcher.fetch("ftp://example.com/file")
 
         assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun リダイレクトを追ってページを取得する() = runBlocking {
+        server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/moved").build())
+        server.enqueue(
+            MockResponse.Builder()
+                .addHeader("Content-Type", "text/html; charset=utf-8")
+                .body("<html><head><title>移動先</title></head><body><article>本文</article></body></html>")
+                .build()
+        )
+
+        val content = fetcher.fetch(server.url("/old").toString()).getOrThrow()
+
+        assertEquals("移動先", content.title)
+        assertEquals("/moved", server.takeRequest().let { server.takeRequest() }.url.encodedPath)
+    }
+
+    @Test
+    fun リダイレクトが続きすぎるとfailureになる() = runBlocking {
+        repeat(10) { server.enqueue(MockResponse.Builder().code(302).addHeader("Location", "/loop").build()) }
+
+        val result = fetcher.fetch(server.url("/loop").toString())
+
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun ローカルネットワークのアドレスには接続しない() = runBlocking {
+        val restricted = UrlContentFetcher(OkHttpClient(), TestDispatcherProvider(Dispatchers.Unconfined))
+        server.enqueue(MockResponse.Builder().addHeader("Content-Type", "text/html").body("<html></html>").build())
+
+        // ホスト名(DNS で解決する)と IP アドレスの直接指定の両方
+        listOf("http://localhost:${server.port}/", "http://127.0.0.1:${server.port}/", server.url("/").toString())
+            .forEach { url -> assertTrue(url, restricted.fetch(url).isFailure) }
+        assertEquals(0, server.requestCount)
     }
 }
