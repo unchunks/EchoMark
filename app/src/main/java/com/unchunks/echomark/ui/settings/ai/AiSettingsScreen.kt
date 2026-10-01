@@ -468,6 +468,7 @@ private fun ApiSection(
     var keyInput by remember(provider) { mutableStateOf("") }
     var keyVisible by remember(provider) { mutableStateOf(false) }
     var modelInput by remember(provider, uiState.selectedModel) { mutableStateOf(uiState.selectedModel) }
+    var showClearKeyDialog by remember(provider) { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.padding(horizontal = 16.dp),
@@ -514,7 +515,7 @@ private fun ApiSection(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    onClick = { onClearKey(provider) },
+                    onClick = { showClearKeyDialog = true },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("削除") }
             }
@@ -575,6 +576,40 @@ private fun ApiSection(
             Text("${provider.shortName} の API キーを取得")
         }
     }
+
+    if (showClearKeyDialog) {
+        ClearApiKeyDialog(
+            provider = provider,
+            onConfirm = {
+                showClearKeyDialog = false
+                onClearKey(provider)
+            },
+            onDismiss = { showClearKeyDialog = false }
+        )
+    }
+}
+
+/** API キーの削除の確認。キーは端末内にしか無いため、消すと入力し直すまで API を使えない */
+@Composable
+internal fun ClearApiKeyDialog(provider: ApiProvider, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
+        title = { Text("${provider.shortName} の API キーを削除しますか?") },
+        text = {
+            Text(
+                "削除すると、キーを入力し直すまで ${provider.shortName} の API は使えません。",
+                style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) { Text("削除") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
 }
 
 @Composable
