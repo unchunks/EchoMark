@@ -1,6 +1,5 @@
 package com.unchunks.echomark.ui.bookmark
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
@@ -44,8 +43,7 @@ import javax.inject.Inject
 class BookmarkViewModel @Inject constructor(
     private val repository: BookmarkRepository,
     private val tagRepository: TagRepository,
-    private val recentlyDeleted: RecentlyDeletedBookmarks,
-    private val savedStateHandle: SavedStateHandle
+    private val recentlyDeleted: RecentlyDeletedBookmarks
 ) : ViewModel() {
 
     /** 検索語以外の表示条件 */
@@ -160,27 +158,6 @@ class BookmarkViewModel @Inject constructor(
                 }
             }
         }
-        // タグ管理画面でタグを選んで戻ってきたら、そのタグで絞り込む
-        viewModelScope.launch {
-            savedStateHandle.getStateFlow(KEY_SELECT_TAG_ID, NO_TAG).collect { tagId ->
-                if (tagId != NO_TAG) {
-                    controlsFlow.update { it.copy(tagId = tagId, searchActive = false) }
-                    searchQueryFlow.value = ""
-                    savedStateHandle[KEY_SELECT_TAG_ID] = NO_TAG
-                }
-            }
-        }
-        // ショートカット・ウィジェットから起動したとき、追加シートや検索モードを開く
-        viewModelScope.launch {
-            savedStateHandle.getStateFlow<String?>(KEY_LAUNCH_ACTION, null).collect { name ->
-                val action = ListLaunchAction.entries.firstOrNull { it.name == name } ?: return@collect
-                savedStateHandle[KEY_LAUNCH_ACTION] = null
-                when (action) {
-                    ListLaunchAction.ADD_BOOKMARK -> addSheetRequestChannel.send(Unit)
-                    ListLaunchAction.SEARCH -> onSearchActiveChange(true)
-                }
-            }
-        }
     }
 
     private fun loadRediscover() {
@@ -221,6 +198,20 @@ class BookmarkViewModel @Inject constructor(
 
     fun onTagSelected(tagId: Long?) {
         controlsFlow.update { it.copy(tagId = tagId) }
+    }
+
+    /** タグ管理画面で選ばれたタグで絞り込む。検索モードは閉じて、そのタグの一覧を見せる */
+    fun showTag(tagId: Long) {
+        controlsFlow.update { it.copy(tagId = tagId, searchActive = false) }
+        searchQueryFlow.value = ""
+    }
+
+    /** ショートカット・ウィジェットから起動したとき、追加シートや検索モードを開く */
+    fun handleLaunchAction(action: ListLaunchAction) {
+        when (action) {
+            ListLaunchAction.ADD_BOOKMARK -> addSheetRequestChannel.trySend(Unit)
+            ListLaunchAction.SEARCH -> onSearchActiveChange(true)
+        }
     }
 
     fun onFilterChange(filter: BookmarkFilter) {
@@ -336,13 +327,6 @@ class BookmarkViewModel @Inject constructor(
         private const val SEARCH_DEBOUNCE_MS = 300L
         private const val REDISCOVER_CANDIDATES = 30
         private const val DERIVED_TITLE_MAX = 40
-
-        /** タグ管理画面から「このタグで絞り込む」ときに、一覧の SavedStateHandle に入れるキー */
-        const val KEY_SELECT_TAG_ID = "selectTagId"
-        private const val NO_TAG = -1L
-
-        /** 起動直後の操作([ListLaunchAction] の name)を、一覧の SavedStateHandle に入れるキー */
-        const val KEY_LAUNCH_ACTION = "launchAction"
 
         /** 本文の1行目からタイトルを作る(長すぎれば切って「…」) */
         internal fun deriveTitle(text: String): String {

@@ -1,6 +1,5 @@
 package com.unchunks.echomark.ui.bookmark
 
-import androidx.lifecycle.SavedStateHandle
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
@@ -34,9 +33,7 @@ class BookmarkViewModelTest {
     private val repository = FakeBookmarkRepository()
     private val tagRepository = FakeTagRepository()
     private val recentlyDeleted = RecentlyDeletedBookmarks()
-    private val savedStateHandle = SavedStateHandle()
-
-    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, recentlyDeleted, savedStateHandle)
+    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, recentlyDeleted)
 
     /**
      * uiState を購読し、届いたメッセージを集める。
@@ -128,14 +125,14 @@ class BookmarkViewModelTest {
     }
 
     @Test
-    fun タグ管理画面から渡されたタグで絞り込む() = runTest {
+    fun タグ管理画面から渡されたタグで絞り込み検索モードを閉じる() = runTest {
         repository.bookmarks.value = listOf(testBookmark(1).copy(tags = listOf("10")), testBookmark(2))
         val viewModel = createViewModel()
         start(viewModel)
         viewModel.onSearchActiveChange(true)
         advanceUntilIdle()
 
-        savedStateHandle[BookmarkViewModel.KEY_SELECT_TAG_ID] = 10L
+        viewModel.showTag(10L)
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -400,14 +397,15 @@ class BookmarkViewModelTest {
     }
 
     @Test
-    fun 起動直後の操作が検索なら検索モードを開き_キーは消す() = runTest {
-        savedStateHandle[BookmarkViewModel.KEY_LAUNCH_ACTION] = ListLaunchAction.SEARCH.name
+    fun 起動直後の操作が検索なら検索モードを開く() = runTest {
         val viewModel = createViewModel()
         start(viewModel)
         advanceUntilIdle()
 
+        viewModel.handleLaunchAction(ListLaunchAction.SEARCH)
+        advanceUntilIdle()
+
         assertTrue(viewModel.uiState.value.isSearchActive)
-        assertEquals(null, savedStateHandle.get<String>(BookmarkViewModel.KEY_LAUNCH_ACTION))
     }
 
     @Test
@@ -419,22 +417,10 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
         assertTrue(requests.isEmpty())
 
-        // 一覧の表示後に届いた場合(NavHost から SavedStateHandle に入れる)
-        savedStateHandle[BookmarkViewModel.KEY_LAUNCH_ACTION] = ListLaunchAction.ADD_BOOKMARK.name
+        viewModel.handleLaunchAction(ListLaunchAction.ADD_BOOKMARK)
         advanceUntilIdle()
 
         assertEquals(1, requests.size)
-        assertFalse(viewModel.uiState.value.isSearchActive)
-        assertEquals(null, savedStateHandle.get<String>(BookmarkViewModel.KEY_LAUNCH_ACTION))
-    }
-
-    @Test
-    fun 未知の起動操作は無視する() = runTest {
-        savedStateHandle[BookmarkViewModel.KEY_LAUNCH_ACTION] = "UNKNOWN"
-        val viewModel = createViewModel()
-        start(viewModel)
-        advanceUntilIdle()
-
         assertFalse(viewModel.uiState.value.isSearchActive)
     }
 }

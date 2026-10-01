@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -40,8 +41,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
-import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
-import com.unchunks.echomark.ui.bookmark.BookmarkViewModel
 import com.unchunks.echomark.ui.bookmark.ListLaunchAction
 import com.unchunks.echomark.ui.tags.TagManagementScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
@@ -62,12 +61,12 @@ private enum class TopLevelDestination(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
-    BOOKMARKS("bookmarks", "ブックマーク", Icons.Filled.Bookmarks, Icons.Outlined.Bookmarks),
+    BOOKMARKS(BOOKMARKS_ROUTE, "ブックマーク", Icons.Filled.Bookmarks, Icons.Outlined.Bookmarks),
     CHAT("chat", "チャット", Icons.Filled.Forum, Icons.Outlined.Forum),
     SETTINGS("settings", "設定", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
-private const val CHAT_NEW_ROUTE = "chat/new"
+internal const val CHAT_NEW_ROUTE = "chat/new"
 
 private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
 
@@ -116,33 +115,11 @@ fun EchoMarkNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
-    // 一覧の上に積んで開くので、戻ると一覧に戻る(チャット・AI 設定はそれぞれのタブを経由する)。
-    // URL を追加・検索は一覧そのものの上でシート・検索モードを開く
     LaunchedEffect(launchTarget) {
         if (launchTarget == null) return@LaunchedEffect
         // NavHost がグラフを設定し、開始画面を表示するまで待つ(それより前の navigate は失敗する)
         navController.currentBackStackEntryFlow.first()
-        when (launchTarget) {
-            // 一覧(開始画面)の ViewModel に、追加シート・検索モードを開くよう伝える
-            LaunchTarget.ADD_BOOKMARK, LaunchTarget.SEARCH -> {
-                val action = if (launchTarget == LaunchTarget.ADD_BOOKMARK) {
-                    ListLaunchAction.ADD_BOOKMARK
-                } else {
-                    ListLaunchAction.SEARCH
-                }
-                navController.popBackStack(TopLevelDestination.BOOKMARKS.route, inclusive = false)
-                runCatching { navController.getBackStackEntry(TopLevelDestination.BOOKMARKS.route) }.getOrNull()
-                    ?.savedStateHandle?.set(BookmarkViewModel.KEY_LAUNCH_ACTION, action.name)
-            }
-            LaunchTarget.NEW_CHAT -> {
-                navController.navigate(TopLevelDestination.CHAT.route)
-                navController.navigate(CHAT_NEW_ROUTE)
-            }
-            LaunchTarget.AI_SETTINGS -> {
-                navController.navigate(TopLevelDestination.SETTINGS.route)
-                navController.navigate(Routes.AI_SETTINGS)
-            }
-        }
+        navController.openLaunchTarget(launchTarget)
         onLaunchTargetHandled()
     }
 
@@ -181,13 +158,14 @@ fun EchoMarkNavHost(
             popEnterTransition = fadeEnter,
             popExitTransition = fadeExit
         ) {
-            composable(TopLevelDestination.BOOKMARKS.route) {
-                BookmarkListScreen(
+            composable(TopLevelDestination.BOOKMARKS.route) { entry ->
+                BookmarkListDestination(
+                    entry = entry,
                     onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
                     onOpenTagManagement = { navController.navigate(Routes.TAGS) }
                 )
             }
-            // タグ管理。タグをタップしたら、一覧の SavedStateHandle にタグ ID を渡して一覧へ戻る
+            // タグ管理。タグをタップしたら、そのタグで絞り込んだ一覧へ戻る
             composable(
                 route = Routes.TAGS,
                 enterTransition = subScreenEnter,
@@ -195,12 +173,7 @@ fun EchoMarkNavHost(
             ) {
                 TagManagementScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenTag = { tagId ->
-                        val bookmarksRoute = TopLevelDestination.BOOKMARKS.route
-                        runCatching { navController.getBackStackEntry(bookmarksRoute) }.getOrNull()
-                            ?.savedStateHandle?.set(BookmarkViewModel.KEY_SELECT_TAG_ID, tagId)
-                        navController.popBackStack(bookmarksRoute, inclusive = false)
-                    }
+                    onOpenTag = { tagId -> navController.returnToBookmarkListWithTag(tagId) }
                 )
             }
             // チャットタブ = 会話一覧。"chat/new" は初回送信時に会話を作成、"chat/{conversationId}" は再開
@@ -282,6 +255,25 @@ fun EchoMarkNavHost(
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
+        }
+    }
+}
+
+/**
+ * 起動直後に [target] の画面を開く。一覧の上に積んで開くので、戻ると一覧に戻る
+ * (チャット・AI 設定はそれぞれのタブを経由する)。URL を追加・検索は一覧そのものの上でシート・検索モードを開く。
+ */
+internal fun NavController.openLaunchTarget(target: LaunchTarget) {
+    when (target) {
+        LaunchTarget.ADD_BOOKMARK -> openBookmarkListWith(ListLaunchAction.ADD_BOOKMARK)
+        LaunchTarget.SEARCH -> openBookmarkListWith(ListLaunchAction.SEARCH)
+        LaunchTarget.NEW_CHAT -> {
+            navigate(TopLevelDestination.CHAT.route)
+            navigate(CHAT_NEW_ROUTE)
+        }
+        LaunchTarget.AI_SETTINGS -> {
+            navigate(TopLevelDestination.SETTINGS.route)
+            navigate(Routes.AI_SETTINGS)
         }
     }
 }
