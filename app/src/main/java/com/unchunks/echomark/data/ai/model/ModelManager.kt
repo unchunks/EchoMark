@@ -8,6 +8,7 @@ import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -36,7 +37,11 @@ class ModelManager @Inject constructor(
     private val bookmarkRepository: BookmarkRepository,
     dispatcherProvider: DispatcherProvider
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
+    // 取り込み・削除の想定外の失敗でアプリを落とさない(取り込みの失敗は importInternal で状態に反映する)
+    private val scope = CoroutineScope(
+        SupervisorJob() + dispatcherProvider.io +
+            CoroutineExceptionHandler { _, e -> Timber.e(e, "モデルの管理処理に失敗") }
+    )
 
     private val modelsDir: File
         get() = File(context.filesDir, "models").also { it.mkdirs() }
@@ -150,6 +155,11 @@ class ModelManager @Inject constructor(
             Timber.w(e, "モデルファイルへのアクセスが拒否された")
             part.delete()
             _importState.value = ModelImportState.Failed(ModelImportError.ReadFailed)
+        } catch (e: Exception) {
+            // 取り込み元のプロバイダが IllegalArgumentException などを投げた場合。コピー中のまま残さない
+            Timber.w(e, "モデルの取り込みで想定外のエラー")
+            part.delete()
+            _importState.value = ModelImportState.Failed(ModelImportError.ReadFailed)
         }
     }
 
@@ -159,7 +169,8 @@ class ModelManager @Inject constructor(
         return try {
             val storageManager = context.getSystemService(StorageManager::class.java)
             storageManager.getAllocatableBytes(storageManager.getUuidForPath(dir))
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            // 保存先の情報を取れない場合(IOException など)は、通常の空き容量で見積もる
             dir.usableSpace
         }
     }
