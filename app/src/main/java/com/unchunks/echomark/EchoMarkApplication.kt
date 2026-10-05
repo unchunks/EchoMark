@@ -16,6 +16,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
 import com.unchunks.echomark.worker.ReembedAllWorker
+import com.unchunks.echomark.worker.StalledAiProcessingRecovery
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
 import okhttp3.OkHttpClient
@@ -30,6 +31,7 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
     // 画像を初めて読み込むまで生成しないよう Lazy で受け取る
     @Inject lateinit var okHttpClient: Lazy<OkHttpClient>
     @Inject lateinit var rediscoverWidgetUpdater: RediscoverWidgetUpdater
+    @Inject lateinit var stalledAiProcessingRecovery: StalledAiProcessingRecovery
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -45,6 +47,8 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
         createNotificationChannels()
         // ブックマークの保存・削除・閲覧に合わせて、ホーム画面ウィジェットを描き直す
         rediscoverWidgetUpdater.start()
+        // 処理待ち・処理中のままワークが失われたブックマークの AI 処理を積み直す
+        stalledAiProcessingRecovery.start()
 
         workManager.enqueueUniqueWork(
             ReembedAllWorker.WORK_NAME,

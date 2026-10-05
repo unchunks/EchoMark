@@ -151,6 +151,25 @@ class BookmarkRepositoryImpl @Inject constructor(
             ids.size
         }
 
+    override suspend fun markProcessingInterrupted(id: Long) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateAiStatusIf(id, expected = AiStatus.PROCESSING, status = AiStatus.PENDING)
+        }
+
+    override suspend fun enqueueStalledProcessing(): Int =
+        withContext(dispatcherProvider.io) {
+            // ブックマークを先に読む。後から読むと、その間に保存されて処理の登録がまだのものを取り残しと見誤る
+            // (それでも重なった場合は同じブックマークを2回処理するだけで、各工程は冪等なので結果は変わらない)
+            val ids = (bookmarkDao.getIdsByAiStatus(AiStatus.PENDING) +
+                bookmarkDao.getIdsByAiStatus(AiStatus.PROCESSING)).distinct()
+            if (ids.isEmpty()) return@withContext 0
+            // どのブックマークの処理か分からないワークが残っている間は、二重に積まないよう何もしない
+            val withWork = workScheduler.bookmarkIdsWithUnfinishedWork() ?: return@withContext 0
+            val stalled = ids.filterNot { it in withWork }
+            enqueueSequentialProcessing(stalled)
+            stalled.size
+        }
+
     override suspend fun reprocess(id: Long) =
         withContext(dispatcherProvider.io) {
             val bookmark = bookmarkDao.getById(id) ?: return@withContext

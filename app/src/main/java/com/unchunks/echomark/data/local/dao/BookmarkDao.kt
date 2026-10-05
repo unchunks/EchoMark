@@ -47,6 +47,10 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET aiStatus = :status WHERE id = :id")
     suspend fun updateAiStatus(id: Long, status: AiStatus)
 
+    /** 状態が [expected] のときだけ [status] に変える(後から始まった処理が書いた状態を上書きしない)。 */
+    @Query("UPDATE bookmarks SET aiStatus = :status WHERE id = :id AND aiStatus = :expected")
+    suspend fun updateAiStatusIf(id: Long, expected: AiStatus, status: AiStatus)
+
     @Query("UPDATE bookmarks SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFavorite: Boolean)
 

@@ -32,7 +32,11 @@ import com.unchunks.echomark.testing.inMemoryBoxStore
 import com.unchunks.echomark.testing.initTestWorkManager
 import com.unchunks.echomark.testing.tearDownTestWorkManager
 import io.objectbox.BoxStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -166,15 +170,44 @@ class BookmarkAiProcessingWorkerTest {
         assertTrue(maxAttemptsFor(LlmException.RateLimited()) > default)
         assertEquals(default, maxAttemptsFor(IllegalStateException("boom")))
     }
+
+    @Test
+    fun 生成の時間切れは再試行せず失敗にする() = runBlocking {
+        val id = insertBookmark()
+        llm.failure = LlmException.Timeout(180_000L)
+
+        // 一括処理のチェーンを止めないよう、ワークとしては成功で終える。設定画面から手動で再処理できる
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+        assertEquals(AiStatus.FAILED, statusOf(id))
+    }
+
+    @Test
+    fun 中断されたら処理中のまま残さず処理待ちに戻す() = runBlocking {
+        val id = insertBookmark()
+        llm.hang = true
+
+        val work = launch { runWorker(id, runAttemptCount = 0) }
+        llm.started.await()
+        assertEquals(AiStatus.PROCESSING, statusOf(id))
+
+        // WorkManager による停止(実行時間の上限・取り消しなど)を、コルーチンのキャンセルで再現する
+        work.cancelAndJoin()
+        assertEquals(AiStatus.PENDING, statusOf(id))
+    }
 }
 
 /** analyze の結果を差し替えられる LLM。 */
 private class ScriptedLlmProvider : LlmProvider {
     var failure: Exception? = null
     var calls = 0
+    /** true なら analyze は取り消されるまで終わらない。 */
+    var hang = false
+    val started = CompletableDeferred<Unit>()
 
     override suspend fun analyze(text: String): BookmarkAnalysis {
         calls++
+        started.complete(Unit)
+        if (hang) awaitCancellation()
         failure?.let { throw it }
         return BookmarkAnalysis("要約", listOf("タグ"), "その他")
     }

@@ -16,9 +16,12 @@ import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
@@ -30,6 +33,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -101,8 +105,62 @@ class LocalLlmProvider @Inject constructor(
             }
         }
 
+    /**
+     * 解析用の生成。[generate] と違い、時間の上限([ANALYZE_TIMEOUT_MS])を設け、コルーチンのキャンセルでも生成を中断する
+     * (ブロッキングの generateResponse はキャンセルできず、止まらない生成がロックを持ち続けて後続の処理まで止めるため)。
+     * 出力の JSON オブジェクトが閉じたら、それ以降の生成(小型モデルが繰り返しに陥った続きなど)は待たずに打ち切る。
+     * @throws LlmException.Timeout 時間内に生成が終わらなかったとき
+     */
+    private suspend fun generateAnalysis(prompt: String): String =
+        withContext(dispatcherProvider.default) {
+            inferenceMutex.withLock {
+                val (model, engine) = engineLocked()
+                newSession(model, engine).use { session ->
+                    session.addQueryChunk(prompt)
+                    // 出力と JSON の検出は MediaPipe のスレッドで更新し、生成が終わってから読む
+                    val output = StringBuilder()
+                    val jsonEnd = JsonObjectEndDetector()
+                    // 生成の終了(失敗を含む)か、JSON が閉じたときに完了する
+                    val stop = CompletableDeferred<Unit>()
+                    val future = session.generateResponseAsync(ProgressListener<String> { partial, _ ->
+                        val closed = synchronized(output) {
+                            // 閉じた後の出力は捨てる(中断が効くまでに届いた分)
+                            if (jsonEnd.endIndex >= 0) {
+                                true
+                            } else {
+                                output.append(partial)
+                                jsonEnd.feed(partial)
+                            }
+                        }
+                        if (closed) stop.complete(Unit)
+                    })
+                    future.addListener({ stop.complete(Unit) }, Runnable::run)
+                    val timedOut = try {
+                        withTimeoutOrNull(ANALYZE_TIMEOUT_MS) { stop.await() } == null
+                    } finally {
+                        // 時間切れ・JSON の完成・キャンセルで止める場合は生成を中断し、終わるのを待ってからセッションを閉じる
+                        if (!future.isDone) runCatching { session.cancelGenerateResponseAsync() }
+                        withContext(NonCancellable) { future.awaitDone() }
+                    }
+                    if (timedOut) throw LlmException.Timeout(ANALYZE_TIMEOUT_MS)
+                    // JSON が閉じた時点で打ち切った場合は、そこまでの出力を使う(中断による future の失敗は無視する)
+                    val untilJsonEnd = synchronized(output) {
+                        jsonEnd.endIndex.takeIf { it >= 0 }?.let { output.substring(0, it) }
+                    }
+                    untilJsonEnd ?: try {
+                        future.get()
+                    } catch (e: ExecutionException) {
+                        throw e.cause ?: e
+                    } catch (e: CancellationException) {
+                        // こちらから止めていないのに生成が取り消された。コルーチンのキャンセルと区別するため別の例外にする
+                        throw IllegalStateException("端末内 AI の生成が中断されました", e)
+                    }
+                }
+            }
+        }
+
     override suspend fun analyze(text: String): BookmarkAnalysis {
-        val response = generate(buildAnalyzePrompt(text))
+        val response = generateAnalysis(buildAnalyzePrompt(text))
         return AnalysisParser.parse(response, text)
     }
 
@@ -175,6 +233,13 @@ class LocalLlmProvider @Inject constructor(
         /** 入力と出力の合計トークン数の上限。プロンプトの文字数の予算は LocalChatPrompt を参照 */
         private const val MAX_TOKENS = 4096
         private const val MAX_INPUT_CHARS = 2000
+
+        /**
+         * 解析(要約・タグ)の生成にかける時間の上限。通常は CPU でも 1 分程度で終わるが、小型モデルは同じ文の繰り返しに陥ると
+         * MAX_TOKENS まで生成を続け、数分〜十数分かかることがある。WorkManager は約 10 分でワーカーを止めるため、
+         * それより十分短くして(モデルの読み込み・ロックの待ちの分を残す)自分で打ち切り、失敗として扱う。
+         */
+        private const val ANALYZE_TIMEOUT_MS = 3 * 60 * 1000L
 
         /** Gemma の対話形式(https://ai.google.dev/gemma/docs/core/prompt-structure)。 */
         private val GEMMA_TEMPLATES: PromptTemplates = PromptTemplates.builder()

@@ -52,6 +52,14 @@ sealed class LlmException(
         "この内容には AI が回答できませんでした(安全上の制限)"
     )
 
+    /**
+     * 生成が制限時間内に終わらなかった(端末内 AI が同じ文を繰り返し続けた場合など)。
+     * 再試行しても同じ結果になりやすいため、自動では再試行しない。
+     */
+    class Timeout(val timeoutMillis: Long) : LlmException(
+        "AI の応答に時間がかかりすぎたため中断しました"
+    )
+
     /** リクエストが不正(存在しないモデル ID など。HTTP 400/404/422)。 */
     class BadRequest(val statusCode: Int, detail: String? = null, cause: Throwable? = null) : LlmException(
         buildString {

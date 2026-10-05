@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.unchunks.echomark.data.local.AppDatabase
@@ -21,6 +22,7 @@ import com.unchunks.echomark.testing.assertSequential
 import com.unchunks.echomark.testing.initTestWorkManager
 import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesOf
+import com.unchunks.echomark.worker.BookmarkAiProcessingWorker
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import io.objectbox.BoxStore
 import kotlinx.coroutines.Dispatchers
@@ -204,5 +206,60 @@ class BookmarkRepositoryImplTest {
         repository.saveEmbedding(id, vector, "v1")
 
         assertEquals("v1", vectorSearch.getModelVersion(id))
+    }
+
+    @Test
+    fun 中断された処理中の状態は処理待ちに戻す() = runBlocking {
+        val id = db.bookmarkDao().insert(textBookmark().copy(aiStatus = AiStatus.PROCESSING).toEntity())
+
+        repository.markProcessingInterrupted(id)
+
+        assertEquals(AiStatus.PENDING, repository.getBookmarkById(id)!!.aiStatus)
+    }
+
+    @Test
+    fun 中断を記録しても後から書かれた状態は上書きしない() = runBlocking {
+        // 置き換えた新しい処理が、古い処理の中断の記録より先に完了した場合
+        val id = db.bookmarkDao().insert(textBookmark().copy(aiStatus = AiStatus.DONE).toEntity())
+
+        repository.markProcessingInterrupted(id)
+
+        assertEquals(AiStatus.DONE, repository.getBookmarkById(id)!!.aiStatus)
+    }
+
+    @Test
+    fun ワークが無いまま処理待ち_処理中のものだけを積み直す() = runBlocking {
+        // 保存時に登録した処理が残っているもの
+        val live = repository.saveBookmark(textBookmark())
+        // 処理が失われたもの、完了・準備待ちのもの
+        val (stalledPending, stalledProcessing, done, waiting) =
+            listOf(AiStatus.PENDING, AiStatus.PROCESSING, AiStatus.DONE, AiStatus.WAITING_MODEL).map { status ->
+                db.bookmarkDao().insert(textBookmark().copy(aiStatus = status).toEntity())
+            }
+
+        assertEquals(2, repository.enqueueStalledProcessing())
+
+        // 失われた2件は一括の列に積み、処理が残っているものは二重に積まない
+        assertSequential(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME), expectedSize = 2)
+        assertEquals(1, unfinished("process_bookmark_$live").size)
+        assertEquals(
+            listOf(AiStatus.PENDING, AiStatus.PENDING, AiStatus.DONE, AiStatus.WAITING_MODEL),
+            listOf(stalledPending, stalledProcessing, done, waiting).map { repository.getBookmarkById(it)!!.aiStatus }
+        )
+
+        // 積み直した後は処理が残っているため、もう一度呼んでも積まない
+        assertEquals(0, repository.enqueueStalledProcessing())
+    }
+
+    @Test
+    fun どのブックマークの処理か分からないワークが残っている間は積み直さない() = runBlocking {
+        // ブックマークごとのタグを付ける前のバージョンで登録された処理
+        workManager.enqueue(
+            OneTimeWorkRequestBuilder<BookmarkAiProcessingWorker>().addTag(BookmarkWorkScheduler.TAG).build()
+        ).result.get()
+        db.bookmarkDao().insert(textBookmark().copy(aiStatus = AiStatus.PROCESSING).toEntity())
+
+        assertEquals(0, repository.enqueueStalledProcessing())
+        assertTrue(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME).isEmpty())
     }
 }

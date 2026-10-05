@@ -24,6 +24,11 @@ class AnalysisOutcomeTest {
     }
 
     @Test
+    fun 生成の時間切れは再試行しない() {
+        assertEquals(AnalysisOutcome.GIVE_UP, classifyAnalysisError(LlmException.Timeout(180_000L)))
+    }
+
+    @Test
     fun 一時的な失敗は再試行() {
         listOf(
             LlmException.RateLimited(),

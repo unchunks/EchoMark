@@ -56,6 +56,16 @@ interface BookmarkRepository {
      * API キーの設定後などに使う。キューに積んだ件数を返す。
      */
     suspend fun enqueueFailedAndWaitingProcessing(): Int
+    /**
+     * 中断された AI 処理の状態を、処理中(PROCESSING)から処理待ち(PENDING)に戻す。
+     * 既に別の処理が状態を書き換えていれば(完了・失敗など)上書きしない。
+     */
+    suspend fun markProcessingInterrupted(id: Long)
+    /**
+     * 処理待ち・処理中のまま、対応するワークが残っていない(取り消された・失われた)ブックマークの AI 処理を積み直す。
+     * 状態が「AI処理中…」のまま終わらなくなるのを防ぐため、アプリの起動時に呼ぶ。積み直した件数を返す。
+     */
+    suspend fun enqueueStalledProcessing(): Int
 
     // Delete
     suspend fun deleteBookmark(bookmark: Bookmark)

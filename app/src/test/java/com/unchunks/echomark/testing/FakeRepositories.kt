@@ -185,6 +185,8 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun updateAiStatus(id: Long, status: AiStatus) = TODO("not used")
     override suspend fun enqueueWaitingModelProcessing() = TODO("not used")
     override suspend fun enqueueFailedAndWaitingProcessing(): Int = TODO("not used")
+    override suspend fun markProcessingInterrupted(id: Long) = TODO("not used")
+    override suspend fun enqueueStalledProcessing(): Int = TODO("not used")
     override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> = TODO("not used")
     override suspend fun getAllBookmarkIds(): List<Long> = TODO("not used")
     override suspend fun getEmbeddingModelVersion(bookmarkId: Long): String? = TODO("not used")
