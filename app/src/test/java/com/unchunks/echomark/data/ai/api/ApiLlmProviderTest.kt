@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.ai.api
 
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.model.ChatMessage
@@ -20,6 +21,7 @@ import okhttp3.OkHttpClient
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -49,9 +51,22 @@ class ApiLlmProviderTest {
             gemini = GeminiApiClient(OkHttpClient(), dispatchers, server.url("/")),
             openAi = OpenAiApiClient(OkHttpClient(), dispatchers, server.url("/")),
             appSettings = settings,
-            apiKeyRepository = keys
+            apiKeyRepository = keys,
+            attachmentLoader = loader
         )
     }
+
+    /** 読み込みを記録し、固定の中身を返す添付の読み込み。 */
+    private class FakeAttachmentLoader : AttachmentLoader {
+        val loaded = mutableListOf<Pair<AnalysisAttachment, AttachmentKind>>()
+        override suspend fun load(attachment: AnalysisAttachment, kind: AttachmentKind): ApiAttachment {
+            loaded += attachment to kind
+            val mimeType = AttachmentPolicy.apiMimeType(kind, attachment.mimeType)!!
+            return ApiAttachment(kind, mimeType, "QkFTRTY0", "file")
+        }
+    }
+
+    private val loader = FakeAttachmentLoader()
 
     private fun geminiText(text: String) = MockResponse.Builder()
         .addHeader("Content-Type", "application/json")
@@ -126,6 +141,90 @@ class ApiLlmProviderTest {
             .analyze(AnalysisInput(title = "", text = "あ".repeat(20_000), kind = ContentKind.MEMO), emptyList())
 
         assertEquals(1, server.requestCount)
+    }
+
+    private val geminiKeys get() = FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000"))
+    private val imageFile = AnalysisAttachment(path = "/data/files/photo.png", mimeType = "image/png", sizeBytes = 2_000_000)
+
+    @Test
+    fun 画像は設定がオンならファイルも送り_種類に合う指示にする() = runBlocking {
+        server.enqueue(geminiText("""{"summary":"レシート","tags":[],"category":"レシート"}"""))
+
+        provider(geminiKeys).analyze(
+            AnalysisInput(title = "photo.png", text = "合計 1,200円", kind = ContentKind.IMAGE, attachment = imageFile),
+            emptyList()
+        )
+
+        assertEquals(listOf(imageFile to AttachmentKind.IMAGE), loader.loaded)
+        val body = JSONObject(server.takeRequest().body!!.utf8())
+        val system = body.getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text")
+        assertTrue(system, system.contains("保存内容(画像)"))
+        val parts = body.getJSONArray("contents").getJSONObject(0).getJSONArray("parts")
+        assertEquals("image/jpeg", parts.getJSONObject(0).getJSONObject("inlineData").getString("mimeType"))
+        val text = parts.getJSONObject(1).getString("text")
+        assertTrue(text, text.contains("添付: 保存した画像のファイルそのもの"))
+        // 画像内の文字(OCR の結果)も手がかりとして渡す
+        assertTrue(text, text.contains("合計 1,200円"))
+    }
+
+    @Test
+    fun 設定がオフならファイルは送らずテキストだけで要約する() = runBlocking {
+        settings.setSendFilesToCloud(false)
+        server.enqueue(geminiText("""{"summary":"s","tags":[],"category":"写真"}"""))
+
+        provider(geminiKeys).analyze(
+            AnalysisInput(title = "photo.png", text = "読み取った文字", kind = ContentKind.IMAGE, attachment = imageFile),
+            emptyList()
+        )
+
+        assertTrue(loader.loaded.isEmpty())
+        val parts = JSONObject(server.takeRequest().body!!.utf8())
+            .getJSONArray("contents").getJSONObject(0).getJSONArray("parts")
+        assertEquals(1, parts.length())
+        assertFalse(parts.getJSONObject(0).getString("text").contains("添付:"))
+    }
+
+    @Test
+    fun 提供元が受け付けない種類のファイルは読み込まない() = runBlocking {
+        settings.setApiProvider(ApiProvider.CLAUDE)
+        server.enqueue(
+            MockResponse.Builder()
+                .addHeader("Content-Type", "application/json")
+                .body(
+                    """{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5",
+                    "content":[{"type":"text","text":"{\"summary\":\"s\"}"}],"stop_reason":"end_turn",
+                    "stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}"""
+                )
+                .build()
+        )
+        val audio = AnalysisAttachment(path = "/data/files/voice.m4a", mimeType = "audio/mp4", sizeBytes = 1_000_000)
+
+        provider(FakeApiKeyRepository(mapOf(ApiProvider.CLAUDE to "sk-ant-test-key")))
+            .analyze(AnalysisInput(title = "", text = "文字起こし", kind = ContentKind.AUDIO, attachment = audio), emptyList())
+
+        // Claude には音声の入力が無いため、文字起こしのテキストだけで要約する
+        assertTrue(loader.loaded.isEmpty())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun PDFや動画をそのまま送るときはテキストを短くし_分割要約はしない() = runBlocking {
+        server.enqueue(geminiText("""{"summary":"s","tags":[],"category":"論文"}"""))
+        val pdf = AnalysisAttachment(path = "/data/files/paper.pdf", mimeType = "application/pdf", sizeBytes = 3_000_000)
+
+        provider(geminiKeys).analyze(
+            AnalysisInput(title = "paper.pdf", text = "あ".repeat(30_000), kind = ContentKind.DOCUMENT, attachment = pdf),
+            emptyList()
+        )
+
+        assertEquals(1, server.requestCount)
+        val body = JSONObject(server.takeRequest().body!!.utf8())
+        val system = body.getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text")
+        assertTrue(system, system.contains("200文字以内"))
+        val parts = body.getJSONArray("contents").getJSONObject(0).getJSONArray("parts")
+        assertEquals("application/pdf", parts.getJSONObject(0).getJSONObject("inlineData").getString("mimeType"))
+        val text = parts.getJSONObject(1).getString("text")
+        assertTrue(text.length < 4_200)
     }
 
     @Test

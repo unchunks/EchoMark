@@ -16,10 +16,16 @@ import com.anthropic.errors.UnauthorizedException
 import com.anthropic.errors.UnprocessableEntityException
 import com.anthropic.models.ErrorType
 import com.anthropic.models.beta.AnthropicBeta
+import com.anthropic.models.beta.messages.BetaBase64ImageSource
+import com.anthropic.models.beta.messages.BetaBase64PdfSource
+import com.anthropic.models.beta.messages.BetaContentBlockParam
+import com.anthropic.models.beta.messages.BetaImageBlockParam
 import com.anthropic.models.beta.messages.BetaMessage
 import com.anthropic.models.beta.messages.BetaOutputConfig
 import com.anthropic.models.beta.messages.BetaRawMessageStreamEvent
+import com.anthropic.models.beta.messages.BetaRequestDocumentBlock
 import com.anthropic.models.beta.messages.BetaStopReason
+import com.anthropic.models.beta.messages.BetaTextBlockParam
 import com.anthropic.models.beta.messages.MessageCreateParams
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.model.ChatRole
@@ -155,7 +161,18 @@ class ClaudeApiClient internal constructor(
             .maxTokens(maxTokens(request.purpose))
         if (request.system.isNotBlank()) builder.system(request.system)
         normalizeTurns(request.messages).forEach { turn ->
-            if (turn.role == ChatRole.USER) builder.addUserMessage(turn.text) else builder.addAssistantMessage(turn.text)
+            when {
+                turn.role != ChatRole.USER -> builder.addAssistantMessage(turn.text)
+                turn.attachments.isEmpty() -> builder.addUserMessage(turn.text)
+                // 画像・文書を先に、テキストを後に置く(公式の推奨)
+                else -> builder.addUserMessageOfBetaContentBlockParams(
+                    turn.attachments.mapNotNull { contentBlockOf(it) } +
+                        listOfNotNull(
+                            turn.text.takeIf { it.isNotBlank() }
+                                ?.let { BetaContentBlockParam.ofText(BetaTextBlockParam.builder().text(it).build()) }
+                        )
+                )
+            }
         }
         if (supportsEffort(model)) {
             val effort = when (request.purpose) {
@@ -169,6 +186,36 @@ class ClaudeApiClient internal constructor(
             builder.addBeta(AnthropicBeta.SERVER_SIDE_FALLBACK_2026_07_01).fallbacksDefault()
         }
         return builder.build()
+    }
+
+    /**
+     * 添付を Claude の content block にする。画像は image(base64)、PDF は document(base64)。
+     * Messages API に音声・動画の入力は無いため null(呼び出し側の [AttachmentPolicy] で送らないようにしている)。
+     * https://platform.claude.com/docs/en/build-with-claude/vision
+     * https://platform.claude.com/docs/en/build-with-claude/pdf-support
+     */
+    private fun contentBlockOf(attachment: ApiAttachment): BetaContentBlockParam? = when (attachment.kind) {
+        AttachmentKind.IMAGE -> imageMediaType(attachment.mimeType)?.let { mediaType ->
+            BetaContentBlockParam.ofImage(
+                BetaImageBlockParam.builder()
+                    .source(BetaBase64ImageSource.builder().mediaType(mediaType).data(attachment.base64Data).build())
+                    .build()
+            )
+        }
+        AttachmentKind.PDF -> BetaContentBlockParam.ofDocument(
+            BetaRequestDocumentBlock.builder()
+                .source(BetaBase64PdfSource.builder().data(attachment.base64Data).build())
+                .build()
+        )
+        AttachmentKind.AUDIO, AttachmentKind.VIDEO -> null
+    }
+
+    private fun imageMediaType(mimeType: String): BetaBase64ImageSource.MediaType? = when (mimeType) {
+        "image/jpeg" -> BetaBase64ImageSource.MediaType.IMAGE_JPEG
+        "image/png" -> BetaBase64ImageSource.MediaType.IMAGE_PNG
+        "image/gif" -> BetaBase64ImageSource.MediaType.IMAGE_GIF
+        "image/webp" -> BetaBase64ImageSource.MediaType.IMAGE_WEBP
+        else -> null
     }
 
     /** SDK の例外を [LlmException] に変換する。キャンセルは素通しする。 */

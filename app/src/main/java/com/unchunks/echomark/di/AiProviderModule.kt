@@ -1,6 +1,8 @@
 package com.unchunks.echomark.di
 
+import com.unchunks.echomark.data.ai.api.AndroidAttachmentLoader
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
+import com.unchunks.echomark.data.ai.api.AttachmentLoader
 import com.unchunks.echomark.data.ai.local.LocalLlmProvider
 import com.unchunks.echomark.di.qualifier.ApiAi
 import com.unchunks.echomark.di.qualifier.LocalAi
@@ -21,4 +23,7 @@ abstract class AiProviderModule {
     @Binds
     @ApiAi
     abstract fun bindApiLlmProvider(impl: ApiLlmProvider): LlmProvider
+
+    @Binds
+    abstract fun bindAttachmentLoader(impl: AndroidAttachmentLoader): AttachmentLoader
 }
