@@ -51,7 +51,9 @@ import coil3.compose.AsyncImage
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.extractDomain
+import com.unchunks.echomark.ui.common.icon
 import com.unchunks.echomark.ui.common.formatRelativeTime
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
@@ -245,24 +247,6 @@ internal fun Bookmark.displaySource(): String =
     siteName?.takeIf { it.isNotBlank() }
         ?: contentUri?.let { extractDomain(it) }
         ?: type.displayName()
-
-private fun BookmarkType.displayName(): String = when (this) {
-    BookmarkType.URL -> "リンク"
-    BookmarkType.TEXT -> "メモ"
-    BookmarkType.IMAGE -> "画像"
-    BookmarkType.PDF -> "PDF"
-    BookmarkType.AUDIO -> "音声"
-    BookmarkType.VIDEO -> "動画"
-}
-
-private fun BookmarkType.icon(): ImageVector = when (this) {
-    BookmarkType.URL -> Icons.Outlined.Link
-    BookmarkType.TEXT -> Icons.AutoMirrored.Outlined.Notes
-    BookmarkType.IMAGE -> Icons.Outlined.Image
-    BookmarkType.PDF -> Icons.Outlined.PictureAsPdf
-    BookmarkType.AUDIO -> Icons.Outlined.Audiotrack
-    BookmarkType.VIDEO -> Icons.Outlined.Movie
-}
 
 @Composable
 private fun SourceLine(source: String, relativeTime: String, showFavoriteMark: Boolean) {

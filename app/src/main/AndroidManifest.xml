@@ -61,6 +61,19 @@
 
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- ファイル(画像・PDF・音声・動画・テキストファイル)の共有。1件ずつ保存する -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
         </activity>
 
         <!-- ホーム画面ウィジェット「EchoMark 再発見」(Jetpack Glance) -->
