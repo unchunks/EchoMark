@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Audiotrack
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Card
@@ -251,6 +252,7 @@ private fun BookmarkType.displayName(): String = when (this) {
     BookmarkType.IMAGE -> "画像"
     BookmarkType.PDF -> "PDF"
     BookmarkType.AUDIO -> "音声"
+    BookmarkType.VIDEO -> "動画"
 }
 
 private fun BookmarkType.icon(): ImageVector = when (this) {
@@ -259,6 +261,7 @@ private fun BookmarkType.icon(): ImageVector = when (this) {
     BookmarkType.IMAGE -> Icons.Outlined.Image
     BookmarkType.PDF -> Icons.Outlined.PictureAsPdf
     BookmarkType.AUDIO -> Icons.Outlined.Audiotrack
+    BookmarkType.VIDEO -> Icons.Outlined.Movie
 }
 
 @Composable

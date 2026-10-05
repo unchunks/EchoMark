@@ -18,6 +18,7 @@ import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.TagSource
@@ -240,7 +241,7 @@ private class ScriptedLlmProvider : LlmProvider {
     var tags: List<String> = listOf("タグ")
     var lastExistingTags: List<String>? = null
 
-    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis {
+    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
         calls++
         started.complete(Unit)
         if (hang) awaitCancellation()

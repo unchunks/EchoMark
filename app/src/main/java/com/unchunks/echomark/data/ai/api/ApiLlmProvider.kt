@@ -2,6 +2,7 @@ package com.unchunks.echomark.data.ai.api
 
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.local.AnalysisParser
+import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
@@ -41,7 +42,8 @@ class ApiLlmProvider @Inject constructor(
         return clients.getValue(provider) to ApiCredentials(apiKey, model)
     }
 
-    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis {
+    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
+        val text = input.combinedText()
         val (client, credentials) = current()
         val request = ApiRequest(
             purpose = ApiPurpose.ANALYZE,

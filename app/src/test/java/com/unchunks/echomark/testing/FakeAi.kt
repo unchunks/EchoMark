@@ -2,6 +2,7 @@ package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.data.security.SecretCipher
 import com.unchunks.echomark.data.security.UnrecoverableSecretException
+import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.ApiProvider
@@ -81,7 +82,7 @@ class FakeLlmProvider(
     var chunks: List<String> = listOf("こんにちは", "、世界"),
     var failure: Throwable? = null
 ) : LlmProvider {
-    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis =
+    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis =
         BookmarkAnalysis("要約", emptyList(), "その他")
 
     override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =

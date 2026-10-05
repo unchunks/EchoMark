@@ -200,6 +200,49 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate9To10_existingBookmarksHaveNoFile() {
+        helper.createDatabase(9).apply {
+            insertV6Bookmark()
+            close()
+        }
+
+        // スキーマ v10 と一致するか(列・既定値・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(10, listOf(MIGRATION_9_10))
+
+        connection.prepare("SELECT title, filePath, mimeType, fileName, fileSize FROM bookmarks WHERE id = 1").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("既存のタイトル", stmt.getText(0))
+            (1..4).forEach { assertTrue(stmt.isNull(it)) }
+        }
+        connection.close()
+    }
+
+    @Test
+    fun migrate6To10_roomOpensWithAppMigrations() = runTest {
+        helper.createDatabase(6).apply {
+            insertV6Bookmark()
+            close()
+        }
+
+        val room = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            AppDatabase::class.java,
+            TEST_DB
+        )
+            .addMigrations(*ALL_MIGRATIONS)
+            .build()
+
+        try {
+            val bookmark = room.bookmarkDao().getByIdsWithTags(listOf(1L)).single().toDomain()
+            assertEquals("既存のタイトル", bookmark.title)
+            assertNull(bookmark.filePath)
+            assertNull(bookmark.mimeType)
+        } finally {
+            room.close()
+        }
+    }
+
     /** v8 のブックマーク1件と、そこに付いたタグ・どこにも付いていないタグ。 */
     private fun SQLiteConnection.insertV8Tags() {
         insertV6Bookmark()

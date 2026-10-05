@@ -21,5 +21,13 @@ data class Bookmark(
     val siteName: String? = null,
     val isFavorite: Boolean = false,
     /** アーカイブ済み(通常の一覧には出さない) */
-    val isArchived: Boolean = false
+    val isArchived: Boolean = false,
+    /** 保存したファイル(画像・PDF・音声など)の、アプリ内の保存先(filesDir からの相対パス)。ファイルでなければ null */
+    val filePath: String? = null,
+    /** 中身の MIME タイプ(ファイル、またはリンク先が HTML 以外のとき)。不明なら null */
+    val mimeType: String? = null,
+    /** 元のファイル名(共有・選択されたときの名前)。表示用 */
+    val fileName: String? = null,
+    /** ファイルのサイズ(バイト)。表示用 */
+    val fileSize: Long? = null
 )

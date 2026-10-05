@@ -6,6 +6,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.contentKind
+import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.provider.LlmException
@@ -57,7 +59,12 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             if (bookmark.summary.isNullOrBlank()) {
                 try {
                     // 既存のタグを伝え、似たタグを増やさず使い回させる
-                    val analysis = llmProviderResolver.resolve().analyze(textToProcess, repository.getTagNamesForAi())
+                    val input = AnalysisInput(
+                        title = bookmark.title,
+                        text = bookmark.content.orEmpty(),
+                        kind = bookmark.contentKind()
+                    )
+                    val analysis = llmProviderResolver.resolve().analyze(input, repository.getTagNamesForAi())
                     repository.updateSummary(bookmarkId, analysis.summary)
                     // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
                     repository.saveAiTags(bookmarkId, analysis.tags)

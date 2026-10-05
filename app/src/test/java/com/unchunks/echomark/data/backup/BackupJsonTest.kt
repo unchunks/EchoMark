@@ -121,7 +121,7 @@ class BackupJsonTest {
             {"format":"echomark-backup","version":1,"exportedAt":1,
              "bookmarks":[
                {"id":1,"type":"URL","contentUri":"https://a","title":"ok","createdAt":10},
-               {"id":2,"type":"VIDEO","title":"未知の種類","createdAt":10},
+               {"id":2,"type":"HOLOGRAM","title":"未知の種類","createdAt":10},
                {"id":3,"type":"TEXT","createdAt":10},
                {"id":4,"type":"TEXT","title":"未知の状態","createdAt":10,"aiStatus":"SOMETHING"}
              ],

@@ -32,5 +32,10 @@ data class BookmarkEntity (
     @ColumnInfo(defaultValue = "0")
     val isFavorite: Boolean = false,
     @ColumnInfo(defaultValue = "0")
-    val isArchived: Boolean = false
+    val isArchived: Boolean = false,
+    // v10 で追加。保存したファイル(画像・PDF・音声など)の情報
+    val filePath: String? = null,
+    val mimeType: String? = null,
+    val fileName: String? = null,
+    val fileSize: Long? = null
 )

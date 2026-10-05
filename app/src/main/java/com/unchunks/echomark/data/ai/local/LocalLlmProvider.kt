@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmException
@@ -159,7 +160,8 @@ class LocalLlmProvider @Inject constructor(
             }
         }
 
-    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis {
+    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
+        val text = input.combinedText()
         val response = generateAnalysis(buildAnalyzePrompt(text, existingTags))
         return AnalysisParser.parse(response, text)
     }

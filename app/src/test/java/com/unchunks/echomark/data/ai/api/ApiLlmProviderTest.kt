@@ -1,5 +1,7 @@
 package com.unchunks.echomark.data.ai.api
 
+import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
@@ -59,7 +61,7 @@ class ApiLlmProviderTest {
     @Test
     fun キー未設定ならApiKeyMissing() = runBlocking {
         try {
-            provider(FakeApiKeyRepository()).analyze("本文", emptyList())
+            provider(FakeApiKeyRepository()).analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
             fail("例外が投げられるはず")
         } catch (e: LlmException.ApiKeyMissing) {
             assertEquals(ApiProvider.GEMINI, e.provider)
@@ -72,7 +74,7 @@ class ApiLlmProviderTest {
         server.enqueue(geminiText("""{"summary":"要約","tags":["a","b"],"category":"技術"}"""))
 
         val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
-            .analyze("本文", listOf("Kotlin", "読書"))
+            .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), listOf("Kotlin", "読書"))
 
         assertEquals("要約", analysis.summary)
         assertEquals(listOf("a", "b"), analysis.tags)
