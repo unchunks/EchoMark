@@ -2,16 +2,19 @@ package com.unchunks.echomark.ui.bookmark
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
+import com.unchunks.echomark.domain.repository.AttachmentRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.domain.repository.TagRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
+import com.unchunks.echomark.ui.common.SelectedFile
 import com.unchunks.echomark.ui.common.normalizeUrlInput
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -43,7 +46,8 @@ import javax.inject.Inject
 class BookmarkViewModel @Inject constructor(
     private val repository: BookmarkRepository,
     private val tagRepository: TagRepository,
-    private val recentlyDeleted: RecentlyDeletedBookmarks
+    private val recentlyDeleted: RecentlyDeletedBookmarks,
+    private val attachmentRepository: AttachmentRepository
 ) : ViewModel() {
 
     /** 検索語以外の表示条件 */
@@ -279,6 +283,44 @@ class BookmarkViewModel @Inject constructor(
                 val title = input.title.trim().ifEmpty { deriveTitle(text) }
                 saveTextBookmark(title, text)
             }
+            is NewBookmarkInput.Files -> saveFiles(input.files, input.title)
+        }
+    }
+
+    /**
+     * ファイルを1件ずつアプリ内へコピーしてブックマークにする。保存できなかったものがあっても残りは続け、
+     * 結果をまとめて知らせる(1件なら「開く」を出せるよう ID も)。
+     */
+    private fun saveFiles(files: List<SelectedFile>, title: String) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            messageChannel.send(BookmarkListMessage.SavingFiles(files.size))
+            var firstId: Long? = null
+            var saved = 0
+            var firstError: String? = null
+            for (file in files) {
+                try {
+                    val stored = attachmentRepository.importFile(file.uri)
+                    val result = repository.saveFileBookmark(stored, title.takeIf { files.size == 1 && it.isNotBlank() }, memo = null)
+                    if (firstId == null) firstId = result.id
+                    saved++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: AttachmentException) {
+                    firstError = firstError ?: e.error.userMessage
+                } catch (e: Exception) {
+                    Timber.w(e, "ファイルの保存に失敗")
+                    firstError = firstError ?: "保存できませんでした。もう一度お試しください。"
+                }
+            }
+            val id = firstId
+            messageChannel.send(
+                if (id == null) {
+                    BookmarkListMessage.SaveFailed(firstError ?: "保存できませんでした。もう一度お試しください。")
+                } else {
+                    BookmarkListMessage.FilesSaved(id, saved, files.size - saved)
+                }
+            )
         }
     }
 

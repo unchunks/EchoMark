@@ -9,6 +9,11 @@
         <exclude domain="file" path="datastore/api_keys.preferences_pb" />
         <!-- 取り込んだオンデバイス LLM モデル(数百MB〜)はバックアップしない -->
         <exclude domain="file" path="models/" />
+        <!--
+            保存した画像・PDF・音声・動画は、クラウドのバックアップ(容量の上限が小さい)には入れない。
+            機種変更時の端末間の転送では移す(ブックマークと一緒に見られるように)
+        -->
+        <exclude domain="file" path="attachments/" />
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>

@@ -4,6 +4,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.ui.common.SelectedFile
 
 /** 一覧が空のとき、どの理由で空なのか(空状態の文言を変えるため)。 */
 enum class ListEmptyKind {
@@ -80,6 +81,9 @@ sealed interface NewBookmarkInput {
 
     /** テキストのメモ。[title] が空なら本文の1行目をタイトルにする */
     data class Note(val text: String, val title: String = "") : NewBookmarkInput
+
+    /** 端末のファイル(1件ずつ保存する)。[title] は1件のときだけ使い、空ならファイル名にする */
+    data class Files(val files: List<SelectedFile>, val title: String = "") : NewBookmarkInput
 }
 
 /** 一覧画面に一度だけ伝える出来事(Snackbar で知らせる)。 */
@@ -95,4 +99,10 @@ sealed interface BookmarkListMessage {
 
     /** 保存できなかった */
     data class SaveFailed(val message: String) : BookmarkListMessage
+
+    /** ファイルをアプリ内へコピーしている(大きなファイルは時間がかかる) */
+    data class SavingFiles(val count: Int) : BookmarkListMessage
+
+    /** ファイルを保存した。[savedCount] 件を保存し、[failedCount] 件は保存できなかった */
+    data class FilesSaved(val firstId: Long, val savedCount: Int, val failedCount: Int) : BookmarkListMessage
 }

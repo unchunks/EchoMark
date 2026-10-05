@@ -1,5 +1,6 @@
 package com.unchunks.echomark.screenshot
 
+import com.unchunks.echomark.ui.common.SelectedFile
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -139,6 +140,49 @@ class BookmarkListScreenshotTest {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
             AddBookmarkSheetContent(
                 form = AddBookmarkForm(mode = AddMode.NOTE, text = "情報は編集することで知識になる。\n次に読む本の候補"),
+                showClipboardSuggestion = false,
+                onModeChange = {},
+                onUrlChange = {},
+                onTitleChange = {},
+                onMemoChange = {},
+                onTextChange = {},
+                onPasteFromClipboard = {},
+                onCancel = {},
+                onSave = {}
+            )
+        }
+    }
+
+    @Test
+    fun addSheetFiles() = screenshot.captureLightDark("library_add_sheet_files") {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            AddBookmarkSheetContent(
+                form = AddBookmarkForm(
+                    mode = AddMode.FILE,
+                    files = listOf(
+                        SelectedFile("content://docs/1", "application/pdf", "論文_Attention Is All You Need.pdf", 2_215_000L),
+                        SelectedFile("content://media/2", "image/png", "ホワイトボード.png", 640_000L),
+                        SelectedFile("content://rec/3", "audio/mp4", "講義の録音.m4a", 48_000_000L)
+                    )
+                ),
+                showClipboardSuggestion = false,
+                onModeChange = {},
+                onUrlChange = {},
+                onTitleChange = {},
+                onMemoChange = {},
+                onTextChange = {},
+                onPasteFromClipboard = {},
+                onCancel = {},
+                onSave = {}
+            )
+        }
+    }
+
+    @Test
+    fun addSheetFilesEmpty() = screenshot.captureLightDark("library_add_sheet_files_empty") {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            AddBookmarkSheetContent(
+                form = AddBookmarkForm(mode = AddMode.FILE),
                 showClipboardSuggestion = false,
                 onModeChange = {},
                 onUrlChange = {},

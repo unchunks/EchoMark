@@ -42,7 +42,7 @@ class SettingsScreenshotTest {
         themeMode = ThemeMode.SYSTEM,
         dynamicColor = false,
         rediscover = RediscoverSettings(enabled = true, dayOfWeek = DayOfWeek.SUNDAY, hour = 20, minute = 0),
-        storage = StorageUsage(databaseBytes = 1_300_000, embeddingBytes = 420_000, modelBytes = 556_000_000),
+        storage = StorageUsage(databaseBytes = 1_300_000, embeddingBytes = 420_000, modelBytes = 556_000_000, attachmentBytes = 84_000_000),
         versionLabel = "1.0 (1)"
     )
 

@@ -16,7 +16,9 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 /**
- * ブックマークの本文取得・AI 処理のワークを登録・取り消す。
+ * ブックマークの本文取得・中身の取り出し・AI 処理のワークを登録・取り消す。
+ * 1件の処理は「本文取得([UrlFetchWorker]) → 中身の取り出し([ContentExtractionWorker]) → AI 処理」の順のチェーンで、
+ * 必要な段だけを積む(ファイルのあるブックマークは取り出しから、メモは AI 処理だけ)。
  * - 1件ごとの処理は一意名([uniqueWorkName])で登録し、同じブックマークの処理を並行させない(新しい依頼で置き換える)
  * - 一括の再処理は1本の列([BULK_WORK_NAME])にして1件ずつ順番に処理する(API のレート制限にかかりにくくする)
  * - クラウド API を使う設定のときは、AI 処理にネットワーク接続を条件として付ける(オフラインで試行回数を使い切らない)
@@ -28,18 +30,21 @@ class BookmarkWorkScheduler @Inject constructor(
     private val appSettings: AppSettingsRepository
 ) {
 
-    /** 処理の対象。[fetchContent] なら AI 処理の前に本文を取得する。 */
-    data class Target(val bookmarkId: Long, val fetchContent: Boolean)
+    /**
+     * 処理の対象。[fetchContent] なら AI 処理の前に本文を取得し、[extractContent] なら保存したファイルから
+     * 要約に使うテキストを取り出す(両方なら取得 → 取り出しの順)。
+     */
+    data class Target(val bookmarkId: Long, val fetchContent: Boolean, val extractContent: Boolean = false)
 
     /**
-     * 1件の処理を登録する。[fetchContent] なら「本文取得 → AI 処理」のチェーン、そうでなければ AI 処理のみ。
-     * 同じブックマークの登録済み・実行中の処理は取り消して置き換える。
+     * 1件の処理を登録する。「本文取得 → 中身の取り出し → AI 処理」のうち、[fetchContent]・[extractContent] で
+     * 指定した段と AI 処理を順に実行する。同じブックマークの登録済み・実行中の処理は取り消して置き換える。
      */
-    suspend fun enqueue(bookmarkId: Long, fetchContent: Boolean) {
+    suspend fun enqueue(bookmarkId: Long, fetchContent: Boolean, extractContent: Boolean = false) {
         enqueueChain(
             uniqueWorkName(bookmarkId),
             ExistingWorkPolicy.REPLACE,
-            requestsFor(Target(bookmarkId, fetchContent), aiConstraints())
+            requestsFor(Target(bookmarkId, fetchContent, extractContent), aiConstraints())
         )
     }
 
@@ -96,6 +101,7 @@ class BookmarkWorkScheduler @Inject constructor(
     private fun requestsFor(target: Target, aiConstraints: Constraints): List<OneTimeWorkRequest> =
         listOfNotNull(
             fetchRequest(target.bookmarkId).takeIf { target.fetchContent },
+            extractionRequest(target.bookmarkId).takeIf { target.extractContent },
             aiRequest(target.bookmarkId, aiConstraints)
         )
 
@@ -122,6 +128,15 @@ class BookmarkWorkScheduler @Inject constructor(
             .addTag(bookmarkTag(bookmarkId))
             .build()
 
+    /** 保存したファイルから要約用のテキストを取り出す(OCR・文字起こしなど。端末内で行うため制約なし) */
+    private fun extractionRequest(bookmarkId: Long): OneTimeWorkRequest =
+        OneTimeWorkRequestBuilder<ContentExtractionWorker>()
+            .setInputData(workDataOf(ContentExtractionWorker.KEY_BOOKMARK_ID to bookmarkId))
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
+            .addTag(TAG)
+            .addTag(bookmarkTag(bookmarkId))
+            .build()
+
     companion object {
         /** ブックマークの処理に付けるタグ(全データ削除でまとめて取り消す)。 */
         const val TAG = "bookmark_processing"
@@ -132,7 +147,7 @@ class BookmarkWorkScheduler @Inject constructor(
         private const val BACKOFF_SECONDS = 30L
         private const val SEQUENTIAL_CHUNK_SIZE = 50
 
-        /** 1件ごとの処理の一意名。本文取得のチェーンと AI 処理のみで共通にし、同じブックマークの処理を並行させない。 */
+        /** 1件ごとの処理の一意名。チェーンの段の組み合わせによらず共通にし、同じブックマークの処理を並行させない。 */
         fun uniqueWorkName(bookmarkId: Long): String = "process_bookmark_$bookmarkId"
 
         private const val BOOKMARK_TAG_PREFIX = "bookmark_id:"

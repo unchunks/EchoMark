@@ -1,5 +1,6 @@
 package com.unchunks.echomark.worker
 
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -78,7 +79,8 @@ class BookmarkAiProcessingWorkerTest {
             vectorSearch = VectorSearchDataSource(boxStore.embeddingBox()),
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
             workScheduler = BookmarkWorkScheduler(workManager, settings),
-            embeddingProvider = FakeEmbeddingProvider()
+            embeddingProvider = FakeEmbeddingProvider(),
+            attachmentStore = AttachmentStore(context, TestDispatcherProvider(Dispatchers.Unconfined))
         )
     }
 
