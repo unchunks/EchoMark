@@ -161,9 +161,8 @@ class LocalLlmProvider @Inject constructor(
         }
 
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
-        val text = input.combinedText()
-        val response = generateAnalysis(buildAnalyzePrompt(text, existingTags))
-        return AnalysisParser.parse(response, text)
+        val response = generateAnalysis(buildAnalyzePrompt(input, existingTags))
+        return AnalysisParser.parse(response, input.combinedText())
     }
 
     override suspend fun chat(
@@ -218,14 +217,16 @@ class LocalLlmProvider @Inject constructor(
         suspendCancellableCoroutine { cont -> addListener({ cont.resume(Unit) }, Runnable::run) }
     }
 
-    private fun buildAnalyzePrompt(text: String, existingTags: List<String>): String = listOf(
+    private fun buildAnalyzePrompt(input: AnalysisInput, existingTags: List<String>): String = listOf(
         AiPrompts.analyzeInstructions(
+            input.kind,
             existingTags,
+            summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, input.text.length > AiPrompts.LONG_TEXT_CHARS),
             maxExistingTags = AiPrompts.LOCAL_MAX_EXISTING_TAGS,
             maxExistingTagChars = AiPrompts.LOCAL_MAX_EXISTING_TAG_CHARS
         ),
         "",
-        AiPrompts.analyzeInput(text, MAX_INPUT_CHARS)
+        AiPrompts.analyzeInput(input.title, input.text, MAX_INPUT_CHARS)
     ).joinToString("\n")
 
     // 指示・文脈・履歴・質問を、MAX_TOKENS に収まる文字数の予算で組み立てる

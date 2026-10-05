@@ -43,14 +43,19 @@ class ApiLlmProvider @Inject constructor(
     }
 
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
-        val text = input.combinedText()
         val (client, credentials) = current()
         val request = ApiRequest(
             purpose = ApiPurpose.ANALYZE,
-            system = AiPrompts.analyzeInstructions(existingTags),
-            messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.analyzeInput(text, MAX_INPUT_CHARS)))
+            system = AiPrompts.analyzeInstructions(
+                input.kind,
+                existingTags,
+                summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, input.text.length > AiPrompts.LONG_TEXT_CHARS)
+            ),
+            messages = listOf(
+                ApiMessage(ChatRole.USER, AiPrompts.analyzeInput(input.title, input.text, MAX_INPUT_CHARS))
+            )
         )
-        return AnalysisParser.parse(client.complete(request, credentials), text)
+        return AnalysisParser.parse(client.complete(request, credentials), input.combinedText())
     }
 
     override suspend fun chat(
