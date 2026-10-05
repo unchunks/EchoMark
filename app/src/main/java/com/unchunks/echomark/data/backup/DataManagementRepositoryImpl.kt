@@ -7,6 +7,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.di.DatabaseModule
@@ -46,6 +47,7 @@ class DataManagementRepositoryImpl @Inject constructor(
     private val appSettings: AppSettingsRepository,
     private val apiKeyRepository: ApiKeyRepository,
     private val workScheduler: BookmarkWorkScheduler,
+    private val attachmentStore: AttachmentStore,
     private val dispatcherProvider: DispatcherProvider
 ) : DataManagementRepository {
 
@@ -92,7 +94,17 @@ class DataManagementRepositoryImpl @Inject constructor(
             throw DataOperationException(e.message ?: "バックアップを読み込めませんでした", e)
         }
 
-        val merged = backupDao.merge(decoded.data)
+        // 添付ファイルの本体はバックアップに含めないため、この端末に無いファイルは「ファイルなし」として読み込む
+        val data = decoded.data.copy(
+            bookmarks = decoded.data.bookmarks.map { bookmark ->
+                if (bookmark.filePath != null && attachmentStore.existingFile(bookmark.filePath) == null) {
+                    bookmark.copy(filePath = null)
+                } else {
+                    bookmark
+                }
+            }
+        )
+        val merged = backupDao.merge(data)
         Timber.i("バックアップを読み込み: added=${merged.bookmarksAdded}, skipped=${merged.bookmarksSkipped}")
 
         if (merged.bookmarksAdded > 0) {
@@ -129,7 +141,8 @@ class DataManagementRepositoryImpl @Inject constructor(
         StorageUsage(
             databaseBytes = databaseBytes,
             embeddingBytes = runCatching { boxStore.dbSizeOnDisk }.getOrDefault(0L),
-            modelBytes = modelManager.installedModel.value?.sizeBytes ?: 0L
+            modelBytes = modelManager.installedModel.value?.sizeBytes ?: 0L,
+            attachmentBytes = attachmentStore.totalBytes()
         )
     }
 
@@ -139,6 +152,8 @@ class DataManagementRepositoryImpl @Inject constructor(
         workManager.cancelUniqueWork(ReembedAllWorker.WORK_NAME)
         backupDao.deleteAll()
         vectorSearch.deleteAll()
+        // 添付ファイルは参照が無くなったので、掃除を待たずにすぐ消す
+        attachmentStore.deleteAll()
         if (resetSettings) {
             appSettings.resetToDefaults()
             ApiProvider.entries.forEach { apiKeyRepository.clearKey(it) }
