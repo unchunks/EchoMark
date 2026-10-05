@@ -426,7 +426,8 @@ private fun DetailBody(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.semantics { heading() }
             )
-            if (bookmark.filePath != null) {
+            // ファイルの種類のブックマークは、ファイルが無くても(バックアップから読み込んだときなど)その旨を出す
+            if (bookmark.filePath != null || bookmark.type in FILE_TYPES) {
                 Spacer(Modifier.height(12.dp))
                 FileInfoCard(bookmark, file, onOpenFile = { callbacks.onOpenFile(bookmark) })
             }
@@ -856,6 +857,9 @@ private fun DetailSectionTitle(text: String, modifier: Modifier = Modifier) {
 }
 
 private const val COLLAPSED_LINES = 6
+
+/** ファイルを保存する種類 */
+private val FILE_TYPES = setOf(BookmarkType.IMAGE, BookmarkType.PDF, BookmarkType.AUDIO, BookmarkType.VIDEO)
 
 private val TAG_CHIP_LABEL_MAX_WIDTH = 220.dp
 
