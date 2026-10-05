@@ -1,5 +1,6 @@
 package com.unchunks.echomark.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +91,7 @@ private val MIN_SHRUNK_TAG_WIDTH = 56.dp
  * @param onToggleFavorite 渡すと右上にお気に入りの星ボタンを出す。null ならお気に入りのときだけ小さな星を表示する
  * @param nowMillis 相対日時の基準時刻。プレビューやスクリーンショットでは固定値を渡す
  * @param onLongClick 渡すと長押しできる(操作メニューを出す用)。[onLongClickLabel] は TalkBack で読み上げる操作名
+ * @param selected 2 画面表示で、右側に詳細を出しているカード。枠線と背景色で強調し、TalkBack では「選択済み」と読む
  */
 @Composable
 fun BookmarkCard(
@@ -98,12 +101,18 @@ fun BookmarkCard(
     onToggleFavorite: (() -> Unit)? = null,
     nowMillis: Long = System.currentTimeMillis(),
     onLongClick: (() -> Unit)? = null,
-    onLongClickLabel: String? = null
+    onLongClickLabel: String? = null,
+    selected: Boolean = false
 ) {
     val domain = bookmark.displaySource()
-    val colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    val colors = CardDefaults.cardColors(
+        containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow
+    )
+    val selectionModifier = if (selected) Modifier.semantics { this.selected = true } else Modifier
+    // タグのチップと同じ色にならないよう、背景は少し濃くするだけにして枠線で示す
+    val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     if (onLongClick == null) {
-        Card(onClick = onClick, modifier = modifier.fillMaxWidth(), colors = colors) {
+        Card(onClick = onClick, modifier = modifier.fillMaxWidth().then(selectionModifier), colors = colors, border = border) {
             BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis)
         }
     } else {
@@ -111,6 +120,7 @@ fun BookmarkCard(
         Card(
             modifier = modifier
                 .fillMaxWidth()
+                .then(selectionModifier)
                 .clip(CardDefaults.shape)
                 .combinedClickable(
                     onClick = onClick,
@@ -120,7 +130,8 @@ fun BookmarkCard(
                     },
                     onLongClickLabel = onLongClickLabel
                 ),
-            colors = colors
+            colors = colors,
+            border = border
         ) {
             BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis)
         }

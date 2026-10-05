@@ -110,6 +110,10 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    // 大きな画面向けの配置(画面サイズクラス・折り目の情報と、一覧と詳細を左右に並べる ListDetailPaneScaffold)。
+    // バージョンは Compose BOM で管理する(material3 と組み合わせの合ったものを使うため)
+    implementation(libs.androidx.compose.material3.adaptive)
+    implementation(libs.androidx.compose.material3.adaptive.layout)
     // アイコン一式(バージョンは Compose BOM で管理)。release の肥大化は R8 有効化で対処する
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)

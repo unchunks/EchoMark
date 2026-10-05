@@ -15,10 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -86,6 +90,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -113,11 +118,17 @@ import kotlinx.coroutines.launch
 /**
  * ブックマーク一覧(ホーム)。ViewModel をつなぐだけの薄いラッパーで、描画は [BookmarkListContent] が行う。
  * Snackbar(保存・削除・アーカイブの結果と取り消し)、追加シート、長押しの操作メニューをここで扱う。
+ *
+ * @param selectedBookmarkId 2 画面表示で右側に詳細を出しているブックマーク(カードを強調する)
+ * @param onBookmarkRemoved 一覧での操作(削除・アーカイブ/戻す)でブックマークが今の一覧から外れたとき。
+ *   2 画面表示で、右側に出しているものなら右側を空にするために使う
  */
 @Composable
 fun BookmarkListScreen(
     onOpenBookmark: (Long) -> Unit = {},
     onOpenTagManagement: () -> Unit = {},
+    selectedBookmarkId: Long? = null,
+    onBookmarkRemoved: (Long) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -186,6 +197,15 @@ fun BookmarkListScreen(
         }
     }
 
+    val setArchived = { bookmark: Bookmark, archived: Boolean ->
+        viewModel.setArchived(bookmark, archived)
+        onBookmarkRemoved(bookmark.id)
+    }
+    val delete = { bookmark: Bookmark ->
+        viewModel.deleteBookmark(bookmark)
+        onBookmarkRemoved(bookmark.id)
+    }
+
     BookmarkListContent(
         uiState = uiState,
         snackbarHostState = snackbarHostState,
@@ -197,13 +217,14 @@ fun BookmarkListScreen(
             onSortOrderChange = viewModel::onSortOrderChange,
             onTagSelected = viewModel::onTagSelected,
             onToggleFavorite = viewModel::toggleFavorite,
-            onSetArchived = viewModel::setArchived,
-            onDelete = viewModel::deleteBookmark,
+            onSetArchived = setArchived,
+            onDelete = delete,
             onLongPress = { actionTarget = it },
             onAddClick = { showAddSheet = true },
             onOpenTagManagement = onOpenTagManagement,
             onRetry = viewModel::retry
-        )
+        ),
+        selectedBookmarkId = selectedBookmarkId
     )
 
     if (showAddSheet) {
@@ -221,9 +242,9 @@ fun BookmarkListScreen(
             bookmark = target,
             onDismiss = { actionTarget = null },
             onToggleFavorite = { viewModel.toggleFavorite(target) },
-            onToggleArchive = { viewModel.setArchived(target, !target.isArchived) },
+            onToggleArchive = { setArchived(target, !target.isArchived) },
             onShare = { shareBookmark(context, target) },
-            onDelete = { viewModel.deleteBookmark(target) }
+            onDelete = { delete(target) }
         )
     }
 }
@@ -248,8 +269,10 @@ class BookmarkListCallbacks(
 /**
  * 一覧画面の本体(状態を受け取って描くだけ)。
  * 上から: トップバー(通常/検索) → 絞り込みチップ → 今日の再発見 → 件数と並び順 → カードの一覧。右下に追加ボタン。
+ * カードは幅に合わせて複数列に並べる(スマートフォンでは1列。タブレットなど広い画面では、カードが横に間延びしないよう2列以上)。
  *
  * @param nowMillis 相対日時の基準。スクリーンショットでは固定値を渡す
+ * @param selectedBookmarkId 2 画面表示で右側に詳細を出しているブックマーク。そのカードを強調する
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -258,10 +281,11 @@ fun BookmarkListContent(
     snackbarHostState: SnackbarHostState,
     callbacks: BookmarkListCallbacks,
     modifier: Modifier = Modifier,
-    nowMillis: Long = System.currentTimeMillis()
+    nowMillis: Long = System.currentTimeMillis(),
+    selectedBookmarkId: Long? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
-    val listState = rememberLazyListState()
+    val listState = rememberLazyStaggeredGridState()
     // 一番上にいるか、上へ戻る方向にスクロールしたときだけ、追加ボタンを文字つきで大きく出す
     val fabExpanded by remember { derivedStateOf { !listState.canScrollBackward || listState.lastScrolledBackward } }
 
@@ -321,45 +345,58 @@ fun BookmarkListContent(
                 uiState.isLoading -> LoadingState(message = "読み込み中…")
                 uiState.errorMessage != null -> ErrorState(message = uiState.errorMessage, onRetry = callbacks.onRetry)
                 uiState.emptyKind != ListEmptyKind.NONE -> ListEmptyState(uiState, callbacks)
-                else -> BookmarkList(uiState, callbacks, listState, nowMillis)
+                else -> BookmarkList(uiState, callbacks, listState, nowMillis, selectedBookmarkId)
             }
         }
     }
 }
 
+/**
+ * カードの一覧。幅に合わせて [BOOKMARK_CARD_MIN_WIDTH] 以上の列に分け、高さの違うカードを詰めて並べる(石垣状)。
+ * 見出しと「今日の再発見」は全列にまたがる。
+ */
 @Composable
 private fun BookmarkList(
     uiState: BookmarkListUiState,
     callbacks: BookmarkListCallbacks,
-    listState: androidx.compose.foundation.lazy.LazyListState,
-    nowMillis: Long
+    listState: LazyStaggeredGridState,
+    nowMillis: Long,
+    selectedBookmarkId: Long?
 ) {
-    LazyColumn(
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Adaptive(BOOKMARK_CARD_MIN_WIDTH),
         state = listState,
         modifier = Modifier.fillMaxSize(),
         // 下は追加ボタンに最後のカードが隠れないだけ空ける
-        contentPadding = PaddingValues(bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(start = LIST_SIDE_PADDING, end = LIST_SIDE_PADDING, bottom = 96.dp),
+        verticalItemSpacing = 8.dp,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (uiState.isShowingSearchResults) {
-            item(key = "search_header", contentType = "header") {
-                SearchResultHeader(
-                    count = uiState.bookmarks.size,
-                    isSearching = uiState.isSearching,
-                    semanticAvailable = uiState.semanticSearchAvailable
-                )
+            item(key = "search_header", contentType = "header", span = StaggeredGridItemSpan.FullLine) {
+                Box(Modifier.ignoreListSidePadding()) {
+                    SearchResultHeader(
+                        count = uiState.bookmarks.size,
+                        isSearching = uiState.isSearching,
+                        semanticAvailable = uiState.semanticSearchAvailable
+                    )
+                }
             }
         } else {
             if (uiState.showRediscover) {
-                item(key = "rediscover", contentType = "rediscover") {
-                    RediscoverSection(uiState.rediscover, nowMillis, callbacks.onOpenBookmark)
+                item(key = "rediscover", contentType = "rediscover", span = StaggeredGridItemSpan.FullLine) {
+                    Box(Modifier.ignoreListSidePadding()) {
+                        RediscoverSection(uiState.rediscover, nowMillis, callbacks.onOpenBookmark)
+                    }
                 }
             }
-            item(key = "list_header", contentType = "header") {
-                ListHeader(count = uiState.bookmarks.size, sortOrder = uiState.sortOrder)
+            item(key = "list_header", contentType = "header", span = StaggeredGridItemSpan.FullLine) {
+                Box(Modifier.ignoreListSidePadding()) {
+                    ListHeader(count = uiState.bookmarks.size, sortOrder = uiState.sortOrder)
+                }
             }
         }
-        items(uiState.bookmarks, key = { it.id }, contentType = { "bookmark" }) { bookmark ->
+        staggeredItems(uiState.bookmarks, key = { it.id }, contentType = { "bookmark" }) { bookmark ->
             val onArchiveToggle = { callbacks.onSetArchived(bookmark, !bookmark.isArchived) }
             val onDelete = { callbacks.onDelete(bookmark) }
             val archiveLabel = if (bookmark.isArchived) "アーカイブから戻す" else "アーカイブ"
@@ -367,14 +404,13 @@ private fun BookmarkList(
                 bookmark = bookmark,
                 onArchiveToggle = onArchiveToggle,
                 onDelete = onDelete,
-                modifier = Modifier
-                    .animateItem()
-                    .padding(horizontal = 16.dp)
+                modifier = Modifier.animateItem()
             ) {
                 Column {
                     if (bookmark.id in uiState.semanticMatchIds) SemanticMatchLabel()
                     BookmarkCard(
                         bookmark = bookmark,
+                        selected = bookmark.id == selectedBookmarkId,
                         onClick = { callbacks.onOpenBookmark(bookmark.id) },
                         onToggleFavorite = { callbacks.onToggleFavorite(bookmark) },
                         onLongClick = { callbacks.onLongPress(bookmark) },
@@ -801,6 +837,31 @@ internal fun BookmarkSortOrder.label(): String = when (this) {
     BookmarkSortOrder.OLDEST -> "古い順"
     BookmarkSortOrder.RECENTLY_OPENED -> "最近開いた順"
     BookmarkSortOrder.TITLE -> "タイトル順"
+}
+
+/** 一覧の左右の余白 */
+private val LIST_SIDE_PADDING = 16.dp
+
+/**
+ * カード1列の最小幅。これより広い列が2つ取れる幅なら2列にする(縦向きのタブレット・スマートフォンの横向きで2列、縦向きでは1列)。
+ * 小さめのスマートフォン(幅 360dp)のカードより少し狭いくらい
+ */
+private val BOOKMARK_CARD_MIN_WIDTH = 300.dp
+
+/**
+ * 一覧の左右の余白([LIST_SIDE_PADDING])を打ち消して、端から端まで広げる。
+ * 見出し・「今日の再発見」(横スクロール)は自分で左右の余白を持っていて、端まで届くほうが自然なため
+ */
+private fun Modifier.ignoreListSidePadding(): Modifier = layout { measurable, constraints ->
+    val side = LIST_SIDE_PADDING.roundToPx()
+    val placeable = measurable.measure(
+        constraints.copy(
+            minWidth = constraints.minWidth + side * 2,
+            maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth + side * 2 else constraints.maxWidth
+        )
+    )
+    val width = (placeable.width - side * 2).coerceIn(constraints.minWidth, constraints.maxWidth)
+    layout(width, placeable.height) { placeable.placeRelative(-side, 0) }
 }
 
 /** 絞り込みチップの並び(すべて → お気に入り → アーカイブ) */

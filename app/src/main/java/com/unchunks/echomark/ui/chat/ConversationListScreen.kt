@@ -1,5 +1,6 @@
 package com.unchunks.echomark.ui.chat
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -58,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,12 +76,16 @@ import kotlinx.coroutines.launch
  * @param onOpenConversation 既存会話を開く
  * @param onNewConversation 新しい会話を始める(会話自体は初回送信時に作成される)
  * @param onOpenAiSettings AI が未設定のときの案内から AI 設定を開く
+ * @param selectedConversationId 2 画面表示で右側に開いている会話(その行を強調する)
+ * @param onConversationDeleted 一覧で会話を削除したとき(2 画面表示で、右側に開いているものなら右側を空にする)
  */
 @Composable
 fun ConversationListScreen(
     onOpenConversation: (Long) -> Unit,
     onNewConversation: () -> Unit,
     onOpenAiSettings: () -> Unit = {},
+    selectedConversationId: Long? = null,
+    onConversationDeleted: (Long) -> Unit = {},
     viewModel: ConversationListViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -109,12 +115,20 @@ fun ConversationListScreen(
         onNewConversation = onNewConversation,
         onOpenAiSettings = onOpenAiSettings,
         onRename = viewModel::rename,
-        onDelete = viewModel::delete,
-        snackbarHostState = snackbarHostState
+        onDelete = { preview ->
+            viewModel.delete(preview)
+            onConversationDeleted(preview.conversation.id)
+        },
+        snackbarHostState = snackbarHostState,
+        selectedConversationId = selectedConversationId
     )
 }
 
-/** 会話一覧の中身。状態とコールバックを受け取るだけなので、スクリーンショットテストで描画できる。 */
+/**
+ * 会話一覧の中身。状態とコールバックを受け取るだけなので、スクリーンショットテストで描画できる。
+ *
+ * @param selectedConversationId 2 画面表示で右側に開いている会話。その行を強調する
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListContent(
@@ -126,7 +140,8 @@ fun ConversationListContent(
     onRename: (Long, String) -> Unit,
     onDelete: (ConversationPreview) -> Unit,
     modifier: Modifier = Modifier,
-    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    selectedConversationId: Long? = null
 ) {
     var renameTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     val isEmpty = !uiState.isLoading && uiState.conversations.isEmpty()
@@ -188,6 +203,7 @@ fun ConversationListContent(
                     items(uiState.conversations, key = { it.conversation.id }) { preview ->
                         SwipeToDeleteConversation(
                             preview = preview,
+                            selected = preview.conversation.id == selectedConversationId,
                             nowMillis = nowMillis,
                             onOpen = { onOpenConversation(preview.conversation.id) },
                             onRename = { renameTargetId = preview.conversation.id },
@@ -214,6 +230,7 @@ fun ConversationListContent(
 @Composable
 private fun SwipeToDeleteConversation(
     preview: ConversationPreview,
+    selected: Boolean,
     nowMillis: Long,
     onOpen: () -> Unit,
     onRename: () -> Unit,
@@ -240,6 +257,7 @@ private fun SwipeToDeleteConversation(
     ) {
         ConversationCard(
             preview = preview,
+            selected = selected,
             nowMillis = nowMillis,
             onOpen = onOpen,
             onRename = onRename,
@@ -269,6 +287,7 @@ private fun DeleteSwipeBackground(alignEnd: Boolean) {
 @Composable
 private fun ConversationCard(
     preview: ConversationPreview,
+    selected: Boolean,
     nowMillis: Long,
     onOpen: () -> Unit,
     onRename: () -> Unit,
@@ -279,7 +298,9 @@ private fun ConversationCard(
     val excerpt = conversationExcerpt(preview)
     val aboutTitle = preview.aboutBookmarkTitle
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        // 2 画面表示で右側に開いている会話は、枠線と背景色で強調する(アイコンの丸と同じ色にならないよう背景は少し濃くするだけ)
+        color = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier
             .fillMaxWidth()
@@ -289,6 +310,7 @@ private fun ConversationCard(
                 onLongClickLabel = "操作メニューを開く"
             )
             .semantics {
+                if (selected) this.selected = true
                 customActions = listOf(
                     CustomAccessibilityAction("名前を変更") { onRename(); true },
                     CustomAccessibilityAction("削除") { onDelete(); true }

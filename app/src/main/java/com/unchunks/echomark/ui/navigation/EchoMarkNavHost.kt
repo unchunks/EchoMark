@@ -5,14 +5,21 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Forum
@@ -23,6 +30,8 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
@@ -51,8 +60,8 @@ import com.unchunks.echomark.ui.bookmark.ListLaunchAction
 import com.unchunks.echomark.ui.tags.TagManagementScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
-import com.unchunks.echomark.ui.chat.ConversationListScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
+import com.unchunks.echomark.ui.detail.BookmarkDetailViewModel
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
@@ -60,7 +69,7 @@ import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import kotlinx.coroutines.flow.first
 
-/** ボトムバーに並ぶトップレベル画面。route は文字列ルート。選択中は塗りのアイコンにする。 */
+/** ボトムバー・ナビゲーションレールに並ぶトップレベル画面。route は文字列ルート。選択中は塗りのアイコンにする。 */
 private enum class TopLevelDestination(
     val route: String,
     val label: String,
@@ -68,16 +77,34 @@ private enum class TopLevelDestination(
     val unselectedIcon: ImageVector
 ) {
     BOOKMARKS(BOOKMARKS_ROUTE, "ブックマーク", Icons.Filled.Bookmarks, Icons.Outlined.Bookmarks),
-    CHAT("chat", "チャット", Icons.Filled.Forum, Icons.Outlined.Forum),
+    CHAT(CHAT_ROUTE, "チャット", Icons.Filled.Forum, Icons.Outlined.Forum),
     SETTINGS("settings", "設定", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
+/** チャットタブ(会話の一覧) */
+internal const val CHAT_ROUTE = "chat"
+
 internal const val CHAT_NEW_ROUTE = "chat/new"
+
+/** 既存の会話を開き直す */
+internal const val CHAT_CONVERSATION_ROUTE = "chat/{${ChatViewModel.ARG_CONVERSATION_ID}}"
 
 private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
 
 /** トップレベル画面(ボトムバーを出す画面)か。起動直後で未確定(null)のときも出しておく */
 private fun NavDestination?.isTopLevel(): Boolean = this == null || route in topLevelRoutes
+
+/**
+ * ナビゲーションを出すか。
+ * ボトムバーはトップレベル画面だけに出し、サブ画面では隠して縦の領域を広く使う。
+ * ナビゲーションレールは横に並ぶので縦の領域を取らず、広い画面では左右に余裕があるため、サブ画面でも出したままにする
+ * (画面を移るたびに中身が左右にずれず、どの画面からでもタブを切り替えられる)。
+ * はじめにの案内だけは、案内に集中できるよう全画面にする。
+ */
+private fun NavDestination?.showsNavigation(navigation: NavigationLayout): Boolean = when (navigation) {
+    NavigationLayout.BAR -> isTopLevel()
+    NavigationLayout.RAIL -> this?.route != Routes.ONBOARDING
+}
 
 // 画面遷移アニメーション。控えめに、タブ間はフェード、サブ画面は少しだけ横から入る
 private const val TRANSITION_MILLIS = 250
@@ -105,7 +132,12 @@ private val subScreenPopExit: AnimatedContentTransitionScope<NavBackStackEntry>.
 
 /**
  * アプリ全体のナビゲーション。
- * トップレベル画面ではボトムバーを出し、詳細・チャット個別などのサブ画面ではボトムバーを隠して全画面にする。
+ * 画面の広さに合わせて([AdaptiveLayout])、狭い画面ではボトムバー、広い画面ではナビゲーションレールでタブを切り替える。
+ * ボトムバーはトップレベル画面だけに出し、詳細・チャット個別などのサブ画面では隠して全画面にする。
+ *
+ * 広い画面(2 画面表示)では、ブックマークとチャットのタブが一覧と詳細を左右に並べる
+ * ([BookmarkListDetailDestination]・[ChatListDetailDestination])。詳細・会話のルートは狭い画面・通知・チャットの引用などから
+ * これまでどおり開け、2 画面表示になったときに一覧から開いていたものは右側のペインへ移す([moveDetailRouteIntoPane])。
  *
  * インセットの扱いは [EchoMarkAppScaffold] を参照。
  *
@@ -119,6 +151,7 @@ fun EchoMarkNavHost(
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
+    val layout = currentAdaptiveLayout()
 
     LaunchedEffect(launchTarget) {
         if (launchTarget == null) return@LaunchedEffect
@@ -128,8 +161,14 @@ fun EchoMarkNavHost(
         onLaunchTargetHandled()
     }
 
+    // 2 画面表示のときに一覧の上へ詳細・会話のルートが開いたら(折りたたみを開いた・通知から開いた)、右側のペインへ移す
+    LaunchedEffect(layout.isTwoPane, backStackEntry) {
+        if (layout.isTwoPane && backStackEntry != null) navController.moveDetailRouteIntoPane()
+    }
+
     EchoMarkAppScaffold(
-        showBottomBar = currentDestination.isTopLevel(),
+        showNavigation = currentDestination.showsNavigation(layout.navigation),
+        navigation = layout.navigation,
         selectedRoute = TopLevelDestination.entries.firstOrNull { destination ->
             currentDestination?.hierarchy?.any { it.route == destination.route } == true
         }?.route,
@@ -145,10 +184,14 @@ fun EchoMarkNavHost(
             popExitTransition = fadeExit
         ) {
             composable(TopLevelDestination.BOOKMARKS.route) { entry ->
-                BookmarkListDestination(
+                BookmarkListDetailDestination(
                     entry = entry,
-                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
-                    onOpenTagManagement = { navController.navigate(Routes.TAGS) }
+                    layout = layout,
+                    isCurrentEntry = { navController.currentBackStackEntry?.id == entry.id },
+                    onOpenBookmarkRoute = { navController.navigate(Routes.bookmarkDetail(it)) },
+                    onOpenTagManagement = { navController.navigate(Routes.TAGS) },
+                    onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
             // タグ管理。タグをタップしたら、そのタグで絞り込んだ一覧へ戻る
@@ -162,11 +205,16 @@ fun EchoMarkNavHost(
                     onOpenTag = dropUnlessResumedWith { tagId: Long -> navController.returnToBookmarkListWithTag(tagId) }
                 )
             }
-            // チャットタブ = 会話一覧。"chat/new" は初回送信時に会話を作成、"chat/{conversationId}" は再開
-            composable(TopLevelDestination.CHAT.route) {
-                ConversationListScreen(
-                    onOpenConversation = { id -> navController.navigate("chat/$id") },
-                    onNewConversation = { navController.navigate(CHAT_NEW_ROUTE) },
+            // チャットタブ = 会話一覧(広い画面では右に会話を並べる)。
+            // "chat/new" は初回送信時に会話を作成、"chat/{conversationId}" は再開
+            composable(TopLevelDestination.CHAT.route) { entry ->
+                ChatListDetailDestination(
+                    entry = entry,
+                    layout = layout,
+                    isCurrentEntry = { navController.currentBackStackEntry?.id == entry.id },
+                    onOpenConversationRoute = { id -> navController.navigate("chat/$id") },
+                    onNewConversationRoute = { navController.navigate(CHAT_NEW_ROUTE) },
+                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
@@ -195,7 +243,7 @@ fun EchoMarkNavHost(
                 )
             }
             composable(
-                route = "chat/{${ChatViewModel.ARG_CONVERSATION_ID}}",
+                route = CHAT_CONVERSATION_ROUTE,
                 arguments = listOf(navArgument(ChatViewModel.ARG_CONVERSATION_ID) { type = NavType.LongType }),
                 enterTransition = subScreenEnter,
                 popExitTransition = subScreenPopExit
@@ -229,7 +277,7 @@ fun EchoMarkNavHost(
             }
             composable(
                 route = Routes.BOOKMARK_DETAIL,
-                arguments = listOf(navArgument("bookmarkId") { type = NavType.LongType }),
+                arguments = listOf(navArgument(BookmarkDetailViewModel.ARG_BOOKMARK_ID) { type = NavType.LongType }),
                 deepLinks = listOf(navDeepLink { uriPattern = Routes.BOOKMARK_DEEP_LINK }),
                 enterTransition = subScreenEnter,
                 popExitTransition = subScreenPopExit
@@ -246,36 +294,63 @@ fun EchoMarkNavHost(
 }
 
 /**
- * アプリ全体の枠。トップレベル画面ではボトムバーを出し、サブ画面では隠す。
+ * アプリ全体の枠。[navigation] に応じて、下にボトムバー([NavigationLayout.BAR])か左にナビゲーションレール
+ * ([NavigationLayout.RAIL])を出す。[showNavigation] が false なら隠す(サブ画面のボトムバー・はじめにの案内)。
  *
  * インセット: 左右と下(ナビゲーションバー・ボトムバー)の分だけ余白を付けて consumeWindowInsets する。
  * 上(ステータスバー)は消費せず、各画面の TopAppBar(既定の windowInsets)が自分の背景色で受け持つ。
  * ここで上まで消費すると、ステータスバーの帯がこの Scaffold の背景のままになり、スクロールで色が変わる
  * TopAppBar とつながらない。各画面の imePadding は、ここで消費した下の分を差し引いた残りだけを足す。
+ * レールを出しているときは、左(画面の始まり側)の分はレールが受け持つので、中身の側では余白を付けずに消費だけする
+ * (インセットはウィンドウの端からの値なので、レールの右に置いた中身でもう一度余白を付けると二重になる)。
  *
  * @param content 画面本体。渡す Modifier(余白とインセットの消費)を付けて表示すること
  */
 @Composable
 internal fun EchoMarkAppScaffold(
-    showBottomBar: Boolean,
+    showNavigation: Boolean,
     selectedRoute: String?,
     onNavigate: (String) -> Unit,
+    navigation: NavigationLayout = NavigationLayout.BAR,
     content: @Composable (Modifier) -> Unit
 ) {
-    Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets
-            .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
-        bottomBar = {
+    val showRail = navigation == NavigationLayout.RAIL && showNavigation
+    Row(Modifier.fillMaxSize()) {
+        if (navigation == NavigationLayout.RAIL) {
             AnimatedVisibility(
-                visible = showBottomBar,
-                enter = slideInVertically(tween(TRANSITION_MILLIS)) { it } + fadeIn(tween(TRANSITION_MILLIS)),
-                exit = slideOutVertically(tween(TRANSITION_MILLIS)) { it } + fadeOut(tween(TRANSITION_MILLIS))
+                visible = showNavigation,
+                enter = expandHorizontally(tween(TRANSITION_MILLIS)) + fadeIn(tween(TRANSITION_MILLIS)),
+                exit = shrinkHorizontally(tween(TRANSITION_MILLIS)) + fadeOut(tween(TRANSITION_MILLIS))
             ) {
-                EchoMarkNavigationBar(selectedRoute = selectedRoute, onNavigate = onNavigate)
+                EchoMarkNavigationRail(
+                    selectedRoute = selectedRoute,
+                    onNavigate = onNavigate,
+                    modifier = Modifier.fillMaxHeight()
+                )
             }
         }
-    ) { innerPadding ->
-        content(Modifier.padding(innerPadding).consumeWindowInsets(innerPadding))
+        val railInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Start)
+        Scaffold(
+            modifier = Modifier
+                .weight(1f)
+                .then(if (showRail) Modifier.consumeWindowInsets(railInsets) else Modifier),
+            contentWindowInsets = ScaffoldDefaults.contentWindowInsets.only(
+                if (showRail) WindowInsetsSides.End + WindowInsetsSides.Bottom else WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+            ),
+            bottomBar = {
+                if (navigation == NavigationLayout.BAR) {
+                    AnimatedVisibility(
+                        visible = showNavigation,
+                        enter = slideInVertically(tween(TRANSITION_MILLIS)) { it } + fadeIn(tween(TRANSITION_MILLIS)),
+                        exit = slideOutVertically(tween(TRANSITION_MILLIS)) { it } + fadeOut(tween(TRANSITION_MILLIS))
+                    ) {
+                        EchoMarkNavigationBar(selectedRoute = selectedRoute, onNavigate = onNavigate)
+                    }
+                }
+            }
+        ) { innerPadding ->
+            content(Modifier.padding(innerPadding).consumeWindowInsets(innerPadding))
+        }
     }
 }
 
@@ -349,17 +424,43 @@ internal fun EchoMarkNavigationBar(
             NavigationBarItem(
                 selected = selected,
                 onClick = { onNavigate(destination.route) },
-                // ラベルを常に表示しているので、アイコン自体は読み上げない
-                icon = {
-                    Icon(
-                        imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
-                        contentDescription = null
-                    )
-                },
+                icon = { TopLevelIcon(destination, selected) },
                 label = { Text(destination.label) }
             )
         }
     }
+}
+
+/**
+ * ナビゲーションレール(広い画面で左に縦に並べるタブ)。並びと見た目はボトムバー([EchoMarkNavigationBar])と同じ。
+ * 項目は上から並べる(親指の届く下側ではなく、視線の起点の左上に置く)。
+ */
+@Composable
+internal fun EchoMarkNavigationRail(
+    selectedRoute: String?,
+    onNavigate: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    NavigationRail(modifier = modifier) {
+        TopLevelDestination.entries.forEach { destination ->
+            val selected = destination.route == selectedRoute
+            NavigationRailItem(
+                selected = selected,
+                onClick = { onNavigate(destination.route) },
+                icon = { TopLevelIcon(destination, selected) },
+                label = { Text(destination.label) }
+            )
+        }
+    }
+}
+
+/** タブのアイコン。ラベルを常に表示しているので、アイコン自体は読み上げない */
+@Composable
+private fun TopLevelIcon(destination: TopLevelDestination, selected: Boolean) {
+    Icon(
+        imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
+        contentDescription = null
+    )
 }
 
 @PreviewLightDark

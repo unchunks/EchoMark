@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -86,6 +85,7 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.common.MessageSnackbarEffect
+import com.unchunks.echomark.ui.common.ReadableLazyColumn
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.SectionHeader
 import java.time.DayOfWeek
@@ -228,7 +228,7 @@ fun SettingsContent(
             return@Scaffold
         }
         val layoutDirection = LocalLayoutDirection.current
-        LazyColumn(
+        ReadableLazyColumn(
             contentPadding = PaddingValues(
                 start = innerPadding.calculateStartPadding(layoutDirection),
                 end = innerPadding.calculateEndPadding(layoutDirection),

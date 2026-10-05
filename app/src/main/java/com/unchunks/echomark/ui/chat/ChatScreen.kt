@@ -9,6 +9,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -80,6 +81,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.ui.components.LoadingState
+import com.unchunks.echomark.ui.navigation.WideContentMaxWidth
+import com.unchunks.echomark.ui.navigation.centeredMaxWidth
 import kotlinx.coroutines.launch
 
 /**
@@ -87,12 +90,15 @@ import kotlinx.coroutines.launch
  * @param onBack 会話一覧へ戻る
  * @param onOpenBookmark 引用・参照カード(ブックマーク)タップ時に、そのIDの詳細を開く
  * @param onOpenAiSettings AI 未設定・キー無効などのときに AI 設定を開く
+ * @param showBackButton トップバーに戻るボタンを出すか。2 画面表示の右側では出さない
+ *   ([onBack] は会話を削除したあと、右側を空にするのに使われる)
  */
 @Composable
 fun ChatScreen(
     onBack: () -> Unit = {},
     onOpenBookmark: (Long) -> Unit = {},
     onOpenAiSettings: () -> Unit = {},
+    showBackButton: Boolean = true,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -122,7 +128,8 @@ fun ChatScreen(
                 snackbarHostState.showSnackbar("コピーしました")
             }
         },
-        snackbarHostState = snackbarHostState
+        snackbarHostState = snackbarHostState,
+        showBackButton = showBackButton
     )
 }
 
@@ -131,6 +138,11 @@ fun ChatScreen(
  *
  * インセット: 親の Scaffold(EchoMarkAppScaffold)が左右と下(ナビゲーションバー)の分を付けて consumeWindowInsets 済み。
  * 上(ステータスバー)は TopAppBar が受け持ち、imePadding は「キーボード高 - 消費済みの分」だけを足す。
+ *
+ * 広い画面では、メッセージ・入力欄を中央の読みやすい幅に収める(1行が長くなりすぎないように)。
+ * スクロールは画面の幅全体で受ける。
+ *
+ * @param showBackButton トップバーに戻るボタンを出すか(2 画面表示の右側では出さない)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,7 +161,8 @@ fun ChatContent(
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
-    listState: LazyListState = rememberLazyListState()
+    listState: LazyListState = rememberLazyListState(),
+    showBackButton: Boolean = true
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -191,7 +204,7 @@ fun ChatContent(
             ChatTopBar(
                 title = title,
                 canEdit = uiState.hasConversation,
-                onBack = onBack,
+                onBack = onBack.takeIf { showBackButton },
                 onRename = { showRename = true },
                 onDelete = { showDelete = true }
             )
@@ -208,7 +221,9 @@ fun ChatContent(
             val about = uiState.aboutBookmark
             if (about != null || !uiState.aiSetup.isReady) {
                 Column(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                    modifier = Modifier
+                        .centeredMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     AiSetupBanner(state = uiState.aiSetup, onOpenAiSettings = onOpenAiSettings, compact = true)
@@ -230,6 +245,7 @@ fun ChatContent(
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 24.dp, vertical = 24.dp)
+                            .centeredMaxWidth()
                     )
                     else -> ChatMessageList(
                         uiState = uiState,
@@ -321,7 +337,7 @@ internal const val DEFAULT_CHAT_TITLE = "新しいチャット"
 private fun ChatTopBar(
     title: String,
     canEdit: Boolean,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -336,8 +352,10 @@ private fun ChatTopBar(
             )
         },
         navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
+                }
             }
         },
         actions = {
@@ -374,43 +392,47 @@ private fun ChatMessageList(
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        items(uiState.messages, key = { it.id }, contentType = { it.role }) { message ->
-            if (message.role == ChatRole.USER) {
-                UserMessageItem(text = message.content, onCopy = { onCopy(message.content) })
-            } else {
-                AssistantMessageItem(
-                    message = message,
-                    referencedBookmarks = uiState.referencedBookmarks,
-                    onOpenBookmark = onOpenBookmark,
-                    onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) }
-                )
+    // 広い画面では左右の余白を広げて、メッセージを中央の読みやすい幅に収める(スクロールは幅全体で受ける)
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val side = maxOf(16.dp, (maxWidth - WideContentMaxWidth) / 2 + 16.dp)
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = side, end = side, top = 8.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(uiState.messages, key = { it.id }, contentType = { it.role }) { message ->
+                if (message.role == ChatRole.USER) {
+                    UserMessageItem(text = message.content, onCopy = { onCopy(message.content) })
+                } else {
+                    AssistantMessageItem(
+                        message = message,
+                        referencedBookmarks = uiState.referencedBookmarks,
+                        onOpenBookmark = onOpenBookmark,
+                        onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) }
+                    )
+                }
             }
-        }
-        // 生成中の回答。最初の文字が届くまでは進み具合を出す
-        val streaming = uiState.streamingText
-        if (uiState.isSending) {
-            item(key = "streaming", contentType = "streaming") {
-                StreamingMessageItem(
-                    text = streaming.orEmpty(),
-                    pendingReferenceCount = uiState.pendingReferenceCount
-                )
+            // 生成中の回答。最初の文字が届くまでは進み具合を出す
+            val streaming = uiState.streamingText
+            if (uiState.isSending) {
+                item(key = "streaming", contentType = "streaming") {
+                    StreamingMessageItem(
+                        text = streaming.orEmpty(),
+                        pendingReferenceCount = uiState.pendingReferenceCount
+                    )
+                }
             }
-        }
-        uiState.error?.let { error ->
-            item(key = "error", contentType = "error") {
-                ChatErrorItem(
-                    error = error,
-                    onRetry = onRetry,
-                    onOpenAiSettings = onOpenAiSettings,
-                    // 上部に AI 未設定の案内が出ているときは、同じボタンを重ねて出さない
-                    showAiSettingsButton = error.needsAiSettings && uiState.aiSetup.isReady
-                )
+            uiState.error?.let { error ->
+                item(key = "error", contentType = "error") {
+                    ChatErrorItem(
+                        error = error,
+                        onRetry = onRetry,
+                        onOpenAiSettings = onOpenAiSettings,
+                        // 上部に AI 未設定の案内が出ているときは、同じボタンを重ねて出さない
+                        showAiSettingsButton = error.needsAiSettings && uiState.aiSetup.isReady
+                    )
+                }
             }
         }
     }
@@ -431,7 +453,10 @@ internal fun ChatInputBar(
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            // 広い画面では、メッセージと同じ中央の幅にそろえる
+            modifier = Modifier
+                .centeredMaxWidth()
+                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             TextField(
