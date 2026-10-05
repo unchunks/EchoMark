@@ -60,7 +60,8 @@ class BookmarkDetailViewModel @Inject constructor(
     private val recentlyDeleted: RecentlyDeletedBookmarks
 ) : ViewModel() {
 
-    private val bookmarkId: Long = checkNotNull(savedStateHandle.get<Long>("bookmarkId"))
+    // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
+    private val bookmarkId: Long = checkNotNull(savedStateHandle.get<Long>(ARG_BOOKMARK_ID))
 
     private val bookmarkFlow = repository.observeBookmark(bookmarkId)
 
@@ -163,5 +164,10 @@ class BookmarkDetailViewModel @Inject constructor(
             recentlyDeleted.notifyDeleted(bookmark)
             onDeleted()
         }
+    }
+
+    companion object {
+        /** ナビゲーション引数(と SavedStateHandle)のキー。 */
+        const val ARG_BOOKMARK_ID = "bookmarkId"
     }
 }

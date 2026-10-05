@@ -112,6 +112,7 @@ import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.statusDescription
+import com.unchunks.echomark.ui.navigation.centeredMaxWidth
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -122,6 +123,8 @@ import java.time.format.DateTimeFormatter
  *
  * @param onAskAi このブックマークについて AI に質問する(チャットの新規会話を開く)
  * @param onOpenAiSettings AI の準備ができていないときに、AI 設定を開く
+ * @param showBackButton トップバーに戻るボタンを出すか。2 画面表示の右側では出さない
+ *   ([onBack] は削除後や「見つかりません」の「戻る」で、右側を空にするのに使われる)
  */
 @Composable
 fun BookmarkDetailScreen(
@@ -129,6 +132,7 @@ fun BookmarkDetailScreen(
     onOpenBookmark: (Long) -> Unit,
     onAskAi: (Long) -> Unit = {},
     onOpenAiSettings: () -> Unit = {},
+    showBackButton: Boolean = true,
     viewModel: BookmarkDetailViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -190,7 +194,8 @@ fun BookmarkDetailScreen(
             onSaveEdit = viewModel::saveEdit,
             onAddTag = viewModel::addTag,
             onRemoveTag = viewModel::removeTag
-        )
+        ),
+        showBackButton = showBackButton
     )
 }
 
@@ -214,6 +219,9 @@ class BookmarkDetailCallbacks(
 /**
  * 詳細画面の本体(状態を受け取って描くだけ)。
  * 上から: OG 画像 → 出どころと保存日時 → タイトル → 開く/質問ボタン → AI 要約(または AI の状態) → タグ → 本文/メモ → 関連。
+ * 広い画面では、本文が横に間延びしないよう中央の読みやすい幅に収める(スクロールは画面の幅全体で受ける)。
+ *
+ * @param showBackButton トップバーに戻るボタンを出すか(2 画面表示の右側では出さない)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -222,7 +230,8 @@ fun BookmarkDetailContent(
     snackbarHostState: SnackbarHostState,
     callbacks: BookmarkDetailCallbacks,
     modifier: Modifier = Modifier,
-    nowMillis: Long = System.currentTimeMillis()
+    nowMillis: Long = System.currentTimeMillis(),
+    showBackButton: Boolean = true
 ) {
     val bookmark = uiState.bookmark
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -236,6 +245,7 @@ fun BookmarkDetailContent(
                 bookmark = bookmark,
                 scrollBehavior = scrollBehavior,
                 callbacks = callbacks,
+                showBackButton = showBackButton,
                 onEdit = { showEditSheet = true },
                 onDelete = { showDeleteDialog = true }
             )
@@ -301,6 +311,7 @@ private fun DetailTopBar(
     bookmark: Bookmark?,
     scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior,
     callbacks: BookmarkDetailCallbacks,
+    showBackButton: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -308,8 +319,10 @@ private fun DetailTopBar(
     TopAppBar(
         title = {},
         navigationIcon = {
-            IconButton(onClick = callbacks.onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+            if (showBackButton) {
+                IconButton(onClick = callbacks.onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                }
             }
         },
         scrollBehavior = scrollBehavior,
@@ -388,6 +401,8 @@ private fun DetailBody(
             .verticalScroll(rememberScrollState())
             .padding(contentPadding)
             .padding(bottom = 24.dp)
+            // 広い画面では中央の読みやすい幅に収める(スクロールより後に付けるので、スクロールは幅全体で受ける)
+            .centeredMaxWidth()
     ) {
         val imageUrl = bookmark.imageUrl
         if (!imageUrl.isNullOrBlank()) {

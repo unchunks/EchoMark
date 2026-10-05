@@ -78,7 +78,7 @@ class WindowInsetsScreenshotTest {
                 LocalAsyncImagePreviewHandler provides AsyncImagePreviewHandler { ColorImage(0xFF6F8FA6.toInt()) }
             ) {
                 EchoMarkTheme(darkTheme = false, dynamicColor = false) {
-                    EchoMarkAppScaffold(showBottomBar = showBottomBar, selectedRoute = null, onNavigate = {}) { modifier ->
+                    EchoMarkAppScaffold(showNavigation = showBottomBar, selectedRoute = null, onNavigate = {}) { modifier ->
                         androidx.compose.foundation.layout.Box(modifier) { content() }
                     }
                 }

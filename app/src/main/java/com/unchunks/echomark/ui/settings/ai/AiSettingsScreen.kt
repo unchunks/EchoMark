@@ -87,6 +87,7 @@ import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.common.MessageSnackbarEffect
 import com.unchunks.echomark.ui.common.openUrl
+import com.unchunks.echomark.ui.common.readableWidth
 import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.settings.SettingsItem
 import com.unchunks.echomark.ui.settings.SettingsNotice
@@ -193,6 +194,8 @@ fun AiSettingsContent(
                 .padding(innerPadding)
                 .imePadding()
                 .verticalScroll(rememberScrollState())
+                // スクロール領域は画面幅いっぱいのまま、中身だけを読みやすい幅にして中央に寄せる
+                .readableWidth()
                 .padding(bottom = 24.dp)
         ) {
             StatusCard(uiState)
