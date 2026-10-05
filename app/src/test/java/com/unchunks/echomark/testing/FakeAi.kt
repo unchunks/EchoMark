@@ -34,12 +34,14 @@ class FakeAppSettingsRepository(
     val themeModeFlow = MutableStateFlow(ThemeMode.SYSTEM)
     val dynamicColorFlow = MutableStateFlow(false)
     val onboardingCompletedFlow = MutableStateFlow(false)
+    val sendFilesToCloudFlow = MutableStateFlow(true)
     var resetCalls = 0
 
     override val rediscoverSettings: Flow<RediscoverSettings> = rediscoverFlow
     override val themeMode: Flow<ThemeMode> = themeModeFlow
     override val dynamicColor: Flow<Boolean> = dynamicColorFlow
     override val onboardingCompleted: Flow<Boolean> = onboardingCompletedFlow
+    override val sendFilesToCloud: Flow<Boolean> = sendFilesToCloudFlow
 
     override suspend fun setLlmBackend(backend: LlmBackend) { backendFlow.value = backend }
     override suspend fun setApiProvider(provider: ApiProvider) { providerFlow.value = provider }
@@ -50,6 +52,7 @@ class FakeAppSettingsRepository(
     override suspend fun setThemeMode(mode: ThemeMode) { themeModeFlow.value = mode }
     override suspend fun setDynamicColor(enabled: Boolean) { dynamicColorFlow.value = enabled }
     override suspend fun setOnboardingCompleted(completed: Boolean) { onboardingCompletedFlow.value = completed }
+    override suspend fun setSendFilesToCloud(enabled: Boolean) { sendFilesToCloudFlow.value = enabled }
     override suspend fun setRediscoverEnabled(enabled: Boolean) {
         rediscoverFlow.value = rediscoverFlow.value.copy(enabled = enabled)
     }
@@ -64,6 +67,7 @@ class FakeAppSettingsRepository(
         rediscoverFlow.value = RediscoverSettings()
         themeModeFlow.value = ThemeMode.SYSTEM
         dynamicColorFlow.value = false
+        sendFilesToCloudFlow.value = true
     }
     override suspend fun getRediscoverNotified(): Map<Long, Long> = TODO("not used")
     override suspend fun recordRediscoverNotified(ids: List<Long>, notifiedAt: Long) = TODO("not used")

@@ -32,6 +32,12 @@ interface AppSettingsRepository {
     /** 初回オンボーディングを終えた(スキップを含む)か。 */
     val onboardingCompleted: Flow<Boolean>
 
+    /**
+     * クラウド API 選択時に、保存したファイル(画像・PDF・音声・動画)そのものを提供元へ送って解析してよいか。
+     * false なら端末内で取り出したテキスト(OCR・文字起こしなど)だけを送る。既定は true。
+     */
+    val sendFilesToCloud: Flow<Boolean>
+
     /** クラウド API 選択時に使う提供元。既定は Claude。 */
     val apiProvider: Flow<ApiProvider>
 
@@ -46,6 +52,7 @@ interface AppSettingsRepository {
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setDynamicColor(enabled: Boolean)
     suspend fun setOnboardingCompleted(completed: Boolean)
+    suspend fun setSendFilesToCloud(enabled: Boolean)
     suspend fun setRediscoverEnabled(enabled: Boolean)
     suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int)
 
