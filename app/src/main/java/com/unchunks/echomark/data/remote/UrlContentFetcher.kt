@@ -22,7 +22,18 @@ data class FetchedContent(
     /** OG 画像の絶対 URL(http/https のみ。無ければ null) */
     val imageUrl: String? = null,
     /** サイト名(og:site_name など。無ければ null) */
-    val siteName: String? = null
+    val siteName: String? = null,
+    /** YouTube の動画ページなら、ページ内の JSON から取り出した動画情報(字幕の取得と本文の組み立てに使う) */
+    val youtube: YouTubeVideo? = null
+)
+
+/** YouTube のウォッチページ(インライン JSON の videoDetails)から取り出した動画情報。 */
+data class YouTubeVideo(
+    val videoId: String?,
+    val title: String?,
+    val author: String?,
+    val description: String?,
+    val keywords: List<String>
 )
 
 /**
@@ -34,12 +45,14 @@ data class FetchedContent(
 class UrlContentFetcher internal constructor(
     okHttpClient: OkHttpClient,
     private val dispatcherProvider: DispatcherProvider,
+    /** YouTube の字幕の取得先を差し替える(テスト用)。null なら本物の YouTube */
+    youtubePlayerEndpoint: HttpUrl? = null,
     /** 接続してよいアドレスか(テストではローカルのサーバーを許可する) */
     isAllowedAddress: (InetAddress) -> Boolean
 ) {
     @Inject
     constructor(okHttpClient: OkHttpClient, dispatcherProvider: DispatcherProvider) :
-        this(okHttpClient, dispatcherProvider, ::isPublicAddress)
+        this(okHttpClient, dispatcherProvider, isAllowedAddress = ::isPublicAddress)
 
     private val client: OkHttpClient = okHttpClient.newBuilder()
         .dns(PublicOnlyDns(okHttpClient.dns, isAllowedAddress))
@@ -48,11 +61,28 @@ class UrlContentFetcher internal constructor(
         .followSslRedirects(false)
         .build()
 
-    /** 失敗時は Result.failure(例外) を返す。呼び出し側はタイトル=URLのまま続行できる */
+    private val transcriptFetcher = youtubePlayerEndpoint
+        ?.let { YouTubeTranscriptFetcher(client, it) }
+        ?: YouTubeTranscriptFetcher(client)
+
+    /**
+     * 失敗時は Result.failure(例外) を返す。呼び出し側はタイトル=URLのまま続行できる。
+     * YouTube の動画ページなら字幕も取得して本文に入れる(字幕が取れなくてもページの取得は成功として返す)。
+     */
     suspend fun fetch(url: String): Result<FetchedContent> =
         withContext(dispatcherProvider.io) {
-            runCatching { fetchBlocking(url) }
+            runCatching { withTranscript(fetchBlocking(url)) }
         }
+
+    /** YouTube なら字幕を取得し、チャンネル名・説明文・字幕をまとめた本文に差し替える */
+    private fun withTranscript(content: FetchedContent): FetchedContent {
+        val video = content.youtube ?: return content
+        val videoId = video.videoId ?: return content
+        val transcript = transcriptFetcher.fetch(videoId) ?: return content
+        val text = HtmlContentExtractor.youtubeText(video, transcript) ?: return content
+        // 本文に説明文と字幕が入るので、汎用の概要(og:description)は重複させない
+        return content.copy(text = text, description = null)
+    }
 
     private fun fetchBlocking(url: String): FetchedContent {
         require(url.startsWith("http://") || url.startsWith("https://")) { "unsupported scheme: $url" }
