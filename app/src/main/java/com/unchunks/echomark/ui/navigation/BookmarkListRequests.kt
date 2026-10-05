@@ -74,12 +74,17 @@ internal fun BookmarkListRequestsEffect(
     }
 }
 
-/** 一覧の画面。エントリに届いた依頼を ViewModel に渡してから、[BookmarkListScreen] を表示する */
+/**
+ * 一覧の画面。エントリに届いた依頼を ViewModel に渡してから、[BookmarkListScreen] を表示する。
+ * [selectedBookmarkId]・[onBookmarkRemoved] は 2 画面表示用([BookmarkListDetailDestination])。
+ */
 @Composable
 internal fun BookmarkListDestination(
     entry: NavBackStackEntry,
     onOpenBookmark: (Long) -> Unit,
     onOpenTagManagement: () -> Unit,
+    selectedBookmarkId: Long? = null,
+    onBookmarkRemoved: (Long) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
 ) {
     BookmarkListRequestsEffect(
@@ -90,6 +95,8 @@ internal fun BookmarkListDestination(
     BookmarkListScreen(
         onOpenBookmark = onOpenBookmark,
         onOpenTagManagement = onOpenTagManagement,
+        selectedBookmarkId = selectedBookmarkId,
+        onBookmarkRemoved = onBookmarkRemoved,
         viewModel = viewModel
     )
 }

@@ -50,6 +50,9 @@ class ChatViewModel @Inject constructor(
     private val conversationIdFlow: StateFlow<Long?> =
         savedStateHandle.getStateFlow<Long?>(ARG_CONVERSATION_ID, null)
 
+    /** 表示中の会話の ID(新しいチャットで、まだ送信していなければ null)。2 画面表示で一覧の選択表示に使う */
+    val conversationId: StateFlow<Long?> = conversationIdFlow
+
     /** 「このブックマークについて質問」で新しく始めるときの対象("chat/new/about/{id}" の引数)。 */
     private val navAboutBookmarkId: Long? = savedStateHandle.get<Long>(Routes.ARG_ABOUT_BOOKMARK_ID)
 
