@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.repository
 
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -13,6 +14,8 @@ import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.AttachmentException
+import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.TestDispatcherProvider
@@ -45,6 +48,7 @@ class BookmarkRepositoryImplTest {
     private lateinit var vectorSearch: VectorSearchDataSource
     private lateinit var workManager: WorkManager
     private lateinit var repository: BookmarkRepositoryImpl
+    private lateinit var attachmentStore: AttachmentStore
 
     private val vector = FloatArray(768) { if (it == 0) 1f else 0f }
 
@@ -55,13 +59,15 @@ class BookmarkRepositoryImplTest {
         boxStore = inMemoryBoxStore()
         vectorSearch = VectorSearchDataSource(boxStore.embeddingBox())
         workManager = initTestWorkManager(context)
+        attachmentStore = AttachmentStore(context, TestDispatcherProvider(Dispatchers.Unconfined))
         repository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
             workScheduler = BookmarkWorkScheduler(workManager, FakeAppSettingsRepository()),
-            embeddingProvider = FakeEmbeddingProvider()
+            embeddingProvider = FakeEmbeddingProvider(),
+            attachmentStore = attachmentStore
         )
     }
 
@@ -78,6 +84,13 @@ class BookmarkRepositoryImplTest {
 
     private fun unfinished(name: String) = workManager.statesOf(name).filterNot { it.isFinished }
 
+    /** 一意名 [name] の未完了のワークの種類(ワーカーのクラスの単純名)の数 */
+    private fun unfinishedKinds(name: String): Map<String, Int> =
+        workManager.getWorkInfosForUniqueWork(name).get()
+            .filterNot { it.state.isFinished }
+            .map { info -> info.tags.first { it.startsWith("com.unchunks") }.substringAfterLast('.') }
+            .groupingBy { it }.eachCount()
+
     private fun urlBookmark(content: String?, status: AiStatus) = Bookmark(
         type = BookmarkType.URL, content = content, contentUri = "https://example.com/${content.hashCode()}",
         title = "https://example.com", createdAt = 1L, lastAccessedAt = 1L, aiStatus = status
@@ -93,10 +106,14 @@ class BookmarkRepositoryImplTest {
     fun URLを保存すると本文取得とAI処理が一意名で登録される() = runBlocking {
         val id = repository.saveUrlBookmark("https://example.com/a", null, null).id
 
-        // 本文取得(ネットワーク待ち)→ AI 処理(前段待ち)
+        // 本文取得(ネットワーク待ち)→ 中身の取り出し(リンク先がファイルだったとき用。前段待ち)→ AI 処理(前段待ち)
         assertEquals(
-            listOf(WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED),
+            listOf(WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED, WorkInfo.State.BLOCKED),
             workManager.statesOf("process_bookmark_$id").sorted()
+        )
+        assertEquals(
+            mapOf("UrlFetchWorker" to 1, "ContentExtractionWorker" to 1, "BookmarkAiProcessingWorker" to 1),
+            workerKinds("process_bookmark_$id")
         )
     }
 
@@ -149,7 +166,7 @@ class BookmarkRepositoryImplTest {
         repository.enqueueWaitingModelProcessing()
 
         assertEquals(
-            mapOf("UrlFetchWorker" to 1, "BookmarkAiProcessingWorker" to 2),
+            mapOf("UrlFetchWorker" to 1, "ContentExtractionWorker" to 1, "BookmarkAiProcessingWorker" to 2),
             workerKinds(BookmarkWorkScheduler.BULK_WORK_NAME)
         )
     }
@@ -161,9 +178,119 @@ class BookmarkRepositoryImplTest {
         repository.reprocess(id)
 
         assertEquals(
-            mapOf("UrlFetchWorker" to 1, "BookmarkAiProcessingWorker" to 1),
+            mapOf("UrlFetchWorker" to 1, "ContentExtractionWorker" to 1, "BookmarkAiProcessingWorker" to 1),
             workerKinds("process_bookmark_$id")
         )
+    }
+
+    // ---- ファイルのブックマーク ----
+
+    private fun storeFile(name: String, bytes: ByteArray, mimeType: String): StoredAttachment =
+        attachmentStore.saveStream(bytes.inputStream(), mimeType, name, maxBytes = 1024 * 1024)
+
+    @Test
+    fun 画像ファイルを保存すると中身の取り出しとAI処理が登録される() = runBlocking {
+        val stored = storeFile("旅行の写真.JPG", byteArrayOf(1, 2, 3), "image/jpeg")
+
+        val id = repository.saveFileBookmark(stored, title = " ", memo = "京都で撮影").id
+
+        val saved = repository.getBookmarkById(id)!!
+        assertEquals(BookmarkType.IMAGE, saved.type)
+        assertEquals("旅行の写真", saved.title)
+        assertEquals("京都で撮影", saved.content)
+        assertEquals(stored.filePath, saved.filePath)
+        assertEquals("image/jpeg", saved.mimeType)
+        assertEquals("旅行の写真.JPG", saved.fileName)
+        assertEquals(3L, saved.fileSize)
+        assertEquals(
+            mapOf("ContentExtractionWorker" to 1, "BookmarkAiProcessingWorker" to 1),
+            workerKinds("process_bookmark_$id")
+        )
+    }
+
+    @Test
+    fun テキストファイルは中身を本文に入れてAI処理のみ登録する() = runBlocking {
+        val stored = storeFile("notes.md", "# 見出し\n本文です".toByteArray(), "text/markdown")
+
+        val id = repository.saveFileBookmark(stored, title = "読書メモ", memo = null).id
+
+        val saved = repository.getBookmarkById(id)!!
+        assertEquals(BookmarkType.TEXT, saved.type)
+        assertEquals("読書メモ", saved.title)
+        assertEquals("# 見出し\n本文です", saved.content)
+        assertEquals(mapOf("BookmarkAiProcessingWorker" to 1), workerKinds("process_bookmark_$id"))
+    }
+
+    @Test(expected = AttachmentException::class)
+    fun 保存できない形式のファイルは保存しない(): Unit = runBlocking {
+        repository.saveFileBookmark(
+            StoredAttachment("attachments/a.zip", "application/zip", "a.zip", 10L),
+            title = null,
+            memo = null
+        )
+        Unit
+    }
+
+    @Test
+    fun ファイルのあるブックマークの再処理と復元は中身の取り出しから行う() = runBlocking {
+        val stored = storeFile("talk.m4a", byteArrayOf(9, 9), "audio/mp4")
+        val id = repository.saveFileBookmark(stored, null, null).id
+
+        repository.reprocess(id)
+        assertEquals(
+            mapOf("ContentExtractionWorker" to 1, "BookmarkAiProcessingWorker" to 1),
+            unfinishedKinds("process_bookmark_$id")
+        )
+
+        val bookmark = repository.getBookmarkById(id)!!
+        repository.deleteBookmark(bookmark)
+        repository.restoreBookmark(bookmark)
+        assertEquals(
+            mapOf("ContentExtractionWorker" to 1, "BookmarkAiProcessingWorker" to 1),
+            unfinishedKinds("process_bookmark_$id")
+        )
+    }
+
+    @Test
+    fun 準備待ちから再開するときファイルのあるものは中身の取り出しから行う() = runBlocking {
+        val stored = storeFile("doc.pdf", byteArrayOf(1), "application/pdf")
+        val id = repository.saveFileBookmark(stored, null, null).id
+        db.bookmarkDao().updateAiStatus(id, AiStatus.WAITING_MODEL)
+
+        repository.enqueueWaitingModelProcessing()
+
+        assertEquals(
+            mapOf("ContentExtractionWorker" to 1, "BookmarkAiProcessingWorker" to 1),
+            workerKinds(BookmarkWorkScheduler.BULK_WORK_NAME)
+        )
+    }
+
+    @Test
+    fun ブックマークを削除しても添付ファイルはすぐには消さず更新日時を今にする() = runBlocking {
+        val stored = storeFile("photo.png", byteArrayOf(1, 2), "image/png")
+        val file = attachmentStore.existingFile(stored.filePath)!!
+        file.setLastModified(1_000L)
+        val id = repository.saveFileBookmark(stored, null, null).id
+
+        repository.deleteBookmark(repository.getBookmarkById(id)!!)
+
+        assertTrue(file.isFile)
+        assertTrue(file.lastModified() > 1_000L)
+    }
+
+    @Test
+    fun リンク先から保存したファイルの情報を差し替えられる() = runBlocking {
+        val id = repository.saveUrlBookmark("https://example.com/paper.pdf", null, null).id
+        val stored = StoredAttachment("attachments/x.pdf", "application/pdf", "paper.pdf", 42L)
+
+        repository.updateAttachment(id, stored)
+
+        val saved = repository.getBookmarkById(id)!!
+        assertEquals(BookmarkType.URL, saved.type)
+        assertEquals("attachments/x.pdf", saved.filePath)
+        assertEquals("application/pdf", saved.mimeType)
+        assertEquals("paper.pdf", saved.fileName)
+        assertEquals(42L, saved.fileSize)
     }
 
     @Test

@@ -14,6 +14,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.unchunks.echomark.data.attachment.UnusedAttachmentCleaner
 import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
 import com.unchunks.echomark.worker.ReembedAllWorker
 import com.unchunks.echomark.worker.StalledAiProcessingRecovery
@@ -32,6 +33,7 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
     @Inject lateinit var okHttpClient: Lazy<OkHttpClient>
     @Inject lateinit var rediscoverWidgetUpdater: RediscoverWidgetUpdater
     @Inject lateinit var stalledAiProcessingRecovery: StalledAiProcessingRecovery
+    @Inject lateinit var unusedAttachmentCleaner: UnusedAttachmentCleaner
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -49,6 +51,8 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
         rediscoverWidgetUpdater.start()
         // 処理待ち・処理中のままワークが失われたブックマークの AI 処理を積み直す
         stalledAiProcessingRecovery.start()
+        // 削除したブックマークの添付ファイルなど、使われなくなってしばらく経ったファイルを消す
+        unusedAttachmentCleaner.start()
 
         workManager.enqueueUniqueWork(
             ReembedAllWorker.WORK_NAME,

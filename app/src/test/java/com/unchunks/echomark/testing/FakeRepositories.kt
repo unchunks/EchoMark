@@ -1,6 +1,11 @@
 package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.AttachmentError
+import com.unchunks.echomark.domain.bookmark.model.AttachmentException
+import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
+import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
@@ -11,6 +16,7 @@ import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.AttachmentRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
@@ -130,6 +136,38 @@ class FakeBookmarkRepository : BookmarkRepository {
             )
         )
     }
+
+    /** 保存したファイルのブックマーク(ファイル・タイトル・メモ)。種類の決め方は実装と同じ */
+    val savedFiles = mutableListOf<Triple<StoredAttachment, String?, String?>>()
+
+    override suspend fun saveFileBookmark(attachment: StoredAttachment, title: String?, memo: String?): SaveResult {
+        savedFiles += Triple(attachment, title, memo)
+        val type = bookmarkTypeOfMimeType(attachment.mimeType)
+            ?: throw AttachmentException(AttachmentError.Unsupported(attachment.mimeType))
+        return saveBookmarkWithResult(
+            Bookmark(
+                type = type,
+                content = memo?.takeIf { it.isNotBlank() },
+                title = title?.takeIf { it.isNotBlank() } ?: titleFromFileName(attachment.fileName),
+                createdAt = 0L,
+                lastAccessedAt = 0L,
+                filePath = attachment.filePath,
+                mimeType = attachment.mimeType,
+                fileName = attachment.fileName,
+                fileSize = attachment.fileSize
+            )
+        )
+    }
+
+    override suspend fun updateAttachment(id: Long, attachment: StoredAttachment?) =
+        updateBookmark(id) {
+            it.copy(
+                filePath = attachment?.filePath,
+                mimeType = attachment?.mimeType,
+                fileName = attachment?.fileName,
+                fileSize = attachment?.fileSize
+            )
+        }
 
     override suspend fun getStaleBookmarks(threshold: Long, limit: Int): List<Bookmark> =
         bookmarks.value.filter { it.lastAccessedAt <= threshold }.sortedBy { it.lastAccessedAt }.take(limit)
@@ -314,4 +352,25 @@ open class FakeChatRepository : ChatRepository {
 class FakeAiSetupRepository(initial: AiSetupState = AiSetupState.READY) : AiSetupRepository {
     val state = MutableStateFlow(initial)
     override val setupState: Flow<AiSetupState> = state
+}
+
+/**
+ * ファイルの取り込みの Fake。[files] に uri ごとの取り込み結果を入れておく(無ければ uri から作る)。
+ * [failures] にある uri は、その理由で失敗させる。
+ */
+class FakeAttachmentRepository : AttachmentRepository {
+    val files = mutableMapOf<String, StoredAttachment>()
+    val failures = mutableMapOf<String, AttachmentError>()
+    val imported = mutableListOf<String>()
+
+    override suspend fun importFile(uri: String): StoredAttachment {
+        imported += uri
+        failures[uri]?.let { throw AttachmentException(it) }
+        return files[uri] ?: StoredAttachment(
+            filePath = "attachments/${uri.hashCode().toUInt()}.jpg",
+            mimeType = "image/jpeg",
+            fileName = uri.substringAfterLast('/'),
+            fileSize = 1024L
+        )
+    }
 }

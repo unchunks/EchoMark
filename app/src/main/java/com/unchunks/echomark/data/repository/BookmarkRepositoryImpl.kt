@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.repository
 
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
@@ -14,6 +15,11 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.AttachmentError
+import com.unchunks.echomark.domain.bookmark.model.AttachmentException
+import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
+import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.TagSource
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
@@ -34,7 +40,8 @@ class BookmarkRepositoryImpl @Inject constructor(
     private val vectorSearch: VectorSearchDataSource,
     private val dispatcherProvider: DispatcherProvider,
     private val workScheduler: BookmarkWorkScheduler,
-    private val embeddingProvider: EmbeddingProvider
+    private val embeddingProvider: EmbeddingProvider,
+    private val attachmentStore: AttachmentStore
 ) : BookmarkRepository {
 
     override suspend fun saveBookmark(bookmark: Bookmark): Long =
@@ -45,14 +52,14 @@ class BookmarkRepositoryImpl @Inject constructor(
             val contentUri = bookmark.contentUri
             if (contentUri == null) {
                 val id = bookmarkDao.insert(bookmark.toEntity())
-                enqueueProcessing(id, bookmark.type)
+                enqueueProcessing(id, bookmark)
                 return@withContext SaveResult(id, isDuplicate = false)
             }
 
             // contentUri を持つもの(URLなど)は重複チェック。REPLACEするとタグ参照が消えるためIGNOREで挿入する
             val insertedId = bookmarkDao.insertIgnore(bookmark.toEntity())
             if (insertedId != -1L) {
-                enqueueProcessing(insertedId, bookmark.type)
+                enqueueProcessing(insertedId, bookmark)
                 SaveResult(insertedId, isDuplicate = false)
             } else {
                 val existing = bookmarkDao.getByContentUri(contentUri)
@@ -77,26 +84,73 @@ class BookmarkRepositoryImpl @Inject constructor(
         )
     }
 
-    /**
-     * 処理をやり直す(再処理・復元・モデル待ちからの再開など)。同じブックマークの処理は置き換える。
-     * 本文が未取得の URL は「本文取得 → AI処理」、それ以外は AI 処理のみ
-     */
-    private suspend fun enqueueReprocessing(bookmarkId: Long, type: BookmarkType, content: String?) {
-        workScheduler.enqueue(bookmarkId, fetchContent = needsContentFetch(type, content))
+    override suspend fun saveFileBookmark(attachment: StoredAttachment, title: String?, memo: String?): SaveResult {
+        val type = bookmarkTypeOfMimeType(attachment.mimeType)
+            ?: throw AttachmentException(AttachmentError.Unsupported(attachment.mimeType))
+        // テキストファイルは中身をそのまま本文にする(取り出しの段は使わない)
+        val text = if (type == BookmarkType.TEXT) attachmentStore.readText(attachment.filePath, MAX_TEXT_FILE_CHARS) else null
+        val content = listOfNotNull(memo?.trim(), text?.trim()).filter { it.isNotEmpty() }.joinToString("\n\n")
+        val now = System.currentTimeMillis()
+        return saveBookmarkWithResult(
+            Bookmark(
+                type = type,
+                content = content.ifEmpty { null },
+                title = title?.trim()?.takeIf { it.isNotEmpty() } ?: titleFromFileName(attachment.fileName),
+                createdAt = now,
+                lastAccessedAt = now,
+                filePath = attachment.filePath,
+                mimeType = attachment.mimeType,
+                fileName = attachment.fileName,
+                fileSize = attachment.fileSize
+            )
+        )
     }
 
-    /** URLは「本文取得 → AI処理」のチェーン、それ以外はAI処理のみを実行する */
-    private suspend fun enqueueProcessing(bookmarkId: Long, type: BookmarkType) {
-        workScheduler.enqueue(bookmarkId, fetchContent = type == BookmarkType.URL)
+    /**
+     * 処理をやり直す(再処理・復元・モデル待ちからの再開など)。同じブックマークの処理は置き換える。
+     * 本文が未取得の URL は本文の取得から、ファイルのあるものは中身の取り出しから、それ以外は AI 処理のみ
+     */
+    private suspend fun enqueueReprocessing(bookmarkId: Long, type: BookmarkType, content: String?, filePath: String?) {
+        val target = reprocessTarget(bookmarkId, type, content, filePath)
+        workScheduler.enqueue(bookmarkId, fetchContent = target.fetchContent, extractContent = target.extractContent)
+    }
+
+    /**
+     * 保存したときの処理。URL は「本文取得 → 中身の取り出し → AI 処理」(リンク先が PDF・画像などなら取得の段で
+     * ファイルを保存し、取り出しの段で読む。HTML なら取り出しの段は何もしない)、ファイルは「中身の取り出し → AI 処理」、
+     * それ以外は AI 処理のみ
+     */
+    private suspend fun enqueueProcessing(bookmarkId: Long, bookmark: Bookmark) {
+        val fetch = bookmark.type == BookmarkType.URL
+        workScheduler.enqueue(
+            bookmarkId,
+            fetchContent = fetch,
+            extractContent = fetch || hasExtractableFile(bookmark.type, bookmark.filePath)
+        )
     }
 
     /** 状態を「処理待ち」に戻し、1件ずつ順番に処理する列に積む(一括の再処理。同時に API を呼びすぎない) */
     private suspend fun enqueueSequentialProcessing(ids: List<Long>) {
         val targets = ids.chunked(ID_QUERY_CHUNK_SIZE).flatMap { chunk ->
-            bookmarkDao.getByIds(chunk).map { BookmarkWorkScheduler.Target(it.id, needsContentFetch(it.type, it.content)) }
+            bookmarkDao.getByIds(chunk).map { reprocessTarget(it.id, it.type, it.content, it.filePath) }
         }
         targets.forEach { bookmarkDao.updateAiStatus(it.bookmarkId, AiStatus.PENDING) }
         workScheduler.enqueueSequential(targets)
+    }
+
+    /** やり直すときの処理の段。本文を取得し直すときは、リンク先がファイルかもしれないので取り出しの段も付ける */
+    private fun reprocessTarget(
+        bookmarkId: Long,
+        type: BookmarkType,
+        content: String?,
+        filePath: String?
+    ): BookmarkWorkScheduler.Target {
+        val fetch = needsContentFetch(type, content)
+        return BookmarkWorkScheduler.Target(
+            bookmarkId,
+            fetchContent = fetch,
+            extractContent = fetch || hasExtractableFile(type, filePath)
+        )
     }
 
     /**
@@ -105,6 +159,10 @@ class BookmarkRepositoryImpl @Inject constructor(
      */
     private fun needsContentFetch(type: BookmarkType, content: String?): Boolean =
         type == BookmarkType.URL && content.isNullOrBlank()
+
+    /** 中身を取り出す(OCR・PDF のテキスト・文字起こし)ファイルがあるか。テキストファイルは保存時に本文へ入れている */
+    private fun hasExtractableFile(type: BookmarkType, filePath: String?): Boolean =
+        filePath != null && type != BookmarkType.TEXT
 
     override suspend fun saveAiTags(bookmarkId: Long, tagNames: List<String>) {
         withContext(dispatcherProvider.io) {
@@ -180,7 +238,7 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             val bookmark = bookmarkDao.getById(id) ?: return@withContext
             bookmarkDao.resetAiResult(id, AiStatus.PENDING)
-            enqueueReprocessing(id, bookmark.type, bookmark.content)
+            enqueueReprocessing(id, bookmark.type, bookmark.content, bookmark.filePath)
         }
 
     override suspend fun restoreBookmark(bookmark: Bookmark) {
@@ -191,7 +249,7 @@ class BookmarkRepositoryImpl @Inject constructor(
             val (aiTags, userTags) = bookmark.tags.partition { it in bookmark.aiTags }
             tagDao.addTagsToBookmark(bookmark.id, userTags, TagSource.USER)
             tagDao.addTagsToBookmark(bookmark.id, aiTags, TagSource.AI)
-            enqueueReprocessing(bookmark.id, bookmark.type, bookmark.content)
+            enqueueReprocessing(bookmark.id, bookmark.type, bookmark.content, bookmark.filePath)
         }
     }
 
@@ -230,6 +288,17 @@ class BookmarkRepositoryImpl @Inject constructor(
             bookmarkDao.updateLinkMetadata(id, imageUrl, siteName)
         }
 
+    override suspend fun updateAttachment(id: Long, attachment: StoredAttachment?) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateAttachment(
+                id,
+                filePath = attachment?.filePath,
+                mimeType = attachment?.mimeType,
+                fileName = attachment?.fileName,
+                fileSize = attachment?.fileSize
+            )
+        }
+
     override suspend fun updateTitleAndContent(id: Long, title: String, content: String?) =
         withContext(dispatcherProvider.io) {
             bookmarkDao.updateTitleAndContent(id, title, content)
@@ -247,6 +316,9 @@ class BookmarkRepositoryImpl @Inject constructor(
             tagDao.deleteOrphanAiTags()
             // ObjectBox側の埋め込みも削除する(孤児ベクトルを残さない)
             vectorSearch.deleteByBookmarkId(bookmark.id)
+            // 添付ファイルは「元に戻す」に備えてすぐには消さない。掃除までの猶予を削除の時点から数える
+            bookmark.filePath?.let { attachmentStore.touch(it) }
+            Unit
         }
 
 
@@ -373,6 +445,9 @@ class BookmarkRepositoryImpl @Inject constructor(
         s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private companion object {
+        /** テキストファイルから本文に入れる最大文字数 */
+        const val MAX_TEXT_FILE_CHARS = 100_000
+
         /** ID の一覧で問い合わせるときの1回あたりの件数(SQLite の変数の上限より十分小さく) */
         const val ID_QUERY_CHUNK_SIZE = 500
 

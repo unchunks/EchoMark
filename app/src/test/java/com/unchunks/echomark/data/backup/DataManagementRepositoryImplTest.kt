@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.backup
 
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -56,7 +57,8 @@ class DataManagementRepositoryImplTest {
             vectorSearch = vectorSearch,
             dispatcherProvider = dispatcherProvider,
             workScheduler = scheduler,
-            embeddingProvider = FakeEmbeddingProvider()
+            embeddingProvider = FakeEmbeddingProvider(),
+            attachmentStore = AttachmentStore(context, TestDispatcherProvider(Dispatchers.Unconfined))
         )
         repository = DataManagementRepositoryImpl(
             context = context,
@@ -84,7 +86,8 @@ class DataManagementRepositoryImplTest {
     fun 全データ削除で処理待ちのワークを取り消す() = runBlocking {
         bookmarkRepository.saveUrlBookmark("https://example.com/a", null, null)
         bookmarkRepository.saveUrlBookmark("https://example.com/b", null, null)
-        assertEquals(4, workManager.statesByTag(BookmarkWorkScheduler.TAG).count { !it.isFinished })
+        // URL 1件につき 本文取得 → 中身の取り出し → AI 処理
+        assertEquals(6, workManager.statesByTag(BookmarkWorkScheduler.TAG).count { !it.isFinished })
 
         repository.deleteAllData(resetSettings = false)
 
