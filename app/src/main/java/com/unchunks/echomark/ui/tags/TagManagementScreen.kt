@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -49,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.domain.model.TagWithCount
+import com.unchunks.echomark.ui.common.ReadableLazyColumn
 import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
@@ -137,7 +137,7 @@ fun TagManagementContent(
                     title = "タグはまだありません",
                     description = "ブックマークを保存すると AI がタグを付けます。詳細画面から自分で付けることもできます。"
                 )
-                else -> LazyColumn(
+                else -> ReadableLazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
