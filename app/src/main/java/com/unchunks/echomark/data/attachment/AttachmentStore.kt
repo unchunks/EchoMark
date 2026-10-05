@@ -140,7 +140,7 @@ class AttachmentStore @Inject constructor(
                     if (read < 0) break
                     filled += read
                 }
-                String(bytes, 0, filled, Charsets.UTF_8).removePrefix("﻿").take(maxChars)
+                String(bytes, 0, filled, Charsets.UTF_8).removePrefix("\uFEFF").take(maxChars)
             }
         } catch (e: IOException) {
             Timber.w(e, "テキストファイルを読めない")

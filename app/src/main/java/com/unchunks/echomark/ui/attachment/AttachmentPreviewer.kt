@@ -16,6 +16,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.graphics.createBitmap
 import com.unchunks.echomark.data.attachment.attachmentFileName
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import kotlinx.coroutines.CancellationException
@@ -129,7 +130,7 @@ class AndroidAttachmentPreviewer private constructor(context: Context) : Attachm
                             val height = (width.toFloat() * page.height / page.width.coerceAtLeast(1)).toInt()
                                 .coerceIn(1, MAX_RENDER_WIDTH * 2)
                             // PDF は背景が透明なことがあるため、紙の白で塗ってから描く
-                            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+                            createBitmap(width, height).apply {
                                 eraseColor(Color.WHITE)
                                 page.render(this, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                             }

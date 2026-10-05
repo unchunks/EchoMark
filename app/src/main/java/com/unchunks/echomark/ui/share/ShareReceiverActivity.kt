@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.core.content.IntentCompat
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import com.unchunks.echomark.MainUiState
 import com.unchunks.echomark.MainViewModel
@@ -158,7 +159,7 @@ data class SharedContent(
 
 /** ファイルの名前・サイズ・種類を提供元に問い合わせて埋める */
 private fun SharedContent.withFileDetails(resolver: ContentResolver): SharedContent =
-    if (files.isEmpty()) this else copy(files = files.map { querySelectedFile(resolver, Uri.parse(it.uri), it.mimeType) })
+    if (files.isEmpty()) this else copy(files = files.map { querySelectedFile(resolver, it.uri.toUri(), it.mimeType) })
 
 private val URL_REGEX = Regex("""https?://[^\s<>"']+""")
 private const val TRAILING_PUNCTUATION = ".,;:!?)]}」』）、。"

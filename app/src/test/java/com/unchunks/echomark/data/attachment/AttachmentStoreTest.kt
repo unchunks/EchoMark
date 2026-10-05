@@ -123,7 +123,7 @@ class AttachmentStoreTest {
 
     @Test
     fun テキストファイルの中身を先頭から読む() = runBlocking {
-        val stored = store.saveStream("﻿こんにちは世界".toByteArray().inputStream(), "text/plain", "hello.txt", 1024)
+        val stored = store.saveStream("\uFEFFこんにちは世界".toByteArray().inputStream(), "text/plain", "hello.txt", 1024)
 
         assertEquals("こんにちは", store.readText(stored.filePath, maxChars = 5))
     }
