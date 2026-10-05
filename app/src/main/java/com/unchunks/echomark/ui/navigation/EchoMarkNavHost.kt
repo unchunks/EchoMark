@@ -133,16 +133,7 @@ fun EchoMarkNavHost(
         selectedRoute = TopLevelDestination.entries.firstOrNull { destination ->
             currentDestination?.hierarchy?.any { it.route == destination.route } == true
         }?.route,
-        onNavigate = { route ->
-            navController.navigate(route) {
-                // スタックが積み上がらないよう、開始地点までを1つにまとめる
-                popUpTo(navController.graph.findStartDestination().id) {
-                    saveState = true
-                }
-                launchSingleTop = true
-                restoreState = true
-            }
-        }
+        onNavigate = { route -> navController.navigateToTopLevel(route) }
     ) { contentModifier ->
         NavHost(
             navController = navController,
@@ -300,6 +291,27 @@ internal fun NavController.popBackAction(): () -> Unit = dropUnlessResumed { pop
 internal fun <T> dropUnlessResumedWith(block: (T) -> Unit): (T) -> Unit {
     val lifecycleOwner = LocalLifecycleOwner.current
     return { value -> if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) block(value) }
+}
+
+/** ボトムバーのタブ [route] を開く。タブごとの画面の積み重ねは保存し、戻ってきたときに復元する */
+internal fun NavController.navigateToTopLevel(route: String) {
+    val startDestination = graph.findStartDestination()
+    if (route == startDestination.route) {
+        // 開始画面(一覧)のタブは、上に積んだ画面を保存して閉じるだけにする。
+        // navigate(restoreState = true) で開くと、popUpTo(開始画面, saveState = true) が保存した
+        // 「閉じた画面の状態」が開始画面にも紐付いているため、それが復元されて別のタブが開いてしまう
+        // (タブを通らずに開いた設定・チャットから戻ったあと、一覧のタブを押すと設定やチャットになる不具合)
+        popBackStack(startDestination.id, inclusive = false, saveState = true)
+        return
+    }
+    navigate(route) {
+        // スタックが積み上がらないよう、開始地点までを1つにまとめる
+        popUpTo(startDestination.id) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
+    }
 }
 
 /**
