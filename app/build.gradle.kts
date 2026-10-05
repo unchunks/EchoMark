@@ -68,6 +68,11 @@ android {
     }
 
     packaging {
+        resources {
+            // PdfBox-Android が依存する BouncyCastle の耐量子暗号(PQC)のパラメータ表(約 4MB)。
+            // PDF の復号(RC4/AES・証明書)では使わない
+            excludes += "org/bouncycastle/pqc/**"
+        }
         jniLibs {
             // tasks-text に同梱される生成 AI 系テキストタスク(TextProofreader / TextSummarizer)専用のネイティブライブラリ。
             // このアプリが使う TextEmbedder は tasks-core の libmediapipe_tasks_jni.so を読み込み、これは読み込まない
@@ -144,6 +149,17 @@ dependencies {
     // ネットワーク・HTML解析(URL本文取得)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
+
+    // ファイルの中身の取り出し(端末内)
+    // PDF のテキスト・タイトル(メタデータ)の取り出し。ページの画像化は端末の PdfRenderer を使う
+    implementation(libs.pdfbox.android)
+    // 画像・スキャンした PDF の文字の読み取り(OCR。日本語+ラテン文字のモデルをアプリに同梱し、オフラインで動く)
+    implementation(libs.mlkit.text.recognition.japanese)
+    // 画像に写っているものの手がかり(ラベル)。ラベルは補助的な情報のため、モデルを同梱する版(ネイティブライブラリが
+    // ABI ごとに約 11MB)ではなく、Google Play 開発者サービスがモデルを配信する版(アプリへの追加は数百 KB)を使う
+    implementation(libs.mlkit.image.labeling)
+    // 画像の撮影日時・向き(EXIF)
+    implementation(libs.androidx.exifinterface)
 
     // Testing
     testImplementation(libs.junit)

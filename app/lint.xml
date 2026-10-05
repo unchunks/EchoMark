@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- androidx.appcompat(ML Kit が依存)が入ると有効になる検査。ホーム画面ウィジェットのレイアウトは
+         RemoteViews で描かれ、appcompat の app:tint は使えないため android:tint のままにする -->
+    <issue id="UseAppTint">
+        <ignore path="src/main/res/layout/widget_*.xml" />
+    </issue>
+</lint>

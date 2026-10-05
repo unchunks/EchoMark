@@ -5,6 +5,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 再発見通知用。Android 13+ のみ実行時に要求する(設定でオンにしたとき) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 長い音声・動画の文字起こし(ContentExtractionWorker)をフォアグラウンドで実行する。
+         Android 15+ はメディア処理(mediaProcessing)、それより前はデータ同期(dataSync)の種類を使う -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+
+    <!-- 端末内の音声認識サービス(文字起こし)に接続するため、パッケージの可視性を宣言する -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <application
         android:name=".EchoMarkApplication"
@@ -76,6 +88,17 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/rediscover_widget_info" />
         </receiver>
+
+        <!-- ML Kit の画像ラベル付け(Google Play 開発者サービス版)のモデルを、インストール時にダウンロードさせる -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ica" />
+
+        <!-- WorkManager のフォアグラウンド実行用サービスに、文字起こしで使う種類を付ける -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync|mediaProcessing"
+            tools:node="merge" />
 
         <provider
             android:name="androidx.startup.InitializationProvider"

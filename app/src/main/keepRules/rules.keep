@@ -69,3 +69,9 @@
 -keep class com.google.common.flogger.backend.system.DefaultPlatform {
     <init>();
 }
+
+# ---- PdfBox-Android(PDF のテキスト抽出) ----
+# 同梱の consumer rules(暗号化ハンドラのコンストラクタ等)で動作上は足りる。
+# JPXFilter(JPEG 2000 画像の復号)は任意の依存 jp2-android(com.gemalto.jp2)を参照するが、このアプリは入れていない。
+# テキスト抽出では画像を復号しない(ページの画像化は端末の PdfRenderer を使う)ため、警告だけを抑える
+-dontwarn com.gemalto.jp2.JP2Decoder
