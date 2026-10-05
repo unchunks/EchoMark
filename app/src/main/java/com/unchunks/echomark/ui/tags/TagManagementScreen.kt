@@ -1,8 +1,10 @@
 package com.unchunks.echomark.ui.tags
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,6 +22,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -46,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.domain.model.TagWithCount
+import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
@@ -53,6 +57,7 @@ import kotlinx.coroutines.launch
 
 /**
  * タグの管理(件数つき一覧・名前変更・統合・削除)。ViewModel をつなぐだけの薄いラッパー。
+ * 自分のタグと AI が作ったタグを見分けて表示し、どちらかに絞り込める。
  * @param onOpenTag タグをタップしたとき。そのタグで絞り込んだ一覧へ戻る
  */
 @Composable
@@ -105,6 +110,8 @@ fun TagManagementContent(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var renameTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var deleteTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var originFilter by rememberSaveable { mutableStateOf(TagOriginFilter.ALL) }
+    val visibleTags = uiState.tags.filter { originFilter.matches(it) }
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -134,15 +141,18 @@ fun TagManagementContent(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
+                    item(key = "filter") {
+                        TagOriginFilterRow(selected = originFilter, onSelect = { originFilter = it })
+                    }
                     item(key = "hint") {
                         Text(
-                            text = "${uiState.tags.size}個のタグ · タップで一覧を絞り込み",
+                            text = "${visibleTags.size}個のタグ · タップで一覧を絞り込み",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
-                    items(uiState.tags, key = { it.id }) { tag ->
+                    items(visibleTags, key = { it.id }) { tag ->
                         TagRow(
                             tag = tag,
                             onClick = { onOpenTag(tag.id) },
@@ -196,6 +206,36 @@ fun TagManagementContent(
     }
 }
 
+/** タグ一覧の絞り込み(誰のタグか)。 */
+internal enum class TagOriginFilter(val label: String) {
+    ALL("すべて"),
+    USER("自分"),
+    AI("AI");
+
+    fun matches(tag: TagWithCount): Boolean = when (this) {
+        ALL -> true
+        USER -> tag.isUserTag
+        AI -> !tag.isUserTag
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TagOriginFilterRow(selected: TagOriginFilter, onSelect: (TagOriginFilter) -> Unit) {
+    Row(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TagOriginFilter.entries.forEach { filter ->
+            FilterChip(
+                selected = filter == selected,
+                onClick = { onSelect(filter) },
+                label = { Text(filter.label) }
+            )
+        }
+    }
+}
+
 @Composable
 private fun TagRow(
     tag: TagWithCount,
@@ -208,10 +248,16 @@ private fun TagRow(
     ListItem(
         headlineContent = { Text(tag.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            Text(if (tag.bookmarkCount > 0) "${tag.bookmarkCount}件" else "ブックマークなし")
+            val count = if (tag.bookmarkCount > 0) "${tag.bookmarkCount}件" else "ブックマークなし"
+            // AI のタグは、どのブックマークにも付かなくなると自動で消える(名前を変更すると自分のタグになる)
+            Text(if (tag.isUserTag) count else "$count · AIが作成")
         },
         leadingContent = {
-            Icon(Icons.Outlined.Tag, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            if (tag.isUserTag) {
+                Icon(Icons.Outlined.Tag, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            } else {
+                AiTagIcon(size = 24.dp, describe = true)
+            }
         },
         trailingContent = {
             Box {

@@ -15,6 +15,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.model.TagSource
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.search.RankFusion
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
@@ -105,14 +106,19 @@ class BookmarkRepositoryImpl @Inject constructor(
     private fun needsContentFetch(type: BookmarkType, content: String?): Boolean =
         type == BookmarkType.URL && content.isNullOrBlank()
 
-    override suspend fun saveTags(bookmarkId: Long, tagNames: List<String>) {
+    override suspend fun saveAiTags(bookmarkId: Long, tagNames: List<String>) {
         withContext(dispatcherProvider.io) {
             // AI 処理中に削除されたブックマークには付けない(孤児タグ・外部キー違反を防ぐ)
-            if (!tagDao.addTagsToBookmark(bookmarkId, tagNames)) {
+            if (!tagDao.replaceAiTags(bookmarkId, tagNames)) {
                 Timber.i("削除済みのブックマークのためタグを保存しない: id=$bookmarkId")
             }
         }
     }
+
+    override suspend fun getTagNamesForAi(): List<String> =
+        withContext(dispatcherProvider.io) {
+            tagDao.getTagNamesByPriority(MAX_TAG_NAMES_FOR_AI)
+        }
 
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String): Unit =
         withContext(dispatcherProvider.io) {
@@ -151,6 +157,25 @@ class BookmarkRepositoryImpl @Inject constructor(
             ids.size
         }
 
+    override suspend fun markProcessingInterrupted(id: Long) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateAiStatusIf(id, expected = AiStatus.PROCESSING, status = AiStatus.PENDING)
+        }
+
+    override suspend fun enqueueStalledProcessing(): Int =
+        withContext(dispatcherProvider.io) {
+            // ブックマークを先に読む。後から読むと、その間に保存されて処理の登録がまだのものを取り残しと見誤る
+            // (それでも重なった場合は同じブックマークを2回処理するだけで、各工程は冪等なので結果は変わらない)
+            val ids = (bookmarkDao.getIdsByAiStatus(AiStatus.PENDING) +
+                bookmarkDao.getIdsByAiStatus(AiStatus.PROCESSING)).distinct()
+            if (ids.isEmpty()) return@withContext 0
+            // どのブックマークの処理か分からないワークが残っている間は、二重に積まないよう何もしない
+            val withWork = workScheduler.bookmarkIdsWithUnfinishedWork() ?: return@withContext 0
+            val stalled = ids.filterNot { it in withWork }
+            enqueueSequentialProcessing(stalled)
+            stalled.size
+        }
+
     override suspend fun reprocess(id: Long) =
         withContext(dispatcherProvider.io) {
             val bookmark = bookmarkDao.getById(id) ?: return@withContext
@@ -162,7 +187,10 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             // 同じ ID で挿入し直す(削除済みなので競合しない)。ベクトルは削除時に消えているため再生成する
             bookmarkDao.insert(bookmark.copy(aiStatus = AiStatus.PENDING).toEntity())
-            tagDao.addTagsToBookmark(bookmark.id, bookmark.tags)
+            // 付けた人も元どおりにする(AI のタグをユーザーのタグに変えてしまわない)
+            val (aiTags, userTags) = bookmark.tags.partition { it in bookmark.aiTags }
+            tagDao.addTagsToBookmark(bookmark.id, userTags, TagSource.USER)
+            tagDao.addTagsToBookmark(bookmark.id, aiTags, TagSource.AI)
             enqueueReprocessing(bookmark.id, bookmark.type, bookmark.content)
         }
     }
@@ -170,13 +198,16 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun addTag(bookmarkId: Long, tagName: String) {
         val name = tagName.trim()
         if (name.isEmpty()) return
-        saveTags(bookmarkId, listOf(name))
+        withContext(dispatcherProvider.io) {
+            if (!tagDao.addTagsToBookmark(bookmarkId, listOf(name), TagSource.USER)) {
+                Timber.i("削除済みのブックマークのためタグを保存しない: id=$bookmarkId")
+            }
+        }
     }
 
     override suspend fun removeTag(bookmarkId: Long, tagName: String) =
         withContext(dispatcherProvider.io) {
-            val tag = tagDao.getTagByName(tagName) ?: return@withContext
-            tagDao.deleteCrossRef(bookmarkId, tag.id)
+            tagDao.removeTagFromBookmark(bookmarkId, tagName)
         }
 
     override suspend fun markAccessed(id: Long) =
@@ -211,6 +242,9 @@ class BookmarkRepositoryImpl @Inject constructor(
             // 処理待ち・実行中の本文取得・AI 処理を止める(削除後にクラウドへ送ったり、書き込んだりしない)
             workScheduler.cancel(bookmark.id)
             bookmarkDao.delete(bookmark.toEntity())
+            // 紐付けは連鎖して消えるため、AI だけが付けていてどこにも付かなくなったタグを消す
+            // (取り消したときは restoreBookmark が同じ名前で付け直す)
+            tagDao.deleteOrphanAiTags()
             // ObjectBox側の埋め込みも削除する(孤児ベクトルを残さない)
             vectorSearch.deleteByBookmarkId(bookmark.id)
         }
@@ -341,6 +375,9 @@ class BookmarkRepositoryImpl @Inject constructor(
     private companion object {
         /** ID の一覧で問い合わせるときの1回あたりの件数(SQLite の変数の上限より十分小さく) */
         const val ID_QUERY_CHUNK_SIZE = 500
+
+        /** AI に渡す既存タグ名の最大数(プロンプトに入れる量は各 LlmProvider がさらに絞る) */
+        const val MAX_TAG_NAMES_FOR_AI = 100
 
         /** ベクトル検索で取得する上位件数 */
         const val VECTOR_TOP_K = 20

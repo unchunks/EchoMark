@@ -20,6 +20,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.TagSource
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -32,7 +33,12 @@ import com.unchunks.echomark.testing.inMemoryBoxStore
 import com.unchunks.echomark.testing.initTestWorkManager
 import com.unchunks.echomark.testing.tearDownTestWorkManager
 import io.objectbox.BoxStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -110,6 +116,38 @@ class BookmarkAiProcessingWorkerTest {
     }
 
     @Test
+    fun 既存のタグをAIに渡し_再処理ではAIのタグだけを付け直す() = runBlocking {
+        val id = insertBookmark()
+        repository.addTag(id, "自分のタグ")
+        db.tagDao().addTagsToBookmark(insertBookmark2(), listOf("Android"), TagSource.USER)
+        llm.tags = listOf("android", "古いAIタグ")
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals(listOf("Android", "自分のタグ"), llm.lastExistingTags)
+        val first = repository.observeBookmark(id).first()!!
+        // 表記ゆれは既存のタグにそろえる
+        assertEquals(setOf("自分のタグ", "Android", "古いAIタグ"), first.tags.toSet())
+        assertEquals(setOf("Android", "古いAIタグ"), first.aiTags)
+
+        repository.reprocess(id)
+        llm.tags = listOf("新しいAIタグ")
+        runWorker(id, runAttemptCount = 0)
+
+        val second = repository.observeBookmark(id).first()!!
+        assertEquals(setOf("自分のタグ", "新しいAIタグ"), second.tags.toSet())
+        assertEquals(setOf("新しいAIタグ"), second.aiTags)
+        // どこにも付かなくなった AI のタグは消え、ユーザーのタグ(別のブックマークに付いている Android)は残る
+        val allTags = db.tagDao().getAllTags().first().map { it.name }.toSet()
+        assertEquals(setOf("自分のタグ", "新しいAIタグ", "Android"), allTags)
+    }
+
+    private suspend fun insertBookmark2(): Long = db.bookmarkDao().insert(
+        Bookmark(type = BookmarkType.TEXT, content = "別の本文", title = "別のメモ", createdAt = 2L, lastAccessedAt = 2L)
+            .toEntity()
+    )
+
+    @Test
     fun 削除済みのブックマークはAIを呼ばずに終える() = runBlocking {
         assertEquals(ListenableWorker.Result.success(), runWorker(999L, runAttemptCount = 0))
         assertEquals(0, llm.calls)
@@ -166,17 +204,49 @@ class BookmarkAiProcessingWorkerTest {
         assertTrue(maxAttemptsFor(LlmException.RateLimited()) > default)
         assertEquals(default, maxAttemptsFor(IllegalStateException("boom")))
     }
+
+    @Test
+    fun 生成の時間切れは再試行せず失敗にする() = runBlocking {
+        val id = insertBookmark()
+        llm.failure = LlmException.Timeout(180_000L)
+
+        // 一括処理のチェーンを止めないよう、ワークとしては成功で終える。設定画面から手動で再処理できる
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+        assertEquals(AiStatus.FAILED, statusOf(id))
+    }
+
+    @Test
+    fun 中断されたら処理中のまま残さず処理待ちに戻す() = runBlocking {
+        val id = insertBookmark()
+        llm.hang = true
+
+        val work = launch { runWorker(id, runAttemptCount = 0) }
+        llm.started.await()
+        assertEquals(AiStatus.PROCESSING, statusOf(id))
+
+        // WorkManager による停止(実行時間の上限・取り消しなど)を、コルーチンのキャンセルで再現する
+        work.cancelAndJoin()
+        assertEquals(AiStatus.PENDING, statusOf(id))
+    }
 }
 
-/** analyze の結果を差し替えられる LLM。 */
+/** analyze の結果を差し替えられる LLM。渡された既存タグを記録する。 */
 private class ScriptedLlmProvider : LlmProvider {
     var failure: Exception? = null
     var calls = 0
+    /** true なら analyze は取り消されるまで終わらない。 */
+    var hang = false
+    val started = CompletableDeferred<Unit>()
+    var tags: List<String> = listOf("タグ")
+    var lastExistingTags: List<String>? = null
 
-    override suspend fun analyze(text: String): BookmarkAnalysis {
+    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis {
         calls++
+        started.complete(Unit)
+        if (hang) awaitCancellation()
+        lastExistingTags = existingTags
         failure?.let { throw it }
-        return BookmarkAnalysis("要約", listOf("タグ"), "その他")
+        return BookmarkAnalysis("要約", tags, "その他")
     }
 
     override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =

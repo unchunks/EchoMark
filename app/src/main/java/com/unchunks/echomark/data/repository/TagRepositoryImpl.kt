@@ -18,7 +18,7 @@ class TagRepositoryImpl @Inject constructor(
 
     override fun observeTagsWithCount(): Flow<List<TagWithCount>> =
         tagDao.observeTagsWithCount()
-            .map { rows -> rows.map { TagWithCount(it.id, it.name, it.bookmarkCount) } }
+            .map { rows -> rows.map { TagWithCount(it.id, it.name, it.bookmarkCount, isUserTag = it.isUserCreated) } }
             .flowOn(dispatcherProvider.io)
 
     override suspend fun renameTag(tagId: Long, newName: String): TagRenameResult =

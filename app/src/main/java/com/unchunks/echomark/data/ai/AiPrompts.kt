@@ -6,19 +6,73 @@ package com.unchunks.echomark.data.ai
  */
 object AiPrompts {
 
-    /** 要約・タグ・カテゴリの指示(JSON のみを出力させる)。 */
-    val ANALYZE_INSTRUCTIONS: String = listOf(
-        "あなたはブックマーク整理アシスタントです。次の保存内容を分析し、JSONのみを出力してください。",
-        "説明文やコードブロックは出力しないでください。",
-        "",
-        "出力形式:",
-        """{"summary": "100文字以内の日本語の要約", "tags": ["タグ1", "タグ2", "タグ3"], "category": "カテゴリ名1つ"}""",
-        "",
-        "ルール:",
-        "- summary は日本語で簡潔に。",
-        "- tags は内容を表す短い単語を最大5個。",
-        "- category は「技術」「ニュース」「レシピ」「学習」「仕事」「趣味」「その他」のように短い1語。"
-    ).joinToString("\n")
+    /**
+     * 要約・タグ・カテゴリの指示(JSON のみを出力させる)。
+     * [existingTags](優先する順)を渡すと、似たタグを増やさないよう、合うものはそのまま使わせる。
+     * 渡すのは先頭から [maxExistingTags] 個・合計 [maxExistingTagChars] 文字まで(長すぎるタグ名は飛ばす)。
+     */
+    fun analyzeInstructions(
+        existingTags: List<String>,
+        maxExistingTags: Int = API_MAX_EXISTING_TAGS,
+        maxExistingTagChars: Int = API_MAX_EXISTING_TAG_CHARS
+    ): String {
+        val tags = existingTagsForPrompt(existingTags, maxExistingTags, maxExistingTagChars)
+        return buildList {
+            add("あなたはブックマーク整理アシスタントです。次の保存内容を分析し、JSONのみを出力してください。")
+            add("説明文やコードブロックは出力しないでください。")
+            add("")
+            add("出力形式:")
+            add("""{"summary": "100文字以内の日本語の要約", "tags": ["タグ1", "タグ2"], "category": "カテゴリ名1つ"}""")
+            add("")
+            add("ルール:")
+            add("- summary は日本語で簡潔に。")
+            add("- tags は内容を表す短い単語を1〜${MAX_TAGS}個。")
+            if (tags.isNotEmpty()) {
+                add("- tags は、下の「既存のタグ」に内容に合うものがあれば、表記を変えずにそのまま使ってください。")
+                add("- 既存のタグに合うものが無いときだけ、新しいタグを作ってください(同じ意味の言い換えや表記ゆれは作らない)。")
+            }
+            add("- category は「技術」「ニュース」「レシピ」「学習」「仕事」「趣味」「その他」のように短い1語。")
+            if (tags.isNotEmpty()) {
+                add("")
+                add("既存のタグ:")
+                add(tags.joinToString(prefix = "[", postfix = "]", separator = ", ") { quote(it) })
+            }
+        }.joinToString("\n")
+    }
+
+    /** AI に付けさせるタグの最大数。多いほど似たタグが増えるため少なめにする */
+    const val MAX_TAGS = 3
+
+    /** クラウド API に渡す既存タグの上限(個数・合計文字数) */
+    const val API_MAX_EXISTING_TAGS = 50
+    const val API_MAX_EXISTING_TAG_CHARS = 1_000
+
+    /** ローカル LLM に渡す既存タグの上限。文脈長(入力と出力の合計)が小さいため少なめにする */
+    const val LOCAL_MAX_EXISTING_TAGS = 20
+    const val LOCAL_MAX_EXISTING_TAG_CHARS = 300
+
+    /** これより長いタグ名はプロンプトに入れない(予算を食うだけで、使い回されることもまず無い) */
+    private const val MAX_PROMPT_TAG_NAME_CHARS = 30
+
+    /** プロンプトに入れる既存タグを、先頭から個数と合計文字数の予算に収まる分だけ選ぶ。 */
+    internal fun existingTagsForPrompt(existingTags: List<String>, maxCount: Int, maxChars: Int): List<String> {
+        val selected = mutableListOf<String>()
+        var chars = 0
+        for (raw in existingTags) {
+            if (selected.size >= maxCount) break
+            val name = raw.trim()
+            if (name.isEmpty() || name.length > MAX_PROMPT_TAG_NAME_CHARS) continue
+            // 引用符と区切り(", ")の分も数える
+            val cost = name.length + 4
+            if (chars + cost > maxChars) break
+            selected += name
+            chars += cost
+        }
+        return selected
+    }
+
+    /** JSON の文字列として引用する(タグ名の " や \ で配列の形が崩れないように)。 */
+    private fun quote(s: String): String = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     /** 分析対象の本文部分。 */
     fun analyzeInput(text: String, maxChars: Int): String =

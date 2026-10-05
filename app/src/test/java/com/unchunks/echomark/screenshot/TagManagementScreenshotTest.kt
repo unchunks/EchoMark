@@ -10,7 +10,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
 
-/** タグ管理画面(一覧・空)の見た目。 */
+/** タグ管理画面(一覧・空)の見た目。一覧には AI が作ったタグ(パフォーマンス)も含める。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class TagManagementScreenshotTest {
@@ -26,7 +26,7 @@ class TagManagementScreenshotTest {
                 tags = listOf(
                     TagWithCount(1, "Android", 12),
                     TagWithCount(2, "Compose", 8),
-                    TagWithCount(3, "パフォーマンス", 3),
+                    TagWithCount(3, "パフォーマンス", 3, isUserTag = false),
                     TagWithCount(4, "読書", 5),
                     TagWithCount(5, "とても長いタグ名の例: 機械学習とデータ分析の基礎から応用まで", 1),
                     TagWithCount(6, "未使用のタグ", 0)

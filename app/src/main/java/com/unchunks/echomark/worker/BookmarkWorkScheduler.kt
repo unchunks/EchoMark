@@ -11,6 +11,7 @@ import androidx.work.workDataOf
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runInterruptible
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -20,6 +21,7 @@ import javax.inject.Inject
  * - 一括の再処理は1本の列([BULK_WORK_NAME])にして1件ずつ順番に処理する(API のレート制限にかかりにくくする)
  * - クラウド API を使う設定のときは、AI 処理にネットワーク接続を条件として付ける(オフラインで試行回数を使い切らない)
  * - すべてのワークに [TAG] を付け、全データ削除でまとめて取り消せるようにする
+ * - ワークにはブックマークごとのタグ([bookmarkTag])も付け、未完了の処理がどのブックマークのものか調べられるようにする
  */
 class BookmarkWorkScheduler @Inject constructor(
     private val workManager: WorkManager,
@@ -69,6 +71,19 @@ class BookmarkWorkScheduler @Inject constructor(
         workManager.cancelAllWorkByTag(TAG)
     }
 
+    /**
+     * 未完了(待機中・前段待ち・実行中)の処理があるブックマークの ID。
+     * どのブックマークの処理か分からないワーク(ブックマークごとのタグを付ける前のバージョンで登録したもの)が
+     * 残っている間は判断できないため null を返す。
+     * 登録と同じ WorkManager の直列のキューで読むため、この呼び出しより前に登録した処理は必ず含まれる。
+     */
+    suspend fun bookmarkIdsWithUnfinishedWork(): Set<Long>? {
+        val infos = runInterruptible { workManager.getWorkInfosByTag(TAG).get() }
+        val ids = infos.filterNot { it.state.isFinished }
+            .map { info -> info.tags.firstNotNullOfOrNull { bookmarkIdOfTag(it) } }
+        return if (ids.any { it == null }) null else ids.filterNotNull().toSet()
+    }
+
     /** [requests] を順番に(前の処理が終わってから次を)実行する列として、一意名 [name] で登録する。 */
     private fun enqueueChain(name: String, policy: ExistingWorkPolicy, requests: List<OneTimeWorkRequest>) {
         var continuation = workManager.beginUniqueWork(name, policy, requests.first())
@@ -96,6 +111,7 @@ class BookmarkWorkScheduler @Inject constructor(
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .addTag(TAG)
+            .addTag(bookmarkTag(bookmarkId))
             .build()
 
     private fun fetchRequest(bookmarkId: Long): OneTimeWorkRequest =
@@ -103,6 +119,7 @@ class BookmarkWorkScheduler @Inject constructor(
             .setInputData(workDataOf(UrlFetchWorker.KEY_BOOKMARK_ID to bookmarkId))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .addTag(TAG)
+            .addTag(bookmarkTag(bookmarkId))
             .build()
 
     companion object {
@@ -117,5 +134,13 @@ class BookmarkWorkScheduler @Inject constructor(
 
         /** 1件ごとの処理の一意名。本文取得のチェーンと AI 処理のみで共通にし、同じブックマークの処理を並行させない。 */
         fun uniqueWorkName(bookmarkId: Long): String = "process_bookmark_$bookmarkId"
+
+        private const val BOOKMARK_TAG_PREFIX = "bookmark_id:"
+
+        /** ブックマークごとのタグ。1件ごとの処理・一括の列のどちらのワークにも付ける。 */
+        fun bookmarkTag(bookmarkId: Long): String = BOOKMARK_TAG_PREFIX + bookmarkId
+
+        private fun bookmarkIdOfTag(tag: String): Long? =
+            if (tag.startsWith(BOOKMARK_TAG_PREFIX)) tag.removePrefix(BOOKMARK_TAG_PREFIX).toLongOrNull() else null
     }
 }

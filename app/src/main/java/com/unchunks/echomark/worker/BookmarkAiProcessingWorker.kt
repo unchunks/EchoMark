@@ -14,6 +14,8 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -54,9 +56,11 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             // 工程1: 要約・タグ・カテゴリ(要約が既にあればスキップ)
             if (bookmark.summary.isNullOrBlank()) {
                 try {
-                    val analysis = llmProviderResolver.resolve().analyze(textToProcess)
+                    // 既存のタグを伝え、似たタグを増やさず使い回させる
+                    val analysis = llmProviderResolver.resolve().analyze(textToProcess, repository.getTagNamesForAi())
                     repository.updateSummary(bookmarkId, analysis.summary)
-                    repository.saveTags(bookmarkId, analysis.tags)
+                    // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
+                    repository.saveAiTags(bookmarkId, analysis.tags)
                     repository.updateCategory(bookmarkId, analysis.category)
                 } catch (e: CancellationException) {
                     throw e
@@ -91,6 +95,9 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             )
             Result.success()
         } catch (e: CancellationException) {
+            // 中断(実行時間の上限・制約の不成立・取り消しなど)で「処理中」のまま残さない。
+            // 再実行されればそこで処理中に戻り、取り消されたまま再実行されなければ起動時に積み直す
+            withContext(NonCancellable) { repository.markProcessingInterrupted(bookmarkId) }
             throw e
         } catch (e: Exception) {
             Timber.e(e, "AI 処理に失敗: id=$bookmarkId attempt=$runAttemptCount")
@@ -138,7 +145,7 @@ internal enum class AnalysisOutcome {
     DONE,
     /** モデル未取り込み・API キー未設定/無効・モデル ID 不正など、設定の変更を待つ */
     WAITING_SETUP,
-    /** 拒否・安全フィルタなど、再試行しても結果が変わらない */
+    /** 拒否・安全フィルタ・生成の時間切れ(端末内 AI の繰り返し)など、再試行しても結果が変わらない */
     GIVE_UP,
     /** レート制限・通信断・サーバー障害など、時間をおけば回復しうる */
     RETRY
@@ -150,6 +157,7 @@ internal fun classifyAnalysisError(e: Exception): AnalysisOutcome = when (e) {
     is LlmException.ApiKeyMissing,
     is LlmException.InvalidApiKey,
     is LlmException.BadRequest -> AnalysisOutcome.WAITING_SETUP
-    is LlmException.Refused -> AnalysisOutcome.GIVE_UP
+    is LlmException.Refused,
+    is LlmException.Timeout -> AnalysisOutcome.GIVE_UP
     else -> AnalysisOutcome.RETRY
 }

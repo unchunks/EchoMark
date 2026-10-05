@@ -8,7 +8,9 @@ import androidx.sqlite.execSQL
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -143,6 +145,66 @@ class MigrationTest {
         } finally {
             room.close()
         }
+    }
+
+    @Test
+    fun migrate8To9_existingTagsAndLinksBecomeUser() {
+        helper.createDatabase(8).apply {
+            insertV8Tags()
+            close()
+        }
+
+        // スキーマ v9 と一致するか(列・既定値・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(9, listOf(MIGRATION_8_9))
+
+        // 誰が付けたか分からない既存の紐付け・タグは、消されないようユーザーのものにする
+        connection.prepare("SELECT source FROM bookmark_tag_cross_ref WHERE bookmarkId = 1 AND tagId = 1").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("USER", stmt.getText(0))
+        }
+        connection.prepare("SELECT name, isUserCreated FROM tags ORDER BY id").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("kotlin", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+            assertTrue(stmt.step())
+            assertEquals("未使用", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+        }
+        connection.close()
+    }
+
+    @Test
+    fun migrate8To9_roomOpensAndKeepsUserTags() = runTest {
+        helper.createDatabase(8).apply {
+            insertV8Tags()
+            close()
+        }
+
+        val room = Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            AppDatabase::class.java,
+            TEST_DB
+        )
+            .addMigrations(*ALL_MIGRATIONS)
+            .build()
+
+        try {
+            val bookmark = room.bookmarkDao().getByIdsWithTags(listOf(1L)).single().toDomain()
+            assertEquals(listOf("kotlin"), bookmark.tags)
+            assertTrue(bookmark.aiTags.isEmpty())
+            // 既存のタグはユーザーのタグなので、どこにも付いていなくても自動では消さない
+            assertEquals(0, room.tagDao().deleteOrphanAiTags())
+            assertEquals(listOf("kotlin", "未使用"), room.tagDao().getAllTags().first().map { it.name })
+        } finally {
+            room.close()
+        }
+    }
+
+    /** v8 のブックマーク1件と、そこに付いたタグ・どこにも付いていないタグ。 */
+    private fun SQLiteConnection.insertV8Tags() {
+        insertV6Bookmark()
+        execSQL("INSERT INTO tags (id, name) VALUES (1, 'kotlin'), (2, '未使用')")
+        execSQL("INSERT INTO bookmark_tag_cross_ref (bookmarkId, tagId) VALUES (1, 1)")
     }
 
     private fun SQLiteConnection.insertV6Bookmark() {

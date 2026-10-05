@@ -78,6 +78,17 @@ class BookmarkWorkSchedulerTest {
     }
 
     @Test
+    fun 未完了の処理があるブックマークのIDを返す() = runBlocking {
+        scheduler.enqueue(1L, fetchContent = true)
+        scheduler.enqueue(2L, fetchContent = false)
+        scheduler.enqueueSequential(listOf(BookmarkWorkScheduler.Target(3L, fetchContent = false)))
+        scheduler.cancel(2L)
+
+        // 1件ごとの処理・一括の列のどちらも含み、取り消したものは含まない
+        assertEquals(setOf(1L, 3L), scheduler.bookmarkIdsWithUnfinishedWork())
+    }
+
+    @Test
     fun クラウドAPIの設定ではAI処理がネットワーク接続を待つ() = runBlocking {
         settings.backendFlow.value = LlmBackend.API
         scheduler.enqueue(1L, fetchContent = false)

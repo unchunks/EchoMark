@@ -13,6 +13,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.echomark.domain.model.TagSource
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -163,6 +164,33 @@ class BackupDaoTest {
         assertEquals(1, other.bookmarksAdded)
         assertEquals(0, other.tagsAdded)
         assertEquals(1, dao.snapshot(0).tags.size)
+    }
+
+    @Test
+    fun タグを付けた人とユーザーのタグかを引き継ぐ() = runTest {
+        dao.merge(
+            backup(
+                bookmarks = listOf(urlBookmark(1, "https://a")),
+                tags = listOf(TagEntity(1, "自分", isUserCreated = true), TagEntity(2, "AI"), TagEntity(3, "付け直した")),
+                bookmarkTags = listOf(
+                    BookmarkTagCrossRef(1, 1, TagSource.USER),
+                    BookmarkTagCrossRef(1, 2, TagSource.AI),
+                    // isUserCreated が無くても、ユーザーが付けた紐付けがあればユーザーのタグにする
+                    BookmarkTagCrossRef(1, 3, TagSource.USER)
+                )
+            )
+        )
+
+        val exported = dao.snapshot(0)
+        val nameOf = exported.tags.associate { it.id to it.name }
+        assertEquals(
+            mapOf("自分" to true, "AI" to false, "付け直した" to true),
+            exported.tags.associate { it.name to it.isUserCreated }
+        )
+        assertEquals(
+            mapOf("自分" to TagSource.USER, "AI" to TagSource.AI, "付け直した" to TagSource.USER),
+            exported.bookmarkTags.associate { nameOf.getValue(it.tagId) to it.source }
+        )
     }
 
     @Test

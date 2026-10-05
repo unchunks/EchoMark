@@ -182,4 +182,80 @@ class HtmlContentExtractorTest {
         assertNull(result.imageUrl)
         assertNull(result.siteName)
     }
+
+    // 実際の m.youtube.com の構造を真似た最小の HTML。先に `ytInitialPlayerResponse = null;` の script がある
+    private fun youtubeHtml(playerResponse: String, siteName: String = "YouTube") =
+        """
+        <html><head>
+          <title>YouTube</title>
+          <meta property="og:site_name" content="$siteName">
+          <meta property="og:title" content="サンプル動画">
+          <meta name="description" content="作成した動画を友だち、家族、世界中の人たちと共有">
+        </head><body>
+          <script>var ytInitialPlayerResponse = null;//# sourceURL=yt-mweb-initial-player-response.js</script>
+          <script>var ytInitialPlayerResponse = $playerResponse;var meta = document.createElement('meta');</script>
+        </body></html>
+        """.trimIndent()
+
+    private val youtubePlayerResponse = """
+        {"responseContext":{"visitorData":"x;y"},"videoDetails":{"videoId":"abc","title":"動画の題名",
+        "keywords":["音楽","live"],"channelId":"UC1","shortDescription":"1行目 {波括弧} と \"引用\"\n\n2行目","author":"チャンネル名"}}
+    """.trimIndent().replace("\n", "")
+
+    @Test
+    fun YouTubeはplayerResponseから説明文とチャンネル名を取り出す() {
+        val document = Jsoup.parse(youtubeHtml(youtubePlayerResponse), "https://m.youtube.com/watch?v=abc")
+        val result = HtmlContentExtractor.extract(document)
+        assertEquals("サンプル動画", result.title)
+        assertEquals(
+            "チャンネル: チャンネル名\n\n1行目 {波括弧} と \"引用\"\n\n2行目\n\nキーワード: 音楽, live",
+            result.text
+        )
+        // 説明文が text に入るので、汎用の meta description は重複させない
+        assertNull(result.description)
+    }
+
+    @Test
+    fun YouTubeはホスト名が不明でもサイト名で判定する() {
+        val result = extract(youtubeHtml(youtubePlayerResponse))
+        assertTrue(result.text.startsWith("チャンネル: チャンネル名"))
+        assertNull(result.description)
+    }
+
+    @Test
+    fun YouTubeの本文は最大文字数で切り詰められる() {
+        val long = "あ".repeat(HtmlContentExtractor.MAX_TEXT_CHARS + 100)
+        val json = """{"videoDetails":{"title":"t","author":"a","shortDescription":"$long","keywords":["k"]}}"""
+        val result = extract(youtubeHtml(json))
+        assertEquals(HtmlContentExtractor.MAX_TEXT_CHARS, result.text.length)
+        assertTrue(result.text.startsWith("チャンネル: a"))
+    }
+
+    @Test
+    fun YouTubeでJSONが壊れていれば汎用の抽出にフォールバックする() {
+        val document = Jsoup.parse(
+            youtubeHtml("""{"videoDetails":{"title":"途中で切れ"""),
+            "https://www.youtube.com/watch?v=abc"
+        )
+        val result = HtmlContentExtractor.extract(document)
+        assertEquals("サンプル動画", result.title)
+        assertEquals("作成した動画を友だち、家族、世界中の人たちと共有", result.description)
+        assertTrue(result.text.isEmpty())
+    }
+
+    @Test
+    fun YouTubeでvideoDetailsが無ければ汎用の抽出にフォールバックする() {
+        val result = extract(youtubeHtml("""{"responseContext":{}}"""))
+        assertEquals("作成した動画を友だち、家族、世界中の人たちと共有", result.description)
+        assertTrue(result.text.isEmpty())
+    }
+
+    @Test
+    fun YouTube以外のページではplayerResponseがあっても無視する() {
+        val html = youtubeHtml(youtubePlayerResponse, siteName = "Example Blog")
+        val document = Jsoup.parse(html, "https://blog.example.com/post")
+        val result = HtmlContentExtractor.extract(document)
+        assertEquals("作成した動画を友だち、家族、世界中の人たちと共有", result.description)
+        assertTrue(result.text.isEmpty())
+    }
 }

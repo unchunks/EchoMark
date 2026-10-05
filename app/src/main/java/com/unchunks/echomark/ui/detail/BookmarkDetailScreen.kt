@@ -107,6 +107,7 @@ import com.unchunks.echomark.ui.common.formatRelativeTime
 import com.unchunks.echomark.ui.common.openUrl
 import com.unchunks.echomark.ui.common.shareBookmark
 import com.unchunks.echomark.ui.components.AiStatusBadge
+import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState
@@ -420,6 +421,7 @@ private fun DetailBody(
             Spacer(Modifier.height(24.dp))
             TagSection(
                 tags = bookmark.tags,
+                aiTags = bookmark.aiTags,
                 allTagNames = uiState.allTagNames,
                 onAddTag = callbacks.onAddTag,
                 onRemoveTag = callbacks.onRemoveTag
@@ -659,11 +661,15 @@ private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
     }
 }
 
-/** タグ: × で外し(取り消せる)、入力欄で追加(既存タグを候補に出す) */
+/**
+ * タグ: × で外し(取り消せる)、入力欄で追加(既存タグを候補に出す)。
+ * AI が付けたタグ([aiTags])には印を付ける。AI のタグは再処理で付け直されるが、自分で付けたタグはそのまま残る
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagSection(
     tags: List<String>,
+    aiTags: Set<String>,
     allTagNames: List<String>,
     onAddTag: (String) -> Unit,
     onRemoveTag: (String) -> Unit
@@ -688,7 +694,21 @@ private fun TagSection(
     } else {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             tags.forEach { tag ->
-                RemovableTagChip(name = tag, onRemove = { onRemoveTag(tag) })
+                RemovableTagChip(name = tag, isAi = tag in aiTags, onRemove = { onRemoveTag(tag) })
+            }
+        }
+        if (tags.any { it in aiTags }) {
+            Row(
+                modifier = Modifier.padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AiTagIcon(size = 14.dp)
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "AIが付けたタグ(再処理で付け直されます)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -728,9 +748,10 @@ private fun TagSection(
 /**
  * 付いているタグ。外せるのは × だけにする(チップ本体を押しても外れない。誤って触れて消えるのを防ぐ)。
  * × は見た目 32dp だが、タッチは周囲を含めて 48dp まで受け付ける(Compose の最小タッチ領域)。
+ * [isAi] なら AI が付けたタグとして先頭に ✨ を付ける。
  */
 @Composable
-private fun RemovableTagChip(name: String, onRemove: () -> Unit) {
+private fun RemovableTagChip(name: String, isAi: Boolean, onRemove: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surface,
@@ -739,9 +760,12 @@ private fun RemovableTagChip(name: String, onRemove: () -> Unit) {
         Row(
             modifier = Modifier
                 .heightIn(min = 32.dp)
-                .padding(start = 12.dp),
+                .padding(start = if (isAi) 8.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isAi) {
+                AiTagIcon(size = 16.dp, modifier = Modifier.padding(end = 4.dp), describe = true)
+            }
             Text(
                 "#$name",
                 style = MaterialTheme.typography.labelLarge,

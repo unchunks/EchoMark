@@ -26,8 +26,25 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+/**
+ * v8 → v9: タグを「ユーザーが付けたもの」と「AI が付けたもの」に分ける。
+ * - 紐付け(bookmark_tag_cross_ref)に付けた人(source: 'USER' / 'AI')を追加する
+ * - タグ(tags)に、ユーザーのタグか(isUserCreated)を追加する。false のタグはどこにも付かなくなったら自動で消す
+ *
+ * 既存の紐付け・タグは誰が付けたか分からないため、すべてユーザーのものとして扱う(ユーザーのタグを誤って消さない)。
+ * source はエンティティに既定値を宣言していない(常に明示して書き込む)。Room は既定値を宣言していない列の
+ * 既定値を検証しないため、既存行を埋めるための DEFAULT を付けて追加しても新規作成の DB と食い違わない。
+ */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bookmark_tag_cross_ref` ADD COLUMN `source` TEXT NOT NULL DEFAULT 'USER'")
+        db.execSQL("ALTER TABLE `tags` ADD COLUMN `isUserCreated` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE `tags` SET `isUserCreated` = 1")
+    }
+}
+
 /** アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。 */
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_6_7, MIGRATION_7_8)
+val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
 
 /** 正式なマイグレーションを用意していない古いバージョン(開発初期)。ここからの更新だけはデータを作り直す。 */
 val DESTRUCTIVE_MIGRATION_FROM_VERSIONS: IntArray = intArrayOf(1, 2, 3, 4, 5)
