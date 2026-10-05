@@ -23,6 +23,7 @@ import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
+import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -166,6 +167,8 @@ class LocalLlmProvider @Inject constructor(
         }
 
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
+        // 端末内 AI はファイルそのものを読めない。取り出したテキストも無ければ、ファイル名だけの要約は作らない
+        if (input.attachment != null && input.text.isBlank()) throw NothingToAnalyzeException()
         // 上限を超える本文は、部分ごとに要約してからまとめる
         val body = digester.prepare(input.text) { part ->
             val prompt = listOf(

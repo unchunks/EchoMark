@@ -8,6 +8,7 @@ import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.LlmException
+import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
@@ -182,6 +183,34 @@ class ApiLlmProviderTest {
             .getJSONArray("contents").getJSONObject(0).getJSONArray("parts")
         assertEquals(1, parts.length())
         assertFalse(parts.getJSONObject(0).getString("text").contains("添付:"))
+    }
+
+    @Test
+    fun 本文が空でファイルも送れないときは要約しない() = runBlocking {
+        settings.setSendFilesToCloud(false)
+
+        try {
+            provider(geminiKeys).analyze(
+                AnalysisInput(title = "IMG_0001.png", text = "", kind = ContentKind.IMAGE, attachment = imageFile),
+                emptyList()
+            )
+            fail("例外が投げられるはず")
+        } catch (e: NothingToAnalyzeException) {
+            // ファイル名だけの要約は作らない
+        }
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun 本文が空でもファイルを送れるなら要約する() = runBlocking {
+        server.enqueue(geminiText("""{"summary":"夕焼けの写真","tags":[],"category":"写真"}"""))
+
+        val analysis = provider(geminiKeys).analyze(
+            AnalysisInput(title = "IMG_0001.png", text = "", kind = ContentKind.IMAGE, attachment = imageFile),
+            emptyList()
+        )
+
+        assertEquals("夕焼けの写真", analysis.summary)
     }
 
     @Test

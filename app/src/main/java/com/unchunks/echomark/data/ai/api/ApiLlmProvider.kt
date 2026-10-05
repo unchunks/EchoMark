@@ -12,6 +12,7 @@ import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
+import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import kotlinx.coroutines.flow.Flow
@@ -49,6 +50,8 @@ class ApiLlmProvider @Inject constructor(
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
         val (client, credentials) = current()
         val attachment = prepareAttachment(input, client.provider)
+        // ファイル名だけの要約は役に立たないため作らない(設定を変えた後の再処理を待つ)
+        if (attachment == null && input.attachment != null && input.text.isBlank()) throw NothingToAnalyzeException()
         // PDF・音声・動画をそのまま渡すときは、ファイルが主役。取り出したテキストは手がかりとして先頭だけ渡す
         val fileIsPrimary = attachment != null && attachment.kind != AttachmentKind.IMAGE
         val body = if (fileIsPrimary) {
