@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.backup
 
+import com.unchunks.echomark.data.attachment.isValidAttachmentPath
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
@@ -16,7 +17,8 @@ import java.io.Writer
 
 /**
  * バックアップの中身。DB のテーブルをそのまま写したもの。
- * API キー・端末内モデル・埋め込みベクトル(読み込み後に再生成する)は含めない。
+ * API キー・端末内モデル・埋め込みベクトル(読み込み後に再生成する)・添付ファイルの本体
+ * (画像・PDF・音声など。ファイル名などの情報だけを含める)は含めない。
  */
 data class BackupData(
     val exportedAt: Long,
@@ -36,9 +38,9 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 3):
+ * 形式(version 4):
  * ```
- * { "format": "echomark-backup", "version": 3, "exportedAt": 1700000000000,
+ * { "format": "echomark-backup", "version": 4, "exportedAt": 1700000000000,
  *   "bookmarks": [ {全列} ], "tags": [ {id, name, isUserCreated} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
  *   "conversations": [ {全列。aboutBookmarkId は通常の会話なら省略} ],
@@ -51,10 +53,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 2: 会話に aboutBookmarkId(「このブックマークについて質問」の対象)を追加。1 では全て通常の会話として読む
  * - 3: タグに isUserCreated、紐付けに source(誰が付けたか)を追加。2 以前では全てユーザーのタグとして読む
  *   (DB のマイグレーションと同じく、ユーザーのタグを AI のものと誤って消さないため)
+ * - 4: ブックマークに添付ファイルの情報(filePath・mimeType・fileName・fileSize)を追加。本体は含めないため、
+ *   読み込む端末にファイルが無ければ filePath を外す(読み込む側で確かめる)。3 以前ではファイルなしとして読む
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 3
+    const val CURRENT_VERSION = 4
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -151,6 +155,10 @@ object BackupJson {
         .putNullable("siteName", siteName)
         .put("isFavorite", isFavorite)
         .put("isArchived", isArchived)
+        .putNullable("filePath", filePath)
+        .putNullable("mimeType", mimeType)
+        .putNullable("fileName", fileName)
+        .apply { fileSize?.let { put("fileSize", it) } }
 
     private fun TagEntity.toJson() = JSONObject().put("id", id).put("name", name).put("isUserCreated", isUserCreated)
 
@@ -201,7 +209,12 @@ object BackupJson {
             imageUrl = stringOrNull("imageUrl")?.takeIf { isWebUrl(it) },
             siteName = stringOrNull("siteName"),
             isFavorite = optBoolean("isFavorite", false),
-            isArchived = optBoolean("isArchived", false)
+            isArchived = optBoolean("isArchived", false),
+            // 添付ファイルの置き場所以外を指すパス(書き換えられたファイルなど)は受け付けない
+            filePath = stringOrNull("filePath")?.takeIf { isValidAttachmentPath(it) },
+            mimeType = stringOrNull("mimeType"),
+            fileName = stringOrNull("fileName"),
+            fileSize = longOrNull("fileSize")?.takeIf { it >= 0 }
         )
     }
 

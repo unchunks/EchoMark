@@ -76,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -102,9 +103,13 @@ import coil3.compose.AsyncImage
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.extract.ExtractedBody
 import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.echomark.ui.common.formatRelativeTime
+import com.unchunks.echomark.ui.common.openAttachment
 import com.unchunks.echomark.ui.common.openUrl
+import com.unchunks.echomark.ui.attachment.rememberAttachmentFile
+import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.shareBookmark
 import com.unchunks.echomark.ui.components.AiStatusBadge
 import com.unchunks.echomark.ui.components.AiTagIcon
@@ -184,6 +189,7 @@ fun BookmarkDetailScreen(
             onBack = onBack,
             onOpenBookmark = onOpenBookmark,
             onOpenInBrowser = { url -> openUrl(context, url) },
+            onOpenFile = { openAttachment(context, it) },
             onAskAi = onAskAi,
             onOpenAiSettings = onOpenAiSettings,
             onShare = { shareBookmark(context, it) },
@@ -204,6 +210,8 @@ class BookmarkDetailCallbacks(
     val onBack: () -> Unit = {},
     val onOpenBookmark: (Long) -> Unit = {},
     val onOpenInBrowser: (String) -> Unit = {},
+    /** 保存したファイルをほかのアプリで開く */
+    val onOpenFile: (Bookmark) -> Unit = {},
     val onAskAi: (Long) -> Unit = {},
     val onOpenAiSettings: () -> Unit = {},
     val onShare: (Bookmark) -> Unit = {},
@@ -218,7 +226,8 @@ class BookmarkDetailCallbacks(
 
 /**
  * 詳細画面の本体(状態を受け取って描くだけ)。
- * 上から: OG 画像 → 出どころと保存日時 → タイトル → 開く/質問ボタン → AI 要約(または AI の状態) → タグ → 本文/メモ → 関連。
+ * 上から: ファイルのプレビュー(または OG 画像) → 出どころと保存日時 → タイトル → ファイルの情報 → 開く/質問ボタン →
+ * AI 要約(または AI の状態) → タグ → 本文/メモ(ファイルから読み取った文字を含む) → 関連。
  * 広い画面では、本文が横に間延びしないよう中央の読みやすい幅に収める(スクロールは画面の幅全体で受ける)。
  *
  * @param showBackButton トップバーに戻るボタンを出すか(2 画面表示の右側では出さない)
@@ -404,8 +413,13 @@ private fun DetailBody(
             // 広い画面では中央の読みやすい幅に収める(スクロールより後に付けるので、スクロールは幅全体で受ける)
             .centeredMaxWidth()
     ) {
+        val file = rememberAttachmentFile(bookmark)
+        val fileType = bookmark.attachmentType()
         val imageUrl = bookmark.imageUrl
-        if (!imageUrl.isNullOrBlank()) {
+        if (file != null && fileType != null && fileType != BookmarkType.TEXT) {
+            AttachmentPreview(file, fileType, onOpenFile = { callbacks.onOpenFile(bookmark) })
+            Spacer(Modifier.height(16.dp))
+        } else if (!imageUrl.isNullOrBlank()) {
             // 装飾扱い(内容はタイトルで伝わる)。OG 画像の標準比率 1.91:1 で切り出す
             AsyncImage(
                 model = imageUrl,
@@ -429,8 +443,13 @@ private fun DetailBody(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.semantics { heading() }
             )
+            // ファイルの種類のブックマークは、ファイルが無くても(バックアップから読み込んだときなど)その旨を出す
+            if (bookmark.filePath != null || bookmark.type in FILE_TYPES) {
+                Spacer(Modifier.height(12.dp))
+                FileInfoCard(bookmark, file, onOpenFile = { callbacks.onOpenFile(bookmark) })
+            }
             Spacer(Modifier.height(16.dp))
-            PrimaryActions(bookmark, callbacks)
+            PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
             Spacer(Modifier.height(20.dp))
             AiSection(bookmark, callbacks)
             Spacer(Modifier.height(24.dp))
@@ -443,11 +462,19 @@ private fun DetailBody(
             )
             val content = bookmark.content
             if (!content.isNullOrBlank()) {
-                Spacer(Modifier.height(24.dp))
-                ContentSection(
-                    label = if (bookmark.type == BookmarkType.URL) "ページの本文・メモ" else "メモ",
-                    text = content
-                )
+                // ファイルから取り出した文字(OCR・文字起こしなど)は区切り行で本文に入っているので、メモと分けて見出しを付ける
+                val parts = ExtractedBody.parse(content)
+                val sections = if (parts.sections.isEmpty()) {
+                    listOf(contentLabel(bookmark) to content)
+                } else {
+                    listOfNotNull(parts.memo?.let { "メモ" to it }) + parts.sections.map { it.source.label to it.text }
+                }
+                sections.forEachIndexed { index, (label, text) ->
+                    key(index) {
+                        Spacer(Modifier.height(24.dp))
+                        ContentSection(label = label, text = text)
+                    }
+                }
             }
         }
 
@@ -481,7 +508,7 @@ private fun SourceAndDate(bookmark: Bookmark, nowMillis: Long) {
     val source = listOfNotNull(bookmark.siteName?.takeIf { it.isNotBlank() }, domain)
         .distinct()
         .joinToString(" · ")
-        .ifEmpty { "メモ" }
+        .ifEmpty { bookmark.attachmentType()?.displayName() ?: bookmark.type.displayName() }
     Text(
         text = source,
         style = MaterialTheme.typography.labelLarge,
@@ -514,7 +541,7 @@ private fun SourceAndDate(bookmark: Bookmark, nowMillis: Long) {
 }
 
 @Composable
-private fun PrimaryActions(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
+private fun PrimaryActions(bookmark: Bookmark, hasFile: Boolean, callbacks: BookmarkDetailCallbacks) {
     val url = bookmark.contentUri
     AdaptiveButtonRow(modifier = Modifier.fillMaxWidth()) {
         if (url != null) {
@@ -522,6 +549,12 @@ private fun PrimaryActions(bookmark: Bookmark, callbacks: BookmarkDetailCallback
                 Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text("ブラウザで開く", textAlign = TextAlign.Center)
+            }
+        } else if (hasFile) {
+            Button(onClick = { callbacks.onOpenFile(bookmark) }) {
+                Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("ファイルを開く", textAlign = TextAlign.Center)
             }
         }
         FilledTonalButton(onClick = { callbacks.onAskAi(bookmark.id) }) {
@@ -852,6 +885,9 @@ private fun DetailSectionTitle(text: String, modifier: Modifier = Modifier) {
 }
 
 private const val COLLAPSED_LINES = 6
+
+/** ファイルを保存する種類 */
+private val FILE_TYPES = setOf(BookmarkType.IMAGE, BookmarkType.PDF, BookmarkType.AUDIO, BookmarkType.VIDEO)
 
 private val TAG_CHIP_LABEL_MAX_WIDTH = 220.dp
 

@@ -6,10 +6,15 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.contentKind
+import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.model.AnalysisAttachment
+import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
+import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -17,6 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.File
 
 /**
  * 保存されたブックマークの AI 処理(要約・タグ・カテゴリ・埋め込み)を行う。
@@ -50,15 +56,25 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
 
         return try {
             repository.updateAiStatus(bookmarkId, AiStatus.PROCESSING)
-            val textToProcess = bookmark.title + "\n" + (bookmark.content ?: "")
             var analysisOutcome = AnalysisOutcome.DONE
+            // この実行で作った要約。埋め込みに含めるため、作ったら埋め込みも作り直す
+            var newSummary: String? = null
 
             // 工程1: 要約・タグ・カテゴリ(要約が既にあればスキップ)
             if (bookmark.summary.isNullOrBlank()) {
                 try {
                     // 既存のタグを伝え、似たタグを増やさず使い回させる
-                    val analysis = llmProviderResolver.resolve().analyze(textToProcess, repository.getTagNamesForAi())
+                    // 種類に合った要約にし、ファイルがあればクラウド API にそのまま渡せるようにする
+                    // (渡すかどうかは設定と提供元の対応で LlmProvider が決める)
+                    val input = AnalysisInput(
+                        title = bookmark.title,
+                        text = bookmark.content.orEmpty(),
+                        kind = bookmark.contentKind(),
+                        attachment = analysisAttachmentOf(bookmark, applicationContext.filesDir)
+                    )
+                    val analysis = llmProviderResolver.resolve().analyze(input, repository.getTagNamesForAi())
                     repository.updateSummary(bookmarkId, analysis.summary)
+                    newSummary = analysis.summary
                     // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
                     repository.saveAiTags(bookmarkId, analysis.tags)
                     repository.updateCategory(bookmarkId, analysis.category)
@@ -76,8 +92,11 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             // 工程2: 埋め込み(現行モデルバージョンで保存済みならスキップ)
             // 埋め込みモデルが無い環境ではスキップし、検索はキーワードのみで動かす
             try {
-                if (repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion) {
-                    val vector = embeddingProvider.embedDocument(textToProcess)
+                if (newSummary != null ||
+                    repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion
+                ) {
+                    val text = embeddingTextOf(bookmark.title, newSummary ?: bookmark.summary, bookmark.content)
+                    val vector = embeddingProvider.embedDocument(text)
                     repository.saveEmbedding(bookmarkId, vector, embeddingProvider.modelVersion)
                 }
             } catch (e: EmbeddingUnavailableException) {
@@ -153,6 +172,8 @@ internal enum class AnalysisOutcome {
 
 /** 解析工程の例外を、ワーカーの振る舞いに対応づける。 */
 internal fun classifyAnalysisError(e: Exception): AnalysisOutcome = when (e) {
+    // 中身を読み取れないファイル。クラウド API への切り替えやファイルの送信をオンにした後に、再処理で要約できる
+    is NothingToAnalyzeException,
     is ModelNotAvailableException,
     is LlmException.ApiKeyMissing,
     is LlmException.InvalidApiKey,
@@ -161,3 +182,32 @@ internal fun classifyAnalysisError(e: Exception): AnalysisOutcome = when (e) {
     is LlmException.Timeout -> AnalysisOutcome.GIVE_UP
     else -> AnalysisOutcome.RETRY
 }
+
+/**
+ * AI に渡す元のファイル。ファイルでない・MIME タイプが不明・ファイルが無い(削除された)ときは null。
+ * [Bookmark.filePath] は filesDir からの相対パス。バックアップの復元などで不正な値が入っても、
+ * アプリの領域の外のファイルは読まない。
+ */
+internal fun analysisAttachmentOf(bookmark: Bookmark, filesDir: File): AnalysisAttachment? {
+    val relativePath = bookmark.filePath?.takeIf { it.isNotBlank() } ?: return null
+    val mimeType = bookmark.mimeType?.takeIf { it.isNotBlank() } ?: return null
+    val root = filesDir.canonicalFile
+    val file = File(root, relativePath).canonicalFile
+    if (!file.startsWith(root) || !file.isFile) return null
+    return AnalysisAttachment(path = file.absolutePath, mimeType = mimeType, sizeBytes = file.length())
+}
+
+/**
+ * 埋め込み(ベクトル検索)に使うテキスト。タイトル・要約・本文の先頭の順に並べる。
+ * 埋め込みモデルが読める長さには上限があり、長い本文は先頭しか反映されないため、
+ * 中身を短くまとめた要約を先に置く(画像・音声など本文の無いものも、要約で検索できるようにする)。
+ */
+internal fun embeddingTextOf(title: String, summary: String?, content: String?): String =
+    listOfNotNull(
+        title.takeIf { it.isNotBlank() },
+        summary?.takeIf { it.isNotBlank() },
+        content?.take(EMBEDDING_CONTENT_CHARS)?.takeIf { it.isNotBlank() }
+    ).joinToString("\n")
+
+/** 埋め込みに含める本文の先頭の文字数 */
+private const val EMBEDDING_CONTENT_CHARS = 1_000

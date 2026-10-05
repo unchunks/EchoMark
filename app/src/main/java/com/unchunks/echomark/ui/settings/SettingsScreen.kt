@@ -340,7 +340,7 @@ fun SettingsContent(
             }
             item {
                 SettingsNotice(
-                    text = "API キーと端末内モデルのファイルはバックアップに含まれません。別の端末では設定し直してください。",
+                    text = "API キーと端末内モデル、保存した画像・PDF・音声などのファイル本体はバックアップに含まれません。別の端末では設定し直してください(ファイルのブックマークは、要約・メモだけが読み込まれます)。",
                     icon = Icons.Outlined.Info
                 )
             }
@@ -355,7 +355,7 @@ fun SettingsContent(
                 SettingsItem(
                     title = "すべてのデータを削除",
                     icon = Icons.Outlined.DeleteForever,
-                    summary = "ブックマーク・タグ・会話を削除します",
+                    summary = "ブックマーク・タグ・会話・ファイルを削除します",
                     titleColor = MaterialTheme.colorScheme.error,
                     iconTint = MaterialTheme.colorScheme.error,
                     onClick = {
@@ -461,6 +461,7 @@ private val StorageUsage.label: String
     get() = buildList {
         add("データ ${formatStorageSize(databaseBytes)}")
         add("検索用 ${formatStorageSize(embeddingBytes)}")
+        if (attachmentBytes > 0) add("ファイル ${formatStorageSize(attachmentBytes)}")
         if (modelBytes > 0) add("モデル ${formatStorageSize(modelBytes)}")
     }.joinToString("・")
 
@@ -558,7 +559,7 @@ internal fun DeleteConfirmDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "保存したブックマーク・タグ・会話と、検索用のデータを削除します。必要なら先にバックアップを書き出してください。",
+                    "保存したブックマーク・タグ・会話・ファイルと、検索用のデータを削除します。必要なら先にバックアップを書き出してください。",
                     style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
                 )
                 Row(

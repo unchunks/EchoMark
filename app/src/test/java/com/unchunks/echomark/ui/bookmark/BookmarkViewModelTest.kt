@@ -4,7 +4,10 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.TagWithCount
+import com.unchunks.echomark.domain.bookmark.model.AttachmentError
+import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.ui.common.SelectedFile
 import com.unchunks.echomark.testing.FakeTagRepository
 import com.unchunks.echomark.testing.MainDispatcherRule
 import com.unchunks.echomark.testing.testBookmark
@@ -33,7 +36,8 @@ class BookmarkViewModelTest {
     private val repository = FakeBookmarkRepository()
     private val tagRepository = FakeTagRepository()
     private val recentlyDeleted = RecentlyDeletedBookmarks()
-    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, recentlyDeleted)
+    private val attachments = FakeAttachmentRepository()
+    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, recentlyDeleted, attachments)
 
     /**
      * uiState を購読し、届いたメッセージを集める。
@@ -422,5 +426,41 @@ class BookmarkViewModelTest {
 
         assertEquals(1, requests.size)
         assertFalse(viewModel.uiState.value.isSearchActive)
+    }
+
+    @Test
+    fun 選んだファイルを1件ずつ保存して結果をまとめて知らせる() = runTest {
+        attachments.failures["content://p/broken.mp4"] = AttachmentError.ReadFailed
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        val files = listOf("content://p/a.jpg", "content://p/broken.mp4", "content://p/c.jpg")
+            .map { SelectedFile(it, "image/jpeg", it.substringAfterLast('/'), 10L) }
+
+        viewModel.save(NewBookmarkInput.Files(files, title = "使われない"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("a", "c"), repository.bookmarks.value.map { it.title })
+        assertEquals(BookmarkType.IMAGE, repository.bookmarks.value.first().type)
+        assertEquals(
+            listOf(
+                BookmarkListMessage.SavingFiles(3),
+                BookmarkListMessage.FilesSaved(firstId = 1L, savedCount = 2, failedCount = 1)
+            ),
+            messages
+        )
+    }
+
+    @Test
+    fun 一件のファイルは入力したタイトルで保存しすべて失敗したら理由を知らせる() = runTest {
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+
+        viewModel.save(NewBookmarkInput.Files(listOf(SelectedFile("content://p/x.jpg", "image/jpeg", "x.jpg", 1L)), "旅の写真"))
+        attachments.failures["content://p/y.jpg"] = AttachmentError.TooLarge(1024)
+        viewModel.save(NewBookmarkInput.Files(listOf(SelectedFile("content://p/y.jpg", "image/jpeg", "y.jpg", 1L))))
+        advanceUntilIdle()
+
+        assertEquals("旅の写真", repository.bookmarks.value.single().title)
+        assertEquals(BookmarkListMessage.SaveFailed(AttachmentError.TooLarge(1024).userMessage), messages.last())
     }
 }

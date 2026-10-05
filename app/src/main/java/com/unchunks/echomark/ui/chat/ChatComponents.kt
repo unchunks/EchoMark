@@ -177,6 +177,7 @@ internal fun Bookmark.chatSourceLabel(): String =
             BookmarkType.IMAGE -> "画像"
             BookmarkType.PDF -> "PDF"
             BookmarkType.AUDIO -> "音声"
+            BookmarkType.VIDEO -> "動画"
         }
 
 /** サムネイルの色分けに使うキー(ドメイン、なければタイトル)。 */

@@ -60,6 +60,17 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET imageUrl = :imageUrl, siteName = :siteName WHERE id = :id")
     suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?)
 
+    /** 保存したファイルの情報を差し替える(リンク先からファイルをダウンロードしたときなど) */
+    @Query(
+        "UPDATE bookmarks SET filePath = :filePath, mimeType = :mimeType, fileName = :fileName, fileSize = :fileSize " +
+            "WHERE id = :id"
+    )
+    suspend fun updateAttachment(id: Long, filePath: String?, mimeType: String?, fileName: String?, fileSize: Long?)
+
+    /** ブックマークが参照している添付ファイルの相対パス(使われていないファイルの掃除用) */
+    @Query("SELECT filePath FROM bookmarks WHERE filePath IS NOT NULL")
+    suspend fun getAllFilePaths(): List<String>
+
     /** AI再処理用: 要約を消して指定ステータスに戻す */
     @Query("UPDATE bookmarks SET summary = NULL, aiStatus = :status WHERE id = :id")
     suspend fun resetAiResult(id: Long, status: AiStatus)
@@ -150,7 +161,7 @@ interface BookmarkDao {
     suspend fun getByIdsWithTags(ids: List<Long>): List<BookmarkWithTags>
 
     /**
-     * キーワード検索(タイトル・要約・本文・タグ名の部分一致)。
+     * キーワード検索(タイトル・要約・本文・ファイル名・タグ名の部分一致)。
      * :pattern は呼び出し側で LIKE 用にエスケープ済み(エスケープ文字は '\')の検索語。
      * :tagId が非NULLならそのタグを持つものだけに絞る(AND)。
      */
@@ -161,6 +172,7 @@ interface BookmarkDao {
             title LIKE '%' || :pattern || '%' ESCAPE '\'
             OR summary LIKE '%' || :pattern || '%' ESCAPE '\'
             OR content LIKE '%' || :pattern || '%' ESCAPE '\'
+            OR fileName LIKE '%' || :pattern || '%' ESCAPE '\'
             OR id IN (
                 SELECT r.bookmarkId FROM bookmark_tag_cross_ref AS r
                 INNER JOIN tags AS t ON t.id = r.tagId

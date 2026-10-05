@@ -174,6 +174,24 @@ fun BookmarkListScreen(
                         if (result == SnackbarResult.ActionPerformed) currentOnOpenBookmark(message.id)
                     }
                     is BookmarkListMessage.SaveFailed -> snackbarHostState.showSnackbar(message.message)
+                    // 結果の知らせ(FilesSaved / SaveFailed)が届くと閉じる
+                    is BookmarkListMessage.SavingFiles -> snackbarHostState.showSnackbar(
+                        message = if (message.count > 1) "${message.count}件のファイルを保存しています…" else "ファイルを保存しています…",
+                        duration = SnackbarDuration.Indefinite
+                    )
+                    is BookmarkListMessage.FilesSaved -> {
+                        val text = buildString {
+                            append(if (message.savedCount > 1) "${message.savedCount}件のファイルを保存しました" else "保存しました")
+                            if (message.failedCount > 0) append("(${message.failedCount}件は保存できませんでした)")
+                            append("。中身を読み取って要約します")
+                        }
+                        val result = snackbarHostState.showSnackbar(
+                            message = text,
+                            actionLabel = "開く".takeIf { message.savedCount == 1 },
+                            duration = SnackbarDuration.Long
+                        )
+                        if (result == SnackbarResult.ActionPerformed) currentOnOpenBookmark(message.firstId)
+                    }
                 }
             }
         }

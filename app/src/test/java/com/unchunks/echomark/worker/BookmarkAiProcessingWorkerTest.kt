@@ -1,5 +1,6 @@
 package com.unchunks.echomark.worker
 
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -18,6 +19,12 @@ import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.model.AnalysisAttachment
+import com.unchunks.echomark.domain.provider.EmbeddingProvider
+import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
+import java.io.File
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.TagSource
@@ -57,6 +64,7 @@ class BookmarkAiProcessingWorkerTest {
     private lateinit var workManager: WorkManager
     private lateinit var repository: BookmarkRepositoryImpl
     private val llm = ScriptedLlmProvider()
+    private val embedding = RecordingEmbeddingProvider()
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
 
     @Before
@@ -71,7 +79,8 @@ class BookmarkAiProcessingWorkerTest {
             vectorSearch = VectorSearchDataSource(boxStore.embeddingBox()),
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
             workScheduler = BookmarkWorkScheduler(workManager, settings),
-            embeddingProvider = FakeEmbeddingProvider()
+            embeddingProvider = FakeEmbeddingProvider(),
+            attachmentStore = AttachmentStore(context, TestDispatcherProvider(Dispatchers.Unconfined))
         )
     }
 
@@ -97,7 +106,7 @@ class BookmarkAiProcessingWorkerTest {
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters
-                ) = BookmarkAiProcessingWorker(appContext, workerParameters, repository, resolver, FakeEmbeddingProvider())
+                ) = BookmarkAiProcessingWorker(appContext, workerParameters, repository, resolver, embedding)
             })
             .build()
         return worker.doWork()
@@ -146,6 +155,52 @@ class BookmarkAiProcessingWorkerTest {
         Bookmark(type = BookmarkType.TEXT, content = "別の本文", title = "別のメモ", createdAt = 2L, lastAccessedAt = 2L)
             .toEntity()
     )
+
+    @Test
+    fun ファイルのブックマークは種類と元のファイルをAIに渡す() = runBlocking {
+        val file = File(context.filesDir, "attachments/receipt.png").apply {
+            parentFile!!.mkdirs()
+            writeBytes(ByteArray(1234))
+        }
+        val id = db.bookmarkDao().insert(
+            Bookmark(
+                type = BookmarkType.IMAGE, content = "合計 1,200円", title = "receipt.png", createdAt = 1L,
+                lastAccessedAt = 1L, filePath = "attachments/receipt.png", mimeType = "image/png", fileSize = 1234L
+            ).toEntity()
+        )
+
+        runWorker(id, runAttemptCount = 0)
+
+        val input = llm.lastInput!!
+        assertEquals(ContentKind.IMAGE, input.kind)
+        assertEquals("合計 1,200円", input.text)
+        assertEquals(AnalysisAttachment(file.canonicalPath, "image/png", 1234L), input.attachment)
+    }
+
+    @Test
+    fun 中身を読み取れないファイルは準備待ちにする() = runBlocking {
+        val id = insertBookmark()
+        llm.failure = NothingToAnalyzeException()
+
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+
+        // 端末内 AI では読めない写真など。クラウド API に切り替えた後などに再処理で要約できる
+        assertEquals(AiStatus.WAITING_MODEL, statusOf(id))
+        assertEquals(null, repository.getBookmarkById(id)!!.summary)
+    }
+
+    @Test
+    fun 埋め込みには作った要約を含め_要約を作り直したら埋め込みも作り直す() = runBlocking {
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0)
+        assertEquals(listOf("メモ\n要約\n本文"), embedding.documents)
+
+        repository.reprocess(id)
+        runWorker(id, runAttemptCount = 0)
+        // 埋め込みモデルは同じでも、要約が変わったため作り直す
+        assertEquals(2, embedding.documents.size)
+    }
 
     @Test
     fun 削除済みのブックマークはAIを呼ばずに終える() = runBlocking {
@@ -239,9 +294,11 @@ private class ScriptedLlmProvider : LlmProvider {
     val started = CompletableDeferred<Unit>()
     var tags: List<String> = listOf("タグ")
     var lastExistingTags: List<String>? = null
+    var lastInput: AnalysisInput? = null
 
-    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis {
+    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
         calls++
+        lastInput = input
         started.complete(Unit)
         if (hang) awaitCancellation()
         lastExistingTags = existingTags
@@ -251,4 +308,17 @@ private class ScriptedLlmProvider : LlmProvider {
 
     override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =
         error("not used")
+}
+
+/** 埋め込みにしたテキストを記録する。 */
+private class RecordingEmbeddingProvider : EmbeddingProvider {
+    private val delegate = FakeEmbeddingProvider()
+    val documents = mutableListOf<String>()
+    override val modelVersion: String = delegate.modelVersion
+    override val dimensions: Int = delegate.dimensions
+    override suspend fun embedDocument(text: String): FloatArray {
+        documents += text
+        return delegate.embedDocument(text)
+    }
+    override suspend fun embedQuery(text: String): FloatArray = delegate.embedQuery(text)
 }

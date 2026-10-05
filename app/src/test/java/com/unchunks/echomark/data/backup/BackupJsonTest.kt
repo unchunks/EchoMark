@@ -31,6 +31,11 @@ class BackupJsonTest {
             BookmarkEntity(
                 id = 2, type = BookmarkType.TEXT, content = null, contentUri = null, title = "メモ",
                 createdAt = 300, lastAccessedAt = 300, aiStatus = AiStatus.FAILED, isArchived = true
+            ),
+            BookmarkEntity(
+                id = 3, type = BookmarkType.IMAGE, content = "読み取った文字", title = "写真",
+                createdAt = 310, lastAccessedAt = 310, aiStatus = AiStatus.DONE,
+                filePath = "attachments/0f8e-11.jpg", mimeType = "image/jpeg", fileName = "IMG_0001.jpg", fileSize = 1234L
             )
         ),
         tags = listOf(TagEntity(10, "kotlin", isUserCreated = true), TagEntity(11, "android")),
@@ -91,6 +96,38 @@ class BackupJsonTest {
     }
 
     @Test
+    fun 添付ファイルの置き場所以外を指すパスは読み込まない() {
+        val text = """
+            {"format":"echomark-backup","version":4,"exportedAt":1,
+             "bookmarks":[
+               {"id":1,"type":"PDF","title":"a","createdAt":1,"filePath":"../databases/echomark.db","mimeType":"application/pdf"},
+               {"id":2,"type":"PDF","title":"b","createdAt":1,"filePath":"attachments/ok.pdf","fileName":"b.pdf","fileSize":10}
+             ]}
+        """.trimIndent()
+        val bookmarks = BackupJson.decode(text).data.bookmarks
+
+        assertNull(bookmarks[0].filePath)
+        assertEquals("application/pdf", bookmarks[0].mimeType)
+        assertEquals("attachments/ok.pdf", bookmarks[1].filePath)
+        assertEquals("b.pdf", bookmarks[1].fileName)
+        assertEquals(10L, bookmarks[1].fileSize)
+    }
+
+    @Test
+    fun ファイル情報の無い古い版はファイルなしとして読む() {
+        val text = """
+            {"format":"echomark-backup","version":3,"exportedAt":1,
+             "bookmarks":[{"id":1,"type":"TEXT","title":"a","createdAt":1}]}
+        """.trimIndent()
+        val bookmark = BackupJson.decode(text).data.bookmarks.single()
+
+        assertNull(bookmark.filePath)
+        assertNull(bookmark.mimeType)
+        assertNull(bookmark.fileName)
+        assertNull(bookmark.fileSize)
+    }
+
+    @Test
     fun 新しいバージョンのバックアップはエラー() {
         val e = assertThrows(BackupFormatException::class.java) {
             BackupJson.decode("""{"format":"echomark-backup","version":99}""")
@@ -121,7 +158,7 @@ class BackupJsonTest {
             {"format":"echomark-backup","version":1,"exportedAt":1,
              "bookmarks":[
                {"id":1,"type":"URL","contentUri":"https://a","title":"ok","createdAt":10},
-               {"id":2,"type":"VIDEO","title":"未知の種類","createdAt":10},
+               {"id":2,"type":"HOLOGRAM","title":"未知の種類","createdAt":10},
                {"id":3,"type":"TEXT","createdAt":10},
                {"id":4,"type":"TEXT","title":"未知の状態","createdAt":10,"aiStatus":"SOMETHING"}
              ],

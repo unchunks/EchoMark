@@ -4,6 +4,7 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
 
@@ -26,6 +27,14 @@ interface BookmarkRepository {
     suspend fun saveBookmark(bookmark: Bookmark): Long
     suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult
     suspend fun saveBookmarkWithResult(bookmark: Bookmark): SaveResult
+    /**
+     * アプリ内に取り込んだファイル([StoredAttachment])をブックマークとして保存し、
+     * 「中身の取り出し(OCR・文字起こしなど) → AI 処理」を登録する。
+     * 種類(画像・PDF・音声・動画・テキスト)は MIME タイプから決める。[title] が空ならファイル名(拡張子なし)、
+     * [memo] は本文の先頭に入れる。テキストファイルは中身をそのまま本文に入れる(取り出しの段は使わない)。
+     * 保存できない形式なら [com.unchunks.echomark.domain.bookmark.model.AttachmentException]。
+     */
+    suspend fun saveFileBookmark(attachment: StoredAttachment, title: String?, memo: String?): SaveResult
     /**
      * AI が付けたタグとして保存する。前回 AI が付けたタグは外して置き換え、ユーザーが付けたタグには触れない。
      * タグ名は表記ゆれ(大文字小文字・全角半角)の範囲で既存のタグにそろえる。
@@ -51,6 +60,8 @@ interface BookmarkRepository {
     suspend fun setArchived(id: Long, isArchived: Boolean)
     /** リンク先から取得した OG 画像 URL・サイト名を保存する(取得できなかった項目は null)。 */
     suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?)
+    /** 保存したファイルの情報を差し替える(リンク先が PDF・画像などで、ダウンロードして保存したとき)。null ならファイルなしにする。 */
+    suspend fun updateAttachment(id: Long, attachment: StoredAttachment?)
 
     // AI 処理
     /** 要約をクリアして AI 処理(要約・タグ・埋め込み)をやり直す。 */

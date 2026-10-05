@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -91,6 +92,7 @@ import com.unchunks.echomark.ui.common.readableWidth
 import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.settings.SettingsItem
 import com.unchunks.echomark.ui.settings.SettingsNotice
+import com.unchunks.echomark.ui.settings.SettingsSwitchItem
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import com.unchunks.echomark.ui.settings.shortName
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -112,6 +114,7 @@ class AiSettingsActions(
     val onSaveKey: (ApiProvider, String) -> Unit = { _, _ -> },
     val onClearKey: (ApiProvider) -> Unit = {},
     val onTestConnection: (String) -> Unit = {},
+    val onSetSendFilesToCloud: (Boolean) -> Unit = {},
     val onReprocess: () -> Unit = {}
 )
 
@@ -157,6 +160,7 @@ fun AiSettingsScreen(
             onSaveKey = viewModel::saveApiKey,
             onClearKey = viewModel::clearApiKey,
             onTestConnection = viewModel::testConnection,
+            onSetSendFilesToCloud = viewModel::setSendFilesToCloud,
             onReprocess = viewModel::reprocessPending
         )
     )
@@ -204,7 +208,8 @@ fun AiSettingsContent(
             BackendSelector(selected = uiState.backend, onSelect = actions.onSelectBackend)
             if (uiState.backend == LlmBackend.API) {
                 SettingsNotice(
-                    text = "ブックマークの本文・要約・チャットの質問が ${uiState.apiProvider.displayName} のサーバーに送信されます。" +
+                    text = "ブックマークの本文・${if (uiState.sendFilesToCloud) "保存したファイル・" else ""}要約・チャットの質問が " +
+                        "${uiState.apiProvider.displayName} のサーバーに送信されます。" +
                         "送信内容の扱いは各社の規約に従い、API の利用料金は各社のアカウントに請求されます。",
                     icon = Icons.Outlined.Info
                 )
@@ -232,6 +237,13 @@ fun AiSettingsContent(
                 onClearKey = actions.onClearKey,
                 onTestConnection = actions.onTestConnection
             )
+            if (uiState.backend == LlmBackend.API) {
+                SendFilesToCloudSetting(
+                    provider = uiState.apiProvider,
+                    checked = uiState.sendFilesToCloud,
+                    onCheckedChange = actions.onSetSendFilesToCloud
+                )
+            }
 
             SectionDivider()
             SectionHeader("AI 処理")
@@ -590,6 +602,38 @@ private fun ApiSection(
             onDismiss = { showClearKeyDialog = false }
         )
     }
+}
+
+/**
+ * ファイルそのものもクラウドに送るかのスイッチ。送ると写っているもの・話している内容から要約できるが、
+ * 送信される情報と API の料金が増えるため、送れる種類と料金を添えて伝える。
+ */
+@Composable
+private fun SendFilesToCloudSetting(provider: ApiProvider, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    SettingsSwitchItem(
+        title = "ファイルもクラウドで解析",
+        icon = Icons.Outlined.CloudUpload,
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        summary = "保存した画像・PDF・音声・動画を ${provider.shortName} に送り、写っているものや話している内容から要約します",
+        modifier = Modifier.padding(top = 8.dp)
+    )
+    SettingsNotice(text = sendFilesNotice(provider, checked), icon = Icons.Outlined.Info)
+}
+
+/** ファイルの送信について、送れる種類・料金・オフのときの動きを説明する。 */
+internal fun sendFilesNotice(provider: ApiProvider, enabled: Boolean): String {
+    val cost = "ファイルを送ると、その分の API の料金がかかります(ページの多い PDF・長い音声や動画ほど高くなります)。"
+    if (!enabled) {
+        return "オフのときは、端末内でファイルから読み取った文字だけを送ります。文字の無い写真などは要約できません。"
+    }
+    val kinds = when (provider) {
+        ApiProvider.GEMINI ->
+            "${provider.shortName} には画像・PDF・音声・動画を送れます(1ファイル 10 MB まで。画像は縮小して送ります)。"
+        ApiProvider.CLAUDE, ApiProvider.OPENAI ->
+            "${provider.shortName} に送れるのは画像と PDF です(画像は縮小して送ります)。音声・動画は端末内で文字起こしした文字だけを送ります。"
+    }
+    return kinds + cost
 }
 
 /** API キーの削除の確認。キーは端末内にしか無いため、消すと入力し直すまで API を使えない */

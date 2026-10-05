@@ -10,6 +10,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
+import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
@@ -121,7 +122,7 @@ class ChatRepositoryImplStreamTest {
     @Test
     fun キャンセルすると途中までの回答を停止付きで保存する() = runBlocking {
         val endless = object : LlmProvider {
-            override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis = TODO("not used")
+            override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis = TODO("not used")
             override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>) =
                 TODO("not used")
 
@@ -150,7 +151,7 @@ class ChatRepositoryImplStreamTest {
         var lastContext: List<String> = emptyList()
         var lastHistory: List<ChatMessage> = emptyList()
 
-        override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis = TODO("not used")
+        override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis = TODO("not used")
         override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>) =
             TODO("not used")
 

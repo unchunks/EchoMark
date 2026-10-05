@@ -70,6 +70,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override val onboardingCompleted: Flow<Boolean> = data.map { it[KEY_ONBOARDING_COMPLETED] ?: false }
 
+    override val sendFilesToCloud: Flow<Boolean> = data.map { it[KEY_SEND_FILES_TO_CLOUD] ?: true }
+
+    override suspend fun setSendFilesToCloud(enabled: Boolean) {
+        dataStore.edit { it[KEY_SEND_FILES_TO_CLOUD] = enabled }
+    }
+
     override suspend fun setThemeMode(mode: ThemeMode) {
         dataStore.edit { it[KEY_THEME_MODE] = mode.name }
     }
@@ -140,6 +146,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_REDISCOVER_NOTIFIED = stringSetPreferencesKey("rediscover_notified")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val KEY_SEND_FILES_TO_CLOUD = booleanPreferencesKey("send_files_to_cloud")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
     }
 }

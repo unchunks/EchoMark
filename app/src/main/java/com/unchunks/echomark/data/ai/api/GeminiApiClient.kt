@@ -80,10 +80,22 @@ class GeminiApiClient internal constructor(
             .build()
         val contents = JSONArray()
         normalizeTurns(request.messages).forEach { turn ->
+            val parts = JSONArray()
+            // ファイル(画像・PDF・音声・動画)は inlineData で、テキストより前に置く
+            // https://ai.google.dev/api/caching#Part
+            turn.attachments.forEach { attachment ->
+                parts.put(
+                    JSONObject().put(
+                        "inlineData",
+                        JSONObject().put("mimeType", attachment.mimeType).put("data", attachment.base64Data)
+                    )
+                )
+            }
+            if (turn.text.isNotBlank() || turn.attachments.isEmpty()) parts.put(JSONObject().put("text", turn.text))
             contents.put(
                 JSONObject()
                     .put("role", if (turn.role == ChatRole.USER) "user" else "model")
-                    .put("parts", JSONArray().put(JSONObject().put("text", turn.text)))
+                    .put("parts", parts)
             )
         }
         val generationConfig = JSONObject().put("maxOutputTokens", maxOutputTokens(request.purpose))

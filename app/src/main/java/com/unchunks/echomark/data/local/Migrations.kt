@@ -43,8 +43,21 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
+/**
+ * v9 → v10: ブックマークに、保存したファイル(画像・PDF・音声など)の情報を追加する。
+ * 既存のブックマークはファイルを持たない(すべて null)。
+ */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `filePath` TEXT")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `mimeType` TEXT")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `fileName` TEXT")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `fileSize` INTEGER")
+    }
+}
+
 /** アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。 */
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
 
 /** 正式なマイグレーションを用意していない古いバージョン(開発初期)。ここからの更新だけはデータを作り直す。 */
 val DESTRUCTIVE_MIGRATION_FROM_VERSIONS: IntArray = intArrayOf(1, 2, 3, 4, 5)

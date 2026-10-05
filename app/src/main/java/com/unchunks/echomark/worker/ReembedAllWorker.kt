@@ -27,7 +27,7 @@ class ReembedAllWorker @AssistedInject constructor(
 
             val bookmark = bookmarkRepository.getBookmarkById(id) ?: continue
             try {
-                val text = bookmark.title + "\n" + (bookmark.content ?: "")
+                val text = embeddingTextOf(bookmark.title, bookmark.summary, bookmark.content)
                 val vector = embeddingProvider.embedDocument(text)
                 bookmarkRepository.saveEmbedding(id, vector, currentVersion)
             } catch (e: Exception) {

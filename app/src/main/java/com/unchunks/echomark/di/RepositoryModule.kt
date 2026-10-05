@@ -14,6 +14,8 @@ import com.unchunks.echomark.data.repository.TagRepositoryImpl
 import com.unchunks.echomark.domain.repository.TagRepository
 import com.unchunks.echomark.data.backup.DataManagementRepositoryImpl
 import com.unchunks.echomark.domain.repository.DataManagementRepository
+import com.unchunks.echomark.data.attachment.AttachmentStore
+import com.unchunks.echomark.domain.repository.AttachmentRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -52,6 +54,11 @@ abstract class RepositoryModule {
     abstract fun bindDataManagementRepository(
         impl: DataManagementRepositoryImpl
     ): DataManagementRepository
+
+    @Binds
+    abstract fun bindAttachmentRepository(
+        impl: AttachmentStore
+    ): AttachmentRepository
 
     @Binds
     abstract fun bindSecretCipher(
