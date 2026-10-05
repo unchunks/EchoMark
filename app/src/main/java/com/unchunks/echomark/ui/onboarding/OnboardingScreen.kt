@@ -11,10 +11,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -76,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.domain.repository.RediscoverSettings
+import com.unchunks.echomark.ui.common.readableWidth
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import kotlinx.coroutines.launch
 import java.time.format.TextStyle
@@ -83,6 +86,12 @@ import java.util.Locale
 
 /** オンボーディングのページ数。 */
 const val ONBOARDING_PAGE_COUNT = 4
+
+/**
+ * スキップ・ページインジケーター・「次へ」を並べる帯の最大幅。
+ * ページ本文(幅 480dp の列 + 左右 24dp の余白)の幅にそろえ、広い画面でボタンが画面の両端に離れないようにする。
+ */
+private val OnboardingMaxWidth = 528.dp
 
 /** オンボーディングの操作。既定は何もしない(スクリーンショット用)。 */
 class OnboardingActions(
@@ -157,7 +166,7 @@ fun OnboardingContent(
             // 上部: スキップ(最後のページでは不要なので出さない。高さは保って位置をずらさない)
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .readableWidth(OnboardingMaxWidth)
                     .heightIn(min = 56.dp)
                     .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.End,
@@ -190,7 +199,7 @@ fun OnboardingContent(
             // 下部: ページインジケーターと「次へ」/「はじめる」
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .readableWidth(OnboardingMaxWidth)
                     .padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -238,7 +247,10 @@ private fun PageIndicator(pagerState: PagerState, modifier: Modifier = Modifier)
 
 // ---- 各ページ ----
 
-/** ページ共通のレイアウト: 波紋つきのアイコン・見出し・説明・ページ固有の内容。 */
+/**
+ * ページ共通のレイアウト: 波紋つきのアイコン・見出し・説明・ページ固有の内容。
+ * 横長で背の低い画面(スマートフォンの横向きなど)では、アイコンを左・文章を右に並べて縦の高さを節約する。
+ */
 @Composable
 private fun OnboardingPage(
     icon: ImageVector,
@@ -248,36 +260,81 @@ private fun OnboardingPage(
     compact: Boolean = false,
     content: @Composable () -> Unit = {}
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(if (compact) 0.dp else 8.dp))
-        EchoIcon(icon, diameter = if (compact) 128.dp else 176.dp)
-        Spacer(Modifier.height(if (compact) 16.dp else 24.dp))
-        Column(Modifier.widthIn(max = 480.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall.japaneseParagraph(),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { heading() }
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                body,
-                style = MaterialTheme.typography.bodyLarge.japaneseParagraph(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(24.dp))
-            content()
-            Spacer(Modifier.height(16.dp))
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (maxHeight < SHORT_SCREEN_HEIGHT && maxWidth >= SHORT_SCREEN_MIN_WIDTH) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(32.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                EchoIcon(icon, diameter = 120.dp)
+                // 内容が多いときは、文章の側だけをスクロールさせる
+                PageText(
+                    title = title,
+                    body = body,
+                    content = content,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.Center
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(if (compact) 0.dp else 8.dp))
+                EchoIcon(icon, diameter = if (compact) 128.dp else 176.dp)
+                Spacer(Modifier.height(if (compact) 16.dp else 24.dp))
+                PageText(title = title, body = body, content = content)
+            }
         }
     }
 }
+
+/** ページの見出し・説明・固有の内容(幅は 480dp まで) */
+@Composable
+private fun PageText(
+    title: String,
+    body: String,
+    content: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    verticalArrangement: Arrangement.Vertical = Arrangement.Top
+) {
+    Column(
+        modifier = modifier.widthIn(max = 480.dp),
+        verticalArrangement = verticalArrangement,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.headlineSmall.japaneseParagraph(),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() }
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            body,
+            style = MaterialTheme.typography.bodyLarge.japaneseParagraph(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(24.dp))
+        content()
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+/** これより低く、かつ [SHORT_SCREEN_MIN_WIDTH] 以上の幅の画面では、アイコンと文章を横に並べる */
+private val SHORT_SCREEN_HEIGHT = 480.dp
+private val SHORT_SCREEN_MIN_WIDTH = 560.dp
 
 /** 同心円の波紋に囲まれたアイコン(「響き返す」イメージ)。装飾なので読み上げない。 */
 @Composable
