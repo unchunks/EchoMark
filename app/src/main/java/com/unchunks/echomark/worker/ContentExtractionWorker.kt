@@ -47,10 +47,8 @@ class ContentExtractionWorker @AssistedInject constructor(
         if (bookmarkId == -1L) return Result.success()
         val bookmark = repository.getBookmarkById(bookmarkId)
         val filePath = bookmark?.filePath
-        if (filePath == null) {
-            Timber.w("ContentExtractionWorker: ファイルのあるブックマークが見つかりません id=%d", bookmarkId)
-            return Result.success()
-        }
+        // URL のチェーンでは毎回この段を通る。リンク先が HTML(ファイルなし)なら何もしない
+        if (filePath == null) return Result.success()
         val file = File(applicationContext.filesDir, filePath)
         if (!file.isFile) {
             Timber.w("ContentExtractionWorker: ファイルがありません id=%d", bookmarkId)

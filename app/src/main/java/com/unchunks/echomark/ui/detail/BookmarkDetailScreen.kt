@@ -76,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -102,6 +103,7 @@ import coil3.compose.AsyncImage
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.extract.ExtractedBody
 import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.echomark.ui.common.formatRelativeTime
 import com.unchunks.echomark.ui.common.openAttachment
@@ -445,8 +447,19 @@ private fun DetailBody(
             )
             val content = bookmark.content
             if (!content.isNullOrBlank()) {
-                Spacer(Modifier.height(24.dp))
-                ContentSection(label = contentLabel(bookmark), text = content)
+                // ファイルから取り出した文字(OCR・文字起こしなど)は区切り行で本文に入っているので、メモと分けて見出しを付ける
+                val parts = ExtractedBody.parse(content)
+                val sections = if (parts.sections.isEmpty()) {
+                    listOf(contentLabel(bookmark) to content)
+                } else {
+                    listOfNotNull(parts.memo?.let { "メモ" to it }) + parts.sections.map { it.source.label to it.text }
+                }
+                sections.forEachIndexed { index, (label, text) ->
+                    key(index) {
+                        Spacer(Modifier.height(24.dp))
+                        ContentSection(label = label, text = text)
+                    }
+                }
             }
         }
 
