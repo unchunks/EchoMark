@@ -82,7 +82,7 @@ class OpenAiApiClient internal constructor(
             input.put(
                 JSONObject()
                     .put("role", if (turn.role == ChatRole.USER) "user" else "assistant")
-                    .put("content", turn.text)
+                    .put("content", if (turn.attachments.isEmpty()) turn.text else contentParts(turn))
             )
         }
         val body = JSONObject()
@@ -101,6 +101,32 @@ class OpenAiApiClient internal constructor(
             .header("Authorization", "Bearer ${credentials.apiKey}")
             .post(body.toJsonRequestBody())
             .build()
+    }
+
+    /**
+     * ファイル付きの発言の content。画像は input_image、PDF は input_file(どちらも data URL)で、テキストより前に置く。
+     * Responses API に音声・動画の入力は無いため送らない(呼び出し側の [AttachmentPolicy] で除いている)。
+     * https://developers.openai.com/api/docs/guides/images-vision
+     * https://developers.openai.com/api/docs/guides/pdf-files
+     */
+    private fun contentParts(turn: ApiMessage): JSONArray {
+        val parts = JSONArray()
+        turn.attachments.forEach { attachment ->
+            when (attachment.kind) {
+                AttachmentKind.IMAGE -> parts.put(
+                    JSONObject().put("type", "input_image").put("image_url", attachment.dataUrl())
+                )
+                AttachmentKind.PDF -> parts.put(
+                    JSONObject()
+                        .put("type", "input_file")
+                        .put("filename", attachment.fileName)
+                        .put("file_data", attachment.dataUrl())
+                )
+                AttachmentKind.AUDIO, AttachmentKind.VIDEO -> Unit
+            }
+        }
+        if (turn.text.isNotBlank()) parts.put(JSONObject().put("type", "input_text").put("text", turn.text))
+        return parts
     }
 
     /** output[] の message から (テキスト, 拒否文) を取り出す。 */

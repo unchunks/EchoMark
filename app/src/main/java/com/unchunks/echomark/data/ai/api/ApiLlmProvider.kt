@@ -1,6 +1,9 @@
 package com.unchunks.echomark.data.ai.api
 
 import com.unchunks.echomark.data.ai.AiPrompts
+import com.unchunks.echomark.data.ai.LongTextConfig
+import com.unchunks.echomark.data.ai.LongTextDigester
+import com.unchunks.echomark.data.ai.PreparedBody
 import com.unchunks.echomark.data.ai.local.AnalysisParser
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
@@ -9,6 +12,7 @@ import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
+import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import kotlinx.coroutines.flow.Flow
@@ -28,7 +32,8 @@ class ApiLlmProvider @Inject constructor(
     gemini: GeminiApiClient,
     openAi: OpenAiApiClient,
     private val appSettings: AppSettingsRepository,
-    private val apiKeyRepository: ApiKeyRepository
+    private val apiKeyRepository: ApiKeyRepository,
+    private val attachmentLoader: AttachmentLoader
 ) : LlmProvider {
 
     private val clients: Map<ApiProvider, ApiLlmClient> =
@@ -43,14 +48,58 @@ class ApiLlmProvider @Inject constructor(
     }
 
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
-        val text = input.combinedText()
         val (client, credentials) = current()
+        val attachment = prepareAttachment(input, client.provider)
+        // ファイル名だけの要約は役に立たないため作らない(設定を変えた後の再処理を待つ)
+        if (attachment == null && input.attachment != null && input.text.isBlank()) throw NothingToAnalyzeException()
+        // PDF・音声・動画をそのまま渡すときは、ファイルが主役。取り出したテキストは手がかりとして先頭だけ渡す
+        val fileIsPrimary = attachment != null && attachment.kind != AttachmentKind.IMAGE
+        val body = if (fileIsPrimary) {
+            PreparedBody.Whole(input.text)
+        } else {
+            // 上限を超える本文は、部分ごとに要約してからまとめる
+            digester.prepare(input.text) { part ->
+                val request = ApiRequest(
+                    purpose = ApiPurpose.ANALYZE,
+                    system = AiPrompts.partInstructions(input.kind, LONG_TEXT.noteMaxChars),
+                    messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.partInput(input.title, part)))
+                )
+                AnalysisParser.parseNotes(client.complete(request, credentials))
+            }
+        }
+        val isLong = fileIsPrimary || body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
         val request = ApiRequest(
             purpose = ApiPurpose.ANALYZE,
-            system = AiPrompts.analyzeInstructions(existingTags),
-            messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.analyzeInput(text, MAX_INPUT_CHARS)))
+            system = AiPrompts.analyzeInstructions(
+                input.kind,
+                existingTags,
+                summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong)
+            ),
+            messages = listOf(
+                ApiMessage(
+                    role = ChatRole.USER,
+                    text = AiPrompts.analyzeInput(
+                        input.title,
+                        body.text,
+                        maxChars = if (fileIsPrimary) MAX_TEXT_WITH_FILE_CHARS else MAX_INPUT_CHARS,
+                        attachmentLabel = attachment?.let { AttachmentPolicy.label(it.kind) }
+                    ),
+                    attachments = listOfNotNull(attachment)
+                )
+            )
         )
-        return AnalysisParser.parse(client.complete(request, credentials), text)
+        return AnalysisParser.parse(client.complete(request, credentials), input.combinedText())
+    }
+
+    /**
+     * 元のファイルを提供元にそのまま渡せるなら読み込む。設定でオフ・提供元が受け付けない種類・大きすぎる・読めないなら null
+     * (端末内で取り出したテキストだけで要約する)。
+     */
+    private suspend fun prepareAttachment(input: AnalysisInput, provider: ApiProvider): ApiAttachment? {
+        val attachment = input.attachment ?: return null
+        if (!appSettings.sendFilesToCloud.first()) return null
+        val kind = AttachmentPolicy.plan(provider, attachment.mimeType, attachment.sizeBytes) ?: return null
+        return attachmentLoader.load(attachment, kind)
     }
 
     override suspend fun chat(
@@ -98,9 +147,25 @@ class ApiLlmProvider @Inject constructor(
             ApiMessage(ChatRole.USER, userMessage)
     )
 
+    private val digester = LongTextDigester(LONG_TEXT)
+
     private companion object {
         // クラウドはローカルより文脈長に余裕があるため、多めに渡す
         const val MAX_INPUT_CHARS = 20_000
+
+        /** PDF・音声・動画のファイルそのものを渡すときに、一緒に渡すテキストの上限(ファイルと重複するため短く) */
+        const val MAX_TEXT_WITH_FILE_CHARS = 4_000
+
+        /**
+         * 長い本文の分割要約。1回の上限(20,000 文字)ごとに最大 6 部分(約 12 万文字。超える分は均等に間引く)。
+         * 呼び出しは部分の数 + 1 回。時間の目安は WorkManager の実行時間の上限(約 10 分)に収まるようにする
+         */
+        val LONG_TEXT = LongTextConfig(
+            chunkChars = MAX_INPUT_CHARS,
+            maxChunks = 6,
+            noteMaxChars = 1_200,
+            timeBudgetMillis = 4 * 60 * 1000L
+        )
         const val MAX_CONTEXT_ITEMS = 5
         const val MAX_HISTORY_ITEMS = 6
         const val MAX_HISTORY_CHARS = 2_000

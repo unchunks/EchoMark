@@ -43,7 +43,9 @@ data class AiSettingsUiState(
     /** 提供元ごとのモデル ID */
     val apiModels: Map<ApiProvider, String> = emptyMap(),
     /** API キーが保存済みの提供元 */
-    val configuredProviders: Set<ApiProvider> = emptySet()
+    val configuredProviders: Set<ApiProvider> = emptySet(),
+    /** クラウド API にファイル(画像・PDF・音声・動画)そのものも送って解析するか */
+    val sendFilesToCloud: Boolean = true
 ) {
     val selectedModel: String get() = apiModels[apiProvider] ?: apiProvider.defaultModel
     val isKeyConfigured: Boolean get() = apiProvider in configuredProviders
@@ -62,16 +64,17 @@ class AiSettingsViewModel @Inject constructor(
         appSettings.llmBackend,
         combine(modelManager.installedModel, modelManager.importState, ::Pair),
         appSettings.apiProvider,
-        appSettings.apiModels,
+        combine(appSettings.apiModels, appSettings.sendFilesToCloud, ::Pair),
         apiKeyRepository.configuredProviders
-    ) { backend, (model, import), provider, models, configured ->
+    ) { backend, (model, import), provider, (models, sendFiles), configured ->
         AiSettingsUiState(
             backend = backend,
             localModel = model,
             importState = import,
             apiProvider = provider,
             apiModels = models,
-            configuredProviders = configured
+            configuredProviders = configured,
+            sendFilesToCloud = sendFiles
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AiSettingsUiState())
 
@@ -96,6 +99,10 @@ class AiSettingsViewModel @Inject constructor(
     fun setApiModel(provider: ApiProvider, modelId: String) {
         _connectionTest.value = ConnectionTestState.Idle
         viewModelScope.launch { appSettings.setApiModel(provider, modelId) }
+    }
+
+    fun setSendFilesToCloud(enabled: Boolean) {
+        viewModelScope.launch { appSettings.setSendFilesToCloud(enabled) }
     }
 
     /** キーを暗号化して保存する。入力欄の平文は呼び出し側で消すこと。 */
