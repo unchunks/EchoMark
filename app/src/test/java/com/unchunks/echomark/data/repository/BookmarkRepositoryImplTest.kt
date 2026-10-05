@@ -175,19 +175,51 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 存在しないブックマークにはタグを保存しない() = runBlocking {
-        repository.saveTags(bookmarkId = 999L, tagNames = listOf("kotlin"))
+        repository.saveAiTags(bookmarkId = 999L, tagNames = listOf("kotlin"))
 
         assertTrue(db.tagDao().getAllTags().first().isEmpty())
     }
 
     @Test
-    fun タグは既存のブックマークに付く() = runBlocking {
+    fun AIのタグは前回の分を置き換え_ユーザーのタグは残す() = runBlocking {
         val id = repository.saveBookmark(textBookmark())
+        repository.addTag(id, "自分")
 
-        repository.saveTags(id, listOf("kotlin", "android"))
-        repository.saveTags(id, listOf("kotlin"))
+        repository.saveAiTags(id, listOf("kotlin", "android"))
+        repository.saveAiTags(id, listOf("kotlin"))
 
-        assertEquals(setOf("kotlin", "android"), repository.observeBookmark(id).first()!!.tags.toSet())
+        val bookmark = repository.observeBookmark(id).first()!!
+        assertEquals(setOf("自分", "kotlin"), bookmark.tags.toSet())
+        assertEquals(setOf("kotlin"), bookmark.aiTags)
+    }
+
+    @Test
+    fun 削除するとAIだけのタグは消え_取り消すと付けた人ごと元に戻る() = runBlocking {
+        val id = repository.saveBookmark(textBookmark())
+        repository.addTag(id, "自分")
+        repository.saveAiTags(id, listOf("AI"))
+        val bookmark = repository.observeBookmark(id).first()!!
+
+        repository.deleteBookmark(bookmark)
+        assertEquals(listOf("自分"), db.tagDao().getAllTags().first().map { it.name })
+
+        repository.restoreBookmark(bookmark)
+        val restored = repository.observeBookmark(id).first()!!
+        assertEquals(setOf("自分", "AI"), restored.tags.toSet())
+        assertEquals(setOf("AI"), restored.aiTags)
+    }
+
+    @Test
+    fun AIのタグだけを外すとタグも消える() = runBlocking {
+        val id = repository.saveBookmark(textBookmark())
+        repository.addTag(id, "自分")
+        repository.saveAiTags(id, listOf("AI"))
+
+        repository.removeTag(id, "AI")
+        repository.removeTag(id, "自分")
+
+        // ユーザーのタグは件数 0 でも残す(タグ管理から消せる)
+        assertEquals(listOf("自分"), db.tagDao().getAllTags().first().map { it.name })
     }
 
     @Test

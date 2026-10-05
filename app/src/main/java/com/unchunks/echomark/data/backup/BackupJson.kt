@@ -8,6 +8,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.echomark.domain.model.TagSource
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -35,10 +36,11 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 2):
+ * 形式(version 3):
  * ```
- * { "format": "echomark-backup", "version": 2, "exportedAt": 1700000000000,
- *   "bookmarks": [ {全列} ], "tags": [ {id, name} ], "bookmarkTags": [ {bookmarkId, tagId} ],
+ * { "format": "echomark-backup", "version": 3, "exportedAt": 1700000000000,
+ *   "bookmarks": [ {全列} ], "tags": [ {id, name, isUserCreated} ],
+ *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
  *   "conversations": [ {全列。aboutBookmarkId は通常の会話なら省略} ],
  *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ] }
  * ```
@@ -47,10 +49,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * 版の履歴(古い版もそのまま読み込める):
  * - 1: 最初の形式
  * - 2: 会話に aboutBookmarkId(「このブックマークについて質問」の対象)を追加。1 では全て通常の会話として読む
+ * - 3: タグに isUserCreated、紐付けに source(誰が付けたか)を追加。2 以前では全てユーザーのタグとして読む
+ *   (DB のマイグレーションと同じく、ユーザーのタグを AI のものと誤って消さないため)
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 2
+    const val CURRENT_VERSION = 3
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -148,9 +152,12 @@ object BackupJson {
         .put("isFavorite", isFavorite)
         .put("isArchived", isArchived)
 
-    private fun TagEntity.toJson() = JSONObject().put("id", id).put("name", name)
+    private fun TagEntity.toJson() = JSONObject().put("id", id).put("name", name).put("isUserCreated", isUserCreated)
 
-    private fun BookmarkTagCrossRef.toJson() = JSONObject().put("bookmarkId", bookmarkId).put("tagId", tagId)
+    private fun BookmarkTagCrossRef.toJson() = JSONObject()
+        .put("bookmarkId", bookmarkId)
+        .put("tagId", tagId)
+        .put("source", source.name)
 
     private fun ConversationEntity.toJson() = JSONObject()
         .put("id", id)
@@ -200,12 +207,19 @@ object BackupJson {
 
     private fun JSONObject.toTag(): TagEntity? {
         val name = stringOrNull("name")?.takeIf { it.isNotBlank() } ?: return null
-        return TagEntity(id = longOrNull("id") ?: return null, name = name)
+        return TagEntity(
+            id = longOrNull("id") ?: return null,
+            name = name,
+            // version 2 以前には無い(ユーザーのタグとして読む)
+            isUserCreated = optBoolean("isUserCreated", true)
+        )
     }
 
     private fun JSONObject.toCrossRef(): BookmarkTagCrossRef? = BookmarkTagCrossRef(
         bookmarkId = longOrNull("bookmarkId") ?: return null,
-        tagId = longOrNull("tagId") ?: return null
+        tagId = longOrNull("tagId") ?: return null,
+        // version 2 以前には無い。未知の値(将来の版で増えた場合など)も、消されないようユーザーのものとして読む
+        source = enumOrNull<TagSource>(optString("source")) ?: TagSource.USER
     )
 
     private fun JSONObject.toConversation(): ConversationEntity? {

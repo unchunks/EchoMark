@@ -41,11 +41,11 @@ class ApiLlmProvider @Inject constructor(
         return clients.getValue(provider) to ApiCredentials(apiKey, model)
     }
 
-    override suspend fun analyze(text: String): BookmarkAnalysis {
+    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis {
         val (client, credentials) = current()
         val request = ApiRequest(
             purpose = ApiPurpose.ANALYZE,
-            system = AiPrompts.ANALYZE_INSTRUCTIONS,
+            system = AiPrompts.analyzeInstructions(existingTags),
             messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.analyzeInput(text, MAX_INPUT_CHARS)))
         )
         return AnalysisParser.parse(client.complete(request, credentials), text)

@@ -101,8 +101,8 @@ class LocalLlmProvider @Inject constructor(
             }
         }
 
-    override suspend fun analyze(text: String): BookmarkAnalysis {
-        val response = generate(buildAnalyzePrompt(text))
+    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis {
+        val response = generate(buildAnalyzePrompt(text, existingTags))
         return AnalysisParser.parse(response, text)
     }
 
@@ -158,8 +158,12 @@ class LocalLlmProvider @Inject constructor(
         suspendCancellableCoroutine { cont -> addListener({ cont.resume(Unit) }, Runnable::run) }
     }
 
-    private fun buildAnalyzePrompt(text: String): String = listOf(
-        AiPrompts.ANALYZE_INSTRUCTIONS,
+    private fun buildAnalyzePrompt(text: String, existingTags: List<String>): String = listOf(
+        AiPrompts.analyzeInstructions(
+            existingTags,
+            maxExistingTags = AiPrompts.LOCAL_MAX_EXISTING_TAGS,
+            maxExistingTagChars = AiPrompts.LOCAL_MAX_EXISTING_TAG_CHARS
+        ),
         "",
         AiPrompts.analyzeInput(text, MAX_INPUT_CHARS)
     ).joinToString("\n")

@@ -26,7 +26,11 @@ interface BookmarkRepository {
     suspend fun saveBookmark(bookmark: Bookmark): Long
     suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult
     suspend fun saveBookmarkWithResult(bookmark: Bookmark): SaveResult
-    suspend fun saveTags(bookmarkId: Long, tagNames: List<String>)
+    /**
+     * AI が付けたタグとして保存する。前回 AI が付けたタグは外して置き換え、ユーザーが付けたタグには触れない。
+     * タグ名は表記ゆれ(大文字小文字・全角半角)の範囲で既存のタグにそろえる。
+     */
+    suspend fun saveAiTags(bookmarkId: Long, tagNames: List<String>)
     suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String)
 
     // Update
@@ -37,7 +41,9 @@ interface BookmarkRepository {
 
     /** 削除の取り消し用。同じ ID・タグで復元し、埋め込みを再生成する。 */
     suspend fun restoreBookmark(bookmark: Bookmark)
+    /** ユーザーがタグを付ける。AI が付けていたタグなら、ユーザーが付けたものに変える(再処理で外れなくなる)。 */
     suspend fun addTag(bookmarkId: Long, tagName: String)
+    /** タグを外す。AI だけが付けていたタグで、どのブックマークにも付かなくなったらタグ自体も消す。 */
     suspend fun removeTag(bookmarkId: Long, tagName: String)
     /** 詳細画面を開いたときに lastAccessedAt を現在時刻に更新する。 */
     suspend fun markAccessed(id: Long)
@@ -68,6 +74,11 @@ interface BookmarkRepository {
     suspend fun getAllBookmarkIds(): List<Long>
     suspend fun getRelatedBookmarks(bookmarkId: Long, limit: Int = 5): List<Bookmark>
     suspend fun getEmbeddingModelVersion(bookmarkId: Long): String?
+    /**
+     * AI に伝える既存のタグ名(ユーザーのタグ → よく使われている順)。似たタグを増やさず使い回させるために使う。
+     * プロンプトに入れる量は各 LlmProvider がさらに絞る。
+     */
+    suspend fun getTagNamesForAi(): List<String>
 
     // Observe / Search
     fun observeBookmarks(): Flow<List<Bookmark>>

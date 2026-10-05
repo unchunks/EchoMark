@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.model.TagSource
 
 /** バックアップの読み込みで追加・スキップした件数。 */
 data class BackupMergeResult(
@@ -82,6 +83,9 @@ abstract class BackupDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertTag(tag: TagEntity): Long
 
+    @Query("UPDATE tags SET isUserCreated = 1 WHERE id = :id")
+    abstract suspend fun markTagUserCreated(id: Long)
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertCrossRef(crossRef: BookmarkTagCrossRef)
 
@@ -98,7 +102,8 @@ abstract class BackupDao {
      * [data] を今の DB に統合する(既存のデータは変更しない)。途中で失敗したら全体を取り消す。
      * - ブックマーク: 同じ URL があればスキップ。ID は振り直す。処理待ち・処理中だったものは「AI の準備待ち」にする
      *   (書き出し元の処理キューは引き継がれないため。読み込み後に再処理する)
-     * - タグ・紐付け: 追加したブックマークの分だけ、同名のタグに付け替える(無ければ作る)
+     * - タグ・紐付け: 追加したブックマークの分だけ、同名のタグに付け替える(無ければ作る)。誰が付けたかも引き継ぐ。
+     *   バックアップでユーザーのタグだったもの(ユーザーが付けた紐付けがあるものも)は、この DB でもユーザーのタグにする
      * - 会話・メッセージ: 同じ会話があればスキップ。メッセージの引用と会話の質問の対象(aboutBookmarkId)は
      *   新しいブックマーク ID に付け替える(対象がバックアップに無ければ通常の会話にする)
      */
@@ -134,15 +139,23 @@ abstract class BackupDao {
         }
 
         val tagNames = data.tags.associate { it.id to it.name.trim() }
+        val userTagNames = buildSet {
+            data.tags.filter { it.isUserCreated }.forEach { add(it.name.trim()) }
+            data.bookmarkTags.filter { it.source == TagSource.USER }.forEach { ref -> tagNames[ref.tagId]?.let { add(it) } }
+        }
         val tagIds = mutableMapOf<String, Long>()
         var tagsAdded = 0
         for (crossRef in data.bookmarkTags) {
             val bookmarkId = bookmarkIds[crossRef.bookmarkId]?.takeIf { it in addedBookmarkIds } ?: continue
             val name = tagNames[crossRef.tagId]?.takeIf { it.isNotEmpty() } ?: continue
             val tagId = tagIds.getOrPut(name) {
-                findTagIdByName(name) ?: insertTag(TagEntity(name = name)).also { tagsAdded++ }
+                val isUserTag = name in userTagNames
+                val id = findTagIdByName(name)
+                    ?: insertTag(TagEntity(name = name, isUserCreated = isUserTag)).also { tagsAdded++ }
+                if (isUserTag) markTagUserCreated(id)
+                id
             }
-            insertCrossRef(BookmarkTagCrossRef(bookmarkId = bookmarkId, tagId = tagId))
+            insertCrossRef(BookmarkTagCrossRef(bookmarkId = bookmarkId, tagId = tagId, source = crossRef.source))
         }
 
         val conversationIds = mutableMapOf<Long, Long>()

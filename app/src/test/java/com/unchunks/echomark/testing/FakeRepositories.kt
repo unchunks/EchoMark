@@ -178,7 +178,8 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun getRelatedBookmarks(bookmarkId: Long, limit: Int): List<Bookmark> = related.take(limit)
 
     override suspend fun saveBookmark(bookmark: Bookmark): Long = TODO("not used")
-    override suspend fun saveTags(bookmarkId: Long, tagNames: List<String>) = TODO("not used")
+    override suspend fun saveAiTags(bookmarkId: Long, tagNames: List<String>) = TODO("not used")
+    override suspend fun getTagNamesForAi(): List<String> = TODO("not used")
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String) = TODO("not used")
     override suspend fun updateSummary(id: Long, summary: String) = TODO("not used")
     override suspend fun updateCategory(id: Long, category: String) = TODO("not used")
