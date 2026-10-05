@@ -51,9 +51,26 @@ import coil3.compose.AsyncImage
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
+import com.unchunks.echomark.ui.attachment.rememberAttachmentFile
+import com.unchunks.echomark.ui.attachment.rememberMediaDuration
+import com.unchunks.echomark.ui.attachment.rememberPdfPage
+import com.unchunks.echomark.ui.attachment.rememberVideoFrame
 import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.extractDomain
+import com.unchunks.echomark.ui.common.fileKindName
+import com.unchunks.echomark.ui.common.formatDuration
+import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.common.icon
+import coil3.request.ImageRequest
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import java.io.File
 import com.unchunks.echomark.ui.common.formatRelativeTime
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
@@ -242,11 +259,19 @@ private fun MoreTagsLabel(hidden: Int) {
     )
 }
 
-/** サイト名 > URL のドメイン > 種類名 の順で「どこから来たか」を返す */
+/** サイト名 > URL のドメイン > ファイルの種類とサイズ > 種類名 の順で「どこから来たか」を返す */
 internal fun Bookmark.displaySource(): String =
     siteName?.takeIf { it.isNotBlank() }
         ?: contentUri?.let { extractDomain(it) }
+        ?: fileSourceLabel()
         ?: type.displayName()
+
+/** 保存したファイルなら「PDF · 2.1 MB」 */
+private fun Bookmark.fileSourceLabel(): String? {
+    if (filePath == null) return null
+    val kind = bookmarkTypeOfMimeType(mimeType)?.fileKindName() ?: type.displayName()
+    return listOfNotNull(kind, fileSize?.takeIf { it > 0 }?.let(::formatFileSize)).joinToString(" · ")
+}
 
 @Composable
 private fun SourceLine(source: String, relativeTime: String, showFavoriteMark: Boolean) {
@@ -307,8 +332,11 @@ fun BookmarkThumbnail(
             .background(container),
         contentAlignment = Alignment.Center
     ) {
+        // 保存したファイルがあれば、その種類で見せる(リンク先が PDF などのときも)
+        val file = rememberAttachmentFile(bookmark)
+        val fileType = if (file != null) bookmarkTypeOfMimeType(bookmark.mimeType) else null
         val initial = domain.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
-        if (bookmark.type == BookmarkType.URL && initial != null) {
+        if (bookmark.type == BookmarkType.URL && fileType == null && initial != null) {
             Text(
                 text = initial.toString(),
                 style = MaterialTheme.typography.headlineSmall,
@@ -316,10 +344,12 @@ fun BookmarkThumbnail(
                 color = content
             )
         } else {
-            Icon(bookmark.type.icon(), contentDescription = null, tint = content, modifier = Modifier.size(size / 2.5f))
+            Icon((fileType ?: bookmark.type).icon(), contentDescription = null, tint = content, modifier = Modifier.size(size / 2.5f))
         }
         val imageUrl = bookmark.imageUrl
-        if (!imageUrl.isNullOrBlank()) {
+        if (file != null && fileType != null) {
+            FileThumbnailContent(file, fileType, size)
+        } else if (!imageUrl.isNullOrBlank()) {
             // 装飾扱い(内容はタイトルで伝わる)。失敗時は何も描かれず下のプレースホルダーが見える
             AsyncImage(
                 model = imageUrl,
@@ -328,6 +358,71 @@ fun BookmarkThumbnail(
                 modifier = Modifier.fillMaxSize()
             )
         }
+    }
+}
+
+/**
+ * 保存したファイルのサムネイル。画像は縮小して、PDF は1ページ目、動画は1秒目のコマ(再生の印つき)、
+ * 音声は長さを見せる。作れなかったときは何も描かず、下の種類アイコンが見える。
+ */
+@Composable
+private fun BoxScope.FileThumbnailContent(file: File, type: BookmarkType, size: Dp) {
+    val context = LocalContext.current
+    val sizePx = with(LocalDensity.current) { size.roundToPx() }
+    when (type) {
+        BookmarkType.IMAGE -> AsyncImage(
+            // 一覧では表示サイズまで縮小して読み込む(大きな写真をそのまま読まない)
+            model = remember(file, sizePx) { ImageRequest.Builder(context).data(file).size(sizePx).build() },
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        BookmarkType.PDF -> {
+            val page by rememberPdfPage(file, pageIndex = 0, widthPx = sizePx * 2)
+            page?.let {
+                Image(
+                    bitmap = it,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+        BookmarkType.VIDEO -> {
+            val frame by rememberVideoFrame(file, widthPx = sizePx * 2)
+            frame?.let {
+                Image(bitmap = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Icon(
+                    Icons.Filled.PlayCircle,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(size / 2.8f)
+                )
+            }
+            DurationLabel(file)
+        }
+        BookmarkType.AUDIO -> DurationLabel(file)
+        else -> Unit
+    }
+}
+
+/** 音声・動画の長さを右下に小さく出す(取れなければ出さない) */
+@Composable
+private fun BoxScope.DurationLabel(file: File) {
+    val duration by rememberMediaDuration(file)
+    duration?.takeIf { it > 0 }?.let { millis ->
+        Text(
+            text = formatDuration(millis),
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            maxLines = 1,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(4.dp)
+                .background(Color.Black.copy(alpha = 0.6f), MaterialTheme.shapes.extraSmall)
+                .padding(horizontal = 4.dp, vertical = 1.dp)
+        )
     }
 }
 
