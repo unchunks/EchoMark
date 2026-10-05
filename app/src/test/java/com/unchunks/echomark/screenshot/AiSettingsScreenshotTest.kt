@@ -55,7 +55,7 @@ class AiSettingsScreenshotTest {
 
     @Composable
     private fun Screen(state: AiSettingsUiState, connectionTest: ConnectionTestState = ConnectionTestState.Idle) {
-        Box(Modifier.height(2000.dp)) {
+        Box(Modifier.height(2300.dp)) {
             AiSettingsContent(uiState = state, connectionTest = connectionTest, actions = AiSettingsActions())
         }
     }
@@ -90,6 +90,20 @@ class AiSettingsScreenshotTest {
                 configuredProviders = setOf(ApiProvider.CLAUDE)
             ),
             connectionTest = ConnectionTestState.Success(ApiProvider.CLAUDE)
+        )
+    }
+
+    /** クラウド API(Gemini)・ファイルの送信をオフにした状態 */
+    @Test
+    fun apiSendFilesOff() = screenshot.captureLightDark("ai_settings_api_send_files_off") {
+        Screen(
+            AiSettingsUiState(
+                backend = LlmBackend.API,
+                apiProvider = ApiProvider.GEMINI,
+                apiModels = ApiProvider.entries.associateWith { it.defaultModel },
+                configuredProviders = setOf(ApiProvider.GEMINI),
+                sendFilesToCloud = false
+            )
         )
     }
 
