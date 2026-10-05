@@ -87,6 +87,47 @@ class ApiLlmProviderTest {
         assertTrue(system, system.contains("""["Kotlin", "読書"]"""))
     }
 
+    private fun geminiRequestTexts(): Pair<String, String> {
+        val body = JSONObject(server.takeRequest().body!!.utf8())
+        val system = body.getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text")
+        val user = body.getJSONArray("contents").getJSONObject(0).getJSONArray("parts").getJSONObject(0).getString("text")
+        return system to user
+    }
+
+    @Test
+    fun 上限を超える本文は部分ごとに要約してからまとめる() = runBlocking {
+        server.enqueue(geminiText("""{"notes":"前半の要点"}"""))
+        server.enqueue(geminiText("""{"notes":"後半の要点"}"""))
+        server.enqueue(geminiText("""{"summary":"全体の要約","tags":["動画"],"category":"学習"}"""))
+        // 1段落 1,000 文字 × 25(約 25,000 文字。1回の上限 20,000 文字を超える)
+        val text = (1..25).joinToString("\n\n") { "段落$it" + "あ".repeat(990) }
+
+        val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+            .analyze(AnalysisInput(title = "長い動画", text = text, kind = ContentKind.VIDEO), emptyList())
+
+        assertEquals("全体の要約", analysis.summary)
+        assertEquals(3, server.requestCount)
+        val (partSystem, partUser) = geminiRequestTexts()
+        assertTrue(partSystem, partSystem.contains("全体の一部"))
+        assertTrue(partUser, partUser.startsWith("タイトル: 長い動画\n[部分 1/2]\n段落1"))
+        val (_, secondUser) = geminiRequestTexts()
+        assertTrue(secondUser.contains("[部分 2/2]"))
+        val (finalSystem, finalUser) = geminiRequestTexts()
+        // 長い動画は要約を長めにする
+        assertTrue(finalSystem, finalSystem.contains("200文字以内"))
+        assertTrue(finalUser, finalUser.contains("[部分 1/2]\n前半の要点\n\n[部分 2/2]\n後半の要点"))
+    }
+
+    @Test
+    fun 上限以下の本文は1回で要約する() = runBlocking {
+        server.enqueue(geminiText("""{"summary":"要約","tags":[],"category":"メモ"}"""))
+
+        provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+            .analyze(AnalysisInput(title = "", text = "あ".repeat(20_000), kind = ContentKind.MEMO), emptyList())
+
+        assertEquals(1, server.requestCount)
+    }
+
     @Test
     fun チャットは文脈をシステム指示に_履歴と質問をメッセージにする() = runBlocking {
         server.enqueue(geminiText("回答"))

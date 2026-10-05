@@ -180,6 +180,49 @@ object AiPrompts {
     }.joinToString("\n")
 
     /**
+     * 長い本文の一部を要約させる指示(分割要約の map 側)。後でまとめるためのメモを JSON で出力させる。
+     * JSON にするのは、ローカル LLM で JSON が閉じた時点で生成を打ち切れるようにするため(繰り返しに陥っても止まる)。
+     */
+    fun partInstructions(kind: ContentKind, noteMaxChars: Int): String = buildList {
+        add("あなたは長い保存内容(${kindLabel(kind)})を読むアシスタントです。次の本文は全体の一部です。")
+        add("この部分の要点を、後で全体の要約を作るためのメモとして書き出し、JSONのみを出力してください。")
+        add("説明文やコードブロックは出力しないでください。")
+        add("")
+        add("出力形式:")
+        add("""{"notes": "この部分の要点(${noteMaxChars}文字以内の日本語)"}""")
+        add("")
+        add("方針:")
+        addAll(kindGuidance(kind))
+        add("- 固有名詞・数値・結論は残す。本文に書かれていないことは書かない。")
+        add("- この部分に要点が無ければ notes は空文字にする。")
+    }.joinToString("\n")
+
+    /** 部分要約の入力。 */
+    fun partInput(title: String, part: TextPart): String = buildList {
+        if (title.isNotBlank()) add("タイトル: ${title.trim()}")
+        add("[部分 ${part.number}/${part.total}]")
+        add(part.text)
+    }.joinToString("\n")
+
+    /**
+     * 部分ごとの要約メモを、最終の要約に渡す本文にまとめる。
+     * @param notes (部分の番号, メモ) の番号順のリスト
+     * @param totalParts 本文を分けた部分の数(間引いて要約しなかった部分も含む)
+     */
+    fun digestBody(notes: List<Pair<Int, String>>, totalParts: Int): String = buildList {
+        val omitted = totalParts - notes.size
+        add(
+            "長い本文を${totalParts}個の部分に分けて要約したメモです" +
+                if (omitted > 0) "(長さと時間の都合で${omitted}個の部分は省略)。" else "。"
+        )
+        notes.forEach { (number, note) ->
+            add("")
+            add("[部分 $number/$totalParts]")
+            add(note)
+        }
+    }.joinToString("\n")
+
+    /**
      * RAG チャットの指示。context は呼び出し側で "[n] タイトル: 要約" に整形済み
      * (番号は呼び出し側の付番をそのまま使う)。
      */

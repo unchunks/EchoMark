@@ -92,4 +92,17 @@ class AnalysisParserTest {
         val result = AnalysisParser.parse("", "元")
         assertEquals("元", result.summary)
     }
+
+    @Test
+    fun 部分要約のメモをJSONから取り出す() {
+        assertEquals("要点です", AnalysisParser.parseNotes("```json\n{\"notes\": \" 要点です \"}\n```"))
+        // 要点が無い部分は空
+        assertEquals("", AnalysisParser.parseNotes("""{"notes": ""}"""))
+    }
+
+    @Test
+    fun 閉じていないJSONやテキストの出力からもメモを取り出す() {
+        assertEquals("途中まで", AnalysisParser.parseNotes("""{"notes": "途中まで"""))
+        assertEquals("ただの文章", AnalysisParser.parseNotes("```\nただの文章\n```"))
+    }
 }

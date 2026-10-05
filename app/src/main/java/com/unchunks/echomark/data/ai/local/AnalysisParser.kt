@@ -49,5 +49,24 @@ object AnalysisParser {
         }
     }
 
+    /**
+     * 部分要約の出力(`{"notes": "..."}`)からメモを取り出す。
+     * JSON が壊れていれば notes の値の部分を、それも無ければ出力そのもの(コードブロックの記号を除く)を使う。
+     */
+    fun parseNotes(response: String): String {
+        try {
+            val start = response.indexOf('{')
+            val end = response.lastIndexOf('}')
+            if (start in 0 until end) return JSONObject(response.substring(start, end + 1)).optString("notes").trim()
+        } catch (e: Exception) {
+            Timber.w(e, "部分要約の JSON 解析に失敗。テキストとして使う")
+        }
+        NOTES_VALUE.find(response)?.let { return it.groupValues[1].trim() }
+        return response.replace("```json", "").replace("```", "").trim()
+    }
+
+    /** 閉じていない JSON(生成の打ち切りなど)から notes の値を取り出す */
+    private val NOTES_VALUE = Regex("\"notes\"\\s*:\\s*\"([^\"]*)")
+
     private fun fallbackSummary(source: String): String = source.trim().take(FALLBACK_SUMMARY_CHARS)
 }

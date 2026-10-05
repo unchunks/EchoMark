@@ -11,6 +11,9 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession.LlmInfe
 import com.google.mediapipe.tasks.genai.llminference.ProgressListener
 import com.google.mediapipe.tasks.genai.llminference.PromptTemplates
 import com.unchunks.echomark.data.ai.AiPrompts
+import com.unchunks.echomark.data.ai.LongTextConfig
+import com.unchunks.echomark.data.ai.LongTextDigester
+import com.unchunks.echomark.data.ai.PreparedBody
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.di.DispatcherProvider
@@ -64,6 +67,8 @@ class LocalLlmProvider @Inject constructor(
     // (取り込み直し・削除の直後に閉じると、ネイティブ資源の解放後に使ってしまう)
     private val inferenceMutex = Mutex()
 
+    private val digester = LongTextDigester(LONG_TEXT)
+
     /** 現在のモデルのエンジン。必ず [inferenceMutex] を持った状態で呼ぶ。 */
     private fun engineLocked(): Pair<LocalModelInfo, LlmInference> {
         val model = modelManager.installedModel.value
@@ -107,12 +112,12 @@ class LocalLlmProvider @Inject constructor(
         }
 
     /**
-     * 解析用の生成。[generate] と違い、時間の上限([ANALYZE_TIMEOUT_MS])を設け、コルーチンのキャンセルでも生成を中断する
+     * 解析用の生成。[generate] と違い、時間の上限([timeoutMs]。既定は [ANALYZE_TIMEOUT_MS])を設け、コルーチンのキャンセルでも生成を中断する
      * (ブロッキングの generateResponse はキャンセルできず、止まらない生成がロックを持ち続けて後続の処理まで止めるため)。
      * 出力の JSON オブジェクトが閉じたら、それ以降の生成(小型モデルが繰り返しに陥った続きなど)は待たずに打ち切る。
      * @throws LlmException.Timeout 時間内に生成が終わらなかったとき
      */
-    private suspend fun generateAnalysis(prompt: String): String =
+    private suspend fun generateAnalysis(prompt: String, timeoutMs: Long = ANALYZE_TIMEOUT_MS): String =
         withContext(dispatcherProvider.default) {
             inferenceMutex.withLock {
                 val (model, engine) = engineLocked()
@@ -137,13 +142,13 @@ class LocalLlmProvider @Inject constructor(
                     })
                     future.addListener({ stop.complete(Unit) }, Runnable::run)
                     val timedOut = try {
-                        withTimeoutOrNull(ANALYZE_TIMEOUT_MS) { stop.await() } == null
+                        withTimeoutOrNull(timeoutMs) { stop.await() } == null
                     } finally {
                         // 時間切れ・JSON の完成・キャンセルで止める場合は生成を中断し、終わるのを待ってからセッションを閉じる
                         if (!future.isDone) runCatching { session.cancelGenerateResponseAsync() }
                         withContext(NonCancellable) { future.awaitDone() }
                     }
-                    if (timedOut) throw LlmException.Timeout(ANALYZE_TIMEOUT_MS)
+                    if (timedOut) throw LlmException.Timeout(timeoutMs)
                     // JSON が閉じた時点で打ち切った場合は、そこまでの出力を使う(中断による future の失敗は無視する)
                     val untilJsonEnd = synchronized(output) {
                         jsonEnd.endIndex.takeIf { it >= 0 }?.let { output.substring(0, it) }
@@ -161,7 +166,17 @@ class LocalLlmProvider @Inject constructor(
         }
 
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
-        val response = generateAnalysis(buildAnalyzePrompt(input, existingTags))
+        // 上限を超える本文は、部分ごとに要約してからまとめる
+        val body = digester.prepare(input.text) { part ->
+            val prompt = listOf(
+                AiPrompts.partInstructions(input.kind, LONG_TEXT.noteMaxChars),
+                "",
+                AiPrompts.partInput(input.title, part)
+            ).joinToString("\n")
+            AnalysisParser.parseNotes(generateAnalysis(prompt, PART_TIMEOUT_MS))
+        }
+        val isLong = body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
+        val response = generateAnalysis(buildAnalyzePrompt(input, body.text, isLong, existingTags))
         return AnalysisParser.parse(response, input.combinedText())
     }
 
@@ -217,16 +232,21 @@ class LocalLlmProvider @Inject constructor(
         suspendCancellableCoroutine { cont -> addListener({ cont.resume(Unit) }, Runnable::run) }
     }
 
-    private fun buildAnalyzePrompt(input: AnalysisInput, existingTags: List<String>): String = listOf(
+    private fun buildAnalyzePrompt(
+        input: AnalysisInput,
+        body: String,
+        isLong: Boolean,
+        existingTags: List<String>
+    ): String = listOf(
         AiPrompts.analyzeInstructions(
             input.kind,
             existingTags,
-            summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, input.text.length > AiPrompts.LONG_TEXT_CHARS),
+            summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
             maxExistingTags = AiPrompts.LOCAL_MAX_EXISTING_TAGS,
             maxExistingTagChars = AiPrompts.LOCAL_MAX_EXISTING_TAG_CHARS
         ),
         "",
-        AiPrompts.analyzeInput(input.title, input.text, MAX_INPUT_CHARS)
+        AiPrompts.analyzeInput(input.title, body, MAX_INPUT_CHARS)
     ).joinToString("\n")
 
     // 指示・文脈・履歴・質問を、MAX_TOKENS に収まる文字数の予算で組み立てる
@@ -247,6 +267,21 @@ class LocalLlmProvider @Inject constructor(
          * それより十分短くして(モデルの読み込み・ロックの待ちの分を残す)自分で打ち切り、失敗として扱う。
          */
         private const val ANALYZE_TIMEOUT_MS = 3 * 60 * 1000L
+
+        /** 長い本文の部分要約1回の時間の上限。出力が短いため、まとめ([ANALYZE_TIMEOUT_MS])より短くする */
+        private const val PART_TIMEOUT_MS = 90 * 1000L
+
+        /**
+         * 長い本文の分割要約。入力の上限(2,000 文字)ごとに最大 4 部分(約 8,000 文字。超える分は均等に間引く)。
+         * 部分要約(最長 [PART_TIMEOUT_MS])の時間の目安と、まとめ([ANALYZE_TIMEOUT_MS])を合わせても、
+         * WorkManager の実行時間の上限(約 10 分)に収まるようにする
+         */
+        private val LONG_TEXT = LongTextConfig(
+            chunkChars = MAX_INPUT_CHARS,
+            maxChunks = 4,
+            noteMaxChars = 300,
+            timeBudgetMillis = 4 * 60 * 1000L
+        )
 
         /** Gemma の対話形式(https://ai.google.dev/gemma/docs/core/prompt-structure)。 */
         private val GEMMA_TEMPLATES: PromptTemplates = PromptTemplates.builder()

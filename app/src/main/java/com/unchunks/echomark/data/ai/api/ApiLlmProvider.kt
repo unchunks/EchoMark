@@ -1,6 +1,9 @@
 package com.unchunks.echomark.data.ai.api
 
 import com.unchunks.echomark.data.ai.AiPrompts
+import com.unchunks.echomark.data.ai.LongTextConfig
+import com.unchunks.echomark.data.ai.LongTextDigester
+import com.unchunks.echomark.data.ai.PreparedBody
 import com.unchunks.echomark.data.ai.local.AnalysisParser
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
@@ -44,15 +47,25 @@ class ApiLlmProvider @Inject constructor(
 
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
         val (client, credentials) = current()
+        // 上限を超える本文は、部分ごとに要約してからまとめる
+        val body = digester.prepare(input.text) { part ->
+            val request = ApiRequest(
+                purpose = ApiPurpose.ANALYZE,
+                system = AiPrompts.partInstructions(input.kind, LONG_TEXT.noteMaxChars),
+                messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.partInput(input.title, part)))
+            )
+            AnalysisParser.parseNotes(client.complete(request, credentials))
+        }
+        val isLong = body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
         val request = ApiRequest(
             purpose = ApiPurpose.ANALYZE,
             system = AiPrompts.analyzeInstructions(
                 input.kind,
                 existingTags,
-                summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, input.text.length > AiPrompts.LONG_TEXT_CHARS)
+                summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong)
             ),
             messages = listOf(
-                ApiMessage(ChatRole.USER, AiPrompts.analyzeInput(input.title, input.text, MAX_INPUT_CHARS))
+                ApiMessage(ChatRole.USER, AiPrompts.analyzeInput(input.title, body.text, MAX_INPUT_CHARS))
             )
         )
         return AnalysisParser.parse(client.complete(request, credentials), input.combinedText())
@@ -103,9 +116,22 @@ class ApiLlmProvider @Inject constructor(
             ApiMessage(ChatRole.USER, userMessage)
     )
 
+    private val digester = LongTextDigester(LONG_TEXT)
+
     private companion object {
         // クラウドはローカルより文脈長に余裕があるため、多めに渡す
         const val MAX_INPUT_CHARS = 20_000
+
+        /**
+         * 長い本文の分割要約。1回の上限(20,000 文字)ごとに最大 6 部分(約 12 万文字。超える分は均等に間引く)。
+         * 呼び出しは部分の数 + 1 回。時間の目安は WorkManager の実行時間の上限(約 10 分)に収まるようにする
+         */
+        val LONG_TEXT = LongTextConfig(
+            chunkChars = MAX_INPUT_CHARS,
+            maxChunks = 6,
+            noteMaxChars = 1_200,
+            timeBudgetMillis = 4 * 60 * 1000L
+        )
         const val MAX_CONTEXT_ITEMS = 5
         const val MAX_HISTORY_ITEMS = 6
         const val MAX_HISTORY_CHARS = 2_000
