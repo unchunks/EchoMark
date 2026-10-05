@@ -1,12 +1,17 @@
 package com.unchunks.echomark.data.ai.local
 
+import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
+import com.unchunks.echomark.domain.model.TagNames
 import org.json.JSONObject
 import timber.log.Timber
 
-/** LLM の出力(JSON を含む文字列)を [BookmarkAnalysis] に変換する。失敗時は入力テキストから代替を作る。 */
+/**
+ * LLM の出力(JSON を含む文字列)を [BookmarkAnalysis] に変換する。失敗時は入力テキストから代替を作る。
+ * タグは [TagNames.clean] で整え、表記ゆれの重複を除く(既存タグへのそろえは保存時に行う)。
+ */
 object AnalysisParser {
-    const val MAX_TAGS = 5
+    const val MAX_TAGS = AiPrompts.MAX_TAGS
     const val FALLBACK_SUMMARY_CHARS = 100
     const val DEFAULT_CATEGORY = "未分類"
 
@@ -22,11 +27,11 @@ object AnalysisParser {
             val tags = buildList {
                 if (tagsArray != null) {
                     for (i in 0 until tagsArray.length()) {
-                        val tag = tagsArray.optString(i).trim().removePrefix("#")
+                        val tag = TagNames.clean(tagsArray.optString(i))
                         if (tag.isNotEmpty()) add(tag)
                     }
                 }
-            }.distinct().take(MAX_TAGS)
+            }.distinctBy { TagNames.key(it) }.take(MAX_TAGS)
             val category = json.optString("category").trim().ifEmpty { DEFAULT_CATEGORY }
 
             BookmarkAnalysis(

@@ -59,7 +59,7 @@ class ApiLlmProviderTest {
     @Test
     fun キー未設定ならApiKeyMissing() = runBlocking {
         try {
-            provider(FakeApiKeyRepository()).analyze("本文")
+            provider(FakeApiKeyRepository()).analyze("本文", emptyList())
             fail("例外が投げられるはず")
         } catch (e: LlmException.ApiKeyMissing) {
             assertEquals(ApiProvider.GEMINI, e.provider)
@@ -71,15 +71,18 @@ class ApiLlmProviderTest {
         settings.setApiModel(ApiProvider.GEMINI, "gemini-3.5-flash-lite")
         server.enqueue(geminiText("""{"summary":"要約","tags":["a","b"],"category":"技術"}"""))
 
-        val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000"))).analyze("本文")
+        val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+            .analyze("本文", listOf("Kotlin", "読書"))
 
         assertEquals("要約", analysis.summary)
         assertEquals(listOf("a", "b"), analysis.tags)
         assertEquals("技術", analysis.category)
-        assertEquals(
-            "/v1beta/models/gemini-3.5-flash-lite:generateContent",
-            server.takeRequest().url.encodedPath
-        )
+        val request = server.takeRequest()
+        assertEquals("/v1beta/models/gemini-3.5-flash-lite:generateContent", request.url.encodedPath)
+        // 既存のタグをシステム指示で伝え、合うものを使い回させる
+        val system = JSONObject(request.body!!.utf8())
+            .getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text")
+        assertTrue(system, system.contains("""["Kotlin", "読書"]"""))
     }
 
     @Test

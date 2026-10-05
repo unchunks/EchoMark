@@ -37,8 +37,17 @@ class AnalysisParserTest {
             """{"summary": "s", "tags": ["#kotlin", " kotlin ", "", "b", "c", "d", "e", "f"], "category": "c"}""",
             "元"
         )
-        assertEquals(listOf("kotlin", "b", "c", "d", "e"), result.tags)
+        assertEquals(listOf("kotlin", "b", "c"), result.tags)
         assertEquals(AnalysisParser.MAX_TAGS, result.tags.size)
+    }
+
+    @Test
+    fun 大文字小文字と全角半角だけが違うタグは1つにまとめる() {
+        val result = AnalysisParser.parse(
+            """{"summary": "s", "tags": ["Android", "android", "ＡＮＤＲＯＩＤ", "＃Kotlin"], "category": "c"}""",
+            "元"
+        )
+        assertEquals(listOf("Android", "Kotlin"), result.tags)
     }
 
     @Test

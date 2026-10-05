@@ -25,6 +25,7 @@ internal object PreviewSamples {
         lastAccessedAt = NOW - 3 * DAY,
         aiStatus = AiStatus.DONE,
         tags = listOf("Android", "Compose", "パフォーマンス", "Kotlin"),
+        aiTags = setOf("パフォーマンス", "Kotlin"),
         imageUrl = "https://www.example.com/og/compose.png",
         siteName = "Example Tech Blog",
         isFavorite = true

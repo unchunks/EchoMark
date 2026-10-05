@@ -160,6 +160,7 @@ private fun BookmarkCardBody(
             TagLine(
                 status = bookmark.aiStatus.takeIf { showStatus },
                 tags = bookmark.tags,
+                aiTags = bookmark.aiTags,
                 modifier = Modifier.padding(end = 8.dp)
             )
         }
@@ -169,9 +170,15 @@ private fun BookmarkCardBody(
 /**
  * AI の状態とタグを1行に並べる。収まるタグだけを先頭から出し、出せなかった分は「+N」にまとめる
  * (タグが幅 0 に潰れたり、「+N」が縦に割れたりしない)。1つも収まらないときは、先頭のタグを省略表示で入れる。
+ * [aiTags] に含まれるタグは AI が付けたものとして印を付ける。
  */
 @Composable
-private fun TagLine(status: AiStatus?, tags: List<String>, modifier: Modifier = Modifier) {
+private fun TagLine(
+    status: AiStatus?,
+    tags: List<String>,
+    aiTags: Set<String>,
+    modifier: Modifier = Modifier
+) {
     SubcomposeLayout(modifier) { constraints ->
         val spacing = TAG_SPACING.roundToPx()
         val available = constraints.maxWidth
@@ -189,7 +196,7 @@ private fun TagLine(status: AiStatus?, tags: List<String>, modifier: Modifier = 
 
         val badge = status?.let { measure("badge") { AiStatusBadge(it) } }
         val candidates = tags.take(MAX_VISIBLE_TAGS)
-        val chips = candidates.mapIndexed { index, tag -> measure("tag_$index") { TagChip(name = tag) } }
+        val chips = candidates.mapIndexed { index, tag -> measure("tag_$index") { TagChip(name = tag, isAi = tag in aiTags) } }
 
         var shown = chips.size
         var items: List<Placeable>
@@ -203,7 +210,7 @@ private fun TagLine(status: AiStatus?, tags: List<String>, modifier: Modifier = 
             val fixed = listOfNotNull(badge, moreLabel)
             val remaining = available - rowWidth(fixed) - if (fixed.isEmpty()) 0 else spacing
             if (remaining >= MIN_SHRUNK_TAG_WIDTH.roundToPx()) {
-                val chip = measure("tag_0_shrunk", maxWidth = remaining) { TagChip(name = tags.first()) }
+                val chip = measure("tag_0_shrunk", maxWidth = remaining) { TagChip(name = tags.first(), isAi = tags.first() in aiTags) }
                 items = listOfNotNull(badge, chip, moreLabel)
             }
         }

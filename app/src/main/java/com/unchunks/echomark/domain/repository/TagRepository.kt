@@ -20,10 +20,13 @@ sealed interface TagRenameResult {
 
 /** タグ管理(一覧・名前変更・統合・削除)。ブックマークへのタグの付け外しは [BookmarkRepository] で行う。 */
 interface TagRepository {
-    /** 件数つきのタグ一覧(件数 0 のタグも含む。名前順)。 */
+    /** 件数つきのタグ一覧(件数 0 のタグも含む。名前順)。ユーザーのタグか AI のタグかも返す。 */
     fun observeTagsWithCount(): Flow<List<TagWithCount>>
 
-    /** 名前を変更する。同名の別タグがあればそちらへ統合する。前後の空白は除く。 */
+    /**
+     * 名前を変更する。同名の別タグがあればそちらへ統合する。前後の空白は除く。
+     * 変更後のタグはユーザーのタグになる(AI のタグでも、件数 0 になったときに自動で消さない)。
+     */
     suspend fun renameTag(tagId: Long, newName: String): TagRenameResult
 
     /** タグを削除する。付いていたブックマークからは外れるが、ブックマーク自体は残る。 */

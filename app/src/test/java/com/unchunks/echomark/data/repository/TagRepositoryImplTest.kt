@@ -93,6 +93,18 @@ class TagRepositoryImplTest {
     }
 
     @Test
+    fun AIのタグは名前を変更すると自分のタグになる() = runTest {
+        bookmark(1)
+        db.tagDao().replaceAiTags(1, listOf("andorid"))
+        val id = db.tagDao().getTagByName("andorid")!!.id
+        assertEquals(listOf(false), repository.observeTagsWithCount().first().map { it.isUserTag })
+
+        repository.renameTag(id, "Android")
+
+        assertEquals(listOf("Android" to true), repository.observeTagsWithCount().first().map { it.name to it.isUserTag })
+    }
+
+    @Test
     fun 同じ名前や空の名前では何もしない() = runTest {
         val id = tag("kotlin")
 

@@ -56,9 +56,11 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             // 工程1: 要約・タグ・カテゴリ(要約が既にあればスキップ)
             if (bookmark.summary.isNullOrBlank()) {
                 try {
-                    val analysis = llmProviderResolver.resolve().analyze(textToProcess)
+                    // 既存のタグを伝え、似たタグを増やさず使い回させる
+                    val analysis = llmProviderResolver.resolve().analyze(textToProcess, repository.getTagNamesForAi())
                     repository.updateSummary(bookmarkId, analysis.summary)
-                    repository.saveTags(bookmarkId, analysis.tags)
+                    // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
+                    repository.saveAiTags(bookmarkId, analysis.tags)
                     repository.updateCategory(bookmarkId, analysis.category)
                 } catch (e: CancellationException) {
                     throw e

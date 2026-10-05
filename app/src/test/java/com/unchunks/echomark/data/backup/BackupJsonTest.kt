@@ -8,6 +8,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.echomark.domain.model.TagSource
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,8 +33,8 @@ class BackupJsonTest {
                 createdAt = 300, lastAccessedAt = 300, aiStatus = AiStatus.FAILED, isArchived = true
             )
         ),
-        tags = listOf(TagEntity(10, "kotlin"), TagEntity(11, "android")),
-        bookmarkTags = listOf(BookmarkTagCrossRef(1, 10), BookmarkTagCrossRef(1, 11)),
+        tags = listOf(TagEntity(10, "kotlin", isUserCreated = true), TagEntity(11, "android")),
+        bookmarkTags = listOf(BookmarkTagCrossRef(1, 10, TagSource.USER), BookmarkTagCrossRef(1, 11, TagSource.AI)),
         conversations = listOf(
             ConversationEntity(id = 5, title = "質問", isTitleManuallySet = true, summary = null, createdAt = 400, updatedAt = 500),
             ConversationEntity(id = 6, title = "記事Aについて", isTitleManuallySet = true, createdAt = 600, updatedAt = 700, aboutBookmarkId = 1)
@@ -95,6 +96,23 @@ class BackupJsonTest {
             BackupJson.decode("""{"format":"echomark-backup","version":99}""")
         }
         assertTrue(e.message!!.contains("アプリを更新"))
+    }
+
+    @Test
+    fun 誰が付けたかの無い古い版のタグはユーザーのものとして読む() {
+        val text = """
+            {"format":"echomark-backup","version":2,"exportedAt":1,
+             "tags":[{"id":1,"name":"kotlin"}],
+             "bookmarkTags":[{"bookmarkId":1,"tagId":1},{"bookmarkId":2,"tagId":1,"source":"UNKNOWN"}]}
+        """.trimIndent()
+        val decoded = BackupJson.decode(text)
+
+        assertEquals(listOf(TagEntity(1, "kotlin", isUserCreated = true)), decoded.data.tags)
+        assertEquals(
+            listOf(BookmarkTagCrossRef(1, 1, TagSource.USER), BookmarkTagCrossRef(2, 1, TagSource.USER)),
+            decoded.data.bookmarkTags
+        )
+        assertEquals(0, decoded.invalidRecords)
     }
 
     @Test

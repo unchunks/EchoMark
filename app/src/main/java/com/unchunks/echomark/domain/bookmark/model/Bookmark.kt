@@ -13,6 +13,8 @@ data class Bookmark(
     val lastAccessedAt: Long,
     val aiStatus: AiStatus = AiStatus.PENDING,
     val tags: List<String> = emptyList(),
+    /** [tags] のうち AI が付けたもの(残りはユーザーが付けたもの)。再処理すると付け直される */
+    val aiTags: Set<String> = emptySet(),
     /** リンク先の OG 画像 URL(取得できなければ null) */
     val imageUrl: String? = null,
     /** リンク先のサイト名(og:site_name など。取得できなければ null) */

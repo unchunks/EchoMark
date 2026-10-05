@@ -81,7 +81,8 @@ class FakeLlmProvider(
     var chunks: List<String> = listOf("こんにちは", "、世界"),
     var failure: Throwable? = null
 ) : LlmProvider {
-    override suspend fun analyze(text: String): BookmarkAnalysis = BookmarkAnalysis("要約", emptyList(), "その他")
+    override suspend fun analyze(text: String, existingTags: List<String>): BookmarkAnalysis =
+        BookmarkAnalysis("要約", emptyList(), "その他")
 
     override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =
         chunks.joinToString("")

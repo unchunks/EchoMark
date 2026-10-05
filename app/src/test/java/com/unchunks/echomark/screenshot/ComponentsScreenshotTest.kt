@@ -103,6 +103,7 @@ class ComponentsScreenshotTest {
             SectionHeader("最近保存したもの", actionLabel = "すべて見る", onAction = {})
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TagChip("Android")
+                TagChip("AIが付けたタグ", isAi = true)
                 TagChip("とても長いタグの名前はどう表示されるか")
                 TagChip("タップできるタグ", onClick = {})
             }
