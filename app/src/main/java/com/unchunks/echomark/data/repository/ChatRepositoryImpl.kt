@@ -10,6 +10,7 @@ import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.chat.RagSupport
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.model.ChatMessage
@@ -78,7 +79,7 @@ class ChatRepositoryImpl @Inject constructor(
             val prepared = prepare(conversationId, userMessage)
 
             // 4. LLMに問い合わせ(モデル未取得なら ModelNotAvailableException をそのまま伝播)
-            val answer = llmProviderResolver.resolve().chat(userMessage, prepared.context, prepared.history)
+            val answer = llmProviderResolver.resolve(AiTask.CHAT).chat(userMessage, prepared.context, prepared.history)
 
             // 5. 回答を保存(実際に文脈として使ったブックマークIDだけを記録)
             saveAssistantMessage(conversationId, answer, prepared.referencedIds)
@@ -101,7 +102,7 @@ class ChatRepositoryImpl @Inject constructor(
         emit(ChatStreamEvent.Started(prepared.referencedIds))
 
         val provider = try {
-            llmProviderResolver.resolve()
+            llmProviderResolver.resolve(AiTask.CHAT)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

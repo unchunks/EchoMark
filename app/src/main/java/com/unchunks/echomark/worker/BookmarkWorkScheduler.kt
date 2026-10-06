@@ -8,6 +8,7 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import kotlinx.coroutines.flow.first
@@ -105,10 +106,15 @@ class BookmarkWorkScheduler @Inject constructor(
             aiRequest(target.bookmarkId, aiConstraints)
         )
 
-    /** クラウド API を使う設定ならネットワーク接続を待つ。端末内 AI はオフラインでも動かす。 */
-    private suspend fun aiConstraints(): Constraints = when (appSettings.llmBackend.first()) {
-        LlmBackend.API -> Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        LlmBackend.LOCAL -> Constraints.NONE
+    /** タグ付け・要約のどちらかにクラウド API を使う設定ならネットワーク接続を待つ。端末内 AI だけならオフラインでも動かす。 */
+    private suspend fun aiConstraints(): Constraints {
+        val settings = appSettings.aiTaskSettings.first()
+        val usesApi = listOf(AiTask.TAGGING, AiTask.SUMMARY).any { settings[it]?.backend == LlmBackend.API }
+        return if (usesApi) {
+            Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        } else {
+            Constraints.NONE
+        }
     }
 
     private fun aiRequest(bookmarkId: Long, constraints: Constraints): OneTimeWorkRequest =

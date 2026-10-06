@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.NetworkType
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.assertSequential
@@ -90,7 +91,16 @@ class BookmarkWorkSchedulerTest {
 
     @Test
     fun クラウドAPIの設定ではAI処理がネットワーク接続を待つ() = runBlocking {
-        settings.backendFlow.value = LlmBackend.API
+        settings.setBackendForAll(LlmBackend.API)
+        scheduler.enqueue(1L, fetchContent = false)
+
+        assertEquals(NetworkType.CONNECTED, aiWorkNetworkType(1L))
+    }
+
+    @Test
+    fun タグ付けだけクラウドAPIでもAI処理がネットワーク接続を待つ() = runBlocking {
+        settings.setBackendForAll(LlmBackend.LOCAL)
+        settings.setLlmBackend(AiTask.TAGGING, LlmBackend.API)
         scheduler.enqueue(1L, fetchContent = false)
 
         assertEquals(NetworkType.CONNECTED, aiWorkNetworkType(1L))
@@ -98,7 +108,9 @@ class BookmarkWorkSchedulerTest {
 
     @Test
     fun 端末内AIの設定ではAI処理にネットワーク条件を付けない() = runBlocking {
-        settings.backendFlow.value = LlmBackend.LOCAL
+        settings.setBackendForAll(LlmBackend.LOCAL)
+        // チャットはブックマークの AI 処理に関係しない
+        settings.setLlmBackend(AiTask.CHAT, LlmBackend.API)
         scheduler.enqueue(1L, fetchContent = false)
 
         assertEquals(NetworkType.NOT_REQUIRED, aiWorkNetworkType(1L))

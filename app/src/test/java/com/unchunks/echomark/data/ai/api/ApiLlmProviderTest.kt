@@ -3,12 +3,15 @@ package com.unchunks.echomark.data.ai.api
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.LlmException
+import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
@@ -45,7 +48,11 @@ class ApiLlmProviderTest {
         server.close()
     }
 
-    private fun provider(keys: FakeApiKeyRepository): ApiLlmProvider {
+    /** [task] の設定で呼び出す [LlmProvider]。 */
+    private fun provider(keys: FakeApiKeyRepository, task: AiTask = AiTask.SUMMARY): LlmProvider =
+        apiLlmProvider(keys).forTask(task)
+
+    private fun apiLlmProvider(keys: FakeApiKeyRepository): ApiLlmProvider {
         val dispatchers = TestDispatcherProvider(Dispatchers.IO)
         return ApiLlmProvider(
             claude = ClaudeApiClient(dispatchers, server.url("/").toString(), maxRetries = 0),
@@ -86,7 +93,7 @@ class ApiLlmProviderTest {
 
     @Test
     fun 選択中の提供元とモデルで要約しJSONを解析する() = runBlocking {
-        settings.setApiModel(ApiProvider.GEMINI, "gemini-3.5-flash-lite")
+        settings.setApiModel(AiTask.SUMMARY, ApiProvider.GEMINI, "gemini-3.5-flash-lite")
         server.enqueue(geminiText("""{"summary":"要約","tags":["a","b"],"category":"技術"}"""))
 
         val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
@@ -215,7 +222,7 @@ class ApiLlmProviderTest {
 
     @Test
     fun 提供元が受け付けない種類のファイルは読み込まない() = runBlocking {
-        settings.setApiProvider(ApiProvider.CLAUDE)
+        settings.setApiProvider(AiTask.SUMMARY, ApiProvider.CLAUDE)
         server.enqueue(
             MockResponse.Builder()
                 .addHeader("Content-Type", "application/json")
@@ -264,7 +271,7 @@ class ApiLlmProviderTest {
             ChatMessage(conversationId = 1, role = ChatRole.ASSISTANT, content = "前の回答", createdAt = 1)
         )
 
-        val answer = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+        val answer = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.CHAT)
             .chat("今の質問", listOf("[1] タイトル: 要約"), history)
 
         assertEquals("回答", answer)
@@ -283,10 +290,36 @@ class ApiLlmProviderTest {
     fun 接続テストは入力中のキーを優先する() = runBlocking {
         server.enqueue(geminiText("OK"))
 
-        provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaSavedKey000000")))
+        apiLlmProvider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaSavedKey000000")))
             .testConnection(ApiProvider.GEMINI, "gemini-3.8-flash", "  AIzaTypedKey000000 ")
 
         assertEquals("AIzaTypedKey000000", server.takeRequest().headers["x-goog-api-key"])
+    }
+
+    @Test
+    fun 用途ごとに選んだ提供元とモデルで呼び出す() = runBlocking {
+        settings.setApiModel(AiTask.SUMMARY, ApiProvider.GEMINI, "gemini-3.5-flash-lite")
+        settings.setApiModel(AiTask.CHAT, ApiProvider.GEMINI, "gemini-3.1-pro-preview")
+        server.enqueue(geminiText("回答"))
+
+        provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.CHAT)
+            .chat("質問", emptyList(), emptyList())
+
+        assertEquals("/v1beta/models/gemini-3.1-pro-preview:generateContent", server.takeRequest().url.encodedPath)
+    }
+
+    @Test
+    fun タグだけを作るときはsummaryを出力させない() = runBlocking {
+        server.enqueue(geminiText("""{"tags":["Kotlin"],"category":"技術"}"""))
+
+        val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.TAGGING)
+            .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), listOf("Kotlin"), AnalysisScope.TAGS)
+
+        assertEquals(listOf("Kotlin"), analysis.tags)
+        assertEquals("技術", analysis.category)
+        val (system, _) = geminiRequestTexts()
+        assertFalse(system, system.contains("summary"))
+        assertTrue(system, system.contains("\"tags\""))
     }
 
     @Test
@@ -294,18 +327,38 @@ class ApiLlmProviderTest {
         val local = FakeLlmProvider()
         val api = FakeLlmProvider()
         val keys = FakeApiKeyRepository()
-        val resolver = LlmProviderResolver(local, api, settings, keys)
+        val resolver = LlmProviderResolver(local, { api }, settings, keys)
 
         try {
-            resolver.resolve()
+            resolver.resolve(AiTask.SUMMARY)
             fail("例外が投げられるはず")
         } catch (e: LlmException.ApiKeyMissing) {
             assertEquals(ApiProvider.GEMINI, e.provider)
         }
 
         keys.setKey(ApiProvider.GEMINI, "AIzaKey")
-        assertSame(api, resolver.resolve())
-        settings.setLlmBackend(LlmBackend.LOCAL)
-        assertSame(local, resolver.resolve())
+        assertSame(api, resolver.resolve(AiTask.SUMMARY))
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.LOCAL)
+        assertSame(local, resolver.resolve(AiTask.SUMMARY))
+    }
+
+    @Test
+    fun Resolverは用途ごとの実行場所と提供元で選ぶ() = runBlocking {
+        val local = FakeLlmProvider()
+        val apiByTask = AiTask.entries.associateWith { FakeLlmProvider() }
+        val keys = FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKey"))
+        val resolver = LlmProviderResolver(local, { apiByTask.getValue(it) }, settings, keys)
+        settings.setLlmBackend(AiTask.TAGGING, LlmBackend.LOCAL)
+        settings.setApiProvider(AiTask.CHAT, ApiProvider.OPENAI)
+
+        assertSame(local, resolver.resolve(AiTask.TAGGING))
+        assertSame(apiByTask.getValue(AiTask.SUMMARY), resolver.resolve(AiTask.SUMMARY))
+        // チャットに選んだ OpenAI のキーは無い
+        try {
+            resolver.resolve(AiTask.CHAT)
+            fail("例外が投げられるはず")
+        } catch (e: LlmException.ApiKeyMissing) {
+            assertEquals(ApiProvider.OPENAI, e.provider)
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.unchunks.echomark.domain.provider
 
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import kotlinx.coroutines.flow.Flow
@@ -12,12 +13,17 @@ interface LlmProvider {
      * 中身の種類([AnalysisInput.kind])に合わせて、要約の主役(記事の要点・動画で話している内容・画像に写っているものなど)を変える。
      * @param existingTags 既存のタグ名(優先する順)。合うものがあれば新しく作らずに使わせる。
      *   プロンプトに入れる量は実装ごとの予算で切り詰める
+     * @param scope 作る項目。[AnalysisScope.ALL] 以外では、作らない項目に代替の値が入る(呼び出し側で使わない)
      * 本文が上限より長ければ、部分ごとに要約してからまとめる。
      * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
      * @throws NothingToAnalyzeException ファイルのブックマークで、本文が空でファイルも AI に渡せないとき
      * @throws LlmException クラウド API の呼び出しに失敗したとき(キー未設定・拒否など)
      */
-    suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis
+    suspend fun analyze(
+        input: AnalysisInput,
+        existingTags: List<String>,
+        scope: AnalysisScope = AnalysisScope.ALL
+    ): BookmarkAnalysis
 
     /**
      * 保存済みブックマークの内容([context])を根拠にユーザーの質問へ回答する(RAG)。

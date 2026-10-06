@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.onboarding
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.RediscoverSettings
@@ -53,15 +54,16 @@ class OnboardingViewModel @Inject constructor(
         OnboardingUiState(aiChoice = choice, rediscover = rediscover)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OnboardingUiState())
 
-    /** AI の実行場所を選ぶ。「あとで」なら設定は変えない。 */
+    /** AI の実行場所を選ぶ(全用途に同じ実行場所を設定する)。「あとで」なら設定は変えない。 */
     fun chooseAi(choice: AiSetupChoice) {
         aiChoice.value = choice
+        val backend = when (choice) {
+            AiSetupChoice.LOCAL -> LlmBackend.LOCAL
+            AiSetupChoice.API -> LlmBackend.API
+            AiSetupChoice.LATER -> return
+        }
         viewModelScope.launch {
-            when (choice) {
-                AiSetupChoice.LOCAL -> appSettings.setLlmBackend(LlmBackend.LOCAL)
-                AiSetupChoice.API -> appSettings.setLlmBackend(LlmBackend.API)
-                AiSetupChoice.LATER -> Unit
-            }
+            AiTask.entries.forEach { appSettings.setLlmBackend(it, backend) }
         }
     }
 

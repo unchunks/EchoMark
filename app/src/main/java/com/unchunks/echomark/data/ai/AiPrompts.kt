@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.ai
 
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.model.AnalysisScope
 
 /**
  * ローカル LLM とクラウド API で共通のプロンプト文言。
@@ -14,38 +15,48 @@ object AiPrompts {
      * [existingTags](優先する順)を渡すと、似たタグを増やさないよう、合うものはそのまま使わせる。
      * 渡すのは先頭から [maxExistingTags] 個・合計 [maxExistingTagChars] 文字まで(長すぎるタグ名は飛ばす)。
      * @param summaryMaxChars 要約の文字数の上限。長い動画・文書などは [summaryMaxChars] で長めにする
+     * @param scope 作らせる項目。要約だけ・タグとカテゴリだけのときは、出力形式とルールをその項目に絞る
      */
     fun analyzeInstructions(
         kind: ContentKind,
         existingTags: List<String>,
         summaryMaxChars: Int = DEFAULT_SUMMARY_CHARS,
         maxExistingTags: Int = API_MAX_EXISTING_TAGS,
-        maxExistingTagChars: Int = API_MAX_EXISTING_TAG_CHARS
+        maxExistingTagChars: Int = API_MAX_EXISTING_TAG_CHARS,
+        scope: AnalysisScope = AnalysisScope.ALL
     ): String {
-        val tags = existingTagsForPrompt(existingTags, maxExistingTags, maxExistingTagChars)
+        val withSummary = scope != AnalysisScope.TAGS
+        val withTags = scope != AnalysisScope.SUMMARY
+        val tags = if (withTags) existingTagsForPrompt(existingTags, maxExistingTags, maxExistingTagChars) else emptyList()
+        val summaryField = """"summary": "${summaryMaxChars}文字以内の日本語の要約""""
+        val tagFields = """"tags": ["タグ1", "タグ2"], "category": "カテゴリ名1つ""""
         return buildList {
             add("あなたはブックマーク整理アシスタントです。次の保存内容(${kindLabel(kind)})を分析し、JSONのみを出力してください。")
             add("説明文やコードブロックは出力しないでください。")
             add("")
             add("出力形式:")
-            add("""{"summary": "${summaryMaxChars}文字以内の日本語の要約", "tags": ["タグ1", "タグ2"], "category": "カテゴリ名1つ"}""")
+            add("{" + listOfNotNull(summaryField.takeIf { withSummary }, tagFields.takeIf { withTags }).joinToString(", ") + "}")
             add("")
-            add("要約の方針:")
+            add(if (withSummary) "要約の方針:" else "内容の捉え方:")
             addAll(kindGuidance(kind))
-            add("- 本文に書かれていないことを推測で補わない。本文が無いときは、タイトルや添付から分かる範囲で書く。")
-            add("- 本文が「部分ごとの要約メモ」のときは、全体を通した主題と要点をまとめる。")
+            if (withSummary) {
+                add("- 本文に書かれていないことを推測で補わない。本文が無いときは、タイトルや添付から分かる範囲で書く。")
+            }
+            add("- 本文が「部分ごとの要約メモ」のときは、全体を通した主題と要点${if (withSummary) "をまとめる" else "から判断する"}。")
             add("")
             add("本文の見出し:")
             addAll(inputHeadingGuide(kind))
             add("")
             add("ルール:")
-            add("- summary は日本語で簡潔に。")
-            add("- tags は内容を表す短い単語を1〜${MAX_TAGS}個。")
-            if (tags.isNotEmpty()) {
-                add("- tags は、下の「既存のタグ」に内容に合うものがあれば、表記を変えずにそのまま使ってください。")
-                add("- 既存のタグに合うものが無いときだけ、新しいタグを作ってください(同じ意味の言い換えや表記ゆれは作らない)。")
+            if (withSummary) add("- summary は日本語で簡潔に。")
+            if (withTags) {
+                add("- tags は内容を表す短い単語を1〜${MAX_TAGS}個。")
+                if (tags.isNotEmpty()) {
+                    add("- tags は、下の「既存のタグ」に内容に合うものがあれば、表記を変えずにそのまま使ってください。")
+                    add("- 既存のタグに合うものが無いときだけ、新しいタグを作ってください(同じ意味の言い換えや表記ゆれは作らない)。")
+                }
+                add("- category は${categoryExamples(kind).joinToString("") { "「$it」" }}のように短い1語。")
             }
-            add("- category は${categoryExamples(kind).joinToString("") { "「$it」" }}のように短い1語。")
             if (tags.isNotEmpty()) {
                 add("")
                 add("既存のタグ:")

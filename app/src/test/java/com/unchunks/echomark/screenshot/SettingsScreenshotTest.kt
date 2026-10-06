@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
@@ -15,6 +16,7 @@ import com.unchunks.echomark.ui.settings.AiSummary
 import com.unchunks.echomark.ui.settings.SettingsActions
 import com.unchunks.echomark.ui.settings.SettingsContent
 import com.unchunks.echomark.ui.settings.SettingsUiState
+import com.unchunks.echomark.testing.aiTasks
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,10 +36,8 @@ class SettingsScreenshotTest {
     private val readyState = SettingsUiState(
         isLoaded = true,
         ai = AiSummary(
-            backend = LlmBackend.API,
-            apiProvider = ApiProvider.CLAUDE,
-            apiModel = "claude-opus-5-5",
-            apiKeyConfigured = true
+            tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE),
+            configuredProviders = setOf(ApiProvider.CLAUDE)
         ),
         themeMode = ThemeMode.SYSTEM,
         dynamicColor = false,
@@ -74,13 +74,29 @@ class SettingsScreenshotTest {
     fun settingsNeedsSetup() = screenshot.captureLightDark("settings_needs_setup") {
         Screen(
             readyState.copy(
-                ai = AiSummary(backend = LlmBackend.LOCAL, localModelName = null),
+                ai = AiSummary(tasks = aiTasks(LlmBackend.LOCAL), localModelName = null),
                 themeMode = ThemeMode.DARK,
                 dynamicColor = true,
                 storage = null
             ),
             height = 1300,
             notificationsBlocked = true
+        )
+    }
+
+    /** 用途ごとに違う AI を選んでいる */
+    @Test
+    fun settingsMixedAi() = screenshot.captureLightDark("settings_mixed_ai") {
+        Screen(
+            readyState.copy(
+                ai = AiSummary(
+                    tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE) +
+                        (AiTask.TAGGING to aiTasks(LlmBackend.LOCAL).getValue(AiTask.TAGGING)),
+                    localModelName = "gemma3-1b-it-int4",
+                    configuredProviders = setOf(ApiProvider.CLAUDE)
+                )
+            ),
+            height = 820
         )
     }
 

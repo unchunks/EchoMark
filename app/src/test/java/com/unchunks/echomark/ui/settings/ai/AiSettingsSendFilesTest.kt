@@ -8,7 +8,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.testing.aiTasks
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,7 +19,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** 「ファイルもクラウドで解析」のスイッチ: クラウド API のときだけ出し、切り替えを伝える。 */
+/** 「ファイルもクラウドで解析」のスイッチ: タグ付けか要約がクラウド API のときだけ出し、切り替えを伝える。 */
 @RunWith(AndroidJUnit4::class)
 class AiSettingsSendFilesTest {
 
@@ -26,13 +28,13 @@ class AiSettingsSendFilesTest {
 
     private val changes = mutableListOf<Boolean>()
 
-    private fun setContent(backend: LlmBackend, sendFiles: Boolean) {
+    private fun setContent(backend: LlmBackend, sendFiles: Boolean, chatBackend: LlmBackend = backend) {
         composeRule.setContent {
             EchoMarkTheme {
                 AiSettingsContent(
                     uiState = AiSettingsUiState(
-                        backend = backend,
-                        apiProvider = ApiProvider.CLAUDE,
+                        tasks = aiTasks(backend, ApiProvider.CLAUDE) +
+                            (AiTask.CHAT to aiTasks(chatBackend, ApiProvider.CLAUDE).getValue(AiTask.CHAT)),
                         configuredProviders = setOf(ApiProvider.CLAUDE),
                         sendFilesToCloud = sendFiles
                     ),
@@ -67,15 +69,27 @@ class AiSettingsSendFilesTest {
     }
 
     @Test
+    fun チャットだけクラウドAPIのときは出さない() {
+        // チャットではファイルを送らない
+        setContent(LlmBackend.LOCAL, sendFiles = true, chatBackend = LlmBackend.API)
+
+        composeRule.onNodeWithText(SWITCH_TITLE).assertDoesNotExist()
+    }
+
+    @Test
     fun 説明は送れる種類と料金_オフのときの動きを伝える() {
-        val claude = sendFilesNotice(ApiProvider.CLAUDE, enabled = true)
+        val claude = sendFilesNotice(listOf(ApiProvider.CLAUDE), enabled = true)
         assertTrue(claude, claude.contains("画像と PDF"))
         assertTrue(claude, claude.contains("料金"))
-        val gemini = sendFilesNotice(ApiProvider.GEMINI, enabled = true)
+        val gemini = sendFilesNotice(listOf(ApiProvider.GEMINI), enabled = true)
         assertTrue(gemini, gemini.contains("音声・動画を送れます"))
-        val off = sendFilesNotice(ApiProvider.GEMINI, enabled = false)
+        val off = sendFilesNotice(listOf(ApiProvider.GEMINI), enabled = false)
         assertTrue(off, off.contains("読み取った文字だけ"))
         assertFalse(off, off.contains("料金"))
+        // タグ付けと要約で提供元が違えば、両方の送れる種類を伝える
+        val both = sendFilesNotice(listOf(ApiProvider.CLAUDE, ApiProvider.GEMINI), enabled = true)
+        assertTrue(both, both.contains("Claude に送れるのは画像と PDF"))
+        assertTrue(both, both.contains("Gemini には画像・PDF・音声・動画"))
     }
 
     private companion object {

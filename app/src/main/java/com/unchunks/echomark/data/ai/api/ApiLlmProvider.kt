@@ -6,6 +6,7 @@ import com.unchunks.echomark.data.ai.LongTextDigester
 import com.unchunks.echomark.data.ai.PreparedBody
 import com.unchunks.echomark.data.ai.local.AnalysisParser
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
@@ -13,8 +14,10 @@ import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
+import com.unchunks.echomark.domain.repository.aiTaskSetting
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
@@ -22,8 +25,13 @@ import kotlinx.coroutines.flow.flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** 用途([AiTask])ごとの設定(提供元・モデル)で動く、クラウド API の [LlmProvider] を返す。 */
+fun interface ApiLlmProviderFactory {
+    fun forTask(task: AiTask): LlmProvider
+}
+
 /**
- * クラウド API による [LlmProvider]。設定で選ばれた提供元([ApiProvider])の [ApiLlmClient] に委譲する。
+ * クラウド API による [LlmProvider]。用途ごとの設定で選ばれた提供元([ApiProvider])の [ApiLlmClient] に委譲する。
  * 提供元・モデル・キーは呼び出しのたびに読むため、設定変更は次の呼び出しから反映される。
  */
 @Singleton
@@ -34,21 +42,44 @@ class ApiLlmProvider @Inject constructor(
     private val appSettings: AppSettingsRepository,
     private val apiKeyRepository: ApiKeyRepository,
     private val attachmentLoader: AttachmentLoader
-) : LlmProvider {
+) : ApiLlmProviderFactory {
+
+    override fun forTask(task: AiTask): LlmProvider = TaskProvider(task)
+
+    /** [task] の設定で呼び出す [LlmProvider]。 */
+    private inner class TaskProvider(private val task: AiTask) : LlmProvider {
+        override suspend fun analyze(
+            input: AnalysisInput,
+            existingTags: List<String>,
+            scope: AnalysisScope
+        ): BookmarkAnalysis = analyze(task, input, existingTags, scope)
+
+        override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =
+            chat(task, userMessage, context, history)
+
+        override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> =
+            chatStream(task, userMessage, context, history)
+    }
 
     private val clients: Map<ApiProvider, ApiLlmClient> =
         listOf(claude, gemini, openAi).associateBy { it.provider }
 
-    /** 現在の設定での呼び出し先。キー未設定なら [LlmException.ApiKeyMissing]。 */
-    private suspend fun current(): Pair<ApiLlmClient, ApiCredentials> {
-        val provider = appSettings.apiProvider.first()
-        val model = appSettings.apiModels.first()[provider] ?: provider.defaultModel
+    /** [task] の現在の設定での呼び出し先。キー未設定なら [LlmException.ApiKeyMissing]。 */
+    private suspend fun current(task: AiTask): Pair<ApiLlmClient, ApiCredentials> {
+        val setting = appSettings.aiTaskSetting(task).first()
+        val provider = setting.apiProvider
+        val model = setting.apiModel
         val apiKey = apiKeyRepository.getKey(provider) ?: throw LlmException.ApiKeyMissing(provider)
         return clients.getValue(provider) to ApiCredentials(apiKey, model)
     }
 
-    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
-        val (client, credentials) = current()
+    private suspend fun analyze(
+        task: AiTask,
+        input: AnalysisInput,
+        existingTags: List<String>,
+        scope: AnalysisScope
+    ): BookmarkAnalysis {
+        val (client, credentials) = current(task)
         val attachment = prepareAttachment(input, client.provider)
         // ファイル名だけの要約は役に立たないため作らない(設定を変えた後の再処理を待つ)
         if (attachment == null && input.attachment != null && input.text.isBlank()) throw NothingToAnalyzeException()
@@ -73,7 +104,8 @@ class ApiLlmProvider @Inject constructor(
             system = AiPrompts.analyzeInstructions(
                 input.kind,
                 existingTags,
-                summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong)
+                summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
+                scope = scope
             ),
             messages = listOf(
                 ApiMessage(
@@ -102,21 +134,23 @@ class ApiLlmProvider @Inject constructor(
         return attachmentLoader.load(attachment, kind)
     }
 
-    override suspend fun chat(
+    private suspend fun chat(
+        task: AiTask,
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>
     ): String {
-        val (client, credentials) = current()
+        val (client, credentials) = current(task)
         return client.complete(chatRequest(userMessage, context, history), credentials).trim()
     }
 
-    override fun chatStream(
+    private fun chatStream(
+        task: AiTask,
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>
     ): Flow<String> = flow {
-        val (client, credentials) = current()
+        val (client, credentials) = current(task)
         emitAll(client.stream(chatRequest(userMessage, context, history), credentials))
     }
 

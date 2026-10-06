@@ -6,7 +6,10 @@ import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.provider.LlmProvider
+import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -16,20 +19,31 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import java.time.DayOfWeek
 
-/** 設定の Fake。AI・表示・オンボーディング・再発見通知の設定を保持する。 */
+/**
+ * 設定の Fake。AI・表示・オンボーディング・再発見通知の設定を保持する。
+ * AI の設定は、全用途を [backend]・[provider] で始める。
+ */
 class FakeAppSettingsRepository(
     backend: LlmBackend = LlmBackend.LOCAL,
     provider: ApiProvider = ApiProvider.CLAUDE
 ) : AppSettingsRepository {
-    val backendFlow = MutableStateFlow(backend)
-    val providerFlow = MutableStateFlow(provider)
-    val modelsFlow = MutableStateFlow(ApiProvider.entries.associateWith { it.defaultModel })
+    val tasksFlow = MutableStateFlow(aiTasks(backend, provider))
 
-    override val llmBackend: Flow<LlmBackend> = backendFlow
-    override val apiProvider: Flow<ApiProvider> = providerFlow
-    override val apiModels: Flow<Map<ApiProvider, String>> = modelsFlow
+    override val aiTaskSettings: Flow<Map<AiTask, AiTaskSetting>> = tasksFlow
+
+    fun setting(task: AiTask): AiTaskSetting = tasksFlow.value.getValue(task)
+
+    /** 全用途の実行場所をまとめて変える。 */
+    fun setBackendForAll(backend: LlmBackend) {
+        tasksFlow.update { tasks -> tasks.mapValues { it.value.copy(backend = backend) } }
+    }
+
+    private fun updateTask(task: AiTask, transform: AiTaskSetting.() -> AiTaskSetting) {
+        tasksFlow.update { it + (task to it.getValue(task).transform()) }
+    }
     val rediscoverFlow = MutableStateFlow(RediscoverSettings())
     val themeModeFlow = MutableStateFlow(ThemeMode.SYSTEM)
     val dynamicColorFlow = MutableStateFlow(false)
@@ -43,10 +57,10 @@ class FakeAppSettingsRepository(
     override val onboardingCompleted: Flow<Boolean> = onboardingCompletedFlow
     override val sendFilesToCloud: Flow<Boolean> = sendFilesToCloudFlow
 
-    override suspend fun setLlmBackend(backend: LlmBackend) { backendFlow.value = backend }
-    override suspend fun setApiProvider(provider: ApiProvider) { providerFlow.value = provider }
-    override suspend fun setApiModel(provider: ApiProvider, modelId: String) {
-        modelsFlow.value = modelsFlow.value + (provider to modelId.ifBlank { provider.defaultModel })
+    override suspend fun setLlmBackend(task: AiTask, backend: LlmBackend) = updateTask(task) { copy(backend = backend) }
+    override suspend fun setApiProvider(task: AiTask, provider: ApiProvider) = updateTask(task) { copy(apiProvider = provider) }
+    override suspend fun setApiModel(task: AiTask, provider: ApiProvider, modelId: String) = updateTask(task) {
+        copy(apiModels = apiModels + (provider to modelId.trim().ifBlank { provider.defaultModel }))
     }
 
     override suspend fun setThemeMode(mode: ThemeMode) { themeModeFlow.value = mode }
@@ -61,9 +75,7 @@ class FakeAppSettingsRepository(
     }
     override suspend fun resetToDefaults() {
         resetCalls++
-        backendFlow.value = LlmBackend.LOCAL
-        providerFlow.value = ApiProvider.CLAUDE
-        modelsFlow.value = ApiProvider.entries.associateWith { it.defaultModel }
+        tasksFlow.value = aiTasks(LlmBackend.LOCAL, ApiProvider.CLAUDE)
         rediscoverFlow.value = RediscoverSettings()
         themeModeFlow.value = ThemeMode.SYSTEM
         dynamicColorFlow.value = false
@@ -72,6 +84,12 @@ class FakeAppSettingsRepository(
     override suspend fun getRediscoverNotified(): Map<Long, Long> = TODO("not used")
     override suspend fun recordRediscoverNotified(ids: List<Long>, notifiedAt: Long) = TODO("not used")
 }
+
+/** 全用途で同じ実行場所・提供元(モデルは各提供元の既定)の AI の設定。 */
+fun aiTasks(backend: LlmBackend, provider: ApiProvider = ApiProvider.CLAUDE): Map<AiTask, AiTaskSetting> =
+    AiTask.entries.associateWith {
+        AiTaskSetting(backend, provider, ApiProvider.entries.associateWith { it.defaultModel })
+    }
 
 class FakeApiKeyRepository(initial: Map<ApiProvider, String> = emptyMap()) : ApiKeyRepository {
     private val keys = MutableStateFlow(initial)
@@ -86,7 +104,7 @@ class FakeLlmProvider(
     var chunks: List<String> = listOf("こんにちは", "、世界"),
     var failure: Throwable? = null
 ) : LlmProvider {
-    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis =
+    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis =
         BookmarkAnalysis("要約", emptyList(), "その他")
 
     override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =

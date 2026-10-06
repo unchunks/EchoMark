@@ -10,7 +10,10 @@ import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportError
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.testing.aiTasks
 import com.unchunks.echomark.ui.settings.ai.AiSettingsActions
 import com.unchunks.echomark.ui.settings.ai.AiSettingsContent
 import com.unchunks.echomark.ui.settings.ai.AiSettingsUiState
@@ -28,7 +31,7 @@ import java.util.TimeZone
 /** AI 設定サブ画面の主な状態(縦長の画面で全体を撮る)。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w400dp-h2400dp-xhdpi")
+@Config(qualifiers = "w400dp-h3400dp-xhdpi")
 class AiSettingsScreenshotTest {
 
     @get:Rule
@@ -55,7 +58,7 @@ class AiSettingsScreenshotTest {
 
     @Composable
     private fun Screen(state: AiSettingsUiState, connectionTest: ConnectionTestState = ConnectionTestState.Idle) {
-        Box(Modifier.height(2300.dp)) {
+        Box(Modifier.height(3300.dp)) {
             AiSettingsContent(uiState = state, connectionTest = connectionTest, actions = AiSettingsActions())
         }
     }
@@ -71,7 +74,7 @@ class AiSettingsScreenshotTest {
     fun localImporting() = screenshot.captureLightDark("ai_settings_local_importing") {
         Screen(
             AiSettingsUiState(
-                backend = LlmBackend.LOCAL,
+                tasks = aiTasks(LlmBackend.LOCAL),
                 localModel = model,
                 importState = ModelImportState.Copying(copiedBytes = 230_000_000, totalBytes = 555_000_000)
             )
@@ -83,13 +86,33 @@ class AiSettingsScreenshotTest {
     fun apiReady() = screenshot.captureLightDark("ai_settings_api_ready") {
         Screen(
             AiSettingsUiState(
-                backend = LlmBackend.API,
+                tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE),
                 localModel = model,
-                apiProvider = ApiProvider.CLAUDE,
-                apiModels = ApiProvider.entries.associateWith { it.defaultModel },
+                keyProvider = ApiProvider.CLAUDE,
                 configuredProviders = setOf(ApiProvider.CLAUDE)
             ),
             connectionTest = ConnectionTestState.Success(ApiProvider.CLAUDE)
+        )
+    }
+
+    /** 用途ごとに違う AI: タグ付けは端末内、要約は Gemini、チャットは Claude Haiku */
+    @Test
+    fun mixedTasks() = screenshot.captureLightDark("ai_settings_mixed_tasks") {
+        Screen(
+            AiSettingsUiState(
+                tasks = mapOf(
+                    AiTask.TAGGING to AiTaskSetting(LlmBackend.LOCAL),
+                    AiTask.SUMMARY to AiTaskSetting(LlmBackend.API, ApiProvider.GEMINI),
+                    AiTask.CHAT to AiTaskSetting(
+                        LlmBackend.API,
+                        ApiProvider.CLAUDE,
+                        mapOf(ApiProvider.CLAUDE to "claude-haiku-4-5")
+                    )
+                ),
+                localModel = model,
+                keyProvider = ApiProvider.GEMINI,
+                configuredProviders = setOf(ApiProvider.CLAUDE, ApiProvider.GEMINI)
+            )
         )
     }
 
@@ -98,9 +121,8 @@ class AiSettingsScreenshotTest {
     fun apiSendFilesOff() = screenshot.captureLightDark("ai_settings_api_send_files_off") {
         Screen(
             AiSettingsUiState(
-                backend = LlmBackend.API,
-                apiProvider = ApiProvider.GEMINI,
-                apiModels = ApiProvider.entries.associateWith { it.defaultModel },
+                tasks = aiTasks(LlmBackend.API, ApiProvider.GEMINI),
+                keyProvider = ApiProvider.GEMINI,
                 configuredProviders = setOf(ApiProvider.GEMINI),
                 sendFilesToCloud = false
             )
@@ -118,10 +140,9 @@ class AiSettingsScreenshotTest {
     fun apiNeedsKey() = screenshot.captureLightDark("ai_settings_api_needs_key") {
         Screen(
             AiSettingsUiState(
-                backend = LlmBackend.API,
+                tasks = aiTasks(LlmBackend.API, ApiProvider.GEMINI),
                 importState = ModelImportState.Failed(ModelImportError.UnsupportedFormat("model.bin")),
-                apiProvider = ApiProvider.GEMINI,
-                apiModels = ApiProvider.entries.associateWith { it.defaultModel },
+                keyProvider = ApiProvider.GEMINI,
                 configuredProviders = setOf(ApiProvider.CLAUDE)
             ),
             connectionTest = ConnectionTestState.Failure("API キーが正しくありません。キーを確認してください")

@@ -11,6 +11,7 @@ import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
@@ -20,6 +21,7 @@ import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
@@ -77,7 +79,7 @@ class ChatRepositoryImplStreamTest {
         chatMessageDao = messageDao,
         vectorSearch = unusedVectorSearch(),
         embeddingProvider = noEmbedding,
-        llmProviderResolver = LlmProviderResolver(llm, llm, settings, FakeApiKeyRepository()),
+        llmProviderResolver = LlmProviderResolver(llm, { llm }, settings, FakeApiKeyRepository()),
         bookmarkRepository = bookmarkRepository,
         dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
     )
@@ -120,9 +122,20 @@ class ChatRepositoryImplStreamTest {
     }
 
     @Test
+    fun チャットの用途の設定でプロバイダを選ぶ() = runBlocking {
+        // 要約・タグ付けはキーの無い API でも、チャットが端末内なら答えられる
+        val settings = FakeAppSettingsRepository(LlmBackend.API, ApiProvider.OPENAI)
+        settings.setLlmBackend(AiTask.CHAT, LlmBackend.LOCAL)
+        val events = repository(FakeLlmProvider(listOf("回答")), settings).sendMessageStream(1L, "質問").toList()
+
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
     fun キャンセルすると途中までの回答を停止付きで保存する() = runBlocking {
         val endless = object : LlmProvider {
-            override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis = TODO("not used")
+            override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis =
+                TODO("not used")
             override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>) =
                 TODO("not used")
 
@@ -151,7 +164,8 @@ class ChatRepositoryImplStreamTest {
         var lastContext: List<String> = emptyList()
         var lastHistory: List<ChatMessage> = emptyList()
 
-        override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis = TODO("not used")
+        override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis =
+            TODO("not used")
         override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>) =
             TODO("not used")
 

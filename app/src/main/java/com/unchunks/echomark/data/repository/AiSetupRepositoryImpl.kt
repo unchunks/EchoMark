@@ -3,14 +3,16 @@ package com.unchunks.echomark.data.repository
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
+import com.unchunks.echomark.domain.repository.aiTaskSetting
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
 
-/** 設定・取り込み済みモデル・API キーの有無を組み合わせて、AI を使える状態かを流す。 */
+/** 設定・取り込み済みモデル・API キーの有無を組み合わせて、チャットで AI を使える状態かを流す。 */
 class AiSetupRepositoryImpl @Inject constructor(
     appSettings: AppSettingsRepository,
     apiKeyRepository: ApiKeyRepository,
@@ -18,15 +20,14 @@ class AiSetupRepositoryImpl @Inject constructor(
 ) : AiSetupRepository {
 
     override val setupState: Flow<AiSetupState> = combine(
-        appSettings.llmBackend,
+        appSettings.aiTaskSetting(AiTask.CHAT),
         modelManager.installedModel,
-        appSettings.apiProvider,
         apiKeyRepository.configuredProviders
-    ) { backend, model, provider, configured ->
+    ) { setting, model, configured ->
         AiSetupState.of(
-            backend = backend,
+            backend = setting.backend,
             isLocalModelInstalled = model != null,
-            apiProvider = provider,
+            apiProvider = setting.apiProvider,
             configuredProviders = configured
         )
     }.distinctUntilChanged()

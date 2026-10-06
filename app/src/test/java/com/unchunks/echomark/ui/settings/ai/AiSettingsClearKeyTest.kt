@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.testing.aiTasks
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -33,8 +34,8 @@ class AiSettingsClearKeyTest {
             EchoMarkTheme {
                 AiSettingsContent(
                     uiState = AiSettingsUiState(
-                        backend = LlmBackend.API,
-                        apiProvider = ApiProvider.CLAUDE,
+                        tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE),
+                        keyProvider = ApiProvider.CLAUDE,
                         configuredProviders = setOf(ApiProvider.CLAUDE)
                     ),
                     connectionTest = ConnectionTestState.Idle,

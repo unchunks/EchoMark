@@ -1,5 +1,6 @@
 package com.unchunks.echomark.ui.onboarding
 
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeRediscoverScheduleController
@@ -32,20 +33,20 @@ class OnboardingViewModelTest {
         viewModel.chooseAi(AiSetupChoice.LOCAL)
         advanceUntilIdle()
 
-        assertEquals(LlmBackend.LOCAL, settings.backendFlow.value)
+        AiTask.entries.forEach { assertEquals(LlmBackend.LOCAL, settings.setting(it).backend) }
         assertEquals(OnboardingExit.AI_SETTINGS, viewModel.uiState.value.exit)
     }
 
     @Test
     fun クラウドAPIを選ぶと実行場所をAPIにする() = runTest {
-        settings.backendFlow.value = LlmBackend.LOCAL
+        settings.setBackendForAll(LlmBackend.LOCAL)
         val viewModel = createViewModel()
         backgroundScope.launch { viewModel.uiState.collect {} }
 
         viewModel.chooseAi(AiSetupChoice.API)
         advanceUntilIdle()
 
-        assertEquals(LlmBackend.API, settings.backendFlow.value)
+        AiTask.entries.forEach { assertEquals(LlmBackend.API, settings.setting(it).backend) }
         assertEquals(OnboardingExit.AI_SETTINGS, viewModel.uiState.value.exit)
     }
 
@@ -57,7 +58,7 @@ class OnboardingViewModelTest {
         viewModel.chooseAi(AiSetupChoice.LATER)
         advanceUntilIdle()
 
-        assertEquals(LlmBackend.API, settings.backendFlow.value)
+        AiTask.entries.forEach { assertEquals(LlmBackend.API, settings.setting(it).backend) }
         assertEquals(OnboardingExit.LIST, viewModel.uiState.value.exit)
     }
 

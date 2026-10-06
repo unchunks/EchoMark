@@ -438,7 +438,7 @@ fun SettingsContent(
             },
             onDismiss = { dialog = null }
         )
-        SettingsDialog.PRIVACY -> PrivacyDialog(backend = uiState.ai.backend, onDismiss = { dialog = null })
+        SettingsDialog.PRIVACY -> PrivacyDialog(backends = uiState.ai.backends, onDismiss = { dialog = null })
         SettingsDialog.LICENSES -> LicensesDialog(onDismiss = { dialog = null })
         null -> Unit
     }
@@ -608,7 +608,7 @@ internal fun DeleteFinalDialog(resetSettings: Boolean, onConfirm: () -> Unit, on
 }
 
 @Composable
-internal fun PrivacyDialog(backend: LlmBackend, onDismiss: () -> Unit) {
+internal fun PrivacyDialog(backends: Set<LlmBackend>, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Outlined.PrivacyTip, contentDescription = null) },
@@ -628,7 +628,8 @@ internal fun PrivacyDialog(backend: LlmBackend, onDismiss: () -> Unit) {
                 )
                 PrivacyPoint(
                     "クラウド API を選んだとき",
-                    "ブックマークの本文・要約とチャットの質問を、選んだ提供元(Anthropic・Google・OpenAI)のサーバーに送信します。" +
+                    "クラウド API を選んだ用途(タグ付け・要約・チャット)では、その処理に使うブックマークの本文・要約やチャットの質問を、" +
+                        "選んだ提供元(Anthropic・Google・OpenAI)のサーバーに送信します。" +
                         "検索用のデータは引き続き端末内で作ります。"
                 )
                 PrivacyPoint(
@@ -640,7 +641,11 @@ internal fun PrivacyDialog(backend: LlmBackend, onDismiss: () -> Unit) {
                     "端末内で暗号化して保存し、バックアップには含めません。"
                 )
                 Text(
-                    "いまの設定: " + if (backend == LlmBackend.LOCAL) "端末内で動かす" else "クラウド API を使う",
+                    "いまの設定: " + when {
+                        LlmBackend.API !in backends -> "端末内で動かす"
+                        LlmBackend.LOCAL !in backends -> "クラウド API を使う"
+                        else -> "用途ごとに端末内とクラウド API を使い分ける"
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary
                 )

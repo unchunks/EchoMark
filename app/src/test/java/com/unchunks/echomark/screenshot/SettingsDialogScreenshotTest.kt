@@ -43,7 +43,7 @@ class SettingsDialogScreenshotTest {
 
     @Test
     fun privacyDialog() = screenshot.captureDialogLightDark("settings_dialog_privacy") {
-        PrivacyDialog(backend = LlmBackend.LOCAL, onDismiss = {})
+        PrivacyDialog(backends = setOf(LlmBackend.LOCAL), onDismiss = {})
     }
 
     @Test

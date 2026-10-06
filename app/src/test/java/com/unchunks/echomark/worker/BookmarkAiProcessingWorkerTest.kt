@@ -11,6 +11,7 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
@@ -20,6 +21,7 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
@@ -97,7 +99,7 @@ class BookmarkAiProcessingWorkerTest {
     )
 
     private suspend fun runWorker(bookmarkId: Long, runAttemptCount: Int): ListenableWorker.Result {
-        val resolver = LlmProviderResolver(llm, llm, settings, FakeApiKeyRepository())
+        val analyzer = BookmarkAnalyzer(LlmProviderResolver(llm, { llm }, settings, FakeApiKeyRepository()), settings)
         val worker = TestListenableWorkerBuilder<BookmarkAiProcessingWorker>(context)
             .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
             .setRunAttemptCount(runAttemptCount)
@@ -106,7 +108,7 @@ class BookmarkAiProcessingWorkerTest {
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters
-                ) = BookmarkAiProcessingWorker(appContext, workerParameters, repository, resolver, embedding)
+                ) = BookmarkAiProcessingWorker(appContext, workerParameters, repository, analyzer, embedding)
             })
             .build()
         return worker.doWork()
@@ -296,7 +298,7 @@ private class ScriptedLlmProvider : LlmProvider {
     var lastExistingTags: List<String>? = null
     var lastInput: AnalysisInput? = null
 
-    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
+    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis {
         calls++
         lastInput = input
         started.complete(Unit)

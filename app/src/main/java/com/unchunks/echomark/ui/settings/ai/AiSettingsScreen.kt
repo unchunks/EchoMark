@@ -21,12 +21,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Label
+import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Memory
@@ -52,9 +55,13 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -85,6 +92,7 @@ import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.formatBytes
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.common.MessageSnackbarEffect
 import com.unchunks.echomark.ui.common.openUrl
@@ -104,13 +112,15 @@ import java.util.Date
 /** AI 設定画面の操作。既定は何もしない(スクリーンショット用)。 */
 class AiSettingsActions(
     val onBack: () -> Unit = {},
-    val onSelectBackend: (LlmBackend) -> Unit = {},
+    val onSelectBackend: (AiTask, LlmBackend) -> Unit = { _, _ -> },
     /** モデルファイルを選ぶ(ファイル選択画面は呼び出し側で開く) */
     val onPickModel: () -> Unit = {},
     val onCancelImport: () -> Unit = {},
     val onDeleteModel: () -> Unit = {},
-    val onSelectProvider: (ApiProvider) -> Unit = {},
-    val onSetModel: (ApiProvider, String) -> Unit = { _, _ -> },
+    val onSelectProvider: (AiTask, ApiProvider) -> Unit = { _, _ -> },
+    val onSetModel: (AiTask, ApiProvider, String) -> Unit = { _, _, _ -> },
+    /** API キーを入力する提供元を選ぶ */
+    val onSelectKeyProvider: (ApiProvider) -> Unit = {},
     val onSaveKey: (ApiProvider, String) -> Unit = { _, _ -> },
     val onClearKey: (ApiProvider) -> Unit = {},
     val onTestConnection: (String) -> Unit = {},
@@ -119,7 +129,7 @@ class AiSettingsActions(
 )
 
 /**
- * AI 設定(実行場所・端末内モデルの取り込み・クラウド API のキーとモデル・再処理)。
+ * AI 設定(用途ごとの実行場所・提供元・モデル、端末内モデルの取り込み、クラウド API のキー、再処理)。
  * 設定タブの「AI の設定」から開くサブ画面。表示は [AiSettingsContent]。
  */
 @Composable
@@ -157,6 +167,7 @@ fun AiSettingsScreen(
             onDeleteModel = viewModel::deleteModel,
             onSelectProvider = viewModel::setApiProvider,
             onSetModel = viewModel::setApiModel,
+            onSelectKeyProvider = viewModel::selectKeyProvider,
             onSaveKey = viewModel::saveApiKey,
             onClearKey = viewModel::clearApiKey,
             onTestConnection = viewModel::testConnection,
@@ -204,14 +215,31 @@ fun AiSettingsContent(
         ) {
             StatusCard(uiState)
 
-            SectionHeader("実行場所")
-            BackendSelector(selected = uiState.backend, onSelect = actions.onSelectBackend)
-            if (uiState.backend == LlmBackend.API) {
+            SectionHeader("用途ごとの AI")
+            AiTask.entries.forEach { task ->
+                TaskSettingCard(
+                    task = task,
+                    uiState = uiState,
+                    onSelectBackend = { actions.onSelectBackend(task, it) },
+                    onSelectProvider = { actions.onSelectProvider(task, it) },
+                    onSetModel = { provider, model -> actions.onSetModel(task, provider, model) }
+                )
+            }
+            if (uiState.analyzesSeparately) {
                 SettingsNotice(
-                    text = "ブックマークの本文・${if (uiState.sendFilesToCloud) "保存したファイル・" else ""}要約・チャットの質問が " +
-                        "${uiState.apiProvider.displayName} のサーバーに送信されます。" +
-                        "送信内容の扱いは各社の規約に従い、API の利用料金は各社のアカウントに請求されます。",
+                    text = "タグ付けと要約に別の AI を選んでいるため、ブックマーク1件につき AI を2回呼び出します" +
+                        "(処理に時間がかかり、クラウド API ならその分の料金がかかります)。",
                     icon = Icons.Outlined.Info
+                )
+            }
+            if (uiState.apiTasks.isNotEmpty()) {
+                SettingsNotice(text = cloudNotice(uiState), icon = Icons.Outlined.Info)
+            }
+            if (uiState.analysisApiProviders.isNotEmpty()) {
+                SendFilesToCloudSetting(
+                    providers = uiState.analysisApiProviders,
+                    checked = uiState.sendFilesToCloud,
+                    onCheckedChange = actions.onSetSendFilesToCloud
                 )
             }
 
@@ -220,30 +248,22 @@ fun AiSettingsContent(
             LocalModelSection(
                 model = uiState.localModel,
                 importState = uiState.importState,
-                isSelected = uiState.backend == LlmBackend.LOCAL,
+                isSelected = uiState.usesLocal,
                 onPickModel = actions.onPickModel,
                 onCancelImport = actions.onCancelImport,
                 onDelete = actions.onDeleteModel
             )
 
             SectionDivider()
-            SectionHeader("クラウド API")
-            ApiSection(
+            SectionHeader("クラウド API のキー")
+            ApiKeySection(
                 uiState = uiState,
                 connectionTest = connectionTest,
-                onSelectProvider = actions.onSelectProvider,
-                onSetModel = actions.onSetModel,
+                onSelectProvider = actions.onSelectKeyProvider,
                 onSaveKey = actions.onSaveKey,
                 onClearKey = actions.onClearKey,
                 onTestConnection = actions.onTestConnection
             )
-            if (uiState.backend == LlmBackend.API) {
-                SendFilesToCloudSetting(
-                    provider = uiState.apiProvider,
-                    checked = uiState.sendFilesToCloud,
-                    onCheckedChange = actions.onSetSendFilesToCloud
-                )
-            }
 
             SectionDivider()
             SectionHeader("AI 処理")
@@ -262,22 +282,10 @@ private fun SectionDivider() {
     HorizontalDivider(Modifier.padding(top = 16.dp, bottom = 4.dp))
 }
 
-/** 画面の先頭で、今の設定で AI が使えるか・次に何をすればよいかを伝える。 */
+/** 画面の先頭で、用途ごとに AI が使えるか・次に何をすればよいかを伝える。 */
 @Composable
 private fun StatusCard(uiState: AiSettingsUiState) {
-    val provider = uiState.apiProvider.shortName
-    val (ready, text) = when (uiState.backend) {
-        LlmBackend.LOCAL -> if (uiState.localModel != null) {
-            true to "端末内のモデルで動いています"
-        } else {
-            false to "モデルファイルを取り込むと使えます"
-        }
-        LlmBackend.API -> if (uiState.isKeyConfigured) {
-            true to "$provider の API で動いています"
-        } else {
-            false to "$provider の API キーを保存すると使えます"
-        }
-    }
+    val ready = AiTask.entries.all(uiState::isReady)
     val container = if (ready) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
     val content = if (ready) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
     Card(
@@ -288,31 +296,170 @@ private fun StatusCard(uiState: AiSettingsUiState) {
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Icon(if (ready) Icons.Outlined.CheckCircle else Icons.Outlined.WarningAmber, contentDescription = null)
-            Text(text, style = MaterialTheme.typography.bodyLarge.japaneseParagraph())
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    if (ready) "すべての用途で AI を使えます" else "設定が必要な用途があります",
+                    style = MaterialTheme.typography.bodyLarge.japaneseParagraph()
+                )
+                AiTask.entries.forEach { task ->
+                    Text(
+                        "${task.label}: ${taskStatusText(uiState, task)}",
+                        style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
+                    )
+                }
+            }
         }
     }
 }
 
-@Composable
-private fun BackendSelector(selected: LlmBackend, onSelect: (LlmBackend) -> Unit) {
-    Column(Modifier.selectableGroup()) {
-        RadioItem(
-            title = "端末内(オンデバイス)",
-            description = "保存内容は端末の外に送信されません。モデルファイルの取り込みが必要です",
-            selected = selected == LlmBackend.LOCAL,
-            onClick = { onSelect(LlmBackend.LOCAL) }
-        )
-        RadioItem(
-            title = "クラウド API",
-            description = "Claude・Gemini・OpenAI の API を使います。高品質ですが、保存内容が提供元に送信されます",
-            selected = selected == LlmBackend.API,
-            onClick = { onSelect(LlmBackend.API) }
-        )
+/** 用途ごとの状態の説明。例: 「Claude の API(claude-opus-5-5)で動きます」「モデルファイルを取り込むと使えます」 */
+internal fun taskStatusText(uiState: AiSettingsUiState, task: AiTask): String {
+    val setting = uiState.setting(task)
+    val provider = setting.apiProvider.shortName
+    val ready = uiState.isReady(task)
+    return when (setting.backend) {
+        LlmBackend.LOCAL -> if (ready) "端末内のモデルで動きます" else "モデルファイルを取り込むと使えます"
+        LlmBackend.API -> if (ready) "$provider の API(${setting.apiModel})で動きます" else "$provider の API キーを保存すると使えます"
     }
+}
+
+private val AiTask.icon: ImageVector
+    get() = when (this) {
+        AiTask.TAGGING -> Icons.AutoMirrored.Outlined.Label
+        AiTask.SUMMARY -> Icons.AutoMirrored.Outlined.Notes
+        AiTask.CHAT -> Icons.Outlined.Forum
+    }
+
+private val AiTask.description: String
+    get() = when (this) {
+        AiTask.TAGGING -> "保存したブックマークにタグとカテゴリを付けます"
+        AiTask.SUMMARY -> "保存したブックマークの要約を作ります(音声・動画をクラウドで文字起こしするかも、この設定に従います)"
+        AiTask.CHAT -> "保存した内容をもとに、チャットの質問に答えます"
+    }
+
+/** 1つの用途の設定(実行場所と、クラウド API なら提供元・モデル)。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaskSettingCard(
+    task: AiTask,
+    uiState: AiSettingsUiState,
+    onSelectBackend: (LlmBackend) -> Unit,
+    onSelectProvider: (ApiProvider) -> Unit,
+    onSetModel: (ApiProvider, String) -> Unit
+) {
+    val setting = uiState.setting(task)
+    val provider = setting.apiProvider
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(task.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(task.label, style = MaterialTheme.typography.titleMedium)
+            }
+            Text(
+                task.description,
+                style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                LlmBackend.entries.forEachIndexed { index, backend ->
+                    SegmentedButton(
+                        selected = setting.backend == backend,
+                        onClick = { onSelectBackend(backend) },
+                        shape = SegmentedButtonDefaults.itemShape(index, LlmBackend.entries.size)
+                    ) {
+                        Text(
+                            when (backend) {
+                                LlmBackend.LOCAL -> "端末内"
+                                LlmBackend.API -> "クラウド API"
+                            }
+                        )
+                    }
+                }
+            }
+            if (setting.backend == LlmBackend.API) {
+                FieldLabel("提供元")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ApiProvider.entries.forEach { option ->
+                        FilterChip(
+                            selected = option == provider,
+                            onClick = { onSelectProvider(option) },
+                            label = { Text(option.shortName) }
+                        )
+                    }
+                }
+                FieldLabel("モデル")
+                ModelSelector(
+                    provider = provider,
+                    selectedModel = setting.apiModel,
+                    onSetModel = { onSetModel(provider, it) }
+                )
+            }
+            if (!uiState.isReady(task)) {
+                StatusLine(
+                    icon = {
+                        Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    },
+                    text = when (setting.backend) {
+                        LlmBackend.LOCAL -> "端末内モデルが未取り込みです(下の「端末内モデル」で取り込めます)"
+                        LlmBackend.API -> "${provider.shortName} の API キーが未設定です(下の「クラウド API のキー」で保存できます)"
+                    },
+                    isError = true
+                )
+            }
+        }
+    }
+}
+
+/** 提供元のモデルをプリセットから選ぶか、ID を自由入力する。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ModelSelector(provider: ApiProvider, selectedModel: String, onSetModel: (String) -> Unit) {
+    var modelInput by remember(provider, selectedModel) { mutableStateOf(selectedModel) }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        provider.presets.forEach { preset ->
+            FilterChip(
+                selected = selectedModel == preset.id,
+                onClick = { onSetModel(preset.id) },
+                label = { Text(preset.label) }
+            )
+        }
+    }
+    OutlinedTextField(
+        value = modelInput,
+        onValueChange = { modelInput = it },
+        label = { Text("モデル ID(自由入力)") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Done),
+        trailingIcon = {
+            if (modelInput.trim() != selectedModel) {
+                TextButton(onClick = { onSetModel(modelInput) }) { Text("適用") }
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+/** クラウド API を使う用途で、何がどの提供元に送られるか。 */
+internal fun cloudNotice(uiState: AiSettingsUiState): String {
+    val destinations = uiState.apiTasks.joinToString("・") { "${it.label}: ${uiState.setting(it).apiProvider.shortName}" }
+    val analysisUsesApi = uiState.apiTasks.any { it != AiTask.CHAT }
+    val contents = buildList {
+        if (analysisUsesApi) add("ブックマークの本文")
+        if (analysisUsesApi && uiState.sendFilesToCloud) add("保存したファイル")
+        if (AiTask.CHAT in uiState.apiTasks) add("要約・チャットの質問")
+    }.joinToString("・")
+    return "クラウド API を選んだ用途($destinations)では、${contents}が提供元のサーバーに送信されます。" +
+        "送信内容の扱いは各社の規約に従い、API の利用料金は各社のアカウントに請求されます。"
 }
 
 /** ラジオボタンの行。行全体をタップ対象にし、RadioButton 自体は onClick = null(TalkBack で二重に読まれない)。 */
@@ -449,13 +596,12 @@ private fun LocalModelSection(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** 提供元ごとの API キーの保存・削除・接続テスト。どの用途でどの提供元を使うかは用途ごとの設定で選ぶ。 */
 @Composable
-private fun ApiSection(
+private fun ApiKeySection(
     uiState: AiSettingsUiState,
     connectionTest: ConnectionTestState,
     onSelectProvider: (ApiProvider) -> Unit,
-    onSetModel: (ApiProvider, String) -> Unit,
     onSaveKey: (ApiProvider, String) -> Unit,
     onClearKey: (ApiProvider) -> Unit,
     onTestConnection: (String) -> Unit
@@ -463,15 +609,17 @@ private fun ApiSection(
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val provider = uiState.apiProvider
+    val provider = uiState.keyProvider
 
-    // 提供元ごとの選択
+    // キーを入力する提供元の選択
     Column(Modifier.selectableGroup()) {
         ApiProvider.entries.forEach { option ->
             val configured = option in uiState.configuredProviders
+            val usedBy = uiState.apiTasks.filter { uiState.setting(it).apiProvider == option }
             RadioItem(
                 title = option.displayName,
-                description = if (configured) "API キー設定済み" else "API キー未設定",
+                description = (if (configured) "API キー設定済み" else "API キー未設定") +
+                    if (usedBy.isNotEmpty()) "・${usedBy.joinToString("・") { it.label }}で使用" else "",
                 selected = option == provider,
                 onClick = { onSelectProvider(option) },
                 trailingIcon = if (configured) Icons.Outlined.Key else null
@@ -482,39 +630,13 @@ private fun ApiSection(
     // キー入力欄は画面内だけで保持する(保存後は消す)。提供元を切り替えたらリセット
     var keyInput by remember(provider) { mutableStateOf("") }
     var keyVisible by remember(provider) { mutableStateOf(false) }
-    var modelInput by remember(provider, uiState.selectedModel) { mutableStateOf(uiState.selectedModel) }
     var showClearKeyDialog by remember(provider) { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        FieldLabel("モデル")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            provider.presets.forEach { preset ->
-                FilterChip(
-                    selected = uiState.selectedModel == preset.id,
-                    onClick = { onSetModel(provider, preset.id) },
-                    label = { Text(preset.label) }
-                )
-            }
-        }
-        OutlinedTextField(
-            value = modelInput,
-            onValueChange = { modelInput = it },
-            label = { Text("モデル ID(自由入力)") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Done),
-            trailingIcon = {
-                if (modelInput.trim() != uiState.selectedModel) {
-                    TextButton(onClick = { onSetModel(provider, modelInput) }) { Text("適用") }
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.size(4.dp))
-        FieldLabel("API キー")
+        FieldLabel("${provider.shortName} の API キー")
         if (uiState.isKeyConfigured) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -582,6 +704,11 @@ private fun ApiSection(
                     (keyInput.isNotBlank() || uiState.isKeyConfigured)
             ) { Text("接続テスト") }
         }
+        Text(
+            "接続テストには ${uiState.testModel} を使います。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         ConnectionTestResult(connectionTest)
         TextButton(
             onClick = { openUrl(context, provider.keyConsoleUrl) },
@@ -607,31 +734,35 @@ private fun ApiSection(
 /**
  * ファイルそのものもクラウドに送るかのスイッチ。送ると写っているもの・話している内容から要約できるが、
  * 送信される情報と API の料金が増えるため、送れる種類と料金を添えて伝える。
+ * @param providers タグ付け・要約で使う提供元
  */
 @Composable
-private fun SendFilesToCloudSetting(provider: ApiProvider, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SendFilesToCloudSetting(providers: List<ApiProvider>, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     SettingsSwitchItem(
         title = "ファイルもクラウドで解析",
         icon = Icons.Outlined.CloudUpload,
         checked = checked,
         onCheckedChange = onCheckedChange,
-        summary = "保存した画像・PDF・音声・動画を ${provider.shortName} に送り、写っているものや話している内容から要約します",
+        summary = "保存した画像・PDF・音声・動画を ${providers.joinToString("・") { it.shortName }} に送り、" +
+            "写っているものや話している内容から要約・タグ付けします",
         modifier = Modifier.padding(top = 8.dp)
     )
-    SettingsNotice(text = sendFilesNotice(provider, checked), icon = Icons.Outlined.Info)
+    SettingsNotice(text = sendFilesNotice(providers, checked), icon = Icons.Outlined.Info)
 }
 
-/** ファイルの送信について、送れる種類・料金・オフのときの動きを説明する。 */
-internal fun sendFilesNotice(provider: ApiProvider, enabled: Boolean): String {
+/** ファイルの送信について、提供元ごとに送れる種類・料金・オフのときの動きを説明する。 */
+internal fun sendFilesNotice(providers: List<ApiProvider>, enabled: Boolean): String {
     val cost = "ファイルを送ると、その分の API の料金がかかります(ページの多い PDF・長い音声や動画ほど高くなります)。"
     if (!enabled) {
         return "オフのときは、端末内でファイルから読み取った文字だけを送ります。文字の無い写真などは要約できません。"
     }
-    val kinds = when (provider) {
-        ApiProvider.GEMINI ->
-            "${provider.shortName} には画像・PDF・音声・動画を送れます(1ファイル 10 MB まで。画像は縮小して送ります)。"
-        ApiProvider.CLAUDE, ApiProvider.OPENAI ->
-            "${provider.shortName} に送れるのは画像と PDF です(画像は縮小して送ります)。音声・動画は端末内で文字起こしした文字だけを送ります。"
+    val kinds = providers.distinct().joinToString("") { provider ->
+        when (provider) {
+            ApiProvider.GEMINI ->
+                "${provider.shortName} には画像・PDF・音声・動画を送れます(1ファイル 10 MB まで。画像は縮小して送ります)。"
+            ApiProvider.CLAUDE, ApiProvider.OPENAI ->
+                "${provider.shortName} に送れるのは画像と PDF です(画像は縮小して送ります)。音声・動画は端末内で文字起こしした文字だけを送ります。"
+        }
     }
     return kinds + cost
 }

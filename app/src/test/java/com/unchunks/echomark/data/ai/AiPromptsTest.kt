@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.ai
 
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.model.AnalysisScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -16,6 +17,34 @@ class AiPromptsTest {
         assertTrue(prompt, prompt.contains("既存のタグ:\n[\"Android\", \"読書\"]"))
         assertTrue(prompt, prompt.contains("表記を変えずにそのまま使って"))
         assertTrue(prompt, prompt.contains("1〜${AiPrompts.MAX_TAGS}個"))
+    }
+
+    @Test
+    fun まとめて作るときは要約_タグ_カテゴリを出力させる() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), summaryMaxChars = 150)
+
+        assertTrue(prompt, prompt.contains("{\"summary\": \"150文字以内の日本語の要約\", \"tags\": [\"タグ1\", \"タグ2\"], \"category\": \"カテゴリ名1つ\"}"))
+    }
+
+    @Test
+    fun 要約だけのときはタグとカテゴリの指示を入れない() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, listOf("Android"), scope = AnalysisScope.SUMMARY)
+
+        assertTrue(prompt, prompt.contains("{\"summary\": "))
+        assertTrue(prompt, prompt.contains("要約の方針:"))
+        assertFalse(prompt, prompt.contains("tags"))
+        assertFalse(prompt, prompt.contains("category"))
+        assertFalse(prompt, prompt.contains("既存のタグ"))
+    }
+
+    @Test
+    fun タグだけのときは要約の指示を入れず_既存のタグは使い回させる() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, listOf("Android"), scope = AnalysisScope.TAGS)
+
+        assertTrue(prompt, prompt.contains("{\"tags\": [\"タグ1\", \"タグ2\"], \"category\": \"カテゴリ名1つ\"}"))
+        assertFalse(prompt, prompt.contains("summary"))
+        assertFalse(prompt, prompt.contains("要約の方針:"))
+        assertTrue(prompt, prompt.contains("既存のタグ:\n[\"Android\"]"))
     }
 
     @Test

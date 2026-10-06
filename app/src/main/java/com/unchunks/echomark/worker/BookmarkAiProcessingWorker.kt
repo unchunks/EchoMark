@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.unchunks.echomark.data.ai.LlmProviderResolver
+import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
@@ -36,7 +36,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val repository: BookmarkRepository,
-    private val llmProviderResolver: LlmProviderResolver,
+    private val bookmarkAnalyzer: BookmarkAnalyzer,
     private val embeddingProvider: EmbeddingProvider
 ) : CoroutineWorker(context, params) {
 
@@ -66,13 +66,14 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     // 既存のタグを伝え、似たタグを増やさず使い回させる
                     // 種類に合った要約にし、ファイルがあればクラウド API にそのまま渡せるようにする
                     // (渡すかどうかは設定と提供元の対応で LlmProvider が決める)
+                    // タグ付けと要約に別の AI を選んでいれば、それぞれの AI で作る
                     val input = AnalysisInput(
                         title = bookmark.title,
                         text = bookmark.content.orEmpty(),
                         kind = bookmark.contentKind(),
                         attachment = analysisAttachmentOf(bookmark, applicationContext.filesDir)
                     )
-                    val analysis = llmProviderResolver.resolve().analyze(input, repository.getTagNamesForAi())
+                    val analysis = bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi())
                     repository.updateSummary(bookmarkId, analysis.summary)
                     newSummary = analysis.summary
                     // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)

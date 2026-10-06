@@ -18,6 +18,7 @@ import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmException
@@ -166,7 +167,11 @@ class LocalLlmProvider @Inject constructor(
             }
         }
 
-    override suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
+    override suspend fun analyze(
+        input: AnalysisInput,
+        existingTags: List<String>,
+        scope: AnalysisScope
+    ): BookmarkAnalysis {
         // 端末内 AI はファイルそのものを読めない。取り出したテキストも無ければ、ファイル名だけの要約は作らない
         if (input.attachment != null && input.text.isBlank()) throw NothingToAnalyzeException()
         // 上限を超える本文は、部分ごとに要約してからまとめる
@@ -179,7 +184,7 @@ class LocalLlmProvider @Inject constructor(
             AnalysisParser.parseNotes(generateAnalysis(prompt, PART_TIMEOUT_MS))
         }
         val isLong = body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
-        val response = generateAnalysis(buildAnalyzePrompt(input, body.text, isLong, existingTags))
+        val response = generateAnalysis(buildAnalyzePrompt(input, body.text, isLong, existingTags, scope))
         return AnalysisParser.parse(response, input.combinedText())
     }
 
@@ -239,14 +244,16 @@ class LocalLlmProvider @Inject constructor(
         input: AnalysisInput,
         body: String,
         isLong: Boolean,
-        existingTags: List<String>
+        existingTags: List<String>,
+        scope: AnalysisScope
     ): String = listOf(
         AiPrompts.analyzeInstructions(
             input.kind,
             existingTags,
             summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
             maxExistingTags = AiPrompts.LOCAL_MAX_EXISTING_TAGS,
-            maxExistingTagChars = AiPrompts.LOCAL_MAX_EXISTING_TAG_CHARS
+            maxExistingTagChars = AiPrompts.LOCAL_MAX_EXISTING_TAG_CHARS,
+            scope = scope
         ),
         "",
         AiPrompts.analyzeInput(input.title, body, MAX_INPUT_CHARS)

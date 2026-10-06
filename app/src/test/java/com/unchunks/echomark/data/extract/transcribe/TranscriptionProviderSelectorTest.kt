@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.extract.transcribe
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
@@ -14,7 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** クラウドに音声を送るのは、クラウド API・送信の許可・音声に対応した提供元・キーがそろったときだけ。 */
+/** クラウドに音声を送るのは、要約にクラウド API・送信の許可・音声に対応した提供元・キーがそろったときだけ。 */
 @RunWith(AndroidJUnit4::class)
 class TranscriptionProviderSelectorTest {
 
@@ -39,13 +40,13 @@ class TranscriptionProviderSelectorTest {
     @Test
     fun 条件がそろえばクラウドの後に端末内() {
         assertEquals(listOf("openai", "on-device"), names())
-        settings.providerFlow.value = ApiProvider.GEMINI
+        runBlocking { settings.setApiProvider(AiTask.SUMMARY, ApiProvider.GEMINI) }
         assertEquals(listOf("gemini", "on-device"), names())
     }
 
     @Test
     fun Claudeは音声に対応していないので端末内だけ() {
-        settings.providerFlow.value = ApiProvider.CLAUDE
+        runBlocking { settings.setApiProvider(AiTask.SUMMARY, ApiProvider.CLAUDE) }
 
         assertEquals(listOf("on-device"), names())
     }
@@ -59,9 +60,20 @@ class TranscriptionProviderSelectorTest {
 
     @Test
     fun 端末内のAIを選んでいれば端末内だけ() {
-        settings.backendFlow.value = LlmBackend.LOCAL
+        settings.setBackendForAll(LlmBackend.LOCAL)
 
         assertEquals(listOf("on-device"), names())
+    }
+
+    @Test
+    fun 要約の設定に従い_ほかの用途の設定は見ない() = runBlocking {
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.LOCAL)
+        assertEquals(listOf("on-device"), names())
+
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+        settings.setLlmBackend(AiTask.TAGGING, LlmBackend.LOCAL)
+        settings.setApiProvider(AiTask.CHAT, ApiProvider.CLAUDE)
+        assertEquals(listOf("openai", "on-device"), names())
     }
 
     @Test

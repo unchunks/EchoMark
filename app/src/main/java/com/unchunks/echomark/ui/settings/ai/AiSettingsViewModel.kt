@@ -9,6 +9,8 @@ import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
+import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -36,19 +38,50 @@ sealed interface ConnectionTestState {
 }
 
 data class AiSettingsUiState(
-    val backend: LlmBackend = LlmBackend.LOCAL,
+    /** 用途ごとの設定(実行場所・提供元・モデル) */
+    val tasks: Map<AiTask, AiTaskSetting> = AiTask.entries.associateWith { AiTaskSetting() },
     val localModel: LocalModelInfo? = null,
     val importState: ModelImportState = ModelImportState.Idle,
-    val apiProvider: ApiProvider = ApiProvider.CLAUDE,
-    /** 提供元ごとのモデル ID */
-    val apiModels: Map<ApiProvider, String> = emptyMap(),
+    /** API キーを入力・確認する提供元(キーは提供元ごとに1つで、用途の選択とは別) */
+    val keyProvider: ApiProvider = ApiProvider.CLAUDE,
     /** API キーが保存済みの提供元 */
     val configuredProviders: Set<ApiProvider> = emptySet(),
     /** クラウド API にファイル(画像・PDF・音声・動画)そのものも送って解析するか */
     val sendFilesToCloud: Boolean = true
 ) {
-    val selectedModel: String get() = apiModels[apiProvider] ?: apiProvider.defaultModel
-    val isKeyConfigured: Boolean get() = apiProvider in configuredProviders
+    fun setting(task: AiTask): AiTaskSetting = tasks[task] ?: AiTaskSetting()
+
+    /** [task] に選んだ実行場所に必要なもの(端末内モデル・API キー)がそろっているか */
+    fun isReady(task: AiTask): Boolean {
+        val setting = setting(task)
+        return when (setting.backend) {
+            LlmBackend.LOCAL -> localModel != null
+            LlmBackend.API -> setting.apiProvider in configuredProviders
+        }
+    }
+
+    /** 端末内で動かす用途があるか */
+    val usesLocal: Boolean get() = AiTask.entries.any { setting(it).backend == LlmBackend.LOCAL }
+
+    /** クラウド API を使う用途 */
+    val apiTasks: List<AiTask> get() = AiTask.entries.filter { setting(it).backend == LlmBackend.API }
+
+    /** ファイルを送りうる用途(タグ付け・要約)で使う提供元。重複なし */
+    val analysisApiProviders: List<ApiProvider>
+        get() = listOf(AiTask.SUMMARY, AiTask.TAGGING).map(::setting)
+            .filter { it.backend == LlmBackend.API }
+            .map { it.apiProvider }
+            .distinct()
+
+    /** タグ付けと要約が別の AI で、1件につき2回推論するか */
+    val analyzesSeparately: Boolean get() = !setting(AiTask.TAGGING).sameEngineAs(setting(AiTask.SUMMARY))
+
+    val isKeyConfigured: Boolean get() = keyProvider in configuredProviders
+
+    /** 接続テストに使うモデル。[keyProvider] を選んでいる用途があればそのモデル、無ければ提供元の既定 */
+    val testModel: String
+        get() = apiTasks.map(::setting).firstOrNull { it.apiProvider == keyProvider }?.apiModel
+            ?: keyProvider.defaultModel
 }
 
 @HiltViewModel
@@ -60,19 +93,23 @@ class AiSettingsViewModel @Inject constructor(
     private val bookmarkRepository: BookmarkRepository
 ) : ViewModel() {
 
+    /** キーを入力する提供元として選ばれたもの。未選択なら、クラウド API を使う用途の提供元を出す */
+    private val selectedKeyProvider = MutableStateFlow<ApiProvider?>(null)
+
     val uiState: StateFlow<AiSettingsUiState> = combine(
-        appSettings.llmBackend,
+        appSettings.aiTaskSettings,
         combine(modelManager.installedModel, modelManager.importState, ::Pair),
-        appSettings.apiProvider,
-        combine(appSettings.apiModels, appSettings.sendFilesToCloud, ::Pair),
+        selectedKeyProvider,
+        appSettings.sendFilesToCloud,
         apiKeyRepository.configuredProviders
-    ) { backend, (model, import), provider, (models, sendFiles), configured ->
+    ) { tasks, (model, import), keyProvider, sendFiles, configured ->
         AiSettingsUiState(
-            backend = backend,
+            tasks = tasks,
             localModel = model,
             importState = import,
-            apiProvider = provider,
-            apiModels = models,
+            keyProvider = keyProvider
+                ?: AiTask.entries.mapNotNull { tasks[it] }.firstOrNull { it.backend == LlmBackend.API }?.apiProvider
+                ?: ApiProvider.CLAUDE,
             configuredProviders = configured,
             sendFilesToCloud = sendFiles
         )
@@ -87,18 +124,25 @@ class AiSettingsViewModel @Inject constructor(
 
     private var testJob: Job? = null
 
-    fun setBackend(backend: LlmBackend) {
-        viewModelScope.launch { appSettings.setLlmBackend(backend) }
+    fun setBackend(task: AiTask, backend: LlmBackend) {
+        viewModelScope.launch { appSettings.setLlmBackend(task, backend) }
     }
 
-    fun setApiProvider(provider: ApiProvider) {
-        _connectionTest.value = ConnectionTestState.Idle
-        viewModelScope.launch { appSettings.setApiProvider(provider) }
+    /** [task] の提供元を選ぶ。キーの入力欄もその提供元に合わせる(未設定ならすぐ入力できるように) */
+    fun setApiProvider(task: AiTask, provider: ApiProvider) {
+        selectKeyProvider(provider)
+        viewModelScope.launch { appSettings.setApiProvider(task, provider) }
     }
 
-    fun setApiModel(provider: ApiProvider, modelId: String) {
+    fun setApiModel(task: AiTask, provider: ApiProvider, modelId: String) {
         _connectionTest.value = ConnectionTestState.Idle
-        viewModelScope.launch { appSettings.setApiModel(provider, modelId) }
+        viewModelScope.launch { appSettings.setApiModel(task, provider, modelId) }
+    }
+
+    /** API キーを入力・確認する提供元を選ぶ。 */
+    fun selectKeyProvider(provider: ApiProvider) {
+        if (uiState.value.keyProvider != provider) _connectionTest.value = ConnectionTestState.Idle
+        selectedKeyProvider.value = provider
     }
 
     fun setSendFilesToCloud(enabled: Boolean) {
@@ -130,11 +174,11 @@ class AiSettingsViewModel @Inject constructor(
     fun testConnection(typedKey: String) {
         if (_connectionTest.value == ConnectionTestState.Running) return
         val state = uiState.value
-        val provider = state.apiProvider
+        val provider = state.keyProvider
         _connectionTest.value = ConnectionTestState.Running
         testJob = viewModelScope.launch {
             _connectionTest.value = try {
-                apiLlmProvider.testConnection(provider, state.selectedModel, typedKey.ifBlank { null })
+                apiLlmProvider.testConnection(provider, state.testModel, typedKey.ifBlank { null })
                 ConnectionTestState.Success(provider)
             } catch (e: CancellationException) {
                 throw e

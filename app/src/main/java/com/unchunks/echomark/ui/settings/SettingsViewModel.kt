@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.BuildConfig
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupImportSummary
@@ -33,30 +35,51 @@ import javax.inject.Inject
 
 /** 設定画面の「AI」行に出す、今の AI の状態。 */
 data class AiSummary(
-    val backend: LlmBackend = LlmBackend.LOCAL,
+    /** 用途ごとの設定 */
+    val tasks: Map<AiTask, AiTaskSetting> = AiTask.entries.associateWith { AiTaskSetting() },
     /** 取り込み済みの端末内モデルの表示名(拡張子なし)。未取り込みなら null */
     val localModelName: String? = null,
-    val apiProvider: ApiProvider = ApiProvider.CLAUDE,
-    val apiModel: String = ApiProvider.CLAUDE.defaultModel,
-    val apiKeyConfigured: Boolean = false
+    /** API キーが保存済みの提供元 */
+    val configuredProviders: Set<ApiProvider> = emptySet()
 ) {
-    /** 要約・チャットをすぐ使える状態か */
-    val isReady: Boolean
-        get() = when (backend) {
-            LlmBackend.LOCAL -> localModelName != null
-            LlmBackend.API -> apiKeyConfigured
+    private fun setting(task: AiTask): AiTaskSetting = tasks[task] ?: AiTaskSetting()
+
+    private fun isReady(setting: AiTaskSetting): Boolean = when (setting.backend) {
+        LlmBackend.LOCAL -> localModelName != null
+        LlmBackend.API -> setting.apiProvider in configuredProviders
+    }
+
+    /** タグ付け・要約・チャットのすべてをすぐ使える状態か */
+    val isReady: Boolean get() = AiTask.entries.all { isReady(setting(it)) }
+
+    /** 使っている実行場所(用途ごとに違えば両方) */
+    val backends: Set<LlmBackend> get() = AiTask.entries.mapTo(mutableSetOf()) { setting(it).backend }
+
+    /**
+     * 全用途が同じ AI なら 例: 「端末内: gemma3-1b-it-int4」「Claude API(claude-opus-5-5)」「未設定(…)」。
+     * 用途ごとに違えば 例: 「タグ付け: 端末内 / 要約: Claude(claude-opus-5-5) / チャット: 未設定(…)」
+     */
+    val label: String
+        get() {
+            val first = setting(AiTask.entries.first())
+            if (AiTask.entries.all { setting(it).sameEngineAs(first) }) return fullLabel(first)
+            return AiTask.entries.joinToString(" / ") { "${it.label}: ${shortLabel(setting(it))}" }
         }
 
-    /** 例: 「端末内: gemma3-1b-it-int4」「Claude API(claude-opus-5-5)」「未設定(…)」 */
-    val label: String
-        get() = when (backend) {
-            LlmBackend.LOCAL -> localModelName?.let { "端末内: $it" } ?: "未設定(端末内モデルが未取り込み)"
-            LlmBackend.API -> if (apiKeyConfigured) {
-                "${apiProvider.shortName} API($apiModel)"
-            } else {
-                "未設定(${apiProvider.shortName} の API キーが未入力)"
-            }
+    private fun fullLabel(setting: AiTaskSetting): String = when (setting.backend) {
+        LlmBackend.LOCAL -> localModelName?.let { "端末内: $it" } ?: "未設定(端末内モデルが未取り込み)"
+        LlmBackend.API -> if (isReady(setting)) {
+            "${setting.apiProvider.shortName} API(${setting.apiModel})"
+        } else {
+            "未設定(${setting.apiProvider.shortName} の API キーが未入力)"
         }
+    }
+
+    private fun shortLabel(setting: AiTaskSetting): String = when {
+        !isReady(setting) -> fullLabel(setting)
+        setting.backend == LlmBackend.LOCAL -> "端末内"
+        else -> "${setting.apiProvider.shortName}(${setting.apiModel})"
+    }
 }
 
 /** 「Claude (Anthropic)」→「Claude」 */
@@ -95,18 +118,14 @@ class SettingsViewModel @Inject constructor(
     private val dataOperation = MutableStateFlow<DataOperationState>(DataOperationState.Idle)
 
     private val aiSummary = combine(
-        appSettings.llmBackend,
-        appSettings.apiProvider,
-        appSettings.apiModels,
+        appSettings.aiTaskSettings,
         apiKeyRepository.configuredProviders,
         modelManager.installedModel
-    ) { backend, provider, models, configured, model ->
+    ) { tasks, configured, model ->
         AiSummary(
-            backend = backend,
+            tasks = tasks,
             localModelName = model?.displayName?.let(::modelDisplayName),
-            apiProvider = provider,
-            apiModel = models[provider] ?: provider.defaultModel,
-            apiKeyConfigured = provider in configured
+            configuredProviders = configured
         )
     }
 

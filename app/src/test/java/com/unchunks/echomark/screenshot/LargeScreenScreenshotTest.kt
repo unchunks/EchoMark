@@ -31,6 +31,7 @@ import com.unchunks.echomark.ui.share.ShareSheetContent
 import com.unchunks.echomark.ui.share.SharedContent
 import com.unchunks.echomark.ui.tags.TagManagementContent
 import com.unchunks.echomark.ui.tags.TagManagementUiState
+import com.unchunks.echomark.testing.aiTasks
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -71,10 +72,8 @@ class LargeScreenScreenshotTest {
     private val settingsState = SettingsUiState(
         isLoaded = true,
         ai = AiSummary(
-            backend = LlmBackend.API,
-            apiProvider = ApiProvider.CLAUDE,
-            apiModel = "claude-opus-5-5",
-            apiKeyConfigured = true
+            tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE),
+            configuredProviders = setOf(ApiProvider.CLAUDE)
         ),
         themeMode = ThemeMode.SYSTEM,
         dynamicColor = false,
@@ -99,15 +98,14 @@ class LargeScreenScreenshotTest {
     @Composable
     private fun AiSettingsScreen() = AiSettingsContent(
         uiState = AiSettingsUiState(
-            backend = LlmBackend.API,
+            tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE),
             localModel = LocalModelInfo(
                 fileName = "local_llm.task",
                 displayName = "gemma3-1b-it-int4.task",
                 sizeBytes = 555_000_000,
                 importedAt = 1_790_000_000_000L
             ),
-            apiProvider = ApiProvider.CLAUDE,
-            apiModels = ApiProvider.entries.associateWith { it.defaultModel },
+            keyProvider = ApiProvider.CLAUDE,
             configuredProviders = setOf(ApiProvider.CLAUDE)
         ),
         connectionTest = ConnectionTestState.Success(ApiProvider.CLAUDE),

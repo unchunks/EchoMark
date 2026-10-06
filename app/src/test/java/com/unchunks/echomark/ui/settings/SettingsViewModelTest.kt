@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.DataOperationException
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -53,7 +54,7 @@ class SettingsViewModelTest {
 
     @Test
     fun 読み込み後にAIの状態_表示設定_ストレージが反映される() = runTest {
-        settings.backendFlow.value = LlmBackend.API
+        settings.setBackendForAll(LlmBackend.API)
         settings.themeModeFlow.value = ThemeMode.DARK
         apiKeys.setKey(ApiProvider.CLAUDE, "sk-test")
         val viewModel = createViewModel()
@@ -78,10 +79,30 @@ class SettingsViewModelTest {
         assertFalse(viewModel.uiState.value.ai.isReady)
         assertEquals("未設定(端末内モデルが未取り込み)", viewModel.uiState.value.ai.label)
 
-        settings.backendFlow.value = LlmBackend.API
-        settings.providerFlow.value = ApiProvider.GEMINI
+        settings.setBackendForAll(LlmBackend.API)
+        AiTask.entries.forEach { settings.setApiProvider(it, ApiProvider.GEMINI) }
         advanceUntilIdle()
         assertEquals("未設定(Gemini の API キーが未入力)", viewModel.uiState.value.ai.label)
+    }
+
+    @Test
+    fun 用途ごとにAIが違えば用途ごとに表示し_すべて使えるときだけ準備完了() = runTest {
+        apiKeys.setKey(ApiProvider.CLAUDE, "sk-test")
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+        settings.setLlmBackend(AiTask.CHAT, LlmBackend.API)
+        settings.setApiProvider(AiTask.CHAT, ApiProvider.OPENAI)
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val ai = viewModel.uiState.value.ai
+        assertFalse(ai.isReady)
+        assertEquals(setOf(LlmBackend.LOCAL, LlmBackend.API), ai.backends)
+        assertEquals(
+            "タグ付け: 未設定(端末内モデルが未取り込み) / 要約: Claude(claude-opus-5-5) / " +
+                "チャット: 未設定(OpenAI の API キーが未入力)",
+            ai.label
+        )
     }
 
     @Test
