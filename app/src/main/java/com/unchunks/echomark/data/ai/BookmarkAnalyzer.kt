@@ -7,6 +7,7 @@ import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
+import com.unchunks.echomark.domain.repository.LlmBackend
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
@@ -31,8 +32,16 @@ class BookmarkAnalyzer @Inject constructor(
 
         val summarizer = resolver.resolve(AiTask.SUMMARY)
         val tagger = resolver.resolve(AiTask.TAGGING)
-        val summarized = summarizer.analyze(input, existingTags, AnalysisScope.SUMMARY)
-        val tagged = tagger.analyze(input, existingTags, AnalysisScope.TAGS)
-        return BookmarkAnalysis(summary = summarized.summary, tags = tagged.tags, category = tagged.category)
+        // 端末内の推論を先にする。モデル未取り込み・ファイルを読めないなどで失敗しても、
+        // クラウド API の呼び出し(料金)を無駄にしない(片方の結果だけでは保存しないため)
+        return if (tagging.backend == LlmBackend.LOCAL) {
+            val tagged = tagger.analyze(input, existingTags, AnalysisScope.TAGS)
+            val summarized = summarizer.analyze(input, existingTags, AnalysisScope.SUMMARY)
+            BookmarkAnalysis(summary = summarized.summary, tags = tagged.tags, category = tagged.category)
+        } else {
+            val summarized = summarizer.analyze(input, existingTags, AnalysisScope.SUMMARY)
+            val tagged = tagger.analyze(input, existingTags, AnalysisScope.TAGS)
+            BookmarkAnalysis(summary = summarized.summary, tags = tagged.tags, category = tagged.category)
+        }
     }
 }

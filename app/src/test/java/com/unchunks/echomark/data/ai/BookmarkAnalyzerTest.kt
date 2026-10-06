@@ -8,6 +8,7 @@ import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
+import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
@@ -93,13 +94,30 @@ class BookmarkAnalyzerTest {
         assertTrue(local.scopes.isEmpty())
     }
 
-    /** 呼び出された範囲を記録し、[name] 入りの結果を返す LLM。 */
+    @Test
+    fun 端末内とクラウドAPIに分けたときは端末内を先にし_失敗したらクラウドAPIを呼ばない() = runBlocking {
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+        local.failure = ModelNotAvailableException()
+
+        try {
+            analyzer.analyze(input, emptyList())
+            fail("例外が投げられるはず")
+        } catch (e: ModelNotAvailableException) {
+            // 端末内モデルが無い
+        }
+        assertEquals(listOf(AnalysisScope.TAGS), local.scopes)
+        assertTrue(apiByTask.getValue(AiTask.SUMMARY).scopes.isEmpty())
+    }
+
+    /** 呼び出された範囲を記録し、[name] 入りの結果を返す LLM。[failure] があれば記録した後に投げる。 */
     private class RecordingLlm(private val name: String) : LlmProvider {
         val scopes = mutableListOf<AnalysisScope>()
         var lastExistingTags: List<String>? = null
+        var failure: Exception? = null
 
         override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis {
             scopes += scope
+            failure?.let { throw it }
             lastExistingTags = existingTags
             return BookmarkAnalysis("${name}の要約", listOf("${name}のタグ"), "${name}のカテゴリ")
         }
