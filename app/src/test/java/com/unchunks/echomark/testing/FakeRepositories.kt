@@ -100,6 +100,9 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?) =
         updateBookmark(id) { it.copy(imageUrl = imageUrl, siteName = siteName) }
 
+    override suspend fun markContentFetched(id: Long, fetchedAt: Long) =
+        updateBookmark(id) { it.copy(contentFetchedAt = fetchedAt) }
+
     private fun updateBookmark(id: Long, transform: (Bookmark) -> Bookmark) {
         bookmarks.value = bookmarks.value.map { if (it.id == id) transform(it) else it }
     }

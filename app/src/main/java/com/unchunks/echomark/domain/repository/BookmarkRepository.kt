@@ -60,6 +60,8 @@ interface BookmarkRepository {
     suspend fun setArchived(id: Long, isArchived: Boolean)
     /** リンク先から取得した OG 画像 URL・サイト名を保存する(取得できなかった項目は null)。 */
     suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?)
+    /** URL の本文(リンク先)を取得できたことを記録する。記録の無い URL は再処理で本文の取得からやり直す。 */
+    suspend fun markContentFetched(id: Long, fetchedAt: Long)
     /** 保存したファイルの情報を差し替える(リンク先が PDF・画像などで、ダウンロードして保存したとき)。null ならファイルなしにする。 */
     suspend fun updateAttachment(id: Long, attachment: StoredAttachment?)
 

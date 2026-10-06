@@ -219,6 +219,31 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate10To11_urlsWithContentAreTreatedAsFetched() {
+        helper.createDatabase(10).apply {
+            execSQL(
+                """
+                INSERT INTO bookmarks (id, type, content, contentUri, title, createdAt, lastAccessedAt, aiStatus)
+                VALUES (1, 'URL', '本文', 'https://example.com/a', 'a', 100, 100, 'DONE'),
+                       (2, 'URL', NULL, 'https://example.com/b', 'b', 200, 200, 'DONE'),
+                       (3, 'URL', '  ', 'https://example.com/c', 'c', 300, 300, 'DONE'),
+                       (4, 'TEXT', 'メモ', NULL, 'd', 400, 400, 'DONE')
+                """.trimIndent()
+            )
+            close()
+        }
+
+        // スキーマ v11 と一致するか(列・既定値・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(11, listOf(MIGRATION_10_11))
+
+        val fetchedAt = connection.prepare("SELECT contentFetchedAt FROM bookmarks ORDER BY id").use { stmt ->
+            buildList { while (stmt.step()) add(if (stmt.isNull(0)) null else stmt.getLong(0)) }
+        }
+        assertEquals(listOf(100L, null, null, null), fetchedAt)
+        connection.close()
+    }
+
+    @Test
     fun migrate6To10_roomOpensWithAppMigrations() = runTest {
         helper.createDatabase(6).apply {
             insertV6Bookmark()

@@ -110,9 +110,9 @@ class BookmarkRepositoryImpl @Inject constructor(
      * 処理をやり直す(再処理・復元・モデル待ちからの再開など)。同じブックマークの処理は置き換える。
      * 本文が未取得の URL は本文の取得から、ファイルのあるものは中身の取り出しから、それ以外は AI 処理のみ
      */
-    private suspend fun enqueueReprocessing(bookmarkId: Long, type: BookmarkType, content: String?, filePath: String?) {
-        val target = reprocessTarget(bookmarkId, type, content, filePath)
-        workScheduler.enqueue(bookmarkId, fetchContent = target.fetchContent, extractContent = target.extractContent)
+    private suspend fun enqueueReprocessing(bookmark: Bookmark) {
+        val target = with(bookmark) { reprocessTarget(id, type, content, filePath, contentFetchedAt) }
+        workScheduler.enqueue(bookmark.id, fetchContent = target.fetchContent, extractContent = target.extractContent)
     }
 
     /**
@@ -132,7 +132,9 @@ class BookmarkRepositoryImpl @Inject constructor(
     /** 状態を「処理待ち」に戻し、1件ずつ順番に処理する列に積む(一括の再処理。同時に API を呼びすぎない) */
     private suspend fun enqueueSequentialProcessing(ids: List<Long>) {
         val targets = ids.chunked(ID_QUERY_CHUNK_SIZE).flatMap { chunk ->
-            bookmarkDao.getByIds(chunk).map { reprocessTarget(it.id, it.type, it.content, it.filePath) }
+            bookmarkDao.getByIds(chunk).map {
+                reprocessTarget(it.id, it.type, it.content, it.filePath, it.contentFetchedAt)
+            }
         }
         targets.forEach { bookmarkDao.updateAiStatus(it.bookmarkId, AiStatus.PENDING) }
         workScheduler.enqueueSequential(targets)
@@ -143,9 +145,10 @@ class BookmarkRepositoryImpl @Inject constructor(
         bookmarkId: Long,
         type: BookmarkType,
         content: String?,
-        filePath: String?
+        filePath: String?,
+        contentFetchedAt: Long?
     ): BookmarkWorkScheduler.Target {
-        val fetch = needsContentFetch(type, content)
+        val fetch = needsContentFetch(type, content, contentFetchedAt)
         return BookmarkWorkScheduler.Target(
             bookmarkId,
             fetchContent = fetch,
@@ -155,10 +158,11 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     /**
      * 本文を取得してから AI 処理すべきか。保存時に取得できなかった・バックアップから本文未取得のまま読み込んだ URL は、
-     * そのままでは URL の文字列だけを要約してしまうため、本文の取得からやり直す
+     * そのままでは URL の文字列(メモがあればメモだけ)を要約してしまうため、本文の取得からやり直す。
+     * メモを付けて保存した URL は本文が空にならないので、取得できたかは [contentFetchedAt] で判断する
      */
-    private fun needsContentFetch(type: BookmarkType, content: String?): Boolean =
-        type == BookmarkType.URL && content.isNullOrBlank()
+    private fun needsContentFetch(type: BookmarkType, content: String?, contentFetchedAt: Long?): Boolean =
+        type == BookmarkType.URL && (contentFetchedAt == null || content.isNullOrBlank())
 
     /** 中身を取り出す(OCR・PDF のテキスト・文字起こし)ファイルがあるか。テキストファイルは保存時に本文へ入れている */
     private fun hasExtractableFile(type: BookmarkType, filePath: String?): Boolean =
@@ -238,7 +242,7 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             val bookmark = bookmarkDao.getById(id) ?: return@withContext
             bookmarkDao.resetAiResult(id, AiStatus.PENDING)
-            enqueueReprocessing(id, bookmark.type, bookmark.content, bookmark.filePath)
+            enqueueReprocessing(bookmark.toDomain())
         }
 
     override suspend fun restoreBookmark(bookmark: Bookmark) {
@@ -249,7 +253,7 @@ class BookmarkRepositoryImpl @Inject constructor(
             val (aiTags, userTags) = bookmark.tags.partition { it in bookmark.aiTags }
             tagDao.addTagsToBookmark(bookmark.id, userTags, TagSource.USER)
             tagDao.addTagsToBookmark(bookmark.id, aiTags, TagSource.AI)
-            enqueueReprocessing(bookmark.id, bookmark.type, bookmark.content, bookmark.filePath)
+            enqueueReprocessing(bookmark)
         }
     }
 
@@ -286,6 +290,11 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?) =
         withContext(dispatcherProvider.io) {
             bookmarkDao.updateLinkMetadata(id, imageUrl, siteName)
+        }
+
+    override suspend fun markContentFetched(id: Long, fetchedAt: Long) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.updateContentFetchedAt(id, fetchedAt)
         }
 
     override suspend fun updateAttachment(id: Long, attachment: StoredAttachment?) =
