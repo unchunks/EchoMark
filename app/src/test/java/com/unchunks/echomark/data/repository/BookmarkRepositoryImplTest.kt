@@ -368,6 +368,19 @@ class BookmarkRepositoryImplTest {
     }
 
     @Test
+    fun 関連ブックマークは近い順に並ぶ() = runBlocking {
+        val self = repository.saveBookmark(textBookmark("自分"))
+        // ID の小さいほうを遠くし、ID 順と近い順を逆にする
+        val far = repository.saveBookmark(textBookmark("遠い"))
+        val near = repository.saveBookmark(textBookmark("近い"))
+        repository.saveEmbedding(self, vector, "v1")
+        repository.saveEmbedding(far, FloatArray(768) { if (it <= 1) 1f else 0f }, "v1")
+        repository.saveEmbedding(near, FloatArray(768) { if (it == 0) 1f else if (it == 1) 0.1f else 0f }, "v1")
+
+        assertEquals(listOf(near, far), repository.getRelatedBookmarks(self, limit = 5).map { it.id })
+    }
+
+    @Test
     fun 中断された処理中の状態は処理待ちに戻す() = runBlocking {
         val id = db.bookmarkDao().insert(textBookmark().copy(aiStatus = AiStatus.PROCESSING).toEntity())
 

@@ -355,7 +355,9 @@ class BookmarkRepositoryImpl @Inject constructor(
                 .filter { it != bookmarkId } // 自分自身を除外
                 .take(limit)
 
-            bookmarkDao.getByIds(relatedIds).map { it.toDomain() }
+            // IN 句の結果は ID 順で返るため、近い順に並べ直す
+            val byId = bookmarkDao.getByIds(relatedIds).associateBy { it.id }
+            relatedIds.mapNotNull { byId[it] }.map { it.toDomain() }
         }
 
     override suspend fun getEmbeddingModelVersion(bookmarkId: Long): String? =
