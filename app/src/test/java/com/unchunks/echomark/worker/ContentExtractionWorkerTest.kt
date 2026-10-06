@@ -151,6 +151,23 @@ class ContentExtractionWorkerTest {
     }
 
     @Test
+    fun アプリの領域の外を指すパスのファイルは読まない() {
+        // filesDir の外(親ディレクトリ)に実在するファイル
+        val outside = File(context.filesDir.parentFile, "outside.pdf").apply { writeBytes(byteArrayOf(1)) }
+        try {
+            repository.bookmarks.value = listOf(pdfBookmark(filePath = "../outside.pdf"))
+            extractor.result = ExtractedContent.of("本文", ExtractionSource.PDF_TEXT)
+
+            assertEquals(ListenableWorker.Result.success(), runWorker())
+
+            assertTrue(extractor.calls.isEmpty())
+            assertNull(saved().content)
+        } finally {
+            outside.delete()
+        }
+    }
+
+    @Test
     fun 長い処理はフォアグラウンドにしてから取り出す() {
         repository.bookmarks.value = listOf(pdfBookmark())
         extractor.longRunning = true

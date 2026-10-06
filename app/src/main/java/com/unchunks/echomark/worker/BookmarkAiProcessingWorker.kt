@@ -192,10 +192,18 @@ internal fun classifyAnalysisError(e: Exception): AnalysisOutcome = when (e) {
 internal fun analysisAttachmentOf(bookmark: Bookmark, filesDir: File): AnalysisAttachment? {
     val relativePath = bookmark.filePath?.takeIf { it.isNotBlank() } ?: return null
     val mimeType = bookmark.mimeType?.takeIf { it.isNotBlank() } ?: return null
+    val file = attachmentFileOf(filesDir, relativePath) ?: return null
+    return AnalysisAttachment(path = file.absolutePath, mimeType = mimeType, sizeBytes = file.length())
+}
+
+/**
+ * ブックマークの [relativePath](filesDir からの相対パス)が指すファイル。アプリの領域の外を指す・ファイルが無いときは null
+ * (バックアップの復元などで不正な値が入っても、領域の外のファイルは読まない)。
+ */
+internal fun attachmentFileOf(filesDir: File, relativePath: String): File? {
     val root = filesDir.canonicalFile
     val file = File(root, relativePath).canonicalFile
-    if (!file.startsWith(root) || !file.isFile) return null
-    return AnalysisAttachment(path = file.absolutePath, mimeType = mimeType, sizeBytes = file.length())
+    return file.takeIf { it.startsWith(root) && it.isFile }
 }
 
 /**

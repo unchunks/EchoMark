@@ -22,7 +22,6 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 import timber.log.Timber
-import java.io.File
 
 /**
  * 保存したファイル(画像・PDF・音声・動画・テキスト)から、要約に使うテキストを取り出して本文に保存する。
@@ -49,8 +48,9 @@ class ContentExtractionWorker @AssistedInject constructor(
         val filePath = bookmark?.filePath
         // URL のチェーンでは毎回この段を通る。リンク先が HTML(ファイルなし)なら何もしない
         if (filePath == null) return Result.success()
-        val file = File(applicationContext.filesDir, filePath)
-        if (!file.isFile) {
+        // アプリの領域の外を指すパスは読まない(AI 処理と同じ確認)
+        val file = attachmentFileOf(applicationContext.filesDir, filePath)
+        if (file == null) {
             Timber.w("ContentExtractionWorker: ファイルがありません id=%d", bookmarkId)
             return Result.success()
         }
