@@ -26,7 +26,7 @@ class BackupJsonTest {
                 id = 1, type = BookmarkType.URL, content = "本文\n\"引用\"つき", contentUri = "https://example.com/a",
                 title = "記事A", summary = "要約", category = "技術", createdAt = 100, lastAccessedAt = 200,
                 aiStatus = AiStatus.DONE, imageUrl = "https://example.com/og.png", siteName = "Example",
-                isFavorite = true, isArchived = false
+                isFavorite = true, isArchived = false, contentFetchedAt = 150
             ),
             BookmarkEntity(
                 id = 2, type = BookmarkType.TEXT, content = null, contentUri = null, title = "メモ",
@@ -125,6 +125,20 @@ class BackupJsonTest {
         assertNull(bookmark.mimeType)
         assertNull(bookmark.fileName)
         assertNull(bookmark.fileSize)
+    }
+
+    @Test
+    fun 本文の取得日時の無い古い版は_本文のあるURLだけ取得済みとして読む() {
+        val text = """
+            {"format":"echomark-backup","version":4,"exportedAt":1,
+             "bookmarks":[
+               {"id":1,"type":"URL","contentUri":"https://example.com/a","content":"本文","title":"a","createdAt":10},
+               {"id":2,"type":"URL","contentUri":"https://example.com/b","title":"b","createdAt":20},
+               {"id":3,"type":"TEXT","content":"メモ","title":"c","createdAt":30}]}
+        """.trimIndent()
+        val bookmarks = BackupJson.decode(text).data.bookmarks
+
+        assertEquals(listOf(10L, null, null), bookmarks.map { it.contentFetchedAt })
     }
 
     @Test

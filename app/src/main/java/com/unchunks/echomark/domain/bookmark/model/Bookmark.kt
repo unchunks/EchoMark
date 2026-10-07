@@ -29,5 +29,7 @@ data class Bookmark(
     /** 元のファイル名(共有・選択されたときの名前)。表示用 */
     val fileName: String? = null,
     /** ファイルのサイズ(バイト)。表示用 */
-    val fileSize: Long? = null
+    val fileSize: Long? = null,
+    /** URL の本文(リンク先)を取得できた日時。未取得・取得に失敗したままなら null(再処理で取得し直す) */
+    val contentFetchedAt: Long? = null
 )

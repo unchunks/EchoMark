@@ -56,8 +56,24 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
+/**
+ * v10 → v11: URL の本文を取得できた日時(contentFetchedAt)を追加。
+ * これまでは本文があれば取得済みとみなしていたため、本文のある URL は保存日時で取得済みにする
+ * (本文の無いものは未取得のまま。再処理で取得し直す)。
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `contentFetchedAt` INTEGER")
+        db.execSQL(
+            "UPDATE `bookmarks` SET `contentFetchedAt` = `createdAt` " +
+                "WHERE `type` = 'URL' AND `content` IS NOT NULL AND TRIM(`content`) != ''"
+        )
+    }
+}
+
 /** アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。 */
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+val ALL_MIGRATIONS: Array<Migration> =
+    arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
 
 /** 正式なマイグレーションを用意していない古いバージョン(開発初期)。ここからの更新だけはデータを作り直す。 */
 val DESTRUCTIVE_MIGRATION_FROM_VERSIONS: IntArray = intArrayOf(1, 2, 3, 4, 5)

@@ -60,6 +60,10 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET imageUrl = :imageUrl, siteName = :siteName WHERE id = :id")
     suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?)
 
+    /** URL の本文を取得できた日時を記録する(再処理で取得し直すかの判断に使う) */
+    @Query("UPDATE bookmarks SET contentFetchedAt = :fetchedAt WHERE id = :id")
+    suspend fun updateContentFetchedAt(id: Long, fetchedAt: Long)
+
     /** 保存したファイルの情報を差し替える(リンク先からファイルをダウンロードしたときなど) */
     @Query(
         "UPDATE bookmarks SET filePath = :filePath, mimeType = :mimeType, fileName = :fileName, fileSize = :fileSize " +

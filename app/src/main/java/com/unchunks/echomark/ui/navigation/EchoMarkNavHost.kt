@@ -47,7 +47,6 @@ import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
-import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -90,6 +89,27 @@ internal const val CHAT_NEW_ROUTE = "chat/new"
 internal const val CHAT_CONVERSATION_ROUTE = "chat/{${ChatViewModel.ARG_CONVERSATION_ID}}"
 
 private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
+
+/**
+ * 表示中の画面 [currentRoute] がどのタブに属するか(タブを選択状態にする)。
+ * タブのサブ画面("settings/ai"・"chat/new" など)はルートの先頭で決める。詳細・タグ管理のようにどのタブからも開く画面は、
+ * 開いたタブで決める(タブの切り替えは開始画面の上に1つのタブだけを積むので、積み重ねにある開始画面以外のタブ、無ければ開始画面)。
+ * @param isInBackStack ルートの画面が積み重ねにあるか
+ */
+internal fun selectedTopLevelRoute(currentRoute: String?, isInBackStack: (String) -> Boolean): String? {
+    if (currentRoute == null) return null
+    TopLevelDestination.entries
+        .firstOrNull { currentRoute == it.route || currentRoute.startsWith(it.route + "/") }
+        ?.let { return it.route }
+    return TopLevelDestination.entries
+        .filter { it != TopLevelDestination.BOOKMARKS }
+        .firstOrNull { isInBackStack(it.route) }?.route
+        ?: TopLevelDestination.BOOKMARKS.route
+}
+
+/** [route] の画面が積み重ねにあるか */
+private fun NavController.isInBackStack(route: String): Boolean =
+    runCatching { getBackStackEntry(route) }.isSuccess
 
 /** トップレベル画面(ボトムバーを出す画面)か。起動直後で未確定(null)のときも出しておく */
 private fun NavDestination?.isTopLevel(): Boolean = this == null || route in topLevelRoutes
@@ -169,9 +189,9 @@ fun EchoMarkNavHost(
     EchoMarkAppScaffold(
         showNavigation = currentDestination.showsNavigation(layout.navigation),
         navigation = layout.navigation,
-        selectedRoute = TopLevelDestination.entries.firstOrNull { destination ->
-            currentDestination?.hierarchy?.any { it.route == destination.route } == true
-        }?.route,
+        selectedRoute = selectedTopLevelRoute(currentDestination?.route) { route ->
+            navController.isInBackStack(route)
+        },
         onNavigate = { route -> navController.navigateToTopLevel(route) }
     ) { contentModifier ->
         NavHost(
@@ -368,9 +388,17 @@ internal fun <T> dropUnlessResumedWith(block: (T) -> Unit): (T) -> Unit {
     return { value -> if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) block(value) }
 }
 
-/** ボトムバーのタブ [route] を開く。タブごとの画面の積み重ねは保存し、戻ってきたときに復元する */
+/**
+ * ボトムバーのタブ [route] を開く。タブごとの画面の積み重ねは保存し、戻ってきたときに復元する。
+ * 表示中のタブをもう一度押したときは、そのタブの最初の画面に戻る(サブ画面でもタブを出すナビゲーションレール向け)。
+ */
 internal fun NavController.navigateToTopLevel(route: String) {
     val startDestination = graph.findStartDestination()
+    if (route != startDestination.route && currentDestination?.route != route && isInBackStack(route)) {
+        // 開始画面の上に積んだこのタブのサブ画面を閉じる
+        popBackStack(route, inclusive = false)
+        return
+    }
     if (route == startDestination.route) {
         // 開始画面(一覧)のタブは、上に積んだ画面を保存して閉じるだけにする。
         // navigate(restoreState = true) で開くと、popUpTo(開始画面, saveState = true) が保存した

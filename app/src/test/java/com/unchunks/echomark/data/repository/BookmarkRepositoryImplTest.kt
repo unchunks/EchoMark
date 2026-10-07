@@ -91,9 +91,15 @@ class BookmarkRepositoryImplTest {
             .map { info -> info.tags.first { it.startsWith("com.unchunks") }.substringAfterLast('.') }
             .groupingBy { it }.eachCount()
 
-    private fun urlBookmark(content: String?, status: AiStatus) = Bookmark(
+    /** [contentFetchedAt] の既定は、本文があれば取得済み・無ければ未取得 */
+    private fun urlBookmark(
+        content: String?,
+        status: AiStatus,
+        contentFetchedAt: Long? = if (content.isNullOrBlank()) null else 1L
+    ) = Bookmark(
         type = BookmarkType.URL, content = content, contentUri = "https://example.com/${content.hashCode()}",
-        title = "https://example.com", createdAt = 1L, lastAccessedAt = 1L, aiStatus = status
+        title = "https://example.com", createdAt = 1L, lastAccessedAt = 1L, aiStatus = status,
+        contentFetchedAt = contentFetchedAt
     )
 
     /** 一意名 [name] で登録されたワークの種類(ワーカーのクラスの単純名)を、登録順に関係なく数える。 */
@@ -303,6 +309,33 @@ class BookmarkRepositoryImplTest {
     }
 
     @Test
+    fun メモはあるが本文を取得できていないURLの再処理は本文取得から行う() = runBlocking {
+        val id = db.bookmarkDao().insert(
+            urlBookmark(content = "あとで読む", status = AiStatus.DONE, contentFetchedAt = null).toEntity()
+        )
+
+        repository.reprocess(id)
+
+        assertEquals(
+            mapOf("UrlFetchWorker" to 1, "ContentExtractionWorker" to 1, "BookmarkAiProcessingWorker" to 1),
+            workerKinds("process_bookmark_$id")
+        )
+    }
+
+    @Test
+    fun 本文を取得できたことを記録すると再処理はAI処理のみになる() = runBlocking {
+        val id = db.bookmarkDao().insert(
+            urlBookmark(content = "あとで読む", status = AiStatus.DONE, contentFetchedAt = null).toEntity()
+        )
+
+        repository.markContentFetched(id, fetchedAt = 42L)
+        repository.reprocess(id)
+
+        assertEquals(42L, repository.getBookmarkById(id)?.contentFetchedAt)
+        assertEquals(mapOf("BookmarkAiProcessingWorker" to 1), workerKinds("process_bookmark_$id"))
+    }
+
+    @Test
     fun 存在しないブックマークにはタグを保存しない() = runBlocking {
         repository.saveAiTags(bookmarkId = 999L, tagNames = listOf("kotlin"))
 
@@ -365,6 +398,19 @@ class BookmarkRepositoryImplTest {
         repository.saveEmbedding(id, vector, "v1")
 
         assertEquals("v1", vectorSearch.getModelVersion(id))
+    }
+
+    @Test
+    fun 関連ブックマークは近い順に並ぶ() = runBlocking {
+        val self = repository.saveBookmark(textBookmark("自分"))
+        // ID の小さいほうを遠くし、ID 順と近い順を逆にする
+        val far = repository.saveBookmark(textBookmark("遠い"))
+        val near = repository.saveBookmark(textBookmark("近い"))
+        repository.saveEmbedding(self, vector, "v1")
+        repository.saveEmbedding(far, FloatArray(768) { if (it <= 1) 1f else 0f }, "v1")
+        repository.saveEmbedding(near, FloatArray(768) { if (it == 0) 1f else if (it == 1) 0.1f else 0f }, "v1")
+
+        assertEquals(listOf(near, far), repository.getRelatedBookmarks(self, limit = 5).map { it.id })
     }
 
     @Test

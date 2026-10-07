@@ -38,9 +38,9 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 4):
+ * 形式(version 5):
  * ```
- * { "format": "echomark-backup", "version": 4, "exportedAt": 1700000000000,
+ * { "format": "echomark-backup", "version": 5, "exportedAt": 1700000000000,
  *   "bookmarks": [ {全列} ], "tags": [ {id, name, isUserCreated} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
  *   "conversations": [ {全列。aboutBookmarkId は通常の会話なら省略} ],
@@ -55,10 +55,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   (DB のマイグレーションと同じく、ユーザーのタグを AI のものと誤って消さないため)
  * - 4: ブックマークに添付ファイルの情報(filePath・mimeType・fileName・fileSize)を追加。本体は含めないため、
  *   読み込む端末にファイルが無ければ filePath を外す(読み込む側で確かめる)。3 以前ではファイルなしとして読む
+ * - 5: ブックマークに contentFetchedAt(URL の本文を取得できた日時)を追加。4 以前では DB のマイグレーションと同じく、
+ *   本文のある URL は保存日時で取得済み、それ以外は未取得として読む
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 4
+    const val CURRENT_VERSION = 5
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -120,7 +122,7 @@ object BackupJson {
 
         val data = BackupData(
             exportedAt = root.optLong("exportedAt", 0L),
-            bookmarks = readArray("bookmarks") { it.toBookmark() },
+            bookmarks = readArray("bookmarks") { it.toBookmark(version) },
             tags = readArray("tags") { it.toTag() },
             bookmarkTags = readArray("bookmarkTags") { it.toCrossRef() },
             conversations = readArray("conversations") { it.toConversation() },
@@ -159,6 +161,7 @@ object BackupJson {
         .putNullable("mimeType", mimeType)
         .putNullable("fileName", fileName)
         .apply { fileSize?.let { put("fileSize", it) } }
+        .apply { contentFetchedAt?.let { put("contentFetchedAt", it) } }
 
     private fun TagEntity.toJson() = JSONObject().put("id", id).put("name", name).put("isUserCreated", isUserCreated)
 
@@ -186,7 +189,7 @@ object BackupJson {
 
     // ---- JSON → エンティティ(必須項目が無い・未知の種類なら null) ----
 
-    private fun JSONObject.toBookmark(): BookmarkEntity? {
+    private fun JSONObject.toBookmark(version: Int): BookmarkEntity? {
         val type = enumOrNull<BookmarkType>(optString("type")) ?: return null
         val title = stringOrNull("title") ?: return null
         val createdAt = longOrNull("createdAt") ?: return null
@@ -214,7 +217,13 @@ object BackupJson {
             filePath = stringOrNull("filePath")?.takeIf { isValidAttachmentPath(it) },
             mimeType = stringOrNull("mimeType"),
             fileName = stringOrNull("fileName"),
-            fileSize = longOrNull("fileSize")?.takeIf { it >= 0 }
+            fileSize = longOrNull("fileSize")?.takeIf { it >= 0 },
+            contentFetchedAt = if (version >= 5) {
+                longOrNull("contentFetchedAt")
+            } else {
+                // version 4 以前には無い。本文があれば取得済みとみなしていたので、それに合わせる
+                createdAt.takeIf { type == BookmarkType.URL && !stringOrNull("content").isNullOrBlank() }
+            }
         )
     }
 

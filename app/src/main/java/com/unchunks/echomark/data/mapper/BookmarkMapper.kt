@@ -10,7 +10,8 @@ fun BookmarkEntity.toDomain(): Bookmark = Bookmark(
     title = title, summary = summary, category = category,
     createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus,
     imageUrl = imageUrl, siteName = siteName, isFavorite = isFavorite, isArchived = isArchived,
-    filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize
+    filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize,
+    contentFetchedAt = contentFetchedAt
 )
 
 fun Bookmark.toEntity(): BookmarkEntity = BookmarkEntity(
@@ -18,7 +19,8 @@ fun Bookmark.toEntity(): BookmarkEntity = BookmarkEntity(
     title = title, summary = summary, category = category,
     createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus,
     imageUrl = imageUrl, siteName = siteName, isFavorite = isFavorite, isArchived = isArchived,
-    filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize
+    filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize,
+    contentFetchedAt = contentFetchedAt
 )
 
 fun BookmarkWithTags.toDomain(): Bookmark {

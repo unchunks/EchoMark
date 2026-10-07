@@ -167,7 +167,9 @@ fun BookmarkListScreen(
                     }
                     is BookmarkListMessage.Saved -> {
                         val result = snackbarHostState.showSnackbar(
-                            message = if (message.isDuplicate) "既に保存済みです" else "保存しました(AI が要約中…)",
+                            // AI の準備ができていなければ処理は始まらないため、「要約中」とは言わない
+                            // (AI の状態は一覧のカードに出る)
+                            message = if (message.isDuplicate) "既に保存済みです" else "保存しました",
                             actionLabel = "開く",
                             duration = SnackbarDuration.Long
                         )

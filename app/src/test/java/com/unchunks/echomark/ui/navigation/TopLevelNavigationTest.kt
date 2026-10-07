@@ -102,6 +102,50 @@ class TopLevelNavigationTest {
         assertEquals(listOf(BOOKMARKS_ROUTE), routes)
     }
 
+    @Test
+    fun 表示中のタブをもう一度押すと_そのタブの最初の画面に戻る() {
+        setContent()
+        act { openLaunchTarget(LaunchTarget.AI_SETTINGS) }
+        act { navigateToTopLevel(SETTINGS_ROUTE) }
+        assertEquals(listOf(BOOKMARKS_ROUTE, SETTINGS_ROUTE), routes)
+
+        act { navigateToTopLevel(CHAT_ROUTE) }
+        act { navigate(CHAT_NEW_ROUTE) }
+        act { navigateToTopLevel(CHAT_ROUTE) }
+        assertEquals(listOf(BOOKMARKS_ROUTE, CHAT_ROUTE), routes)
+    }
+
+    @Test
+    fun 表示中の画面が属するタブ_サブ画面はルートの先頭で決まる() {
+        setContent()
+        act { openLaunchTarget(LaunchTarget.AI_SETTINGS) }
+        assertEquals(SETTINGS_ROUTE, selectedRoute())
+
+        act { navigateToTopLevel(CHAT_ROUTE) }
+        act { navigate(CHAT_NEW_ROUTE) }
+        assertEquals(CHAT_ROUTE, selectedRoute())
+
+        act { navigateToTopLevel(BOOKMARKS_ROUTE) }
+        assertEquals(BOOKMARKS_ROUTE, selectedRoute())
+    }
+
+    @Test
+    fun 詳細のようにどのタブからも開く画面は_開いたタブに属する() {
+        val inChatTab = setOf(BOOKMARKS_ROUTE, CHAT_ROUTE, "chat/1")
+        assertEquals(CHAT_ROUTE, selectedTopLevelRoute(Routes.BOOKMARK_DETAIL) { it in inChatTab })
+
+        val inBookmarksTab = setOf(BOOKMARKS_ROUTE)
+        assertEquals(BOOKMARKS_ROUTE, selectedTopLevelRoute(Routes.BOOKMARK_DETAIL) { it in inBookmarksTab })
+        assertEquals(BOOKMARKS_ROUTE, selectedTopLevelRoute(Routes.TAGS) { it in inBookmarksTab })
+        assertEquals(SETTINGS_ROUTE, selectedTopLevelRoute(Routes.ONBOARDING) { it in inBookmarksTab })
+        assertEquals(null, selectedTopLevelRoute(null) { true })
+    }
+
+    private fun selectedRoute(): String? {
+        val inStack = routes.toSet()
+        return selectedTopLevelRoute(navController.currentDestination?.route) { it in inStack }
+    }
+
     private companion object {
         const val CHAT_ROUTE = "chat"
         const val SETTINGS_ROUTE = "settings"

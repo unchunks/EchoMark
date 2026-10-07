@@ -37,5 +37,7 @@ data class BookmarkEntity (
     val filePath: String? = null,
     val mimeType: String? = null,
     val fileName: String? = null,
-    val fileSize: Long? = null
+    val fileSize: Long? = null,
+    // v11 で追加。URL の本文(リンク先)を取得できた日時。未取得・取得に失敗したままなら null
+    val contentFetchedAt: Long? = null
 )
