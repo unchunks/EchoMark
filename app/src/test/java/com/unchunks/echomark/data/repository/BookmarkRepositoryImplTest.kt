@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.TestDispatcherProvider
@@ -51,6 +52,8 @@ class BookmarkRepositoryImplTest {
     private lateinit var attachmentStore: AttachmentStore
 
     private val vector = FloatArray(768) { if (it == 0) 1f else 0f }
+    private val embedding = FakeEmbeddingProvider()
+    private val currentVersion get() = embedding.modelVersion
 
     @Before
     fun setUp() {
@@ -66,7 +69,7 @@ class BookmarkRepositoryImplTest {
             vectorSearch = vectorSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
             workScheduler = BookmarkWorkScheduler(workManager, FakeAppSettingsRepository()),
-            embeddingProvider = FakeEmbeddingProvider(),
+            embeddingProvider = embedding,
             attachmentStore = attachmentStore
         )
     }
@@ -406,11 +409,58 @@ class BookmarkRepositoryImplTest {
         // ID の小さいほうを遠くし、ID 順と近い順を逆にする
         val far = repository.saveBookmark(textBookmark("遠い"))
         val near = repository.saveBookmark(textBookmark("近い"))
-        repository.saveEmbedding(self, vector, "v1")
-        repository.saveEmbedding(far, FloatArray(768) { if (it <= 1) 1f else 0f }, "v1")
-        repository.saveEmbedding(near, FloatArray(768) { if (it == 0) 1f else if (it == 1) 0.1f else 0f }, "v1")
+        repository.saveEmbedding(self, vector, currentVersion)
+        repository.saveEmbedding(far, FloatArray(768) { if (it <= 1) 1f else 0f }, currentVersion)
+        repository.saveEmbedding(near, FloatArray(768) { if (it == 0) 1f else if (it == 1) 0.1f else 0f }, currentVersion)
 
         assertEquals(listOf(near, far), repository.getRelatedBookmarks(self, limit = 5).map { it.id })
+    }
+
+    @Test
+    fun 関連ブックマークは旧モデルのベクトルを混ぜない() = runBlocking {
+        val self = repository.saveBookmark(textBookmark("自分"))
+        val sameVersion = repository.saveBookmark(textBookmark("新しい版"))
+        val oldVersion = repository.saveBookmark(textBookmark("旧版"))
+        repository.saveEmbedding(self, vector, currentVersion)
+        repository.saveEmbedding(sameVersion, FloatArray(768) { if (it <= 1) 1f else 0f }, currentVersion)
+        // 自分と全く同じ向きでも、版が違えば比べない
+        repository.saveEmbedding(oldVersion, vector, "old-model")
+
+        assertEquals(listOf(sameVersion), repository.getRelatedBookmarks(self, limit = 5).map { it.id })
+    }
+
+    @Test
+    fun 自分のベクトルが旧モデルのものなら関連ブックマークは空() = runBlocking {
+        val self = repository.saveBookmark(textBookmark("自分"))
+        val other = repository.saveBookmark(textBookmark("他"))
+        repository.saveEmbedding(self, vector, "old-model")
+        repository.saveEmbedding(other, vector, currentVersion)
+
+        assertEquals(emptyList<Long>(), repository.getRelatedBookmarks(self, limit = 5).map { it.id })
+    }
+
+    @Test
+    fun 意味検索は旧モデルのベクトルを混ぜない() = runBlocking {
+        val current = repository.saveBookmark(textBookmark("あ"))
+        val old = repository.saveBookmark(textBookmark("い"))
+        // FakeEmbeddingProvider の質問ベクトル(vector)と同じ向き。版だけが違う
+        repository.saveEmbedding(current, vector, currentVersion)
+        repository.saveEmbedding(old, vector, "old-model")
+
+        val result = repository.searchWithDetails("キーワードに一致しない質問", null)
+
+        assertEquals(setOf(current), result.bookmarks.map { it.id }.toSet())
+    }
+
+    @Test
+    fun 埋め込みの進捗は現在の版で保存済みの件数を数える() = runBlocking {
+        val a = repository.saveBookmark(textBookmark("a"))
+        val b = repository.saveBookmark(textBookmark("b"))
+        repository.saveBookmark(textBookmark("c"))
+        repository.saveEmbedding(a, vector, currentVersion)
+        repository.saveEmbedding(b, vector, "old-model")
+
+        assertEquals(EmbeddingProgress(embedded = 1, total = 3), repository.getEmbeddingProgress())
     }
 
     @Test

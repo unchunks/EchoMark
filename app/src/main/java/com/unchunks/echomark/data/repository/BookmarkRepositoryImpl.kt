@@ -22,6 +22,7 @@ import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.TagSource
+import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.search.RankFusion
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
@@ -355,11 +356,14 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun getRelatedBookmarks(bookmarkId: Long, limit: Int): List<Bookmark> =
         withContext(dispatcherProvider.io) {
-            // 1. 自分自身のembeddingベクトルを取得
-            val myVector = vectorSearch.getVector(bookmarkId) ?: return@withContext emptyList()
+            // 1. 自分自身のembeddingを取得。現在のモデルと違う版(再埋め込み待ち)のベクトルでは、
+            //    現在の版のベクトルと比べられないため、何も返さない(再埋め込みが済めば出る)
+            val mine = vectorSearch.findByBookmarkId(bookmarkId) ?: return@withContext emptyList()
+            val modelVersion = embeddingProvider.modelVersion
+            if (mine.modelVersion != modelVersion) return@withContext emptyList()
 
             // 2. そのベクトルで類似検索(自分自身も結果に含まれるため+1件多めに取る)
-            val relatedIds = vectorSearch.nearestNeighbors(myVector, limit + 1)
+            val relatedIds = vectorSearch.nearestNeighbors(mine.vector, limit + 1, modelVersion)
                 .map { it.bookmarkId }
                 .filter { it != bookmarkId } // 自分自身を除外
                 .take(limit)
@@ -372,6 +376,14 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun getEmbeddingModelVersion(bookmarkId: Long): String? =
         withContext(dispatcherProvider.io) {
             vectorSearch.getModelVersion(bookmarkId)
+        }
+
+    override suspend fun getEmbeddingProgress(): EmbeddingProgress =
+        withContext(dispatcherProvider.io) {
+            val total = bookmarkDao.count()
+            // 削除済みのブックマークの埋め込みが残っていても total を超えないようにする
+            val embedded = vectorSearch.countByModelVersion(embeddingProvider.modelVersion).toInt()
+            EmbeddingProgress(embedded = embedded.coerceAtMost(total), total = total)
         }
 
 
@@ -426,8 +438,9 @@ class BookmarkRepositoryImpl @Inject constructor(
             // ベクトル検索。モデル未取得などで失敗したらキーワードのみにフォールバックする
             val semantic = try {
                 val vector = embeddingProvider.embedQuery(q)
-                val ids = vectorSearch.nearestNeighbors(vector, VECTOR_TOP_K)
-                    .filter { it.score <= embeddingProvider.profile.maxSearchDistance }
+                val profile = embeddingProvider.profile
+                val ids = vectorSearch.nearestNeighbors(vector, VECTOR_TOP_K, profile.modelVersion)
+                    .filter { it.score <= profile.maxSearchDistance }
                     .map { it.bookmarkId }
                 val byId = bookmarkDao.getByIdsWithTags(ids).associateBy { it.bookmark.id }
                 ids.mapNotNull { byId[it] }

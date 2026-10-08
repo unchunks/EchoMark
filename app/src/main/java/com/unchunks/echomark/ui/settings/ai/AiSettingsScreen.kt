@@ -91,6 +91,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.formatBytes
+import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -253,6 +254,7 @@ fun AiSettingsContent(
                 onCancelImport = actions.onCancelImport,
                 onDelete = actions.onDeleteModel
             )
+            uiState.embeddingProgress?.takeIf { !it.isComplete }?.let { EmbeddingIndexProgress(it) }
 
             SectionDivider()
             SectionHeader("クラウド API のキー")
@@ -274,6 +276,29 @@ fun AiSettingsContent(
                 onClick = actions.onReprocess
             )
         }
+    }
+}
+
+/** 埋め込み(検索インデックス)を作り直している間の進み具合。 */
+@Composable
+private fun EmbeddingIndexProgress(progress: EmbeddingProgress) {
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            "検索インデックスを更新中 (${progress.embedded}/${progress.total})",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        LinearProgressIndicator(
+            progress = { if (progress.total > 0) progress.embedded.toFloat() / progress.total else 0f },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            "意味での検索・関連ブックマーク・チャットは、更新が済んだ分から使えます",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

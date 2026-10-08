@@ -90,6 +90,9 @@ interface BookmarkDao {
     fun observeCount(): Flow<Int>
 
 
+    @Query("SELECT COUNT(*) FROM bookmarks")
+    suspend fun count(): Int
+
     // IDの取得
     @Query("SELECT id FROM bookmarks")
     suspend fun getAllIds(): List<Long>

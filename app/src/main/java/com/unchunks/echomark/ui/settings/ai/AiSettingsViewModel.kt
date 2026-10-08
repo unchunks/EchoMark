@@ -7,6 +7,7 @@ import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiTask
@@ -18,6 +19,9 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +46,8 @@ data class AiSettingsUiState(
     val tasks: Map<AiTask, AiTaskSetting> = AiTask.entries.associateWith { AiTaskSetting() },
     val localModel: LocalModelInfo? = null,
     val importState: ModelImportState = ModelImportState.Idle,
+    /** 検索インデックス(埋め込み)の更新状況。まだ読めていなければ null */
+    val embeddingProgress: EmbeddingProgress? = null,
     /** API キーを入力・確認する提供元(キーは提供元ごとに1つで、用途の選択とは別) */
     val keyProvider: ApiProvider = ApiProvider.CLAUDE,
     /** API キーが保存済みの提供元 */
@@ -98,15 +104,16 @@ class AiSettingsViewModel @Inject constructor(
 
     val uiState: StateFlow<AiSettingsUiState> = combine(
         appSettings.aiTaskSettings,
-        combine(modelManager.installedModel, modelManager.importState, ::Pair),
+        combine(modelManager.installedModel, modelManager.importState, embeddingProgressFlow(), ::Triple),
         selectedKeyProvider,
         appSettings.sendFilesToCloud,
         apiKeyRepository.configuredProviders
-    ) { tasks, (model, import), keyProvider, sendFiles, configured ->
+    ) { tasks, (model, import, progress), keyProvider, sendFiles, configured ->
         AiSettingsUiState(
             tasks = tasks,
             localModel = model,
             importState = import,
+            embeddingProgress = progress,
             keyProvider = keyProvider
                 ?: AiTask.entries.mapNotNull { tasks[it] }.firstOrNull { it.backend == LlmBackend.API }?.apiProvider
                 ?: ApiProvider.CLAUDE,
@@ -114,6 +121,23 @@ class AiSettingsViewModel @Inject constructor(
             sendFilesToCloud = sendFiles
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AiSettingsUiState())
+
+    /** 検索インデックスの更新状況を定期的に読む(画面を見ている間だけ動く)。 */
+    private fun embeddingProgressFlow(): Flow<EmbeddingProgress?> = flow {
+        while (true) {
+            emit(
+                try {
+                    bookmarkRepository.getEmbeddingProgress()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "検索インデックスの状況を取得できない")
+                    null
+                }
+            )
+            delay(EMBEDDING_PROGRESS_POLL_MILLIS)
+        }
+    }
 
     private val _connectionTest = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     val connectionTest: StateFlow<ConnectionTestState> = _connectionTest.asStateFlow()
@@ -212,5 +236,9 @@ class AiSettingsViewModel @Inject constructor(
 
     fun onMessageShown() {
         _message.update { null }
+    }
+
+    private companion object {
+        const val EMBEDDING_PROGRESS_POLL_MILLIS = 2_000L
     }
 }
