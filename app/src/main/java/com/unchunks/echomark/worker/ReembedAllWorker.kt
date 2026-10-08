@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.unchunks.echomark.domain.provider.EmbeddingInputBuilder
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.assisted.Assisted
@@ -27,7 +28,9 @@ class ReembedAllWorker @AssistedInject constructor(
 
             val bookmark = bookmarkRepository.getBookmarkById(id) ?: continue
             try {
-                val text = embeddingTextOf(bookmark.title, bookmark.summary, bookmark.content)
+                val text = EmbeddingInputBuilder.build(
+                    bookmark.title, bookmark.summary, bookmark.content, embeddingProvider.profile
+                )
                 val vector = embeddingProvider.embedDocument(text)
                 bookmarkRepository.saveEmbedding(id, vector, currentVersion)
             } catch (e: Exception) {
