@@ -73,6 +73,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,11 +89,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.formatBytes
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.common.MessageSnackbarEffect
@@ -118,6 +121,11 @@ class AiSettingsActions(
     val onPickModel: () -> Unit = {},
     val onCancelImport: () -> Unit = {},
     val onDeleteModel: () -> Unit = {},
+    /** 埋め込みモデルのファイルを選ぶ(取り込むモデルの種類を渡す。ファイル選択画面は呼び出し側で開く) */
+    val onPickEmbeddingModel: (EmbeddingModelProfile) -> Unit = {},
+    val onCancelEmbeddingImport: () -> Unit = {},
+    /** 取り込んだ埋め込みモデルを消して、同梱のモデルに戻す */
+    val onRevertEmbeddingModel: () -> Unit = {},
     val onSelectProvider: (AiTask, ApiProvider) -> Unit = { _, _ -> },
     val onSetModel: (AiTask, ApiProvider, String) -> Unit = { _, _, _ -> },
     /** API キーを入力する提供元を選ぶ */
@@ -151,6 +159,20 @@ fun AiSettingsScreen(
             .map { name -> name?.let { "「$it」を取り込みました" } }
     }
     MessageSnackbarEffect(importedMessages, snackbarHostState, onShown = viewModel::onImportResultShown)
+    val embeddingImportedMessages = remember(viewModel) {
+        viewModel.uiState
+            .map { (it.embeddingImportState as? ModelImportState.Succeeded)?.model?.displayName }
+            .distinctUntilChanged()
+            .map { name -> name?.let { "埋め込みモデル「$it」を取り込みました。検索インデックスを作り直します" } }
+    }
+    MessageSnackbarEffect(embeddingImportedMessages, snackbarHostState, onShown = viewModel::onEmbeddingImportResultShown)
+    // 埋め込みモデルは、取り込む種類を選んでからファイルを選ぶ(画面の再生成でも選んだ種類を失わない)
+    var pendingEmbeddingProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    val embeddingPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        val profile = pendingEmbeddingProfileId?.let(EmbeddingModelProfile::findById)
+        pendingEmbeddingProfileId = null
+        if (uri != null && profile != null) viewModel.importEmbeddingModel(uri, profile)
+    }
     // .task / .litertlm には標準の MIME タイプが無いため、全ファイルから選ばせて取り込み時に拡張子を検証する
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) viewModel.importModel(uri)
@@ -166,6 +188,12 @@ fun AiSettingsScreen(
             onPickModel = { picker.launch(arrayOf("*/*")) },
             onCancelImport = viewModel::cancelImport,
             onDeleteModel = viewModel::deleteModel,
+            onPickEmbeddingModel = { profile ->
+                pendingEmbeddingProfileId = profile.id
+                embeddingPicker.launch(arrayOf("*/*"))
+            },
+            onCancelEmbeddingImport = viewModel::cancelEmbeddingImport,
+            onRevertEmbeddingModel = viewModel::revertEmbeddingModel,
             onSelectProvider = viewModel::setApiProvider,
             onSetModel = viewModel::setApiModel,
             onSelectKeyProvider = viewModel::selectKeyProvider,
@@ -254,6 +282,16 @@ fun AiSettingsContent(
                 onCancelImport = actions.onCancelImport,
                 onDelete = actions.onDeleteModel
             )
+
+            SectionDivider()
+            SectionHeader("検索用の埋め込みモデル")
+            EmbeddingModelSection(
+                model = uiState.embeddingModel,
+                importState = uiState.embeddingImportState,
+                onPickModel = actions.onPickEmbeddingModel,
+                onCancelImport = actions.onCancelEmbeddingImport,
+                onRevert = actions.onRevertEmbeddingModel
+            )
             uiState.embeddingProgress?.takeIf { !it.isComplete }?.let { EmbeddingIndexProgress(it) }
 
             SectionDivider()
@@ -277,6 +315,129 @@ fun AiSettingsContent(
             )
         }
     }
+}
+
+/**
+ * 意味での検索・関連ブックマーク・チャットに使う埋め込みモデル。
+ * 何も取り込んでいなければアプリ同梱のモデル。取り込むと、そのモデルで検索インデックスを作り直す。
+ */
+@Composable
+private fun EmbeddingModelSection(
+    model: EmbeddingModelInfo?,
+    importState: ModelImportState,
+    onPickModel: (EmbeddingModelProfile) -> Unit,
+    onCancelImport: () -> Unit,
+    onRevert: () -> Unit
+) {
+    var showProfileDialog by remember { mutableStateOf(false) }
+
+    SettingsItem(
+        title = model?.file?.displayName ?: "${EmbeddingModelProfile.BUNDLED.displayName}(同梱)",
+        icon = Icons.Outlined.Memory,
+        iconTint = if (model != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        summary = if (model == null) {
+            "アプリに同梱のモデルを使っています"
+        } else {
+            "種類: ${model.profile.displayName}・${formatBytes(model.file.sizeBytes)}・取り込み: " +
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.file.importedAt))
+        }
+    )
+
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        when (importState) {
+            is ModelImportState.Copying -> {
+                val fraction = importState.fraction
+                if (fraction != null) {
+                    LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        "取り込み中… ${(fraction * 100).toInt()}%(${formatBytes(importState.copiedBytes)} / ${formatBytes(importState.totalBytes)})",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Text("取り込み中… ${formatBytes(importState.copiedBytes)}", style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedButton(onClick = onCancelImport) { Text("取り込みを中止") }
+            }
+            else -> {
+                if (importState is ModelImportState.Failed) {
+                    StatusLine(
+                        icon = {
+                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        },
+                        text = "取り込めませんでした: ${importState.error.userMessage}",
+                        isError = true
+                    )
+                }
+                Button(onClick = { showProfileDialog = true }) {
+                    ButtonIcon(Icons.Outlined.UploadFile)
+                    Text(if (model == null) "埋め込みモデルを取り込む" else "別のモデルに入れ替える")
+                }
+                if (model != null) {
+                    OutlinedButton(onClick = onRevert) {
+                        ButtonIcon(Icons.Outlined.Refresh)
+                        Text("同梱のモデルに戻す")
+                    }
+                }
+            }
+        }
+        Text(
+            "モデルを変えると、保存済みのブックマークの検索インデックスを新しいモデルで作り直します" +
+                "(その間、まだ作り直していないブックマークは意味での検索・関連ブックマーク・チャットに出ません)。" +
+                "対応形式: .task / .tflite",
+            style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (model?.profile?.experimental == true) {
+            SettingsNotice(
+                text = "実験的なモデルです。端末の MediaPipe が読み込めないと、検索インデックスを作れず意味での検索が使えなくなります。" +
+                    "その場合は「同梱のモデルに戻す」を選んでください。",
+                icon = Icons.Outlined.WarningAmber,
+                isWarning = true
+            )
+        }
+    }
+
+    if (showProfileDialog) {
+        EmbeddingProfileDialog(
+            onSelect = {
+                showProfileDialog = false
+                onPickModel(it)
+            },
+            onDismiss = { showProfileDialog = false }
+        )
+    }
+}
+
+/** 取り込むファイルがどのモデルかを選ぶ(ファイルからは判別できず、ベクトルの版としきい値がこれで決まる)。 */
+@Composable
+private fun EmbeddingProfileDialog(onSelect: (EmbeddingModelProfile) -> Unit, onDismiss: () -> Unit) {
+    var selected by remember { mutableStateOf(EmbeddingModelProfile.IMPORTABLE.first()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("取り込むモデルの種類") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                Text(
+                    "ファイルの種類を選んでから、取り込むファイルを選びます。選んだ種類と実際のファイルが違うと、検索の精度が落ちます。",
+                    style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
+                )
+                EmbeddingModelProfile.IMPORTABLE.forEach { profile ->
+                    RadioItem(
+                        title = profile.displayName,
+                        description = "${profile.dimensions} 次元・最大 ${profile.maxInputTokens} トークン",
+                        selected = profile == selected,
+                        onClick = { selected = profile }
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSelect(selected) }) { Text("ファイルを選ぶ") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
 }
 
 /** 埋め込み(検索インデックス)を作り直している間の進み具合。 */

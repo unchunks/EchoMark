@@ -20,9 +20,11 @@ data class LocalModelInfo(
 sealed interface ModelImportError {
     val userMessage: String
 
-    data class UnsupportedFormat(val fileName: String) : ModelImportError {
-        override val userMessage =
-            "対応していない形式です(${ModelImportValidator.SUPPORTED_EXTENSIONS.joinToString("・")} のみ)"
+    data class UnsupportedFormat(
+        val fileName: String,
+        val extensions: List<String> = ModelImportValidator.SUPPORTED_EXTENSIONS
+    ) : ModelImportError {
+        override val userMessage = "対応していない形式です(${extensions.joinToString("・")} のみ)"
     }
 
     data class InsufficientStorage(val requiredBytes: Long, val availableBytes: Long) : ModelImportError {
@@ -31,6 +33,11 @@ sealed interface ModelImportError {
 
     data object EmptyFile : ModelImportError {
         override val userMessage = "ファイルが空です"
+    }
+
+    /** 取り込み時に選んだモデルの種類が、対応している一覧に無い */
+    data object UnknownModelProfile : ModelImportError {
+        override val userMessage = "対応していない種類のモデルです"
     }
 
     data object ReadFailed : ModelImportError {
@@ -56,21 +63,29 @@ object ModelImportValidator {
     /** MediaPipe tasks-genai(LLM Inference)が読める形式 */
     val SUPPORTED_EXTENSIONS = listOf(".task", ".litertlm")
 
+    /** 埋め込みモデル(MediaPipe TextEmbedder)が読める形式 */
+    val EMBEDDING_EXTENSIONS = listOf(".task", ".tflite")
+
     /** コピー後にも作業領域が残るよう確保する余白 */
     const val STORAGE_MARGIN_BYTES = 100L * 1024 * 1024
 
     /** 対応する拡張子(小文字)。非対応なら null。 */
-    fun supportedExtension(fileName: String): String? {
+    fun supportedExtension(fileName: String, extensions: List<String> = SUPPORTED_EXTENSIONS): String? {
         val lower = fileName.lowercase()
-        return SUPPORTED_EXTENSIONS.firstOrNull { lower.endsWith(it) }
+        return extensions.firstOrNull { lower.endsWith(it) }
     }
 
     /**
      * @param sizeBytes 取り込み元のサイズ。不明なら -1(コピー中に容量不足を検出する)
      * @param usableBytes 保存先の空き容量
      */
-    fun validate(fileName: String, sizeBytes: Long, usableBytes: Long): ModelImportError? {
-        if (supportedExtension(fileName) == null) return ModelImportError.UnsupportedFormat(fileName)
+    fun validate(
+        fileName: String,
+        sizeBytes: Long,
+        usableBytes: Long,
+        extensions: List<String> = SUPPORTED_EXTENSIONS
+    ): ModelImportError? {
+        if (supportedExtension(fileName, extensions) == null) return ModelImportError.UnsupportedFormat(fileName, extensions)
         if (sizeBytes == 0L) return ModelImportError.EmptyFile
         if (sizeBytes > 0 && sizeBytes + STORAGE_MARGIN_BYTES > usableBytes) {
             return ModelImportError.InsufficientStorage(sizeBytes + STORAGE_MARGIN_BYTES, usableBytes)
