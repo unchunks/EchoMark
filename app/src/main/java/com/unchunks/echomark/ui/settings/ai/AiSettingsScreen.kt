@@ -169,7 +169,7 @@ fun AiSettingsScreen(
     // 埋め込みモデルは、取り込む種類を選んでからファイルを選ぶ(画面の再生成でも選んだ種類を失わない)
     var pendingEmbeddingProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     val embeddingPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        val profile = pendingEmbeddingProfileId?.let(EmbeddingModelProfile::findById)
+        val profile = pendingEmbeddingProfileId?.let { EmbeddingModelProfile.findById(it) }
         pendingEmbeddingProfileId = null
         if (uri != null && profile != null) viewModel.importEmbeddingModel(uri, profile)
     }
