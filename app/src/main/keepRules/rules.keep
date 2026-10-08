@@ -1,12 +1,77 @@
-# Add project specific R8 rules here.
-# AGP will combine all keep rule files in src/main/keepRules to pass to R8
+# EchoMark の R8 keep ルール(release ビルド)。
+# AGP は src/main/keepRules/*.keep をまとめて R8 に渡す。ライブラリ同梱の consumer rules
+# (Room / Hilt / WorkManager / ObjectBox / OkHttp / Coil / Jsoup / Anthropic SDK など)は自動で合流するので、
+# ここには「同梱ルールが無い・足りない」ものだけを書く。追加するときは根拠を添えること。
 #
-# For more details, see
-#   https://d.android.com/r/tools/r8/keep-rules
+# 確認方法: app/build/outputs/mapping/release/ の configuration.txt(合流後の全ルール)・
+# seeds.txt(keep されたもの)・usage.txt(削除されたもの)・mapping.txt(名前の対応)を見る。
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# ---- クラッシュ時のスタックトレース ----
+# mapping.txt で行番号まで復元できるよう行番号を残し、ソースファイル名は伏せる
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+# ---- MediaPipe(tasks-core / tasks-text / tasks-genai) ----
+# MediaPipe の AAR には consumer rules(proguard.txt)が入っていないため、ここで補う。
+# ネイティブ(.so)側が FindClass / GetMethodID / GetFieldID で Java のクラス・メンバーを名前で参照する。
+# .so の文字列から確認した参照先:
+#   libmediapipe_tasks_jni.so: framework.{MediaPipeException, Packet, PacketCreator, PacketListCallback, ProtoUtil$SerializedMessage}
+#   libllm_inference_engine_jni.so: framework.{MediaPipeException, ProtoUtil$SerializedMessage}, genai.llminference.LlmTaskRunner
+#     さらに nativeRegisterCallback(Object) で渡した LlmTaskRunnerDelegate の onAsyncResponse(byte[]) を名前で呼ぶ
+# 名前の変更・削除で実行時に NoSuchMethodError / NoClassDefFoundError(端末でしか分からない)になるため、
+# JNI に関わるパッケージは丸ごと残す(未使用の vision 系などは縮小に任せる)
+-keep class com.google.mediapipe.framework.** { *; }
+-keep class com.google.mediapipe.tasks.core.** { *; }
+-keep class com.google.mediapipe.tasks.genai.llminference.** { *; }
+-keep class com.google.mediapipe.tasks.text.textembedder.** { *; }
+
+# 上の keep で残した framework のクラスが参照しているが、MediaPipe の公開 AAR(tasks-core 1.0.0)に
+# 最初から入っていないクラス。R8 の有無に関係なく実行時にも存在しない(debug ビルドでも同じ)。
+# - Memoized: AutoValue のコンパイル時専用アノテーション(RuntimeInvisibleAnnotations。実行時は不要)
+# - CalculatorProfile / CalculatorGraphTemplate: Graph / GraphProfiler のプロファイル・テンプレート API 用で、
+#   Tasks API(TextEmbedder / LlmInference)からは呼ばれない
+-dontwarn com.google.auto.value.extension.memoized.Memoized
+-dontwarn com.google.mediapipe.proto.CalculatorProfileProto$CalculatorProfile
+-dontwarn com.google.mediapipe.proto.GraphTemplateProto$CalculatorGraphTemplate
+
+# MediaPipe のオプション・結果は protobuf-javalite のメッセージ。javalite は実行時に
+# フィールド名の文字列(newMessageInfo の引数)からリフレクションでフィールドを引くため、
+# フィールドの名前と存在を保つ(protobuf-javalite 4.26.1 の jar には keep ルールが同梱されていない)
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}
+
+# ---- Anthropic Java SDK(Claude API) ----
+# SDK 同梱のルール(anthropic-java-core.pro)は Jackson のアノテーション付きメンバーとコンストラクタを残すが、
+# 合成アノテーション @ExcludeMissing 自体は残さない。R8(full モード)は keep されていないクラスの
+# アノテーション属性を落とすため、@ExcludeMissing に付いた @JacksonAnnotationsInside /
+# @JsonInclude(CUSTOM, valueFilter = JsonField.IsMissing) が消え、未設定(JsonMissing)のフィールドまで
+# 直列化しようとして IllegalStateException("JsonMissing cannot be serialized") になる。
+# (R8 後のバイトコードを JVM で動かすチェックで、Claude へのリクエスト送信時に再現・確認した)
+-keep @interface com.anthropic.core.ExcludeMissing
+# valueFilter のクラスは Jackson がリフレクションで生成し equals で判定する
+-keep class com.anthropic.core.JsonField$IsMissing {
+    <init>();
+    boolean equals(java.lang.Object);
+}
+
+# ---- Jetpack Glance(ホーム画面ウィジェット) ----
+# glance-appwidget 同梱のルール(proto のフィールド、ActionCallback)と、マニフェスト由来の
+# Receiver の keep で動作上は足りる。ただし GlanceAppWidgetManager は GlanceAppWidget のクラス名
+# (getCanonicalName)を DataStore に保存して getGlanceIds() の照合に使うため、難読化名がビルドごとに
+# 変わるとアップデート直後に既存ウィジェットが見つからず更新が飛ばされうる。名前だけ固定する
+-keepnames class * extends androidx.glance.appwidget.GlanceAppWidget
+
+# ---- Flogger(MediaPipe が使用) ----
+# MediaPipe が使う Flogger は、ログ出力の実装(DefaultPlatform)を
+# DefaultPlatform.class.getDeclaredConstructor().newInstance() で生成する。R8 はこの形を解析できるが、
+# 縮小で引数なしコンストラクタが消えると初回ログで落ちるため明示しておく(Flogger 0.6 にはルールが同梱されていない)
+-keep class com.google.common.flogger.backend.system.DefaultPlatform {
+    <init>();
+}
+
+# ---- PdfBox-Android(PDF のテキスト抽出) ----
+# 同梱の consumer rules(暗号化ハンドラのコンストラクタ等)で動作上は足りる。
+# JPXFilter(JPEG 2000 画像の復号)は任意の依存 jp2-android(com.gemalto.jp2)を参照するが、このアプリは入れていない。
+# テキスト抽出では画像を復号しない(ページの画像化は端末の PdfRenderer を使う)ため、警告だけを抑える
+-dontwarn com.gemalto.jp2.JP2Decoder
