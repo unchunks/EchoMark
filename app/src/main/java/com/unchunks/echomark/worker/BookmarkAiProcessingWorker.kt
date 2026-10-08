@@ -10,6 +10,7 @@ import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.provider.EmbeddingInputBuilder
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.provider.LlmException
@@ -96,7 +97,9 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                 if (newSummary != null ||
                     repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion
                 ) {
-                    val text = embeddingTextOf(bookmark.title, newSummary ?: bookmark.summary, bookmark.content)
+                    val text = EmbeddingInputBuilder.build(
+                        bookmark.title, newSummary ?: bookmark.summary, bookmark.content, embeddingProvider.profile
+                    )
                     val vector = embeddingProvider.embedDocument(text)
                     repository.saveEmbedding(bookmarkId, vector, embeddingProvider.modelVersion)
                 }
@@ -205,18 +208,3 @@ internal fun attachmentFileOf(filesDir: File, relativePath: String): File? {
     val file = File(root, relativePath).canonicalFile
     return file.takeIf { it.startsWith(root) && it.isFile }
 }
-
-/**
- * 埋め込み(ベクトル検索)に使うテキスト。タイトル・要約・本文の先頭の順に並べる。
- * 埋め込みモデルが読める長さには上限があり、長い本文は先頭しか反映されないため、
- * 中身を短くまとめた要約を先に置く(画像・音声など本文の無いものも、要約で検索できるようにする)。
- */
-internal fun embeddingTextOf(title: String, summary: String?, content: String?): String =
-    listOfNotNull(
-        title.takeIf { it.isNotBlank() },
-        summary?.takeIf { it.isNotBlank() },
-        content?.take(EMBEDDING_CONTENT_CHARS)?.takeIf { it.isNotBlank() }
-    ).joinToString("\n")
-
-/** 埋め込みに含める本文の先頭の文字数 */
-private const val EMBEDDING_CONTENT_CHARS = 1_000

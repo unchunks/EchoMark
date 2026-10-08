@@ -200,9 +200,11 @@ class ChatRepositoryImpl @Inject constructor(
 
         // 3. ObjectBoxで近傍検索し、類似度しきい値を下回る(無関係な)結果を除外
         // score は COSINE 距離。RagSupport 側で類似度へ変換して判定する
-        val hits = vectorSearch.nearestNeighbors(queryVector, RagSupport.SEARCH_LIMIT)
+        // 現在のモデルの版のベクトルだけを比べる(再埋め込みの途中は旧版を除く)
+        val profile = embeddingProvider.profile
+        val hits = vectorSearch.nearestNeighbors(queryVector, RagSupport.SEARCH_LIMIT, profile.modelVersion)
             .map { it.bookmarkId to it.score }
-        val relevantIds = RagSupport.selectRelevantIds(hits)
+        val relevantIds = RagSupport.selectRelevantIds(hits, profile.minRagSimilarity)
         val byId = bookmarkRepository.getBookmarksByIds(relevantIds).associateBy { it.id }
         return relevantIds.mapNotNull { byId[it] }
     }

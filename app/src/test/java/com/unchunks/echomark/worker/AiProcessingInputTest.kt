@@ -42,12 +42,4 @@ class AiProcessingInputTest {
         assertNull(analysisAttachmentOf(bookmark("a.png", mimeType = null), filesDir))
         assertNull(analysisAttachmentOf(bookmark("../secret.txt"), filesDir))
     }
-
-    @Test
-    fun 埋め込みはタイトル_要約_本文の先頭の順() {
-        assertEquals("題\n要約\n本文", embeddingTextOf("題", "要約", "本文"))
-        assertEquals("題\n本文", embeddingTextOf("題", null, "本文"))
-        assertEquals("題\n要約", embeddingTextOf("題", "要約", ""))
-        assertEquals(1_000, embeddingTextOf("", null, "あ".repeat(5_000)).length)
-    }
 }
