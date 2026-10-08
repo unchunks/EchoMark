@@ -24,6 +24,7 @@ import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
+import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import java.io.File
@@ -316,8 +317,7 @@ private class ScriptedLlmProvider : LlmProvider {
 private class RecordingEmbeddingProvider : EmbeddingProvider {
     private val delegate = FakeEmbeddingProvider()
     val documents = mutableListOf<String>()
-    override val modelVersion: String = delegate.modelVersion
-    override val dimensions: Int = delegate.dimensions
+    override val profile: EmbeddingModelProfile = delegate.profile
     override suspend fun embedDocument(text: String): FloatArray {
         documents += text
         return delegate.embedDocument(text)

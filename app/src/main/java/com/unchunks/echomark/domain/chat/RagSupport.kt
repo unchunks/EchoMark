@@ -8,12 +8,11 @@ import com.unchunks.echomark.domain.model.ChatMessage
 object RagSupport {
 
     /**
-     * 文脈として採用する最小の類似度(コサイン類似度)。
+     * 文脈として採用する最小の類似度(コサイン類似度)は埋め込みモデルごとに異なるため、
+     * [com.unchunks.echomark.domain.provider.EmbeddingModelProfile.minRagSimilarity] を使う。
      * ObjectBox の COSINE は「類似度」ではなく距離(1 - cos類似度、0〜2)を返すため、
      * [distanceToSimilarity] で変換してから比較する。
-     * 埋め込みモデルによって分布が変わるので、実機で調整する前提の暫定値。
      */
-    const val MIN_SIMILARITY = 0.5
 
     /** 検索する近傍の最大件数。 */
     const val SEARCH_LIMIT = 5
@@ -36,7 +35,7 @@ object RagSupport {
      */
     fun selectRelevantIds(
         hits: List<Pair<Long, Double>>,
-        minSimilarity: Double = MIN_SIMILARITY
+        minSimilarity: Double
     ): List<Long> = hits
         .filter { distanceToSimilarity(it.second) >= minSimilarity }
         .sortedBy { it.second }

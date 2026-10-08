@@ -23,12 +23,19 @@ class RagSupportTest {
 
     @Test
     fun selectRelevantIds_emptyWhenAllBelowThreshold() {
-        assertEquals(emptyList<Long>(), RagSupport.selectRelevantIds(listOf(1L to 1.2)))
+        assertEquals(emptyList<Long>(), RagSupport.selectRelevantIds(listOf(1L to 1.2), 0.5))
+    }
+
+    @Test
+    fun selectRelevantIds_usesGivenThreshold() {
+        // 距離 0.5(類似度 0.5)は、しきい値 0.6 のモデルでは除外され、0.4 のモデルでは残る
+        assertEquals(emptyList<Long>(), RagSupport.selectRelevantIds(listOf(1L to 0.5), 0.6))
+        assertEquals(listOf(1L), RagSupport.selectRelevantIds(listOf(1L to 0.5), 0.4))
     }
 
     @Test
     fun selectRelevantIds_removesDuplicates() {
-        assertEquals(listOf(1L), RagSupport.selectRelevantIds(listOf(1L to 0.1, 1L to 0.2)))
+        assertEquals(listOf(1L), RagSupport.selectRelevantIds(listOf(1L to 0.1, 1L to 0.2), 0.5))
     }
 
     @Test

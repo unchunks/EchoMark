@@ -6,6 +6,7 @@ import com.google.mediapipe.tasks.text.textembedder.TextEmbedder
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder.TextEmbedderOptions
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder.TextFormatContext
 import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -22,8 +23,7 @@ class OnDeviceEmbeddingProvider @Inject constructor(
     private val dispatcherProvider: DispatcherProvider
 ) : EmbeddingProvider {
 
-    override val dimensions = 768
-    override val modelVersion = "embedding-gemma-300m-mediapipe-v1"
+    override val profile: EmbeddingModelProfile get() = EmbeddingModelProfile.BUNDLED
 
     private var textEmbedder: TextEmbedder? = null
     private val initMutex = Mutex()

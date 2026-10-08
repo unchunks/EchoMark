@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.provider.LlmException
@@ -65,8 +66,7 @@ class ChatRepositoryImplStreamTest {
 
     /** 埋め込みモデルが無い環境(assets 未同梱)を再現する。 */
     private val noEmbedding = object : EmbeddingProvider {
-        override val dimensions = 768
-        override val modelVersion = "test"
+        override val profile = EmbeddingModelProfile.GEMMA_V1.copy(modelVersion = "test")
         override suspend fun embedDocument(text: String): FloatArray = throw EmbeddingUnavailableException()
         override suspend fun embedQuery(text: String): FloatArray = throw EmbeddingUnavailableException()
     }

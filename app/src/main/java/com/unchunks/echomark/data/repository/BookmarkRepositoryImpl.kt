@@ -427,7 +427,7 @@ class BookmarkRepositoryImpl @Inject constructor(
             val semantic = try {
                 val vector = embeddingProvider.embedQuery(q)
                 val ids = vectorSearch.nearestNeighbors(vector, VECTOR_TOP_K)
-                    .filter { it.score <= MAX_VECTOR_DISTANCE }
+                    .filter { it.score <= embeddingProvider.profile.maxSearchDistance }
                     .map { it.bookmarkId }
                 val byId = bookmarkDao.getByIdsWithTags(ids).associateBy { it.bookmark.id }
                 ids.mapNotNull { byId[it] }
@@ -467,11 +467,5 @@ class BookmarkRepositoryImpl @Inject constructor(
 
         /** ベクトル検索で取得する上位件数 */
         const val VECTOR_TOP_K = 20
-
-        /**
-         * ベクトル検索の採用上限(ObjectBox COSINE の距離 = 1 - コサイン類似度。小さいほど近い)。
-         * 0.4 はコサイン類似度 0.6 相当。無関係な結果が混ざる/取りこぼす場合はここを調整する。
-         */
-        const val MAX_VECTOR_DISTANCE = 0.4
     }
 }

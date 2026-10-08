@@ -202,7 +202,7 @@ class ChatRepositoryImpl @Inject constructor(
         // score は COSINE 距離。RagSupport 側で類似度へ変換して判定する
         val hits = vectorSearch.nearestNeighbors(queryVector, RagSupport.SEARCH_LIMIT)
             .map { it.bookmarkId to it.score }
-        val relevantIds = RagSupport.selectRelevantIds(hits)
+        val relevantIds = RagSupport.selectRelevantIds(hits, embeddingProvider.profile.minRagSimilarity)
         val byId = bookmarkRepository.getBookmarksByIds(relevantIds).associateBy { it.id }
         return relevantIds.mapNotNull { byId[it] }
     }
