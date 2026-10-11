@@ -13,6 +13,7 @@ import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.unchunks.echomark.data.local.objectbox.EmbeddingEntity
 import com.unchunks.echomark.data.local.objectbox.MyObjectBox
+import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import io.objectbox.Box
 import io.objectbox.BoxStore
@@ -83,8 +84,8 @@ fun inMemoryBoxStore(): BoxStore = MyObjectBox.builder().inMemory("test-${UUID.r
 fun BoxStore.embeddingBox(): Box<EmbeddingEntity> = boxFor(EmbeddingEntity::class.java)
 
 /** 固定のベクトルを返す埋め込みの Fake(次元は ObjectBox の索引に合わせる)。 */
-class FakeEmbeddingProvider(override val modelVersion: String = "test-embedding-v1") : EmbeddingProvider {
-    override val dimensions: Int = 768
+class FakeEmbeddingProvider(modelVersion: String = "test-embedding-v1") : EmbeddingProvider {
+    override val profile: EmbeddingModelProfile = EmbeddingModelProfile.GEMMA_V1.copy(modelVersion = modelVersion)
     override suspend fun embedDocument(text: String): FloatArray = unitVector()
     override suspend fun embedQuery(text: String): FloatArray = unitVector()
     private fun unitVector() = FloatArray(dimensions) { if (it == 0) 1f else 0f }

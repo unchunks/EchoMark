@@ -13,6 +13,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
+import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
@@ -232,6 +233,10 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> = TODO("not used")
     override suspend fun getAllBookmarkIds(): List<Long> = TODO("not used")
     override suspend fun getEmbeddingModelVersion(bookmarkId: Long): String? = TODO("not used")
+
+    /** [getEmbeddingProgress] が返す値(テストで差し替える)。 */
+    var embeddingProgress = EmbeddingProgress(embedded = 0, total = 0)
+    override suspend fun getEmbeddingProgress(): EmbeddingProgress = embeddingProgress
 }
 
 /** タグ管理のフェイク。統合・削除は tags の中だけで表す。 */

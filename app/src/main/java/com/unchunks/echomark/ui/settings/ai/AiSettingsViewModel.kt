@@ -4,10 +4,14 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
+import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
+import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
@@ -18,6 +22,9 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +49,11 @@ data class AiSettingsUiState(
     val tasks: Map<AiTask, AiTaskSetting> = AiTask.entries.associateWith { AiTaskSetting() },
     val localModel: LocalModelInfo? = null,
     val importState: ModelImportState = ModelImportState.Idle,
+    /** 取り込んだ埋め込みモデル。null なら同梱のモデルを使っている */
+    val embeddingModel: EmbeddingModelInfo? = null,
+    val embeddingImportState: ModelImportState = ModelImportState.Idle,
+    /** 検索インデックス(埋め込み)の更新状況。まだ読めていなければ null */
+    val embeddingProgress: EmbeddingProgress? = null,
     /** API キーを入力・確認する提供元(キーは提供元ごとに1つで、用途の選択とは別) */
     val keyProvider: ApiProvider = ApiProvider.CLAUDE,
     /** API キーが保存済みの提供元 */
@@ -84,11 +96,21 @@ data class AiSettingsUiState(
             ?: keyProvider.defaultModel
 }
 
+/** uiState にまとめる前の、モデル(端末内 LLM・埋め込み)に関する状態。 */
+private data class ModelsSnapshot(
+    val llm: LocalModelInfo?,
+    val llmImport: ModelImportState,
+    val embedding: EmbeddingModelInfo?,
+    val embeddingImport: ModelImportState,
+    val embeddingProgress: EmbeddingProgress?
+)
+
 @HiltViewModel
 class AiSettingsViewModel @Inject constructor(
     private val appSettings: AppSettingsRepository,
     private val apiKeyRepository: ApiKeyRepository,
     private val modelManager: ModelManager,
+    private val embeddingModelManager: EmbeddingModelManager,
     private val apiLlmProvider: ApiLlmProvider,
     private val bookmarkRepository: BookmarkRepository
 ) : ViewModel() {
@@ -98,15 +120,25 @@ class AiSettingsViewModel @Inject constructor(
 
     val uiState: StateFlow<AiSettingsUiState> = combine(
         appSettings.aiTaskSettings,
-        combine(modelManager.installedModel, modelManager.importState, ::Pair),
+        combine(
+            modelManager.installedModel,
+            modelManager.importState,
+            embeddingModelManager.installedModel,
+            embeddingModelManager.importState,
+            embeddingProgressFlow(),
+            ::ModelsSnapshot
+        ),
         selectedKeyProvider,
         appSettings.sendFilesToCloud,
         apiKeyRepository.configuredProviders
-    ) { tasks, (model, import), keyProvider, sendFiles, configured ->
+    ) { tasks, models, keyProvider, sendFiles, configured ->
         AiSettingsUiState(
             tasks = tasks,
-            localModel = model,
-            importState = import,
+            localModel = models.llm,
+            importState = models.llmImport,
+            embeddingProgress = models.embeddingProgress,
+            embeddingModel = models.embedding,
+            embeddingImportState = models.embeddingImport,
             keyProvider = keyProvider
                 ?: AiTask.entries.mapNotNull { tasks[it] }.firstOrNull { it.backend == LlmBackend.API }?.apiProvider
                 ?: ApiProvider.CLAUDE,
@@ -114,6 +146,23 @@ class AiSettingsViewModel @Inject constructor(
             sendFilesToCloud = sendFiles
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AiSettingsUiState())
+
+    /** 検索インデックスの更新状況を定期的に読む(画面を見ている間だけ動く)。 */
+    private fun embeddingProgressFlow(): Flow<EmbeddingProgress?> = flow {
+        while (true) {
+            emit(
+                try {
+                    bookmarkRepository.getEmbeddingProgress()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "検索インデックスの状況を取得できない")
+                    null
+                }
+            )
+            delay(EMBEDDING_PROGRESS_POLL_MILLIS)
+        }
+    }
 
     private val _connectionTest = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     val connectionTest: StateFlow<ConnectionTestState> = _connectionTest.asStateFlow()
@@ -199,6 +248,20 @@ class AiSettingsViewModel @Inject constructor(
         _message.value = "端末内モデルを削除しました"
     }
 
+    /** [profile] のモデルとして埋め込みモデルのファイルを取り込む(終わると埋め込みを作り直す)。 */
+    fun importEmbeddingModel(uri: Uri, profile: EmbeddingModelProfile) =
+        embeddingModelManager.startImport(uri, profile)
+
+    fun cancelEmbeddingImport() = embeddingModelManager.cancelImport()
+
+    /** 取り込んだ埋め込みモデルを消して同梱のモデルに戻す(埋め込みは作り直す)。 */
+    fun revertEmbeddingModel() {
+        embeddingModelManager.revertToBundled()
+        _message.value = "同梱の埋め込みモデルに戻しました。検索インデックスを作り直します"
+    }
+
+    fun onEmbeddingImportResultShown() = embeddingModelManager.clearImportResult()
+
     /** 取り込み結果(成功・失敗)の表示が済んだ。 */
     fun onImportResultShown() = modelManager.clearImportResult()
 
@@ -212,5 +275,9 @@ class AiSettingsViewModel @Inject constructor(
 
     fun onMessageShown() {
         _message.update { null }
+    }
+
+    private companion object {
+        const val EMBEDDING_PROGRESS_POLL_MILLIS = 2_000L
     }
 }

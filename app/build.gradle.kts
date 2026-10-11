@@ -88,6 +88,10 @@ android {
         getByName("debug") {
             assets.directories.add("$projectDir/schemas")
         }
+        // 検索品質の評価データ(JVM テストと共通の src/test/resources/eval)を、計測テスト(androidTest)の assets として読めるようにする
+        getByName("androidTest") {
+            assets.directories.add("$projectDir/src/test/resources/eval")
+        }
     }
 }
 

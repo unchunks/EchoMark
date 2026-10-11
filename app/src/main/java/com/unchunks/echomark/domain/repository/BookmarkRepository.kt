@@ -5,6 +5,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
 
@@ -97,6 +98,9 @@ interface BookmarkRepository {
     suspend fun getAllBookmarkIds(): List<Long>
     suspend fun getRelatedBookmarks(bookmarkId: Long, limit: Int = 5): List<Bookmark>
     suspend fun getEmbeddingModelVersion(bookmarkId: Long): String?
+
+    /** 現在の埋め込みモデルの版で保存済みの件数とブックマークの総数。「検索インデックスを更新中 (x/y)」の表示用。 */
+    suspend fun getEmbeddingProgress(): EmbeddingProgress
     /**
      * AI に伝える既存のタグ名(ユーザーのタグ → よく使われている順)。似たタグを増やさず使い回させるために使う。
      * プロンプトに入れる量は各 LlmProvider がさらに絞る。

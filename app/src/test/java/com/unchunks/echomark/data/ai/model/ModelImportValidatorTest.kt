@@ -23,6 +23,17 @@ class ModelImportValidatorTest {
     }
 
     @Test
+    fun 埋め込みモデルはtaskとtfliteを受け付けlitertlmは拒否() {
+        val ext = ModelImportValidator.EMBEDDING_EXTENSIONS
+        assertNull(ModelImportValidator.validate("embedding_gemma.task", gb, 10 * gb, ext))
+        assertNull(ModelImportValidator.validate("model.TFLITE", gb, 10 * gb, ext))
+        assertEquals(
+            ModelImportError.UnsupportedFormat("m.litertlm", ext),
+            ModelImportValidator.validate("m.litertlm", gb, 10 * gb, ext)
+        )
+    }
+
+    @Test
     fun 空き容量が足りなければ拒否() {
         val error = ModelImportValidator.validate("model.task", 2 * gb, 2 * gb)
         assertTrue(error is ModelImportError.InsufficientStorage)

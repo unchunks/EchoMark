@@ -2,8 +2,6 @@ package com.unchunks.echomark.data.ai.model
 
 import android.content.Context
 import android.net.Uri
-import android.os.storage.StorageManager
-import android.provider.OpenableColumns
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -12,8 +10,6 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +17,6 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,6 +37,8 @@ class ModelManager @Inject constructor(
         SupervisorJob() + dispatcherProvider.io +
             CoroutineExceptionHandler { _, e -> Timber.e(e, "モデルの管理処理に失敗") }
     )
+
+    private val copier = SafModelCopier(context)
 
     private val modelsDir: File
         get() = File(context.filesDir, "models").also { it.mkdirs() }
@@ -98,8 +95,8 @@ class ModelManager @Inject constructor(
     private suspend fun importInternal(uri: Uri) {
         val part = File(modelsDir, PART_FILE_NAME)
         try {
-            val (displayName, size) = queryNameAndSize(uri)
-            ModelImportValidator.validate(displayName, size, allocatableBytes())?.let {
+            val (displayName, size) = copier.queryNameAndSize(uri)
+            ModelImportValidator.validate(displayName, size, copier.allocatableBytes(modelsDir))?.let {
                 _importState.value = ModelImportState.Failed(it)
                 return
             }
@@ -107,7 +104,7 @@ class ModelManager @Inject constructor(
 
             _importState.value = ModelImportState.Copying(0L, size)
             part.delete()
-            val copied = copyWithProgress(uri, part, size)
+            val copied = copier.copyWithProgress(uri, part) { _importState.value = ModelImportState.Copying(it, size) }
             if (copied == 0L) {
                 part.delete()
                 _importState.value = ModelImportState.Failed(ModelImportError.EmptyFile)
@@ -141,7 +138,7 @@ class ModelManager @Inject constructor(
         } catch (e: IOException) {
             Timber.w(e, "モデルの取り込みに失敗")
             part.delete()
-            val usable = allocatableBytes()
+            val usable = copier.allocatableBytes(modelsDir)
             _importState.value = ModelImportState.Failed(
                 // 書き込み中の容量不足(サイズ不明のファイルなど)
                 if (usable < ModelImportValidator.STORAGE_MARGIN_BYTES) {
@@ -161,61 +158,6 @@ class ModelManager @Inject constructor(
             part.delete()
             _importState.value = ModelImportState.Failed(ModelImportError.ReadFailed)
         }
-    }
-
-    /** 保存先に確保できる容量。消去可能なキャッシュ分も含めて見積もる。 */
-    private fun allocatableBytes(): Long {
-        val dir = modelsDir
-        return try {
-            val storageManager = context.getSystemService(StorageManager::class.java)
-            storageManager.getAllocatableBytes(storageManager.getUuidForPath(dir))
-        } catch (e: Exception) {
-            // 保存先の情報を取れない場合(IOException など)は、通常の空き容量で見積もる
-            dir.usableSpace
-        }
-    }
-
-    /** 表示名とサイズ(不明なら -1)。 */
-    private fun queryNameAndSize(uri: Uri): Pair<String, Long> {
-        var name: String? = null
-        var size = -1L
-        context.contentResolver.query(
-            uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
-                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
-            }
-        }
-        return (name ?: uri.lastPathSegment.orEmpty()) to size
-    }
-
-    private suspend fun copyWithProgress(uri: Uri, dest: File, totalBytes: Long): Long {
-        val input = context.contentResolver.openInputStream(uri) ?: throw IOException("openInputStream returned null")
-        var copied = 0L
-        var lastReported = 0L
-        input.use { src ->
-            FileOutputStream(dest).use { out ->
-                val buffer = ByteArray(BUFFER_SIZE)
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    val read = src.read(buffer)
-                    if (read < 0) break
-                    out.write(buffer, 0, read)
-                    copied += read
-                    // 状態更新が多すぎないよう、一定量ごとに通知する
-                    if (copied - lastReported >= PROGRESS_STEP_BYTES) {
-                        lastReported = copied
-                        _importState.value = ModelImportState.Copying(copied, totalBytes)
-                    }
-                }
-                out.fd.sync()
-            }
-        }
-        _importState.value = ModelImportState.Copying(copied, totalBytes)
-        return copied
     }
 
     private fun loadMetadata(): LocalModelInfo? = try {
@@ -254,7 +196,5 @@ class ModelManager @Inject constructor(
         const val MODEL_FILE_BASE_NAME = "local_llm"
         const val METADATA_FILE_NAME = "local_llm.json"
         const val PART_FILE_NAME = "import.part"
-        const val BUFFER_SIZE = 256 * 1024
-        const val PROGRESS_STEP_BYTES = 8L * 1024 * 1024
     }
 }
