@@ -178,18 +178,38 @@ class ChatRepositoryImpl @Inject constructor(
         //    質問の対象が固定されていれば、それを必ず先頭に含める
         val pinned = pinnedBookmarkId?.let { bookmarkRepository.getBookmarksByIds(listOf(it)).firstOrNull() }
         val searched = findRelevantBookmarks(RagSupport.searchQueryFor(userMessage, pinned?.title))
+            // 質問に近いものもタグで絞れるものも無ければ(「最近保存した記事の要点は？」のような保存全体についての質問)、
+            // 最近保存したものを渡す。関係があるかは AI に判断させる
+            .ifEmpty { if (pinned == null) getRecentBookmarks(RagSupport.SEARCH_LIMIT) else emptyList() }
         val usedBookmarks = RagSupport.pinFirst(pinned, searched, idOf = { it.id })
+        val now = System.currentTimeMillis()
         val context = usedBookmarks.mapIndexed { i, b ->
+            val title = RagSupport.contextTitle(b.title, b.createdAt, now)
             if (b.id == pinned?.id) {
-                RagSupport.formatPinnedContextEntry(i + 1, b.title, b.summary, b.content)
+                RagSupport.formatPinnedContextEntry(i + 1, title, b.summary, b.content)
             } else {
-                RagSupport.formatContextEntry(i + 1, b.title, b.summary ?: b.content)
+                RagSupport.formatContextEntry(i + 1, title, b.summary ?: b.content)
             }
         }
         return PreparedChat(history, context, usedBookmarks.map { it.id })
     }
 
+    /**
+     * 質問に意味の近いものと、質問に名前が出てくるタグ(「「技術」の保存をまとめて」など)の付いたものを、この順に返す。
+     * 意味の近さ(埋め込みの類似度)だけでは、タグで絞る質問の対象が見つからないため、タグでも探す。
+     */
     private suspend fun findRelevantBookmarks(userMessage: String): List<Bookmark> {
+        val similar = findSimilarBookmarks(userMessage)
+        val tagged = RagSupport.tagsMentionedIn(userMessage, bookmarkRepository.observeAllTags().first())
+            .flatMap { tag ->
+                bookmarkRepository.observeBookmarks(BookmarkFilter.ACTIVE, BookmarkSortOrder.NEWEST, tag.id)
+                    .first()
+                    .take(RagSupport.SEARCH_LIMIT)
+            }
+        return (similar + tagged).distinctBy { it.id }
+    }
+
+    private suspend fun findSimilarBookmarks(userMessage: String): List<Bookmark> {
         // 2. 質問文をembedding化。埋め込みモデルが無い環境ではキーワード検索で代替する
         val queryVector = try {
             embeddingProvider.embedQuery(userMessage)

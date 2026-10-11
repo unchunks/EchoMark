@@ -1,6 +1,7 @@
 package com.unchunks.echomark.domain.chat
 
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.Tag
 
 /**
  * チャット(RAG)で使う純粋なヘルパー群。Android 依存なしで単体テストできる。
@@ -42,6 +43,28 @@ object RagSupport {
         .sortedBy { it.second }
         .map { it.first }
         .distinct()
+
+    /** 質問に含まれていればそのタグの保存を文脈に加える、タグ名の最小の文字数(1文字のタグは偶然含まれやすい) */
+    const val MIN_TAG_MATCH_CHARS = 2
+
+    /**
+     * 名前が質問に含まれるタグ(大文字・小文字は区別しない)。
+     * 「「技術」の保存をまとめて」のように、意味の近さ(埋め込み)では見つからない、タグで絞る質問に使う。
+     */
+    fun tagsMentionedIn(message: String, tags: List<Tag>): List<Tag> =
+        tags.filter { it.name.trim().length >= MIN_TAG_MATCH_CHARS && message.contains(it.name.trim(), ignoreCase = true) }
+
+    private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+
+    /**
+     * 文脈に載せるタイトル。いつ保存したかを添え、「最近保存したもの」「今週保存したもの」のような質問に答えられるようにする
+     * (AI は今日の日付を知らないため、日付ではなく何日前かで示す)。例: "タイトル(3日前に保存)"
+     */
+    fun contextTitle(title: String, createdAt: Long, now: Long): String {
+        val days = ((now - createdAt) / DAY_MILLIS).coerceAtLeast(0)
+        val saved = if (days == 0L) "今日保存" else "${days}日前に保存"
+        return "$title($saved)"
+    }
 
     /** 引用しやすい "[n] タイトル: 要約or本文冒頭" 形式の文脈1件を作る。 */
     fun formatContextEntry(index: Int, title: String, body: String?, maxChars: Int = MAX_SNIPPET_CHARS): String {
