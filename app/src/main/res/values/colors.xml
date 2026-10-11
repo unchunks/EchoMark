@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
+    <!-- スプラッシュ画面の背景(ブランドのインディゴ T40)。ダークでは values-night の T30 -->
+    <color name="splash_background">#FF4A55A7</color>
+    <!-- ウィジェット選択画面のプレビュー(layout/widget_rediscover_preview.xml)。ブランド配色のライト。ダークは values-night -->
+    <color name="widget_preview_background">#FFE0E1F9</color>
+    <color name="widget_preview_item">#FFFBF8FF</color>
+    <color name="widget_preview_primary">#FF4A55A7</color>
+    <color name="widget_preview_on_surface">#FF1B1B21</color>
+    <color name="widget_preview_on_surface_variant">#FF46464F</color>
 </resources>

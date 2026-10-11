@@ -11,5 +11,25 @@ data class Bookmark(
     val category: String? = null,
     val createdAt: Long,
     val lastAccessedAt: Long,
-    val tags: List<String> = emptyList()
+    val aiStatus: AiStatus = AiStatus.PENDING,
+    val tags: List<String> = emptyList(),
+    /** [tags] のうち AI が付けたもの(残りはユーザーが付けたもの)。再処理すると付け直される */
+    val aiTags: Set<String> = emptySet(),
+    /** リンク先の OG 画像 URL(取得できなければ null) */
+    val imageUrl: String? = null,
+    /** リンク先のサイト名(og:site_name など。取得できなければ null) */
+    val siteName: String? = null,
+    val isFavorite: Boolean = false,
+    /** アーカイブ済み(通常の一覧には出さない) */
+    val isArchived: Boolean = false,
+    /** 保存したファイル(画像・PDF・音声など)の、アプリ内の保存先(filesDir からの相対パス)。ファイルでなければ null */
+    val filePath: String? = null,
+    /** 中身の MIME タイプ(ファイル、またはリンク先が HTML 以外のとき)。不明なら null */
+    val mimeType: String? = null,
+    /** 元のファイル名(共有・選択されたときの名前)。表示用 */
+    val fileName: String? = null,
+    /** ファイルのサイズ(バイト)。表示用 */
+    val fileSize: Long? = null,
+    /** URL の本文(リンク先)を取得できた日時。未取得・取得に失敗したままなら null(再処理で取得し直す) */
+    val contentFetchedAt: Long? = null
 )

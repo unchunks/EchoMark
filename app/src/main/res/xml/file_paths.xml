@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 保存した添付ファイルを、ほかのアプリで開く・共有するときに FileProvider で渡せる範囲 -->
+<paths>
+    <files-path
+        name="attachments"
+        path="attachments/" />
+</paths>
