@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -8,6 +10,17 @@ plugins {
     alias(libs.plugins.objectbox)
     alias(libs.plugins.roborazzi)
 }
+
+/**
+ * リリース用の署名鍵の設定。リポジトリ直下の keystore.properties(コミットしない。keystore.properties.example を参照)か、
+ * 環境変数(ECHOMARK_KEYSTORE_FILE など)から読む。鍵のパスワードはコードやリポジトリに置かない。
+ */
+val releaseKeystoreProperties: Properties? = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
+}
+
+fun releaseSigningValue(property: String, env: String): String? =
+    releaseKeystoreProperties?.getProperty(property)?.takeIf { it.isNotBlank() } ?: System.getenv(env)?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.unchunks.echomark"
@@ -30,6 +43,18 @@ android {
         }
     }
 
+    signingConfigs {
+        // 鍵の場所が設定されているときだけ作る(無ければ release も debug 署名で仮に署名する)
+        releaseSigningValue("storeFile", "ECHOMARK_KEYSTORE_FILE")?.let { storePath ->
+            create("release") {
+                storeFile = rootProject.file(storePath)
+                storePassword = releaseSigningValue("storePassword", "ECHOMARK_KEYSTORE_PASSWORD")
+                keyAlias = releaseSigningValue("keyAlias", "ECHOMARK_KEY_ALIAS")
+                keyPassword = releaseSigningValue("keyPassword", "ECHOMARK_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             // R8 によるコードの縮小・難読化・最適化とリソースの縮小。
@@ -39,9 +64,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // TODO: リリース用の署名鍵(keystore)を用意したら signingConfigs に release を追加して差し替える。
-            //  それまでは端末へ入れて動作確認できるよう debug 署名で仮に署名する(ストア配布には使えない)
-            signingConfig = signingConfigs.getByName("debug")
+            // リリース用の鍵が設定されていればそれで署名する。無ければ端末へ入れて動作確認できるよう
+            // debug 署名で仮に署名する(配布には使わない)
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

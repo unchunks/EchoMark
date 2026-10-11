@@ -21,3 +21,8 @@ local.properties
 /app/objectbox-models/*.bak
 # ObjectBox がテスト実行時に展開するネイティブライブラリ
 /app/objectbox-jni-*.dll
+
+# リリース用の署名鍵と、その場所・パスワード(コミットしない)
+keystore.properties
+*.jks
+*.keystore
