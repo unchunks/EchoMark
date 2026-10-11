@@ -38,7 +38,10 @@ data class EmbeddingModelProfile(
          */
         const val DEFAULT_CHARS_PER_TOKEN = 1.0
 
-        /** 同梱の EmbeddingGemma(308M, 768 次元, 2K トークン)。 */
+        /**
+         * 同梱の EmbeddingGemma(308M, 768 次元)。モデル自体は 2K トークンまで読めるが、同梱の MediaPipe 版(.task)は
+         * 512 トークン(先頭・末尾の特別なトークンを含む)までで、超えると切り詰めずに失敗する(実機のエラーで確認)。
+         */
         val GEMMA_V1 = EmbeddingModelProfile(
             id = "embedding-gemma-300m",
             displayName = "EmbeddingGemma 300M",
@@ -46,7 +49,7 @@ data class EmbeddingModelProfile(
             dimensions = 768,
             maxSearchDistance = 0.4,
             minRagSimilarity = 0.5,
-            maxInputTokens = 2048,
+            maxInputTokens = 512,
             maxContentChars = 1_000
         )
 

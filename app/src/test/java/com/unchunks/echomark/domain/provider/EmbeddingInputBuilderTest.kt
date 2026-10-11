@@ -23,7 +23,8 @@ class EmbeddingInputBuilderTest {
 
     @Test
     fun 本文はプロファイルの上限までしか含めない() {
-        assertEquals(1_000, EmbeddingInputBuilder.build("", null, "あ".repeat(5_000), v1).length)
+        val roomy = v1.copy(maxInputTokens = 2048)
+        assertEquals(1_000, EmbeddingInputBuilder.build("", null, "あ".repeat(5_000), roomy).length)
         val wide = v1.copy(maxContentChars = 3_000, maxInputTokens = 8192)
         assertEquals(3_000, EmbeddingInputBuilder.build("", null, "あ".repeat(5_000), wide).length)
     }
@@ -73,9 +74,9 @@ class EmbeddingInputBuilderTest {
 
     @Test
     fun 予算はトークン上限から予約分を引いて文字数へ換算する() {
-        assertEquals(2048 - EmbeddingInputBuilder.RESERVED_TOKENS, EmbeddingInputBuilder.charBudget(v1))
+        assertEquals(512 - EmbeddingInputBuilder.RESERVED_TOKENS, EmbeddingInputBuilder.charBudget(v1))
         val ratio = v1.copy(charsPerToken = 1.5)
-        assertEquals(((2048 - EmbeddingInputBuilder.RESERVED_TOKENS) * 1.5).toInt(), EmbeddingInputBuilder.charBudget(ratio))
+        assertEquals(((512 - EmbeddingInputBuilder.RESERVED_TOKENS) * 1.5).toInt(), EmbeddingInputBuilder.charBudget(ratio))
     }
 
     @Test

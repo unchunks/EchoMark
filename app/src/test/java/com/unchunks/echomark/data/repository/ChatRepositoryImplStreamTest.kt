@@ -15,6 +15,7 @@ import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
@@ -191,9 +192,10 @@ class ChatRepositoryImplStreamTest {
 
         assertEquals(ChatStreamEvent.Started(listOf(7L, 5L)), events.first())
         assertEquals(2, llm.lastContext.size)
-        assertTrue(llm.lastContext[0].startsWith("[1] ${RagSupport.PINNED_MARK} Compose メモ: Compose の要約"))
+        assertTrue(llm.lastContext[0].startsWith("[1] ${RagSupport.PINNED_MARK} Compose メモ("))
+        assertTrue(llm.lastContext[0].contains("Compose の要約"))
         assertTrue(llm.lastContext[0].contains("本文です"))
-        assertTrue(llm.lastContext[1].startsWith("[2] Kotlin 入門"))
+        assertTrue(llm.lastContext[1].startsWith("[2] Kotlin 入門("))
         assertEquals("7,5", messageDao.all.value.last().referencedBookmarkIds)
     }
 
@@ -202,6 +204,37 @@ class ChatRepositoryImplStreamTest {
         val events = repository(RecordingLlm()).sendMessageStream(1L, "Kotlin", pinnedBookmarkId = 99L).toList()
 
         assertEquals(ChatStreamEvent.Started(listOf(5L)), events.first())
+    }
+
+    @Test
+    fun 質問に近いものが無ければ最近保存したものを新しい順に渡す() = runBlocking {
+        val day = 24 * 60 * 60 * 1000L
+        val now = System.currentTimeMillis()
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 1, title = "古い記事").copy(createdAt = now - 10 * day, summary = "古い要約"),
+            testBookmark(id = 2, title = "新しい記事").copy(createdAt = now - 2 * day, summary = "新しい要約"),
+            testBookmark(id = 3, title = "アーカイブ").copy(createdAt = now, isArchived = true)
+        )
+        val llm = RecordingLlm()
+
+        val events = repository(llm).sendMessageStream(1L, "最近保存した記事の要点は？").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(2L, 1L)), events.first())
+        assertEquals(listOf("[1] 新しい記事(2日前に保存): 新しい要約", "[2] 古い記事(10日前に保存): 古い要約"), llm.lastContext)
+    }
+
+    @Test
+    fun 質問に名前が出てくるタグの付いたものを渡す() = runBlocking {
+        fakeBookmarks.tags.value = listOf(Tag(1, "技術"), Tag(2, "料理"))
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 1, title = "Kotlin の記事").copy(tags = listOf("1")),
+            testBookmark(id = 2, title = "カレーの作り方").copy(tags = listOf("2"))
+        )
+        val llm = RecordingLlm()
+
+        val events = repository(llm).sendMessageStream(1L, "「技術」の保存をまとめて").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(1L)), events.first())
     }
 
     @Test

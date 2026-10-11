@@ -2,6 +2,7 @@ package com.unchunks.echomark.domain.chat
 
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.echomark.domain.model.Tag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -97,5 +98,26 @@ class RagSupportTest {
         assertEquals("Compose 入門について", RagSupport.aboutBookmarkTitle("Compose 入門"))
         val long = RagSupport.aboutBookmarkTitle("あ".repeat(50))
         assertEquals("あ".repeat(RagSupport.TITLE_MAX_CHARS - 4) + "…について", long)
+    }
+
+    @Test
+    fun tagsMentionedIn_matchesNamesInMessageIgnoringCaseAndShortNames() {
+        val tags = listOf(Tag(1, "AI"), Tag(2, "技術"), Tag(3, "機械学習"), Tag(4, "本"), Tag(5, "料理"))
+
+        assertEquals(
+            listOf(1L, 2L, 3L),
+            RagSupport.tagsMentionedIn("「機械学習」と「技術」とaiの保存をまとめて", tags).map { it.id }
+        )
+        assertEquals(emptyList<Long>(), RagSupport.tagsMentionedIn("最近保存した本は？", tags).map { it.id })
+    }
+
+    @Test
+    fun contextTitle_showsDaysSinceSaved() {
+        val day = 24 * 60 * 60 * 1000L
+        val now = 100 * day
+
+        assertEquals("記事(今日保存)", RagSupport.contextTitle("記事", now - day / 2, now))
+        assertEquals("記事(3日前に保存)", RagSupport.contextTitle("記事", now - 3 * day, now))
+        assertEquals("記事(今日保存)", RagSupport.contextTitle("記事", now + day, now))
     }
 }
