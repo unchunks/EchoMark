@@ -12,6 +12,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.unchunks.echomark.R
+import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.extract.ContentExtractor
@@ -38,7 +39,8 @@ class ContentExtractionWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val repository: BookmarkRepository,
-    private val extractor: ContentExtractor
+    private val extractor: ContentExtractor,
+    private val aiPrewarmer: AiPrewarmer
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -55,6 +57,9 @@ class ContentExtractionWorker @AssistedInject constructor(
             return Result.success()
         }
         val kind = bookmark.contentKind()
+
+        // 後続の AI 処理で端末内モデルを使うなら、取り出しと重ねて読み込んでおく
+        if (bookmark.summary.isNullOrBlank()) aiPrewarmer.prewarmLocalLlmIfUsed()
 
         if (extractor.isLongRunning(file, bookmark.mimeType, kind)) startForeground()
 

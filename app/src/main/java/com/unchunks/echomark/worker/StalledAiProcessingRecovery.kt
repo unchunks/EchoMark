@@ -1,5 +1,6 @@
 package com.unchunks.echomark.worker
 
+import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.Lazy
@@ -19,6 +20,7 @@ import javax.inject.Singleton
 class StalledAiProcessingRecovery @Inject constructor(
     // アプリ起動時(メインスレッド)に DB などを作らないよう、使うときに取り出す
     private val bookmarkRepository: Lazy<BookmarkRepository>,
+    private val aiPrewarmer: Lazy<AiPrewarmer>,
     dispatcherProvider: DispatcherProvider
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
@@ -28,7 +30,11 @@ class StalledAiProcessingRecovery @Inject constructor(
         scope.launch {
             try {
                 val count = bookmarkRepository.get().enqueueStalledProcessing()
-                if (count > 0) Timber.i("止まっていた AI 処理を積み直した: $count 件")
+                if (count > 0) {
+                    Timber.i("止まっていた AI 処理を積み直した: $count 件")
+                    // 積み直した処理がすぐ始まるため、端末内モデルを先に読み込んでおく
+                    aiPrewarmer.get().prewarmLocalLlmIfUsed()
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

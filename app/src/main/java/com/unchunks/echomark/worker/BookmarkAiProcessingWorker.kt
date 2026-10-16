@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.contentKind
@@ -38,7 +39,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val repository: BookmarkRepository,
     private val bookmarkAnalyzer: BookmarkAnalyzer,
-    private val embeddingProvider: EmbeddingProvider
+    private val embeddingProvider: EmbeddingProvider,
+    private val aiPrewarmer: AiPrewarmer
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -57,6 +59,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
 
         return try {
             repository.updateAiStatus(bookmarkId, AiStatus.PROCESSING)
+            prewarm(bookmarkId, bookmark)
             var analysisOutcome = AnalysisOutcome.DONE
             // この実行で作った要約。埋め込みに含めるため、作ったら埋め込みも作り直す
             var newSummary: String? = null
@@ -132,6 +135,19 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                 repository.updateAiStatus(bookmarkId, AiStatus.PENDING)
                 Result.retry()
             }
+        }
+    }
+
+    /**
+     * 使うモデルの読み込みを先に始める(完了は待たない)。要約を作る間に、端末内 LLM の読み込みが済んでいなければ重ねて進め、
+     * 要約の後の埋め込みモデルの読み込みも LLM の推論と重ねる(埋め込みは要約ができるまで始められないため、読み込みだけ先にする)。
+     * 前段の本文取得・取り出しのワーカーが先に始めていれば、ここでは何も起きない。
+     */
+    private suspend fun prewarm(bookmarkId: Long, bookmark: Bookmark) {
+        val needsSummary = bookmark.summary.isNullOrBlank()
+        if (needsSummary) aiPrewarmer.prewarmLocalLlmIfUsed()
+        if (needsSummary || repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion) {
+            embeddingProvider.prewarm()
         }
     }
 

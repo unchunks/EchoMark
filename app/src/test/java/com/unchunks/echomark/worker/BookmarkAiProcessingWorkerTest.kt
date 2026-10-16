@@ -11,6 +11,7 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.AppDatabase
@@ -37,6 +38,7 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
+import com.unchunks.echomark.testing.FakeLlmProvider
 import com.unchunks.echomark.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
@@ -68,6 +70,8 @@ class BookmarkAiProcessingWorkerTest {
     private lateinit var repository: BookmarkRepositoryImpl
     private val llm = ScriptedLlmProvider()
     private val embedding = RecordingEmbeddingProvider()
+    /** 端末内モデルの先読みの呼び出しを数える(AiPrewarmer の先)。 */
+    private val localLlmForPrewarm = FakeLlmProvider()
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
 
     @Before
@@ -109,7 +113,10 @@ class BookmarkAiProcessingWorkerTest {
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters
-                ) = BookmarkAiProcessingWorker(appContext, workerParameters, repository, analyzer, embedding)
+                ) = BookmarkAiProcessingWorker(
+                    appContext, workerParameters, repository, analyzer, embedding,
+                    AiPrewarmer(localLlmForPrewarm, settings)
+                )
             })
             .build()
         return worker.doWork()
@@ -203,6 +210,39 @@ class BookmarkAiProcessingWorkerTest {
         runWorker(id, runAttemptCount = 0)
         // 埋め込みモデルは同じでも、要約が変わったため作り直す
         assertEquals(2, embedding.documents.size)
+    }
+
+    @Test
+    fun 要約を作るときは端末内モデルと埋め込みモデルの読み込みを先に始める() = runBlocking {
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals(1, localLlmForPrewarm.prewarmCalls)
+        assertEquals(1, embedding.prewarmCalls)
+    }
+
+    @Test
+    fun クラウドAPIの設定では端末内モデルを先読みしないが埋め込みモデルは先読みする() = runBlocking {
+        settings.setBackendForAll(LlmBackend.API)
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals(0, localLlmForPrewarm.prewarmCalls)
+        assertEquals(1, embedding.prewarmCalls)
+    }
+
+    @Test
+    fun 要約も埋め込みも済んでいれば何も先読みしない() = runBlocking {
+        val id = insertBookmark()
+        runWorker(id, runAttemptCount = 0)
+
+        runWorker(id, runAttemptCount = 0)
+
+        // 2回目は要約も現行版の埋め込みも済み。1回目の分だけ
+        assertEquals(1, localLlmForPrewarm.prewarmCalls)
+        assertEquals(1, embedding.prewarmCalls)
     }
 
     @Test
@@ -323,4 +363,9 @@ private class RecordingEmbeddingProvider : EmbeddingProvider {
         return delegate.embedDocument(text)
     }
     override suspend fun embedQuery(text: String): FloatArray = delegate.embedQuery(text)
+
+    var prewarmCalls = 0
+    override fun prewarm() {
+        prewarmCalls++
+    }
 }
