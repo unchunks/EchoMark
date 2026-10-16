@@ -5,8 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 再発見通知用。Android 13+ のみ実行時に要求する(設定でオンにしたとき) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 長い音声・動画の文字起こし(ContentExtractionWorker)をフォアグラウンドで実行する。
-         Android 15+ はメディア処理(mediaProcessing)、それより前はデータ同期(dataSync)の種類を使う -->
+    <!-- 長い処理をフォアグラウンドで実行する(WorkManager の setForeground)。
+         - 長い音声・動画の文字起こし(ContentExtractionWorker): Android 15+ はメディア処理(mediaProcessing)、それより前はデータ同期(dataSync)
+         - 端末内 AI・長い本文・ファイルの解析など長い AI 処理(BookmarkAiProcessingWorker): データ同期(dataSync) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
@@ -107,7 +108,8 @@
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="ica" />
 
-        <!-- WorkManager のフォアグラウンド実行用サービスに、文字起こしで使う種類を付ける -->
+        <!-- WorkManager のフォアグラウンド実行用サービスに、フォアグラウンドのワーカーが使う種類(dataSync・mediaProcessing)を付ける。
+             ForegroundInfo に渡す種類は、ここで宣言したものに含まれている必要がある(Android 14+) -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync|mediaProcessing"

@@ -1,7 +1,10 @@
 package com.unchunks.echomark.worker
 
 import com.unchunks.echomark.data.attachment.AttachmentStore
+import android.app.Notification
 import android.content.Context
+import android.content.pm.ServiceInfo
+import androidx.core.app.NotificationManagerCompat
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -11,7 +14,9 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.unchunks.echomark.R
 import com.unchunks.echomark.data.ai.AiPrewarmer
+import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.AppDatabase
@@ -103,7 +108,10 @@ class BookmarkAiProcessingWorkerTest {
             .toEntity()
     )
 
-    private suspend fun runWorker(bookmarkId: Long, runAttemptCount: Int): ListenableWorker.Result {
+    private suspend fun runWorker(bookmarkId: Long, runAttemptCount: Int): ListenableWorker.Result =
+        buildWorker(bookmarkId, runAttemptCount).doWork()
+
+    private fun buildWorker(bookmarkId: Long, runAttemptCount: Int = 0): BookmarkAiProcessingWorker {
         val analyzer = BookmarkAnalyzer(LlmProviderResolver(llm, { llm }, settings, FakeApiKeyRepository()), settings)
         val worker = TestListenableWorkerBuilder<BookmarkAiProcessingWorker>(context)
             .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
@@ -119,7 +127,7 @@ class BookmarkAiProcessingWorkerTest {
                 )
             })
             .build()
-        return worker.doWork()
+        return worker
     }
 
     private suspend fun statusOf(id: Long) = repository.getBookmarkById(id)!!.aiStatus
@@ -243,6 +251,53 @@ class BookmarkAiProcessingWorkerTest {
         // 2回目は要約も現行版の埋め込みも済み。1回目の分だけ
         assertEquals(1, localLlmForPrewarm.prewarmCalls)
         assertEquals(1, embedding.prewarmCalls)
+    }
+
+    @Test
+    fun フォアグラウンドの通知はAI処理中の低い重要度のチャンネルで_タイトルを出す() = runBlocking {
+        val id = db.bookmarkDao().insert(
+            Bookmark(type = BookmarkType.TEXT, content = "本文", title = "読みたい記事", createdAt = 1L, lastAccessedAt = 1L)
+                .toEntity()
+        )
+
+        val info = buildWorker(id).getForegroundInfo()
+
+        assertEquals(AiProcessingNotification.NOTIFICATION_ID, info.notificationId)
+        assertEquals(ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC, info.foregroundServiceType)
+        val notification = info.notification
+        assertEquals(AiProcessingNotification.CHANNEL_ID, notification.channelId)
+        assertEquals(context.getString(R.string.ai_processing_notification_title), notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString())
+        assertEquals("要約を作成中: 読みたい記事", notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+        val channel = NotificationManagerCompat.from(context).getNotificationChannelCompat(AiProcessingNotification.CHANNEL_ID)!!
+        assertEquals(NotificationManagerCompat.IMPORTANCE_LOW, channel.importance)
+    }
+
+    @Test
+    fun フォアグラウンドの通知はブックマークが無くても作れる() = runBlocking {
+        val info = buildWorker(bookmarkId = 999L).getForegroundInfo()
+
+        assertEquals("要約を作成中…", info.notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+    }
+
+    @Test
+    fun 端末内AIの要約はフォアグラウンドで実行しても完了する() = runBlocking {
+        // テスト用のワーカーのフォアグラウンド化は成功する。端末内 AI の設定ではその経路を通る
+        val id = insertBookmark()
+
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+        assertEquals(AiStatus.DONE, statusOf(id))
+    }
+
+    @Test
+    fun フォアグラウンドにするのは時間がかかりそうな要約だけ() {
+        // 端末内 AI は短い本文でもフォアグラウンド
+        assertTrue(shouldRunInForeground(usesLocalLlm = true, textChars = 10, hasAttachment = false))
+        // クラウド API の短い本文は数秒で終わるため通知を出さない
+        assertEquals(false, shouldRunInForeground(usesLocalLlm = false, textChars = 10, hasAttachment = false))
+        assertEquals(false, shouldRunInForeground(usesLocalLlm = false, textChars = AiPrompts.LONG_TEXT_CHARS, hasAttachment = false))
+        // 長い本文・ファイルそのものを渡すときはクラウド API でもフォアグラウンド
+        assertTrue(shouldRunInForeground(usesLocalLlm = false, textChars = AiPrompts.LONG_TEXT_CHARS + 1, hasAttachment = false))
+        assertTrue(shouldRunInForeground(usesLocalLlm = false, textChars = 10, hasAttachment = true))
     }
 
     @Test

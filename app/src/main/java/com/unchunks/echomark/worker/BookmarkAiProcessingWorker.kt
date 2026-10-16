@@ -3,6 +3,7 @@ package com.unchunks.echomark.worker
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
@@ -32,6 +33,11 @@ import java.io.File
  *
  * 結果はブックマークの [AiStatus] で表す。諦めた(FAILED)ときもワークとしては成功で終え、
  * 一括の再処理の列([BookmarkWorkScheduler.enqueueSequential])の後続を止めない。
+ *
+ * 端末内 AI・長い本文・ファイルの解析など、要約の作成が長くかかるときは、通知つきのフォアグラウンドで実行する
+ * ([shouldRunInForeground])。WorkManager の実行時間の上限(約 10 分)やバックグラウンドでの停止を受けにくくし、実行の開始も遅らせない。
+ * フォアグラウンドにできなくても(バックグラウンドからの開始の制限など)処理はそのまま続け、
+ * 通知の権限が無いときは通知が表示されないだけで、フォアグラウンドでの実行は有効。
  */
 @HiltWorker
 class BookmarkAiProcessingWorker @AssistedInject constructor(
@@ -71,12 +77,14 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     // 種類に合った要約にし、ファイルがあればクラウド API にそのまま渡せるようにする
                     // (渡すかどうかは設定と提供元の対応で LlmProvider が決める)
                     // タグ付けと要約に別の AI を選んでいれば、それぞれの AI で作る
+                    val attachment = analysisAttachmentOf(bookmark, applicationContext.filesDir)
                     val input = AnalysisInput(
                         title = bookmark.title,
                         text = bookmark.content.orEmpty(),
                         kind = bookmark.contentKind(),
-                        attachment = analysisAttachmentOf(bookmark, applicationContext.filesDir)
+                        attachment = attachment
                     )
+                    promoteToForegroundIfLong(bookmark, input)
                     val analysis = bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi())
                     repository.updateSummary(bookmarkId, analysis.summary)
                     newSummary = analysis.summary
@@ -136,6 +144,31 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                 Result.retry()
             }
         }
+    }
+
+    /**
+     * 要約の作成が長くかかりそうなら、通知つきのフォアグラウンドにする。
+     * 始められなくても(Android 12 以降のバックグラウンドからの開始の制限など)処理は続ける。
+     */
+    private suspend fun promoteToForegroundIfLong(bookmark: Bookmark, input: AnalysisInput) {
+        if (!shouldRunInForeground(aiPrewarmer.usesLocalLlm(), input.text.length, input.attachment != null)) return
+        try {
+            setForeground(AiProcessingNotification.foregroundInfo(applicationContext, bookmark.title))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "AI 処理をフォアグラウンドにできません。このまま続けます: id=${bookmark.id}")
+        }
+    }
+
+    /**
+     * WorkManager が通知を求めたときの内容(Android 11 以前のエクスペディットなど。このアプリの最小は Android 12 だが、
+     * 取り違えて落ちないよう用意する)。ブックマークのタイトルが分かれば出す。
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val bookmarkId = inputData.getLong(KEY_BOOKMARK_ID, -1L)
+        val title = if (bookmarkId == -1L) null else repository.getBookmarkById(bookmarkId)?.title
+        return AiProcessingNotification.foregroundInfo(applicationContext, title)
     }
 
     /**
