@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -85,14 +86,38 @@ class ApiLlmProvider @Inject constructor(
         if (attachment == null && input.attachment != null && input.text.isBlank()) throw NothingToAnalyzeException()
         // PDF・音声・動画をそのまま渡すときは、ファイルが主役。取り出したテキストは手がかりとして先頭だけ渡す
         val fileIsPrimary = attachment != null && attachment.kind != AttachmentKind.IMAGE
+        val config = ApiInputBudget.longTextConfig(client.provider, credentials.model)
+        return try {
+            analyzeWith(config, client, credentials, input, existingTags, scope, attachment, fileIsPrimary)
+        } catch (e: LlmException.BadRequest) {
+            // 1回で渡す長さの見積もりが外れた(文脈長を超えた)ときは、従来の小さい単位で分けて要約し直す
+            val fallback = ApiInputBudget.fallbackConfig()
+            if (fileIsPrimary || input.text.length <= fallback.singleCallChars || config.singleCallChars <= fallback.singleCallChars) {
+                throw e
+            }
+            Timber.w(e, "本文を1回で渡せなかったため、分けて要約し直す: %d 文字", input.text.length)
+            analyzeWith(fallback, client, credentials, input, existingTags, scope, attachment, fileIsPrimary)
+        }
+    }
+
+    /** [config] の上限を超える本文は、部分ごとに要約してからまとめる。上限以下なら1回の呼び出しで要約する。 */
+    private suspend fun analyzeWith(
+        config: LongTextConfig,
+        client: ApiLlmClient,
+        credentials: ApiCredentials,
+        input: AnalysisInput,
+        existingTags: List<String>,
+        scope: AnalysisScope,
+        attachment: ApiAttachment?,
+        fileIsPrimary: Boolean
+    ): BookmarkAnalysis {
         val body = if (fileIsPrimary) {
             PreparedBody.Whole(input.text)
         } else {
-            // 上限を超える本文は、部分ごとに要約してからまとめる
-            digester.prepare(input.text) { part ->
+            LongTextDigester(config).prepare(input.text) { part ->
                 val request = ApiRequest(
                     purpose = ApiPurpose.ANALYZE,
-                    system = AiPrompts.partInstructions(input.kind, LONG_TEXT.noteMaxChars),
+                    system = AiPrompts.partInstructions(input.kind, config.noteMaxChars),
                     messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.partInput(input.title, part)))
                 )
                 AnalysisParser.parseNotes(client.complete(request, credentials))
@@ -113,7 +138,7 @@ class ApiLlmProvider @Inject constructor(
                     text = AiPrompts.analyzeInput(
                         input.title,
                         body.text,
-                        maxChars = if (fileIsPrimary) MAX_TEXT_WITH_FILE_CHARS else MAX_INPUT_CHARS,
+                        maxChars = if (fileIsPrimary) MAX_TEXT_WITH_FILE_CHARS else config.singleCallChars,
                         attachmentLabel = attachment?.let { AttachmentPolicy.label(it.kind) }
                     ),
                     attachments = listOfNotNull(attachment)
@@ -181,25 +206,13 @@ class ApiLlmProvider @Inject constructor(
             ApiMessage(ChatRole.USER, userMessage)
     )
 
-    private val digester = LongTextDigester(LONG_TEXT)
-
     private companion object {
-        // クラウドはローカルより文脈長に余裕があるため、多めに渡す
-        const val MAX_INPUT_CHARS = 20_000
-
-        /** PDF・音声・動画のファイルそのものを渡すときに、一緒に渡すテキストの上限(ファイルと重複するため短く) */
+        /**
+         * PDF・音声・動画のファイルそのものを渡すときに、一緒に渡すテキストの上限(ファイルと重複するため短く)。
+         * ファイルを渡さないときの本文の上限は、モデルごとの [ApiInputBudget]。
+         */
         const val MAX_TEXT_WITH_FILE_CHARS = 4_000
 
-        /**
-         * 長い本文の分割要約。1回の上限(20,000 文字)ごとに最大 6 部分(約 12 万文字。超える分は均等に間引く)。
-         * 呼び出しは部分の数 + 1 回。時間の目安は WorkManager の実行時間の上限(約 10 分)に収まるようにする
-         */
-        val LONG_TEXT = LongTextConfig(
-            chunkChars = MAX_INPUT_CHARS,
-            maxChunks = 6,
-            noteMaxChars = 1_200,
-            timeBudgetMillis = 4 * 60 * 1000L
-        )
         const val MAX_CONTEXT_ITEMS = 5
         const val MAX_HISTORY_ITEMS = 6
         const val MAX_HISTORY_CHARS = 2_000

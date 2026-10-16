@@ -19,8 +19,10 @@ import com.unchunks.echomark.testing.FakeLlmProvider
 import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 import org.junit.After
@@ -31,6 +33,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 
 class ApiLlmProviderTest {
 
@@ -117,28 +120,106 @@ class ApiLlmProviderTest {
         return system to user
     }
 
+    /** 部分要約(「全体の一部」の指示)には部分の番号で、最終の要約にはそれ以外で応答する。並行する呼び出しの到着順に依らない。 */
+    private fun respondByPrompt(finalJson: String, partNotes: (Int) -> String = { "要点$it" }) {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val body = JSONObject(request.body!!.utf8())
+                if (!body.systemText().contains("全体の一部")) return geminiText(finalJson)
+                val number = Regex("\\[部分 (\\d+)/").find(body.userText())!!.groupValues[1].toInt()
+                return geminiText("""{"notes":"${partNotes(number)}"}""")
+            }
+        }
+    }
+
+    private fun takeRequestBodies(count: Int): List<JSONObject> = List(count) { JSONObject(server.takeRequest().body!!.utf8()) }
+
+    private fun JSONObject.systemText() =
+        getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text")
+
+    private fun JSONObject.userText() =
+        getJSONArray("contents").getJSONObject(0).getJSONArray("parts").getJSONObject(0).getString("text")
+
     @Test
-    fun 上限を超える本文は部分ごとに要約してからまとめる() = runBlocking {
-        server.enqueue(geminiText("""{"notes":"前半の要点"}"""))
-        server.enqueue(geminiText("""{"notes":"後半の要点"}"""))
-        server.enqueue(geminiText("""{"summary":"全体の要約","tags":["動画"],"category":"学習"}"""))
-        // 1段落 1,000 文字 × 25(約 25,000 文字。1回の上限 20,000 文字を超える)
+    fun 文脈長が分からないモデルは従来の上限を超える本文を部分ごとに要約してからまとめる() = runBlocking {
+        settings.setApiModel(AiTask.SUMMARY, ApiProvider.GEMINI, "my-custom-model")
+        respondByPrompt("""{"summary":"全体の要約","tags":["動画"],"category":"学習"}""") { if (it == 1) "前半の要点" else "後半の要点" }
+        // 1段落 1,000 文字 × 25(約 25,000 文字。従来の上限 20,000 文字を超える)
         val text = (1..25).joinToString("\n\n") { "段落$it" + "あ".repeat(990) }
 
-        val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+        val analysis = provider(geminiKeys)
             .analyze(AnalysisInput(title = "長い動画", text = text, kind = ContentKind.VIDEO), emptyList())
 
         assertEquals("全体の要約", analysis.summary)
         assertEquals(3, server.requestCount)
-        val (partSystem, partUser) = geminiRequestTexts()
-        assertTrue(partSystem, partSystem.contains("全体の一部"))
-        assertTrue(partUser, partUser.startsWith("タイトル: 長い動画\n[部分 1/2]\n段落1"))
-        val (_, secondUser) = geminiRequestTexts()
-        assertTrue(secondUser.contains("[部分 2/2]"))
-        val (finalSystem, finalUser) = geminiRequestTexts()
+        val bodies = takeRequestBodies(3)
+        val parts = bodies.filter { it.systemText().contains("全体の一部") }
+        assertEquals(2, parts.size)
+        // 部分は並行して呼ばれるため、到着順ではなく番号で確かめる
+        val first = parts.single { it.userText().contains("[部分 1/2]") }
+        assertTrue(first.userText(), first.userText().startsWith("タイトル: 長い動画\n[部分 1/2]\n段落1"))
+        assertTrue(parts.single { it.userText().contains("[部分 2/2]") }.userText().isNotEmpty())
+        val final = bodies.single { !it.systemText().contains("全体の一部") }
         // 長い動画は要約を長めにする
-        assertTrue(finalSystem, finalSystem.contains("200文字以内"))
-        assertTrue(finalUser, finalUser.contains("[部分 1/2]\n前半の要点\n\n[部分 2/2]\n後半の要点"))
+        assertTrue(final.systemText(), final.systemText().contains("200文字以内"))
+        // メモは部分の順に並ぶ
+        assertTrue(final.userText(), final.userText().contains("[部分 1/2]\n前半の要点\n\n[部分 2/2]\n後半の要点"))
+    }
+
+    @Test
+    fun 現行モデルなら従来の上限を超える本文も1回で要約する() = runBlocking {
+        server.enqueue(geminiText("""{"summary":"要約","tags":[],"category":"ニュース"}"""))
+        // 100,000 文字(従来は 5 部分に分けて 6 回の呼び出しだった)
+        val text = "あ".repeat(100_000)
+
+        val analysis = provider(geminiKeys)
+            .analyze(AnalysisInput(title = "", text = text, kind = ContentKind.WEB_PAGE), emptyList())
+
+        assertEquals("要約", analysis.summary)
+        assertEquals(1, server.requestCount)
+        // 本文は切り詰めずに渡す
+        assertTrue(takeRequestBodies(1).single().userText().length > 100_000)
+    }
+
+    @Test
+    fun 1回で渡せる上限を超える本文は並行して部分要約しメモの順にまとめる() = runBlocking {
+        respondByPrompt("""{"summary":"全体の要約","tags":[],"category":"学習"}""")
+        // 160,000 文字: 上限(150,000 文字)を超えるため、約 4 万文字ずつ 4 部分に分ける
+        val text = (1..160).joinToString("\n\n") { "段落$it" + "あ".repeat(990) }
+
+        provider(geminiKeys).analyze(AnalysisInput(title = "", text = text, kind = ContentKind.WEB_PAGE), emptyList())
+
+        assertEquals(5, server.requestCount)
+        val final = takeRequestBodies(5).single { !it.systemText().contains("全体の一部") }
+        assertTrue(
+            final.userText(),
+            final.userText().contains("[部分 1/4]\n要点1\n\n[部分 2/4]\n要点2\n\n[部分 3/4]\n要点3\n\n[部分 4/4]\n要点4")
+        )
+    }
+
+    @Test
+    fun 1回で渡した本文が文脈長を超えて拒否されたら従来の単位で分けて要約し直す() = runBlocking {
+        val calls = AtomicInteger()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val body = JSONObject(request.body!!.utf8())
+                return when {
+                    // 最初の1回(本文全体)は文脈長超過
+                    calls.incrementAndGet() == 1 -> MockResponse.Builder().code(400)
+                        .body("""{"error":{"message":"input token count exceeds the maximum"}}""").build()
+                    body.systemText().contains("全体の一部") -> geminiText("""{"notes":"要点"}""")
+                    else -> geminiText("""{"summary":"分けて要約","tags":[],"category":"ニュース"}""")
+                }
+            }
+        }
+        val text = (1..60).joinToString("\n\n") { "段落$it" + "あ".repeat(990) } // 約 60,000 文字
+
+        val analysis = provider(geminiKeys)
+            .analyze(AnalysisInput(title = "", text = text, kind = ContentKind.WEB_PAGE), emptyList())
+
+        assertEquals("分けて要約", analysis.summary)
+        // 本文全体 1 回(拒否) + 3 部分 + まとめ 1 回
+        assertEquals(5, server.requestCount)
     }
 
     @Test
