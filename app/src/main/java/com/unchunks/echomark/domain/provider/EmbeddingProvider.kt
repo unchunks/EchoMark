@@ -15,4 +15,10 @@ interface EmbeddingProvider {
 
     suspend fun embedDocument(text: String): FloatArray // 保存(索引)用: passage:
     suspend fun embedQuery(text: String): FloatArray     // 検索(質問)用: query:
+
+    /**
+     * 埋め込みモデルの読み込みを先に始める。完了は待たずに戻り、失敗しても何も起きない
+     * (本番の埋め込みで改めて [EmbeddingUnavailableException] になる)。準備の要らない実装は何もしない。
+     */
+    fun prewarm() {}
 }

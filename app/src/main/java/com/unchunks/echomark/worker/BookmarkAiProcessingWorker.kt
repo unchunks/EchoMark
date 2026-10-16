@@ -3,7 +3,10 @@ package com.unchunks.echomark.worker
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import com.unchunks.echomark.data.ai.AiPerfLog
+import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.contentKind
@@ -31,6 +34,11 @@ import java.io.File
  *
  * 結果はブックマークの [AiStatus] で表す。諦めた(FAILED)ときもワークとしては成功で終え、
  * 一括の再処理の列([BookmarkWorkScheduler.enqueueSequential])の後続を止めない。
+ *
+ * 端末内 AI・長い本文・ファイルの解析など、要約の作成が長くかかるときは、通知つきのフォアグラウンドで実行する
+ * ([shouldRunInForeground])。WorkManager の実行時間の上限(約 10 分)やバックグラウンドでの停止を受けにくくし、実行の開始も遅らせない。
+ * フォアグラウンドにできなくても(バックグラウンドからの開始の制限など)処理はそのまま続け、
+ * 通知の権限が無いときは通知が表示されないだけで、フォアグラウンドでの実行は有効。
  */
 @HiltWorker
 class BookmarkAiProcessingWorker @AssistedInject constructor(
@@ -38,7 +46,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val repository: BookmarkRepository,
     private val bookmarkAnalyzer: BookmarkAnalyzer,
-    private val embeddingProvider: EmbeddingProvider
+    private val embeddingProvider: EmbeddingProvider,
+    private val aiPrewarmer: AiPrewarmer
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -46,6 +55,17 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
         val bookmarkId = inputData.getLong(KEY_BOOKMARK_ID, -1L)
         if (bookmarkId == -1L) return Result.failure()
 
+        // 段ごとの所要時間を、このブックマークの計測として `AiPerf` のログに出す(調べ方は AiPerfLog)
+        return withContext(AiPerfLog.trace(bookmarkId)) {
+            try {
+                AiPerfLog.measure("total", "attempt=$runAttemptCount") { process(bookmarkId) }
+            } finally {
+                AiPerfLog.logSummary(bookmarkId)
+            }
+        }
+    }
+
+    private suspend fun process(bookmarkId: Long): Result {
         // 削除済みなら何もしない(処理すべきものが無いだけなので成功で終える)
         val bookmark = repository.getBookmarkById(bookmarkId) ?: return Result.success()
 
@@ -57,6 +77,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
 
         return try {
             repository.updateAiStatus(bookmarkId, AiStatus.PROCESSING)
+            prewarm(bookmarkId, bookmark)
             var analysisOutcome = AnalysisOutcome.DONE
             // この実行で作った要約。埋め込みに含めるため、作ったら埋め込みも作り直す
             var newSummary: String? = null
@@ -68,13 +89,17 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     // 種類に合った要約にし、ファイルがあればクラウド API にそのまま渡せるようにする
                     // (渡すかどうかは設定と提供元の対応で LlmProvider が決める)
                     // タグ付けと要約に別の AI を選んでいれば、それぞれの AI で作る
+                    val attachment = analysisAttachmentOf(bookmark, applicationContext.filesDir)
                     val input = AnalysisInput(
                         title = bookmark.title,
                         text = bookmark.content.orEmpty(),
                         kind = bookmark.contentKind(),
-                        attachment = analysisAttachmentOf(bookmark, applicationContext.filesDir)
+                        attachment = attachment
                     )
-                    val analysis = bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi())
+                    promoteToForegroundIfLong(bookmark, input)
+                    val analysis = AiPerfLog.measure("analysis", "textChars=${input.text.length}") {
+                        bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi())
+                    }
                     repository.updateSummary(bookmarkId, analysis.summary)
                     newSummary = analysis.summary
                     // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
@@ -100,7 +125,9 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     val text = EmbeddingInputBuilder.build(
                         bookmark.title, newSummary ?: bookmark.summary, bookmark.content, embeddingProvider.profile
                     )
-                    val vector = embeddingProvider.embedDocument(text)
+                    val vector = AiPerfLog.measure("embedding", "chars=${text.length}") {
+                        embeddingProvider.embedDocument(text)
+                    }
                     repository.saveEmbedding(bookmarkId, vector, embeddingProvider.modelVersion)
                 }
             } catch (e: EmbeddingUnavailableException) {
@@ -132,6 +159,44 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                 repository.updateAiStatus(bookmarkId, AiStatus.PENDING)
                 Result.retry()
             }
+        }
+    }
+
+    /**
+     * 要約の作成が長くかかりそうなら、通知つきのフォアグラウンドにする。
+     * 始められなくても(Android 12 以降のバックグラウンドからの開始の制限など)処理は続ける。
+     */
+    private suspend fun promoteToForegroundIfLong(bookmark: Bookmark, input: AnalysisInput) {
+        if (!shouldRunInForeground(aiPrewarmer.usesLocalLlm(), input.text.length, input.attachment != null)) return
+        try {
+            setForeground(AiProcessingNotification.foregroundInfo(applicationContext, bookmark.title))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "AI 処理をフォアグラウンドにできません。このまま続けます: id=${bookmark.id}")
+        }
+    }
+
+    /**
+     * WorkManager が通知を求めたときの内容(Android 11 以前のエクスペディットなど)。最小が Android 12 のこのアプリでは
+     * 通常は呼ばれないが、CoroutineWorker の既定の実装は例外を投げるため用意する。ブックマークのタイトルが分かれば出す。
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val bookmarkId = inputData.getLong(KEY_BOOKMARK_ID, -1L)
+        val title = if (bookmarkId == -1L) null else repository.getBookmarkById(bookmarkId)?.title
+        return AiProcessingNotification.foregroundInfo(applicationContext, title)
+    }
+
+    /**
+     * 使うモデルの読み込みを先に始める(完了は待たない)。要約を作る間に、端末内 LLM の読み込みが済んでいなければ重ねて進め、
+     * 要約の後の埋め込みモデルの読み込みも LLM の推論と重ねる(埋め込みは要約ができるまで始められないため、読み込みだけ先にする)。
+     * 前段の本文取得・取り出しのワーカーが先に始めていれば、ここでは何も起きない。
+     */
+    private suspend fun prewarm(bookmarkId: Long, bookmark: Bookmark) {
+        val needsSummary = bookmark.summary.isNullOrBlank()
+        if (needsSummary) aiPrewarmer.prewarmLocalLlmIfUsed()
+        if (needsSummary || repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion) {
+            embeddingProvider.prewarm()
         }
     }
 

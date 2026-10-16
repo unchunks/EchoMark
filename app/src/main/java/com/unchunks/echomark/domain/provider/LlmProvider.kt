@@ -41,6 +41,12 @@ interface LlmProvider {
      */
     fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> =
         flow { emit(chat(userMessage, context, history)) }
+
+    /**
+     * 推論の準備(端末内モデルの読み込みなど)を先に始める。完了は待たずに戻り、失敗しても何も起きない
+     * (本番の推論で改めて失敗する)。準備の要らない実装(クラウド API)は何もしない。
+     */
+    fun prewarm() {}
 }
 
 /** LLM のモデルファイルが端末に存在せず、推論できないことを表す。 */

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.unchunks.echomark.data.ai.AiPerfLog
+import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.remote.DownloadSink
 import com.unchunks.echomark.data.remote.FetchedContent
@@ -12,6 +14,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -26,7 +29,8 @@ class UrlFetchWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val repository: BookmarkRepository,
     private val fetcher: UrlContentFetcher,
-    private val attachmentStore: AttachmentStore
+    private val attachmentStore: AttachmentStore,
+    private val aiPrewarmer: AiPrewarmer
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -40,11 +44,17 @@ class UrlFetchWorker @AssistedInject constructor(
             return Result.success()
         }
 
+        // 後続の AI 処理で端末内モデルを使うなら、通信している間に読み込んでおく
+        if (bookmark.summary.isNullOrBlank()) aiPrewarmer.prewarmLocalLlmIfUsed()
+
         // ワークが止められたら(ブックマークの削除など)ダウンロードも止める
         val sink = DownloadSink { body, mimeType, fileName, maxBytes ->
             attachmentStore.saveStream(body, mimeType, fileName, maxBytes) { !isStopped }
         }
-        val fetched = fetcher.fetch(url, sink).getOrElse { e ->
+        val fetchResult = withContext(AiPerfLog.trace(bookmarkId)) {
+            AiPerfLog.measure("fetch") { fetcher.fetch(url, sink) }
+        }
+        val fetched = fetchResult.getOrElse { e ->
             Timber.w(e, "UrlFetchWorker: 取得に失敗 url=%s", url)
             return Result.success()
         }

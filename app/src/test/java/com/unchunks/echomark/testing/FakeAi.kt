@@ -104,6 +104,13 @@ class FakeLlmProvider(
     var chunks: List<String> = listOf("こんにちは", "、世界"),
     var failure: Throwable? = null
 ) : LlmProvider {
+    /** [prewarm] が呼ばれた回数。 */
+    var prewarmCalls = 0
+
+    override fun prewarm() {
+        prewarmCalls++
+    }
+
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis =
         BookmarkAnalysis("要約", emptyList(), "その他")
 

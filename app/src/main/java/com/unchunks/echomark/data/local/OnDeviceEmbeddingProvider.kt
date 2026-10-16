@@ -6,6 +6,7 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder.TextEmbedderOptions
 import com.google.mediapipe.tasks.text.textembedder.TextEmbedder.TextFormatContext
+import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.provider.EmbeddingInputBuilder
@@ -13,6 +14,11 @@ import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -49,6 +55,10 @@ class OnDeviceEmbeddingProvider @Inject constructor(
     /** 埋め込みの実行と TextEmbedder の作成・破棄を直列にする(使用中に閉じてしまわないため)。 */
     private val embedMutex = Mutex()
 
+    /** [prewarm] の読み込みを動かす(呼び出し元のワーカーが終わっても読み込みは続ける)。 */
+    private val prewarmScope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
+    private var prewarmJob: Job? = null
+
     /**
      * 現在のモデルに合った TextEmbedder を返す。モデルが切り替わっていたら閉じて作り直す。
      * [embedMutex] を取ってから呼ぶこと。
@@ -63,10 +73,12 @@ class OnDeviceEmbeddingProvider @Inject constructor(
             closeEmbedder()
         }
         val file = modelManager.modelFile()
+        val loadStart = System.nanoTime()
         try {
             val embedder = if (file != null) createFromFile(file) else createFromAsset()
             textEmbedder = embedder
             loadedSourceKey = sourceKey
+            AiPerfLog.record("embedding.load", (System.nanoTime() - loadStart) / 1_000_000L, sourceKey)
             return embedder
         } catch (e: Exception) {
             // assets 未同梱(gitignore 対象)の開発ビルドや、MediaPipe が読めない取り込みファイルで発生する
@@ -116,6 +128,29 @@ class OnDeviceEmbeddingProvider @Inject constructor(
             .setBaseOptions(baseOptions)
             .build()
         return TextEmbedder.createFromOptions(context, options)
+    }
+
+    /**
+     * 埋め込みモデルの読み込みをバックグラウンドで始める。AI 処理で LLM が要約を作っている間に重ねて読み込み、
+     * 要約ができて埋め込みに進むときには読み込み済みにする。読み込み中は [embedMutex] を持つため、
+     * 先に埋め込みが呼ばれても、読み込みが終わるのを待つだけで二重には読み込まない。
+     */
+    override fun prewarm() {
+        synchronized(this) {
+            if (prewarmJob?.isActive == true) return
+            prewarmJob = prewarmScope.launch {
+                try {
+                    embedMutex.withLock { ensureInitialized() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: EmbeddingUnavailableException) {
+                    // モデルが無い環境。本番の埋め込みで同じ扱いになる
+                    Timber.d("埋め込みモデルを先読みできない: ${e.message}")
+                } catch (e: Exception) {
+                    Timber.w(e, "埋め込みモデルの先読みに失敗")
+                }
+            }
+        }
     }
 
     override suspend fun embedDocument(text: String): FloatArray =

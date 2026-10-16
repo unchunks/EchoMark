@@ -1,7 +1,10 @@
 package com.unchunks.echomark.worker
 
 import com.unchunks.echomark.data.attachment.AttachmentStore
+import android.app.Notification
 import android.content.Context
+import android.content.pm.ServiceInfo
+import androidx.core.app.NotificationManagerCompat
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -11,6 +14,10 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.unchunks.echomark.R
+import com.unchunks.echomark.data.ai.AiPerfLog
+import com.unchunks.echomark.data.ai.AiPrewarmer
+import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.AppDatabase
@@ -37,6 +44,7 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
+import com.unchunks.echomark.testing.FakeLlmProvider
 import com.unchunks.echomark.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
@@ -68,10 +76,13 @@ class BookmarkAiProcessingWorkerTest {
     private lateinit var repository: BookmarkRepositoryImpl
     private val llm = ScriptedLlmProvider()
     private val embedding = RecordingEmbeddingProvider()
+    /** 端末内モデルの先読みの呼び出しを数える(AiPrewarmer の先)。 */
+    private val localLlmForPrewarm = FakeLlmProvider()
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
 
     @Before
     fun setUp() {
+        AiPerfLog.clear()
         context = ApplicationProvider.getApplicationContext()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         boxStore = inMemoryBoxStore()
@@ -99,7 +110,10 @@ class BookmarkAiProcessingWorkerTest {
             .toEntity()
     )
 
-    private suspend fun runWorker(bookmarkId: Long, runAttemptCount: Int): ListenableWorker.Result {
+    private suspend fun runWorker(bookmarkId: Long, runAttemptCount: Int): ListenableWorker.Result =
+        buildWorker(bookmarkId, runAttemptCount).doWork()
+
+    private fun buildWorker(bookmarkId: Long, runAttemptCount: Int = 0): BookmarkAiProcessingWorker {
         val analyzer = BookmarkAnalyzer(LlmProviderResolver(llm, { llm }, settings, FakeApiKeyRepository()), settings)
         val worker = TestListenableWorkerBuilder<BookmarkAiProcessingWorker>(context)
             .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
@@ -109,10 +123,13 @@ class BookmarkAiProcessingWorkerTest {
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters
-                ) = BookmarkAiProcessingWorker(appContext, workerParameters, repository, analyzer, embedding)
+                ) = BookmarkAiProcessingWorker(
+                    appContext, workerParameters, repository, analyzer, embedding,
+                    AiPrewarmer(localLlmForPrewarm, settings)
+                )
             })
             .build()
-        return worker.doWork()
+        return worker
     }
 
     private suspend fun statusOf(id: Long) = repository.getBookmarkById(id)!!.aiStatus
@@ -203,6 +220,97 @@ class BookmarkAiProcessingWorkerTest {
         runWorker(id, runAttemptCount = 0)
         // 埋め込みモデルは同じでも、要約が変わったため作り直す
         assertEquals(2, embedding.documents.size)
+    }
+
+    @Test
+    fun 要約を作るときは端末内モデルと埋め込みモデルの読み込みを先に始める() = runBlocking {
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals(1, localLlmForPrewarm.prewarmCalls)
+        assertEquals(1, embedding.prewarmCalls)
+    }
+
+    @Test
+    fun クラウドAPIの設定では端末内モデルを先読みしないが埋め込みモデルは先読みする() = runBlocking {
+        settings.setBackendForAll(LlmBackend.API)
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals(0, localLlmForPrewarm.prewarmCalls)
+        assertEquals(1, embedding.prewarmCalls)
+    }
+
+    @Test
+    fun 要約も埋め込みも済んでいれば何も先読みしない() = runBlocking {
+        val id = insertBookmark()
+        runWorker(id, runAttemptCount = 0)
+
+        runWorker(id, runAttemptCount = 0)
+
+        // 2回目は要約も現行版の埋め込みも済み。1回目の分だけ
+        assertEquals(1, localLlmForPrewarm.prewarmCalls)
+        assertEquals(1, embedding.prewarmCalls)
+    }
+
+    @Test
+    fun フォアグラウンドの通知はAI処理中の低い重要度のチャンネルで_タイトルを出す() = runBlocking {
+        val id = db.bookmarkDao().insert(
+            Bookmark(type = BookmarkType.TEXT, content = "本文", title = "読みたい記事", createdAt = 1L, lastAccessedAt = 1L)
+                .toEntity()
+        )
+
+        val info = buildWorker(id).getForegroundInfo()
+
+        assertEquals(AiProcessingNotification.NOTIFICATION_ID, info.notificationId)
+        assertEquals(ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC, info.foregroundServiceType)
+        val notification = info.notification
+        assertEquals(AiProcessingNotification.CHANNEL_ID, notification.channelId)
+        assertEquals(context.getString(R.string.ai_processing_notification_title), notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString())
+        assertEquals("要約を作成中: 読みたい記事", notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+        val channel = NotificationManagerCompat.from(context).getNotificationChannelCompat(AiProcessingNotification.CHANNEL_ID)!!
+        assertEquals(NotificationManagerCompat.IMPORTANCE_LOW, channel.importance)
+    }
+
+    @Test
+    fun フォアグラウンドの通知はブックマークが無くても作れる() = runBlocking {
+        val info = buildWorker(bookmarkId = 999L).getForegroundInfo()
+
+        assertEquals("要約を作成中…", info.notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+    }
+
+    @Test
+    fun 端末内AIの要約はフォアグラウンドで実行しても完了する() = runBlocking {
+        // テスト用のワーカーのフォアグラウンド化は成功する。端末内 AI の設定ではその経路を通る
+        val id = insertBookmark()
+
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+        assertEquals(AiStatus.DONE, statusOf(id))
+    }
+
+    @Test
+    fun フォアグラウンドにするのは時間がかかりそうな要約だけ() {
+        // 端末内 AI は短い本文でもフォアグラウンド
+        assertTrue(shouldRunInForeground(usesLocalLlm = true, textChars = 10, hasAttachment = false))
+        // クラウド API の短い本文は数秒で終わるため通知を出さない
+        assertEquals(false, shouldRunInForeground(usesLocalLlm = false, textChars = 10, hasAttachment = false))
+        assertEquals(false, shouldRunInForeground(usesLocalLlm = false, textChars = AiPrompts.LONG_TEXT_CHARS, hasAttachment = false))
+        // 長い本文・ファイルそのものを渡すときはクラウド API でもフォアグラウンド
+        assertTrue(shouldRunInForeground(usesLocalLlm = false, textChars = AiPrompts.LONG_TEXT_CHARS + 1, hasAttachment = false))
+        assertTrue(shouldRunInForeground(usesLocalLlm = false, textChars = 10, hasAttachment = true))
+    }
+
+    @Test
+    fun 段ごとの所要時間をブックマークごとに記録する() = runBlocking {
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0)
+
+        val stages = AiPerfLog.recent().filter { it.bookmarkId == id }.map { it.stage }
+        // 解析 → 埋め込み → 全体の順に記録される
+        assertEquals(listOf("analysis", "embedding", "total"), stages)
     }
 
     @Test
@@ -323,4 +431,9 @@ private class RecordingEmbeddingProvider : EmbeddingProvider {
         return delegate.embedDocument(text)
     }
     override suspend fun embedQuery(text: String): FloatArray = delegate.embedQuery(text)
+
+    var prewarmCalls = 0
+    override fun prewarm() {
+        prewarmCalls++
+    }
 }

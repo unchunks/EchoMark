@@ -8,13 +8,17 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.extract.ContentExtractor
 import com.unchunks.echomark.domain.extract.ExtractedContent
 import com.unchunks.echomark.domain.extract.ExtractionSource
+import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.testing.FakeLlmProvider
+import com.unchunks.echomark.domain.repository.LlmBackend
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -32,6 +36,8 @@ class ContentExtractionWorkerTest {
     private lateinit var context: Context
     private val repository = FakeBookmarkRepository()
     private val extractor = FakeContentExtractor()
+    private val localLlm = FakeLlmProvider()
+    private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
 
     @Before
     fun setUp() {
@@ -84,7 +90,9 @@ class ContentExtractionWorkerTest {
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters
-                ) = ContentExtractionWorker(appContext, workerParameters, repository, extractor)
+                ) = ContentExtractionWorker(
+                    appContext, workerParameters, repository, extractor, AiPrewarmer(localLlm, settings)
+                )
             })
             .build()
             .doWork()
@@ -176,6 +184,32 @@ class ContentExtractionWorkerTest {
         assertEquals(ListenableWorker.Result.success(), runWorker())
 
         assertEquals("--- 文字起こし ---\n文字起こし", saved().content)
+    }
+
+    @Test
+    fun 取り出しの前に端末内モデルの読み込みを先に始める() {
+        repository.bookmarks.value = listOf(pdfBookmark())
+        extractor.result = null
+
+        runWorker()
+
+        assertEquals(1, localLlm.prewarmCalls)
+    }
+
+    @Test
+    fun クラウドAPIの設定や要約済みなら先読みしない_ファイルが無いときも() {
+        settings.setBackendForAll(LlmBackend.API)
+        repository.bookmarks.value = listOf(pdfBookmark())
+        runWorker()
+
+        settings.setBackendForAll(LlmBackend.LOCAL)
+        repository.bookmarks.value = listOf(pdfBookmark().copy(summary = "要約済み"))
+        runWorker()
+
+        repository.bookmarks.value = listOf(pdfBookmark(filePath = "attachments/missing.pdf"))
+        runWorker()
+
+        assertEquals(0, localLlm.prewarmCalls)
     }
 
     @Test

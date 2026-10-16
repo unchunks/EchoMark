@@ -5,11 +5,14 @@ import android.util.Log
 import androidx.work.Configuration
 import androidx.work.CoroutineWorker
 import androidx.work.ListenableWorker
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
+import androidx.work.impl.WorkManagerImpl
+import androidx.work.impl.model.WorkSpec
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.unchunks.echomark.data.local.objectbox.EmbeddingEntity
 import com.unchunks.echomark.data.local.objectbox.MyObjectBox
@@ -20,6 +23,7 @@ import io.objectbox.BoxStore
 import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertEquals
 import java.util.UUID
+import java.util.concurrent.Executors
 
 /**
  * テスト用の WorkManager を初期化する(Robolectric)。
@@ -72,6 +76,22 @@ fun assertSequential(states: List<WorkInfo.State>, expectedSize: Int) {
         1,
         states.count { it == WorkInfo.State.ENQUEUED || it == WorkInfo.State.RUNNING }
     )
+}
+
+/**
+ * 登録されたワークのエクスペディットの設定(WorkInfo には出てこないため、WorkManager の DB の WorkSpec から読む)。
+ * 第1は expedited、第2は枠を使い切ったときの扱い。
+ */
+fun expeditedSettingOf(context: Context, info: WorkInfo): Pair<Boolean, OutOfQuotaPolicy> {
+    val dao = WorkManagerImpl.getInstance(context).workDatabase.workSpecDao()
+    // DB はメインスレッドで読めないことがあるため、別のスレッドで読む
+    val executor = Executors.newSingleThreadExecutor()
+    try {
+        val spec = executor.submit<WorkSpec?> { dao.getWorkSpec(info.id.toString()) }.get()
+        return checkNotNull(spec) { "WorkSpec が見つかりません: ${info.id}" }.let { it.expedited to it.outOfQuotaPolicy }
+    } finally {
+        executor.shutdown()
+    }
 }
 
 /** タグ [tag] の付いたワークの状態。 */
