@@ -3,13 +3,16 @@ package com.unchunks.echomark.worker
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.Constraints
 import androidx.work.NetworkType
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.assertSequential
+import com.unchunks.echomark.testing.expeditedSettingOf
 import com.unchunks.echomark.testing.initTestWorkManager
 import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesByTag
@@ -25,13 +28,15 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class BookmarkWorkSchedulerTest {
 
+    private lateinit var context: Context
     private lateinit var workManager: WorkManager
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
     private lateinit var scheduler: BookmarkWorkScheduler
 
     @Before
     fun setUp() {
-        workManager = initTestWorkManager(ApplicationProvider.getApplicationContext<Context>())
+        context = ApplicationProvider.getApplicationContext()
+        workManager = initTestWorkManager(context)
         scheduler = BookmarkWorkScheduler(workManager, settings)
     }
 
@@ -45,6 +50,9 @@ class BookmarkWorkSchedulerTest {
         workManager.getWorkInfosForUniqueWork(BookmarkWorkScheduler.uniqueWorkName(id)).get()
             .single { it.tags.contains(BookmarkAiProcessingWorker::class.java.name) }
             .constraints.requiredNetworkType
+
+    private fun expeditedSettings(uniqueName: String) =
+        workManager.getWorkInfosForUniqueWork(uniqueName).get().map { expeditedSettingOf(context, it) }
 
     @Test
     fun 同じブックマークの処理は新しい依頼で置き換わる() = runBlocking {
@@ -146,5 +154,60 @@ class BookmarkWorkSchedulerTest {
 
         val states = workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME)
         assertSequential(states, expectedSize = 120)
+    }
+
+    @Test
+    fun 1件の処理はチェーンのすべてのワークをエクスペディットにする() = runBlocking {
+        scheduler.enqueue(1L, fetchContent = true, extractContent = true)
+
+        val specs = expeditedSettings(BookmarkWorkScheduler.uniqueWorkName(1L))
+        // 本文取得・中身の取り出し・AI 処理。枠を使い切っても通常のワークとして実行する
+        assertEquals(3, specs.size)
+        assertTrue(specs.toString(), specs.all { it == (true to OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST) })
+    }
+
+    @Test
+    fun クラウドAPIの設定でも1件の処理はエクスペディットにできる() = runBlocking {
+        // エクスペディットで使える制約はネットワークだけ。ネットワーク条件付きでも build で弾かれない
+        settings.setBackendForAll(LlmBackend.API)
+        scheduler.enqueue(1L, fetchContent = true)
+
+        val specs = expeditedSettings(BookmarkWorkScheduler.uniqueWorkName(1L))
+        assertEquals(2, specs.size)
+        assertTrue(specs.toString(), specs.all { it.first })
+        assertEquals(NetworkType.CONNECTED, aiWorkNetworkType(1L))
+    }
+
+    @Test
+    fun 一括の処理はエクスペディットにしない() = runBlocking {
+        scheduler.enqueueSequential(
+            listOf(
+                BookmarkWorkScheduler.Target(1L, fetchContent = true, extractContent = true),
+                BookmarkWorkScheduler.Target(2L, fetchContent = false)
+            )
+        )
+
+        val specs = expeditedSettings(BookmarkWorkScheduler.BULK_WORK_NAME)
+        assertEquals(5, specs.size)
+        assertTrue(specs.toString(), specs.none { it.first })
+    }
+
+    @Test
+    fun エクスペディットのワークの制約はネットワークだけ() {
+        val target = BookmarkWorkScheduler.Target(1L, fetchContent = true, extractContent = true)
+        val requests = scheduler.requestsFor(
+            target,
+            Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
+            expedited = true
+        )
+
+        // 充電中・バッテリー残量・アイドル・コンテンツ URI の条件や初回の遅延があると、エクスペディットの build が失敗する
+        assertEquals(3, requests.size)
+        requests.forEach { request ->
+            val constraints = request.workSpec.constraints
+            assertTrue(!constraints.requiresCharging() && !constraints.requiresBatteryNotLow() && !constraints.requiresDeviceIdle())
+            assertEquals(0L, request.workSpec.initialDelay)
+            assertTrue(request.workSpec.expedited)
+        }
     }
 }

@@ -6,6 +6,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.unchunks.echomark.domain.repository.AiTask
@@ -23,6 +24,9 @@ import javax.inject.Inject
  * - 1件ごとの処理は一意名([uniqueWorkName])で登録し、同じブックマークの処理を並行させない(新しい依頼で置き換える)
  * - 一括の再処理は1本の列([BULK_WORK_NAME])にして1件ずつ順番に処理する(API のレート制限にかかりにくくする)
  * - クラウド API を使う設定のときは、AI 処理にネットワーク接続を条件として付ける(オフラインで試行回数を使い切らない)
+ * - ユーザーが保存・再処理を頼んだ1件の処理は、エクスペディット(優先実行)で登録し、Doze・バッテリーセーバーや
+ *   ジョブの遅延で待たされにくくする。クォータを使い切っていれば通常のワークとして実行する
+ *   ([OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST])。一括の再処理は急がないため通常のワークのまま
  * - すべてのワークに [TAG] を付け、全データ削除でまとめて取り消せるようにする
  * - ワークにはブックマークごとのタグ([bookmarkTag])も付け、未完了の処理がどのブックマークのものか調べられるようにする
  */
@@ -40,12 +44,15 @@ class BookmarkWorkScheduler @Inject constructor(
     /**
      * 1件の処理を登録する。「本文取得 → 中身の取り出し → AI 処理」のうち、[fetchContent]・[extractContent] で
      * 指定した段と AI 処理を順に実行する。同じブックマークの登録済み・実行中の処理は取り消して置き換える。
+     * ユーザーの操作で始まる処理のため、チェーンのすべてのワークをエクスペディットにする(各ワークの制約は
+     * エクスペディットで使えるネットワーク条件だけ。再試行([androidx.work.ListenableWorker.Result.retry])は
+     * WorkManager が通常のジョブとして遅らせて実行する)。
      */
     suspend fun enqueue(bookmarkId: Long, fetchContent: Boolean, extractContent: Boolean = false) {
         enqueueChain(
             uniqueWorkName(bookmarkId),
             ExistingWorkPolicy.REPLACE,
-            requestsFor(Target(bookmarkId, fetchContent, extractContent), aiConstraints())
+            requestsFor(Target(bookmarkId, fetchContent, extractContent), aiConstraints(), expedited = true)
         )
     }
 
@@ -62,7 +69,8 @@ class BookmarkWorkScheduler @Inject constructor(
             enqueueChain(
                 BULK_WORK_NAME,
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
-                chunk.flatMap { requestsFor(it, constraints) }
+                // 一括は急がない。エクスペディットのクォータを使い切って、ユーザーの操作の処理に回らなくなるのを避ける
+                chunk.flatMap { requestsFor(it, constraints, expedited = false) }
             )
         }
     }
@@ -99,11 +107,11 @@ class BookmarkWorkScheduler @Inject constructor(
         continuation.enqueue()
     }
 
-    private fun requestsFor(target: Target, aiConstraints: Constraints): List<OneTimeWorkRequest> =
+    internal fun requestsFor(target: Target, aiConstraints: Constraints, expedited: Boolean): List<OneTimeWorkRequest> =
         listOfNotNull(
-            fetchRequest(target.bookmarkId).takeIf { target.fetchContent },
-            extractionRequest(target.bookmarkId).takeIf { target.extractContent },
-            aiRequest(target.bookmarkId, aiConstraints)
+            fetchRequest(target.bookmarkId, expedited).takeIf { target.fetchContent },
+            extractionRequest(target.bookmarkId, expedited).takeIf { target.extractContent },
+            aiRequest(target.bookmarkId, aiConstraints, expedited)
         )
 
     /** タグ付け・要約のどちらかにクラウド API を使う設定ならネットワーク接続を待つ。端末内 AI だけならオフラインでも動かす。 */
@@ -117,31 +125,42 @@ class BookmarkWorkScheduler @Inject constructor(
         }
     }
 
-    private fun aiRequest(bookmarkId: Long, constraints: Constraints): OneTimeWorkRequest =
+    private fun aiRequest(bookmarkId: Long, constraints: Constraints, expedited: Boolean): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<BookmarkAiProcessingWorker>()
             .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .addTag(TAG)
             .addTag(bookmarkTag(bookmarkId))
+            .expeditedIf(expedited)
             .build()
 
-    private fun fetchRequest(bookmarkId: Long): OneTimeWorkRequest =
+    private fun fetchRequest(bookmarkId: Long, expedited: Boolean): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<UrlFetchWorker>()
             .setInputData(workDataOf(UrlFetchWorker.KEY_BOOKMARK_ID to bookmarkId))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .addTag(TAG)
             .addTag(bookmarkTag(bookmarkId))
+            .expeditedIf(expedited)
             .build()
 
     /** 保存したファイルから要約用のテキストを取り出す(OCR・文字起こしなど。端末内で行うため制約なし) */
-    private fun extractionRequest(bookmarkId: Long): OneTimeWorkRequest =
+    private fun extractionRequest(bookmarkId: Long, expedited: Boolean): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<ContentExtractionWorker>()
             .setInputData(workDataOf(ContentExtractionWorker.KEY_BOOKMARK_ID to bookmarkId))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .addTag(TAG)
             .addTag(bookmarkTag(bookmarkId))
+            .expeditedIf(expedited)
             .build()
+
+    /**
+     * [expedited] ならエクスペディットにする。クォータを使い切っていても失敗にせず、通常のワークとして実行する。
+     * エクスペディットで使える制約はネットワークと空き容量だけ(充電中・バッテリー残量・アイドル・コンテンツ URI を付けると
+     * build() が IllegalArgumentException)で、初回の遅延も付けられない。このクラスの制約はネットワーク接続だけなので満たしている。
+     */
+    private fun OneTimeWorkRequest.Builder.expeditedIf(expedited: Boolean): OneTimeWorkRequest.Builder =
+        if (expedited) setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST) else this
 
     companion object {
         /** ブックマークの処理に付けるタグ(全データ削除でまとめて取り消す)。 */
