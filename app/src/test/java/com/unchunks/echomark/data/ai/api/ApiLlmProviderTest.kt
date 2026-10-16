@@ -84,6 +84,32 @@ class ApiLlmProviderTest {
         .body("""{"candidates":[{"content":{"parts":[{"text":${JSONObject.quote(text)}}]},"finishReason":"STOP"}]}""")
         .build()
 
+    /** Claude の SSE 応答(text_delta 1 つ)。 */
+    private fun claudeSse(text: String): MockResponse {
+        val events = listOf(
+            "message_start" to """{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}}""",
+            "content_block_start" to """{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""",
+            "content_block_delta" to """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":${JSONObject.quote(text)}}}""",
+            "content_block_stop" to """{"type":"content_block_stop","index":0}""",
+            "message_delta" to """{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":3}}""",
+            "message_stop" to """{"type":"message_stop"}"""
+        )
+        return MockResponse.Builder()
+            .addHeader("Content-Type", "text/event-stream")
+            .body(events.joinToString("") { (name, data) -> "event: $name\ndata: $data\n\n" })
+            .build()
+    }
+
+    /** 要約(JSON を返させる呼び出し)はストリーミングで受けるため、SSE で返す。[chunks] は増分のテキスト。 */
+    private fun geminiSse(vararg chunks: String) = MockResponse.Builder()
+        .addHeader("Content-Type", "text/event-stream")
+        .body(
+            chunks.joinToString("") { text ->
+                """data: {"candidates":[{"content":{"parts":[{"text":${JSONObject.quote(text)}}]}}]}""" + "\n\n"
+            }
+        )
+        .build()
+
     @Test
     fun キー未設定ならApiKeyMissing() = runBlocking {
         try {
@@ -97,7 +123,7 @@ class ApiLlmProviderTest {
     @Test
     fun 選択中の提供元とモデルで要約しJSONを解析する() = runBlocking {
         settings.setApiModel(AiTask.SUMMARY, ApiProvider.GEMINI, "gemini-3.5-flash-lite")
-        server.enqueue(geminiText("""{"summary":"要約","tags":["a","b"],"category":"技術"}"""))
+        server.enqueue(geminiSse("""{"summary":"要約","tags":["a","b"],"category":"技術"}"""))
 
         val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
             .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), listOf("Kotlin", "読書"))
@@ -106,7 +132,7 @@ class ApiLlmProviderTest {
         assertEquals(listOf("a", "b"), analysis.tags)
         assertEquals("技術", analysis.category)
         val request = server.takeRequest()
-        assertEquals("/v1beta/models/gemini-3.5-flash-lite:generateContent", request.url.encodedPath)
+        assertEquals("/v1beta/models/gemini-3.5-flash-lite:streamGenerateContent", request.url.encodedPath)
         // 既存のタグをシステム指示で伝え、合うものを使い回させる
         val system = JSONObject(request.body!!.utf8())
             .getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text")
@@ -125,9 +151,9 @@ class ApiLlmProviderTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val body = JSONObject(request.body!!.utf8())
-                if (!body.systemText().contains("全体の一部")) return geminiText(finalJson)
+                if (!body.systemText().contains("全体の一部")) return geminiSse(finalJson)
                 val number = Regex("\\[部分 (\\d+)/").find(body.userText())!!.groupValues[1].toInt()
-                return geminiText("""{"notes":"${partNotes(number)}"}""")
+                return geminiSse("""{"notes":"${partNotes(number)}"}""")
             }
         }
     }
@@ -168,7 +194,7 @@ class ApiLlmProviderTest {
 
     @Test
     fun 現行モデルなら従来の上限を超える本文も1回で要約する() = runBlocking {
-        server.enqueue(geminiText("""{"summary":"要約","tags":[],"category":"ニュース"}"""))
+        server.enqueue(geminiSse("""{"summary":"要約","tags":[],"category":"ニュース"}"""))
         // 100,000 文字(従来は 5 部分に分けて 6 回の呼び出しだった)
         val text = "あ".repeat(100_000)
 
@@ -207,8 +233,8 @@ class ApiLlmProviderTest {
                     // 最初の1回(本文全体)は文脈長超過
                     calls.incrementAndGet() == 1 -> MockResponse.Builder().code(400)
                         .body("""{"error":{"message":"input token count exceeds the maximum"}}""").build()
-                    body.systemText().contains("全体の一部") -> geminiText("""{"notes":"要点"}""")
-                    else -> geminiText("""{"summary":"分けて要約","tags":[],"category":"ニュース"}""")
+                    body.systemText().contains("全体の一部") -> geminiSse("""{"notes":"要点"}""")
+                    else -> geminiSse("""{"summary":"分けて要約","tags":[],"category":"ニュース"}""")
                 }
             }
         }
@@ -224,7 +250,7 @@ class ApiLlmProviderTest {
 
     @Test
     fun 上限以下の本文は1回で要約する() = runBlocking {
-        server.enqueue(geminiText("""{"summary":"要約","tags":[],"category":"メモ"}"""))
+        server.enqueue(geminiSse("""{"summary":"要約","tags":[],"category":"メモ"}"""))
 
         provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
             .analyze(AnalysisInput(title = "", text = "あ".repeat(20_000), kind = ContentKind.MEMO), emptyList())
@@ -232,12 +258,58 @@ class ApiLlmProviderTest {
         assertEquals(1, server.requestCount)
     }
 
+    @Test
+    fun 要約はストリーミングで受け_JSONが閉じたらその後ろは使わない() = runBlocking {
+        server.enqueue(
+            geminiSse("""{"summary":"要約","ta""", """gs":["a"],"category":"技術"}""", """余計な続き{"summary":"別"}""")
+        )
+
+        val analysis = provider(geminiKeys)
+            .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
+
+        assertEquals("要約", analysis.summary)
+        assertEquals(listOf("a"), analysis.tags)
+        assertEquals("技術", analysis.category)
+        val request = server.takeRequest()
+        assertEquals("/v1beta/models/gemini-3.8-flash:streamGenerateContent", request.url.encodedPath)
+        assertEquals("sse", request.url.queryParameter("alt"))
+    }
+
+    @Test
+    fun ストリーミング途中の安全フィルタはRefusedのまま伝わる() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .addHeader("Content-Type", "text/event-stream")
+                .body("""data: {"candidates":[{"content":{"parts":[{"text":"{\"summ"}]},"finishReason":"SAFETY"}]}""" + "\n\n")
+                .build()
+        )
+
+        try {
+            provider(geminiKeys).analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
+            fail("例外が投げられるはず")
+        } catch (e: LlmException.Refused) {
+            assertEquals("SAFETY", e.reason)
+        }
+    }
+
+    @Test
+    fun ストリームが空ならUnexpected() = runBlocking {
+        server.enqueue(MockResponse.Builder().addHeader("Content-Type", "text/event-stream").body("").build())
+
+        try {
+            provider(geminiKeys).analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
+            fail("例外が投げられるはず")
+        } catch (e: LlmException.Unexpected) {
+            // 空の要約を保存せず、再試行させる
+        }
+    }
+
     private val geminiKeys get() = FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000"))
     private val imageFile = AnalysisAttachment(path = "/data/files/photo.png", mimeType = "image/png", sizeBytes = 2_000_000)
 
     @Test
     fun 画像は設定がオンならファイルも送り_種類に合う指示にする() = runBlocking {
-        server.enqueue(geminiText("""{"summary":"レシート","tags":[],"category":"レシート"}"""))
+        server.enqueue(geminiSse("""{"summary":"レシート","tags":[],"category":"レシート"}"""))
 
         provider(geminiKeys).analyze(
             AnalysisInput(title = "photo.png", text = "合計 1,200円", kind = ContentKind.IMAGE, attachment = imageFile),
@@ -259,7 +331,7 @@ class ApiLlmProviderTest {
     @Test
     fun 設定がオフならファイルは送らずテキストだけで要約する() = runBlocking {
         settings.setSendFilesToCloud(false)
-        server.enqueue(geminiText("""{"summary":"s","tags":[],"category":"写真"}"""))
+        server.enqueue(geminiSse("""{"summary":"s","tags":[],"category":"写真"}"""))
 
         provider(geminiKeys).analyze(
             AnalysisInput(title = "photo.png", text = "読み取った文字", kind = ContentKind.IMAGE, attachment = imageFile),
@@ -291,7 +363,7 @@ class ApiLlmProviderTest {
 
     @Test
     fun 本文が空でもファイルを送れるなら要約する() = runBlocking {
-        server.enqueue(geminiText("""{"summary":"夕焼けの写真","tags":[],"category":"写真"}"""))
+        server.enqueue(geminiSse("""{"summary":"夕焼けの写真","tags":[],"category":"写真"}"""))
 
         val analysis = provider(geminiKeys).analyze(
             AnalysisInput(title = "IMG_0001.png", text = "", kind = ContentKind.IMAGE, attachment = imageFile),
@@ -304,16 +376,7 @@ class ApiLlmProviderTest {
     @Test
     fun 提供元が受け付けない種類のファイルは読み込まない() = runBlocking {
         settings.setApiProvider(AiTask.SUMMARY, ApiProvider.CLAUDE)
-        server.enqueue(
-            MockResponse.Builder()
-                .addHeader("Content-Type", "application/json")
-                .body(
-                    """{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5",
-                    "content":[{"type":"text","text":"{\"summary\":\"s\"}"}],"stop_reason":"end_turn",
-                    "stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}"""
-                )
-                .build()
-        )
+        server.enqueue(claudeSse("""{"summary":"s"}"""))
         val audio = AnalysisAttachment(path = "/data/files/voice.m4a", mimeType = "audio/mp4", sizeBytes = 1_000_000)
 
         provider(FakeApiKeyRepository(mapOf(ApiProvider.CLAUDE to "sk-ant-test-key")))
@@ -326,7 +389,7 @@ class ApiLlmProviderTest {
 
     @Test
     fun PDFや動画をそのまま送るときはテキストを短くし_分割要約はしない() = runBlocking {
-        server.enqueue(geminiText("""{"summary":"s","tags":[],"category":"論文"}"""))
+        server.enqueue(geminiSse("""{"summary":"s","tags":[],"category":"論文"}"""))
         val pdf = AnalysisAttachment(path = "/data/files/paper.pdf", mimeType = "application/pdf", sizeBytes = 3_000_000)
 
         provider(geminiKeys).analyze(
@@ -391,7 +454,7 @@ class ApiLlmProviderTest {
 
     @Test
     fun タグだけを作るときはsummaryを出力させない() = runBlocking {
-        server.enqueue(geminiText("""{"tags":["Kotlin"],"category":"技術"}"""))
+        server.enqueue(geminiSse("""{"tags":["Kotlin"],"category":"技術"}"""))
 
         val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.TAGGING)
             .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), listOf("Kotlin"), AnalysisScope.TAGS)

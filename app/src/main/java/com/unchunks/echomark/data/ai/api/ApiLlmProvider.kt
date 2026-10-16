@@ -100,7 +100,10 @@ class ApiLlmProvider @Inject constructor(
         }
     }
 
-    /** [config] の上限を超える本文は、部分ごとに要約してからまとめる。上限以下なら1回の呼び出しで要約する。 */
+    /**
+     * [config] の上限を超える本文は、部分ごとに要約してからまとめる。上限以下なら1回の呼び出しで要約する。
+     * 応答(JSON)はストリーミングで受け、JSON が閉じた時点で打ち切る([completeJson])。
+     */
     private suspend fun analyzeWith(
         config: LongTextConfig,
         client: ApiLlmClient,
@@ -120,7 +123,7 @@ class ApiLlmProvider @Inject constructor(
                     system = AiPrompts.partInstructions(input.kind, config.noteMaxChars),
                     messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.partInput(input.title, part)))
                 )
-                AnalysisParser.parseNotes(client.complete(request, credentials))
+                AnalysisParser.parseNotes(client.completeJson(request, credentials))
             }
         }
         val isLong = fileIsPrimary || body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
@@ -145,7 +148,7 @@ class ApiLlmProvider @Inject constructor(
                 )
             )
         )
-        return AnalysisParser.parse(client.complete(request, credentials), input.combinedText())
+        return AnalysisParser.parse(client.completeJson(request, credentials), input.combinedText())
     }
 
     /**
