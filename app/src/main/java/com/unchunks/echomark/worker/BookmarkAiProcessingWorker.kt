@@ -5,6 +5,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
@@ -54,6 +55,17 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
         val bookmarkId = inputData.getLong(KEY_BOOKMARK_ID, -1L)
         if (bookmarkId == -1L) return Result.failure()
 
+        // 段ごとの所要時間を、このブックマークの計測として `AiPerf` のログに出す(調べ方は AiPerfLog)
+        return withContext(AiPerfLog.trace(bookmarkId)) {
+            try {
+                AiPerfLog.measure("total", "attempt=$runAttemptCount") { process(bookmarkId) }
+            } finally {
+                AiPerfLog.logSummary(bookmarkId)
+            }
+        }
+    }
+
+    private suspend fun process(bookmarkId: Long): Result {
         // 削除済みなら何もしない(処理すべきものが無いだけなので成功で終える)
         val bookmark = repository.getBookmarkById(bookmarkId) ?: return Result.success()
 
@@ -85,7 +97,9 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                         attachment = attachment
                     )
                     promoteToForegroundIfLong(bookmark, input)
-                    val analysis = bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi())
+                    val analysis = AiPerfLog.measure("analysis", "textChars=${input.text.length}") {
+                        bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi())
+                    }
                     repository.updateSummary(bookmarkId, analysis.summary)
                     newSummary = analysis.summary
                     // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
@@ -111,7 +125,9 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     val text = EmbeddingInputBuilder.build(
                         bookmark.title, newSummary ?: bookmark.summary, bookmark.content, embeddingProvider.profile
                     )
-                    val vector = embeddingProvider.embedDocument(text)
+                    val vector = AiPerfLog.measure("embedding", "chars=${text.length}") {
+                        embeddingProvider.embedDocument(text)
+                    }
                     repository.saveEmbedding(bookmarkId, vector, embeddingProvider.modelVersion)
                 }
             } catch (e: EmbeddingUnavailableException) {

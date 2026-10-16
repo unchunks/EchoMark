@@ -109,6 +109,11 @@ object AiPerfLog {
         }
     }
 
+    /** [summaryOf] をログに出す(1件の処理が終わったとき)。記録が無ければ何もしない。 */
+    fun logSummary(bookmarkId: Long) {
+        summaryOf(bookmarkId)?.let { Timber.tag(TAG).i(it) }
+    }
+
     private fun format(entry: Entry): String = buildString {
         entry.bookmarkId?.let { append("bookmark#$it ") }
         append(entry.stage).append(" = ").append(seconds(entry.durationMs))

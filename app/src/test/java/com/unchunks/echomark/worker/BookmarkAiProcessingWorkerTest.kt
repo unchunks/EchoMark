@@ -15,6 +15,7 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.unchunks.echomark.R
+import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
@@ -81,6 +82,7 @@ class BookmarkAiProcessingWorkerTest {
 
     @Before
     fun setUp() {
+        AiPerfLog.clear()
         context = ApplicationProvider.getApplicationContext()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         boxStore = inMemoryBoxStore()
@@ -298,6 +300,17 @@ class BookmarkAiProcessingWorkerTest {
         // 長い本文・ファイルそのものを渡すときはクラウド API でもフォアグラウンド
         assertTrue(shouldRunInForeground(usesLocalLlm = false, textChars = AiPrompts.LONG_TEXT_CHARS + 1, hasAttachment = false))
         assertTrue(shouldRunInForeground(usesLocalLlm = false, textChars = 10, hasAttachment = true))
+    }
+
+    @Test
+    fun 段ごとの所要時間をブックマークごとに記録する() = runBlocking {
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0)
+
+        val stages = AiPerfLog.recent().filter { it.bookmarkId == id }.map { it.stage }
+        // 解析 → 埋め込み → 全体の順に記録される
+        assertEquals(listOf("analysis", "embedding", "total"), stages)
     }
 
     @Test

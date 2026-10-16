@@ -12,6 +12,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.unchunks.echomark.R
+import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.contentKind
@@ -22,6 +23,7 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -64,7 +66,9 @@ class ContentExtractionWorker @AssistedInject constructor(
         if (extractor.isLongRunning(file, bookmark.mimeType, kind)) startForeground()
 
         val extracted = try {
-            extractor.extract(file, bookmark.mimeType, kind)
+            withContext(AiPerfLog.trace(bookmarkId)) {
+                AiPerfLog.measure("extract", "kind=$kind") { extractor.extract(file, bookmark.mimeType, kind) }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
