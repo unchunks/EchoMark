@@ -33,10 +33,17 @@ class GeminiApiClient internal constructor(
     constructor(okHttpClient: OkHttpClient, dispatcherProvider: DispatcherProvider) :
         this(okHttpClient, dispatcherProvider, DEFAULT_BASE_URL.toHttpUrl())
 
+    /**
+     * LLM 用にタイムアウトを上書きしたクライアント(呼び出しのたびに作らない)。
+     * 共通の [okHttpClient] と接続プール・ディスパッチャーを共有するため、接続(TLS 含む)は呼び出しをまたいで使い回される。
+     */
+    private val completeClient by lazy { okHttpClient.forLlm(streaming = false) }
+    private val streamClient by lazy { okHttpClient.forLlm(streaming = true) }
+
     override val provider = ApiProvider.GEMINI
 
     override suspend fun complete(request: ApiRequest, credentials: ApiCredentials): String {
-        val json = okHttpClient.forLlm(streaming = false)
+        val json = completeClient
             .postJson(buildRequest(request, credentials, stream = false), credentials.apiKey, dispatcherProvider.io)
         checkBlocked(json)
         val candidate = json.optJSONArray("candidates")?.optJSONObject(0)
@@ -52,7 +59,7 @@ class GeminiApiClient internal constructor(
     }
 
     override fun stream(request: ApiRequest, credentials: ApiCredentials): Flow<String> =
-        okHttpClient.forLlm(streaming = true)
+        streamClient
             .sseEvents(buildRequest(request, credentials, stream = true), credentials.apiKey, dispatcherProvider.io)
             .transform { event ->
                 val json = parseEventJson(event.data)

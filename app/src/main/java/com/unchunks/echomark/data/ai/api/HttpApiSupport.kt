@@ -36,12 +36,15 @@ internal fun JSONObject.toJsonRequestBody(): RequestBody = toString().toRequestB
 /**
  * LLM 呼び出し用にタイムアウトを上書きしたクライアント。
  * 共通クライアントは callTimeout 15 秒のため、推論待ちの長い応答に合わせて延ばす。
+ * newBuilder() は接続プールとディスパッチャーを元のクライアントと共有するため、作り直しても接続は使い回される
+ * (それでも毎回作る必要は無いので、呼び出し側は1度作って持つ)。
  */
 internal fun OkHttpClient.forLlm(streaming: Boolean): OkHttpClient = newBuilder()
     .connectTimeout(15, TimeUnit.SECONDS)
-    // ストリーミングは全体時間を制限せず、無通信の時間だけで打ち切る
+    // ストリーミングは全体時間を制限せず、無通信の時間だけで打ち切る。
+    // 推論の間は何も流れてこない(長い本文の1回要約では、読み込み + 推論で数十秒かかりうる)ため、余裕を持たせる
     .callTimeout(if (streaming) 0L else 180L, TimeUnit.SECONDS)
-    .readTimeout(if (streaming) 90L else 180L, TimeUnit.SECONDS)
+    .readTimeout(if (streaming) 120L else 180L, TimeUnit.SECONDS)
     .build()
 
 /** コルーチンのキャンセルで HTTP 呼び出しも取り消す。 */
