@@ -14,6 +14,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.unchunks.echomark.data.ai.local.LocalLlmProvider
 import com.unchunks.echomark.data.attachment.UnusedAttachmentCleaner
 import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
 import com.unchunks.echomark.worker.ReembedAllWorker
@@ -66,6 +67,15 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
                 )
                 .build()
         )
+    }
+
+    /**
+     * メモリが逼迫したら、使っていない端末内 LLM のエンジン(モデルのメモリ。数百MB〜数GB)を手放す。
+     * 推論中は解放しない。次に使うときに読み込み直す。
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        LocalLlmProvider.trimMemory(level)
     }
 
     /** Coil の画像読み込み。通信は NetworkModule の共通 OkHttpClient を使う。 */

@@ -10,6 +10,7 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession.LlmInferenceSessionOptions
 import com.google.mediapipe.tasks.genai.llminference.ProgressListener
 import com.google.mediapipe.tasks.genai.llminference.PromptTemplates
+import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.LongTextConfig
 import com.unchunks.echomark.data.ai.LongTextDigester
@@ -28,18 +29,26 @@ import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import timber.log.Timber
+import java.io.File
+import java.lang.ref.WeakReference
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -48,8 +57,17 @@ import kotlin.coroutines.resume
 
 /**
  * MediaPipe LLM Inference (Gemma 等) によるローカル LLM。
- * モデルは [ModelManager] で取り込んだファイルを使い、初回利用時に遅延初期化する。
+ * モデルは [ModelManager] で取り込んだファイルを使い、初回利用時(または [prewarm])に遅延初期化する。
  * 取り込み直し・削除を検知したらエンジンを作り直す。
+ *
+ * 速度とメモリの方針:
+ * - 演算装置: まず GPU でエンジンを作り、作れなければ CPU にする([BackendSelector])。動いた装置はモデルごとに覚え
+ *   (メモリ + `filesDir/models/local_llm_backend.json`)、CPU に落ちたモデルは次から GPU を試さない。
+ *   GPU で作れても最初の推論が失敗したら、以後は CPU を使う。どちらを使ったかは Timber(`AiPerf` タグ含む)に出す
+ * - 先読み: [prewarm] で、AI 処理の前段(本文取得など)と重ねてエンジンを読み込んでおく(数秒〜十数秒の短縮)
+ * - 解放: エンジンはジョブの間は保持するが、最後に使ってから [IDLE_RELEASE_MS] 経つか、メモリが逼迫したとき
+ *   ([trimMemory]。使用中は解放しない)に閉じる。モデルは数百MB〜数GBあり、持ち続けるとバックグラウンドの
+ *   プロセスが OOM で終了されやすくなるため。次に使うときに読み込み直す
  *
  * 注意: tasks-genai 0.10.35 で LLM Inference API は非推奨(保守のみ)になった。
  * 公式の移行先は LiteRT-LM。移行するまで非推奨警告をファイル単位で抑制する。
@@ -61,52 +79,214 @@ class LocalLlmProvider @Inject constructor(
     private val dispatcherProvider: DispatcherProvider
 ) : LlmProvider {
 
-    /** 読み込み済みのエンジンと、その元になったモデル。[inferenceMutex] を持っている間だけ読み書きする。 */
-    private var loaded: Pair<LocalModelInfo, LlmInference>? = null
+    /** 読み込み済みのエンジン。[verified] は、このエンジンで推論に成功したことがあるか。 */
+    private class LoadedEngine(
+        val model: LocalModelInfo,
+        val engine: LlmInference,
+        val backend: EngineBackend,
+        val modelKey: String
+    ) {
+        var verified = false
+    }
+
+    /**
+     * 読み込み済みのエンジン。書き込みは [inferenceMutex] を持っている間だけ。
+     * [prewarm] が無駄な待ちを作らないよう、読み取りだけはロックなしでも行う(@Volatile)。
+     */
+    @Volatile
+    private var loaded: LoadedEngine? = null
 
     // LlmInference は同時に複数の生成を実行できないため直列化する。
     // エンジンの作成・破棄も同じロックの中で行い、生成中のエンジンを別のコルーチンが閉じないようにする
     // (取り込み直し・削除の直後に閉じると、ネイティブ資源の解放後に使ってしまう)
     private val inferenceMutex = Mutex()
 
+    /** 先読み・アイドル時の解放など、呼び出し元を待たせないバックグラウンドの処理を動かす。 */
+    private val backgroundScope = CoroutineScope(SupervisorJob() + dispatcherProvider.default)
+
+    private val backendSelector by lazy {
+        // models/ はバックアップの対象外(GPU の性能が違う別の端末に復元されない)
+        BackendSelector(FileBackendStore(File(File(context.filesDir, "models"), BACKEND_FILE_NAME)))
+    }
+
     private val digester = LongTextDigester(LONG_TEXT)
 
+    private val lifecycleLock = Any()
+    private var prewarmJob: Job? = null
+    private var idleReleaseJob: Job? = null
+
+    @Volatile
+    private var lastUsedNanos = 0L
+
+    init {
+        latest = WeakReference(this)
+    }
+
     /** 現在のモデルのエンジン。必ず [inferenceMutex] を持った状態で呼ぶ。 */
-    private fun engineLocked(): Pair<LocalModelInfo, LlmInference> {
+    private suspend fun engineLocked(): LoadedEngine {
         val model = modelManager.installedModel.value
         val file = modelManager.modelFile()
         if (model == null || file == null) {
             // モデルが削除された場合は保持しているエンジンも破棄する
-            loaded?.second?.close()
-            loaded = null
+            releaseLocked("モデルが無い")
             throw ModelNotAvailableException()
         }
-        loaded?.let { if (it.first == model) return it }
-        loaded?.second?.close()
-        loaded = null
-        val options = LlmInferenceOptions.builder()
+        loaded?.let { if (it.model == model) return it }
+        releaseLocked("モデルが切り替わった")
+        val modelKey = "${model.fileName}:${model.sizeBytes}:${model.importedAt}"
+        val start = System.nanoTime()
+        val created = backendSelector.create(modelKey) { backend ->
+            LlmInference.createFromOptions(context, engineOptions(file, backend))
+        }
+        val millis = (System.nanoTime() - start) / NANOS_PER_MILLI
+        Timber.i("端末内モデルを読み込み: backend=%s %d ms (%s)", created.backend, millis, model.displayName)
+        AiPerfLog.record(
+            "llm.engineLoad", millis, "backend=${created.backend} model=${model.displayName}",
+            AiPerfLog.currentBookmarkId()
+        )
+        return LoadedEngine(model, created.engine, created.backend, modelKey).also { loaded = it }
+    }
+
+    private fun engineOptions(file: File, backend: EngineBackend): LlmInferenceOptions =
+        LlmInferenceOptions.builder()
             .setModelPath(file.absolutePath)
+            // 入力と出力の合計。tasks-genai には出力だけの上限を決める設定が無く(セッションにも無い)、
+            // チャットの文脈の予算(LocalChatPrompt)にも使うため、下げずにそのままにする。
+            // 解析で余計な出力が続くのは、JSON が閉じたら打ち切る・出力の文字数と時間の上限で防ぐ
             .setMaxTokens(MAX_TOKENS)
+            .setPreferredBackend(
+                when (backend) {
+                    EngineBackend.GPU -> LlmInference.Backend.GPU
+                    EngineBackend.CPU -> LlmInference.Backend.CPU
+                }
+            )
             .build()
-        return (model to LlmInference.createFromOptions(context, options)).also { loaded = it }
+
+    /** エンジンを閉じて手放す。必ず [inferenceMutex] を持った状態で呼ぶ。 */
+    private fun releaseLocked(reason: String) {
+        val current = loaded ?: return
+        loaded = null
+        try {
+            current.engine.close()
+        } catch (e: Exception) {
+            Timber.w(e, "端末内モデルを閉じるのに失敗")
+        }
+        Timber.i("端末内モデルを解放: %s", reason)
+    }
+
+    /**
+     * 使い終わった印を付け、[IDLE_RELEASE_MS] 後に(その間に使われていなければ)エンジンを解放する予約をし直す。
+     * 必ず [inferenceMutex] を持った状態で呼ぶ。
+     */
+    private fun markUsedLocked() {
+        lastUsedNanos = System.nanoTime()
+        synchronized(lifecycleLock) {
+            idleReleaseJob?.cancel()
+            idleReleaseJob = backgroundScope.launch {
+                delay(IDLE_RELEASE_MS)
+                inferenceMutex.withLock {
+                    // 待っている間に使われていれば、その終わりに予約し直されている
+                    if (System.nanoTime() - lastUsedNanos >= IDLE_RELEASE_MS * NANOS_PER_MILLI) {
+                        releaseLocked("${IDLE_RELEASE_MS / 1000} 秒使われなかった")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * [block] を、エンジンを読み込んで(読み込み済みならそのまま)排他的に実行する。
+     * GPU で作れたエンジンで最初の推論が失敗したら、以後は CPU を使うよう覚えてエンジンを閉じる(例外はそのまま投げる)。
+     */
+    private suspend fun <T> withEngine(block: suspend (LoadedEngine) -> T): T =
+        inferenceMutex.withLock {
+            try {
+                val current = engineLocked()
+                try {
+                    block(current).also { current.verified = true }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: LlmException.Timeout) {
+                    // 時間切れは装置の不具合とは限らない(遅い端末・繰り返し)ため、装置は変えない
+                    throw e
+                } catch (e: Exception) {
+                    if (current.backend == EngineBackend.GPU && !current.verified) {
+                        Timber.w(e, "GPU での最初の推論に失敗したため、以後は CPU を使う")
+                        backendSelector.demoteToCpu(current.modelKey)
+                        releaseLocked("GPU での推論の失敗")
+                    }
+                    throw e
+                }
+            } finally {
+                markUsedLocked()
+            }
+        }
+
+    /**
+     * エンジンの読み込みを先に始める(完了は待たない)。AI 処理の前段の本文取得・取り出しと重ね、
+     * 推論を始めるときに読み込み済みにする。読み込み中は [inferenceMutex] を持つため、先に推論が呼ばれても
+     * 読み込みが終わるのを待つだけで、二重には読み込まない。モデルが無い・読み込みに失敗しても何も起きない(推論の側で失敗する)。
+     */
+    override fun prewarm() {
+        // 読み込み済みなら何もしない(推論中のロック待ちを増やさない)
+        val current = loaded
+        if (current != null && current.model == modelManager.installedModel.value) return
+        synchronized(lifecycleLock) {
+            if (prewarmJob?.isActive == true) return
+            prewarmJob = backgroundScope.launch {
+                try {
+                    inferenceMutex.withLock {
+                        try {
+                            engineLocked()
+                        } finally {
+                            markUsedLocked()
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: ModelNotAvailableException) {
+                    Timber.d("端末内モデルが無いため先読みしない")
+                } catch (e: Exception) {
+                    Timber.w(e, "端末内モデルの先読みに失敗")
+                }
+            }
+        }
+    }
+
+    /**
+     * メモリの逼迫などで [shouldReleaseEngineOnTrim] なら、使っていないエンジンを手放す。
+     * 推論中(ロック中)は止めずに何もしない。そのときは推論の後のアイドル解放に任せる。
+     */
+    private fun releaseOnTrim(level: Int) {
+        if (!shouldReleaseEngineOnTrim(level)) return
+        backgroundScope.launch {
+            if (!inferenceMutex.tryLock()) {
+                Timber.d("端末内モデルを使用中のため、メモリ逼迫(level=%d)でも解放しない", level)
+                return@launch
+            }
+            try {
+                releaseLocked("メモリ逼迫 level=$level")
+            } finally {
+                inferenceMutex.unlock()
+            }
+        }
     }
 
     /**
      * 1回の生成ごとにセッションを作る(会話履歴はプロンプトに含めるため、セッションに状態を持たせない)。
      * Gemma 系はチャットテンプレートを明示し、ユーザーターン/モデルターンの区切りを正しく付ける。
      */
-    private fun newSession(model: LocalModelInfo, engine: LlmInference): LlmInferenceSession {
+    private fun newSession(loaded: LoadedEngine): LlmInferenceSession {
         val options = LlmInferenceSessionOptions.builder()
-            .apply { if (model.isGemma) setPromptTemplates(GEMMA_TEMPLATES) }
+            .apply { if (loaded.model.isGemma) setPromptTemplates(GEMMA_TEMPLATES) }
             .build()
-        return LlmInferenceSession.createFromOptions(engine, options)
+        return LlmInferenceSession.createFromOptions(loaded.engine, options)
     }
 
     private suspend fun generate(prompt: String): String =
         withContext(dispatcherProvider.default) {
-            inferenceMutex.withLock {
-                val (model, engine) = engineLocked()
-                newSession(model, engine).use { session ->
+            withEngine { loaded ->
+                newSession(loaded).use { session ->
                     session.addQueryChunk(prompt)
                     session.generateResponse()
                 }
@@ -114,33 +294,50 @@ class LocalLlmProvider @Inject constructor(
         }
 
     /**
-     * 解析用の生成。[generate] と違い、時間の上限([timeoutMs]。既定は [ANALYZE_TIMEOUT_MS])を設け、コルーチンのキャンセルでも生成を中断する
+     * 解析用の生成。[generate] と違い、時間の上限([timeoutMillis]。既定は [ANALYZE_TIMEOUT_MS])と出力の文字数の上限
+     * ([maxOutputChars])を設け、コルーチンのキャンセルでも生成を中断する
      * (ブロッキングの generateResponse はキャンセルできず、止まらない生成がロックを持ち続けて後続の処理まで止めるため)。
      * 出力の JSON オブジェクトが閉じたら、それ以降の生成(小型モデルが繰り返しに陥った続きなど)は待たずに打ち切る。
-     * @throws LlmException.Timeout 時間内に生成が終わらなかったとき
+     * JSON が閉じないまま上限を超える出力は、繰り返しに陥ったとみなして時間切れと同じ扱いにする(上限の時間まで待たない)。
+     * 所要時間・最初の出力までの時間・出力の速さは `AiPerf` のログに出す。
+     * @param label ログ用の名前(部分要約 `part 2/4`、最終 `final`)
+     * @param timeoutMillis 使っている演算装置ごとの時間の上限(装置はエンジンの読み込み後に決まる)
+     * @throws LlmException.Timeout 時間内に生成が終わらなかった、または出力が上限を超えたとき
      */
-    private suspend fun generateAnalysis(prompt: String, timeoutMs: Long = ANALYZE_TIMEOUT_MS): String =
-        withContext(dispatcherProvider.default) {
-            inferenceMutex.withLock {
-                val (model, engine) = engineLocked()
-                newSession(model, engine).use { session ->
+    private suspend fun generateAnalysis(
+        prompt: String,
+        label: String,
+        maxOutputChars: Int = ANALYZE_MAX_OUTPUT_CHARS,
+        timeoutMillis: (EngineBackend) -> Long = { ANALYZE_TIMEOUT_MS }
+    ): String {
+        val bookmarkId = AiPerfLog.currentBookmarkId()
+        return withContext(dispatcherProvider.default) {
+            withEngine { loaded ->
+                val timeoutMs = timeoutMillis(loaded.backend)
+                newSession(loaded).use { session ->
                     session.addQueryChunk(prompt)
                     // 出力と JSON の検出は MediaPipe のスレッドで更新し、生成が終わってから読む
                     val output = StringBuilder()
                     val jsonEnd = JsonObjectEndDetector()
-                    // 生成の終了(失敗を含む)か、JSON が閉じたときに完了する
+                    var runaway = false
+                    var firstOutputNanos = 0L
+                    // 生成の終了(失敗を含む)か、JSON が閉じた・出力が上限を超えたときに完了する
                     val stop = CompletableDeferred<Unit>()
+                    val startNanos = System.nanoTime()
                     val future = session.generateResponseAsync(ProgressListener<String> { partial, _ ->
-                        val closed = synchronized(output) {
-                            // 閉じた後の出力は捨てる(中断が効くまでに届いた分)
-                            if (jsonEnd.endIndex >= 0) {
+                        val finished = synchronized(output) {
+                            if (firstOutputNanos == 0L) firstOutputNanos = System.nanoTime()
+                            // 閉じた後・上限を超えた後の出力は捨てる(中断が効くまでに届いた分)
+                            if (jsonEnd.endIndex >= 0 || runaway) {
                                 true
                             } else {
                                 output.append(partial)
-                                jsonEnd.feed(partial)
+                                val closed = jsonEnd.feed(partial)
+                                if (!closed && output.length > maxOutputChars) runaway = true
+                                closed || runaway
                             }
                         }
-                        if (closed) stop.complete(Unit)
+                        if (finished) stop.complete(Unit)
                     })
                     future.addListener({ stop.complete(Unit) }, Runnable::run)
                     val timedOut = try {
@@ -150,7 +347,18 @@ class LocalLlmProvider @Inject constructor(
                         if (!future.isDone) runCatching { session.cancelGenerateResponseAsync() }
                         withContext(NonCancellable) { future.awaitDone() }
                     }
+                    val endNanos = System.nanoTime()
+                    // 生成を止めた後は、MediaPipe のスレッドからの更新は無いため、まとめて読む
+                    val stats = synchronized(output) {
+                        GenerationStats(
+                            outChars = jsonEnd.endIndex.takeIf { it >= 0 } ?: output.length,
+                            runaway = runaway,
+                            firstOutputNanos = firstOutputNanos
+                        )
+                    }
+                    logGeneration(label, loaded.backend, prompt.length, stats, startNanos, endNanos, bookmarkId, timedOut)
                     if (timedOut) throw LlmException.Timeout(timeoutMs)
+                    if (stats.runaway) throw LlmException.Timeout((endNanos - startNanos) / NANOS_PER_MILLI)
                     // JSON が閉じた時点で打ち切った場合は、そこまでの出力を使う(中断による future の失敗は無視する)
                     val untilJsonEnd = synchronized(output) {
                         jsonEnd.endIndex.takeIf { it >= 0 }?.let { output.substring(0, it) }
@@ -166,6 +374,34 @@ class LocalLlmProvider @Inject constructor(
                 }
             }
         }
+    }
+
+    private class GenerationStats(val outChars: Int, val runaway: Boolean, val firstOutputNanos: Long)
+
+    /** 1回の生成の所要時間・最初の出力までの時間(プロンプトの処理)・出力の速さ(文字/秒)を記録する。 */
+    private fun logGeneration(
+        label: String,
+        backend: EngineBackend,
+        promptChars: Int,
+        stats: GenerationStats,
+        startNanos: Long,
+        endNanos: Long,
+        bookmarkId: Long?,
+        timedOut: Boolean
+    ) {
+        val totalMs = (endNanos - startNanos) / NANOS_PER_MILLI
+        val detail = buildString {
+            append("$label backend=$backend prompt=${promptChars}ch out=${stats.outChars}ch")
+            if (stats.firstOutputNanos != 0L) {
+                append(" firstOutput=${(stats.firstOutputNanos - startNanos) / NANOS_PER_MILLI}ms")
+                val decodeMs = (endNanos - stats.firstOutputNanos) / NANOS_PER_MILLI
+                if (decodeMs > 0) append(" decode=%.1fch/s".format(java.util.Locale.ROOT, stats.outChars * 1000.0 / decodeMs))
+            }
+            if (timedOut) append(" TIMEOUT")
+            if (stats.runaway) append(" RUNAWAY")
+        }
+        AiPerfLog.record("llm.generate", totalMs, detail, bookmarkId)
+    }
 
     override suspend fun analyze(
         input: AnalysisInput,
@@ -181,10 +417,13 @@ class LocalLlmProvider @Inject constructor(
                 "",
                 AiPrompts.partInput(input.title, part)
             ).joinToString("\n")
-            AnalysisParser.parseNotes(generateAnalysis(prompt, PART_TIMEOUT_MS))
+            val response = generateAnalysis(
+                prompt, "part ${part.number}/${part.total}", PART_MAX_OUTPUT_CHARS, ::partTimeoutMillis
+            )
+            AnalysisParser.parseNotes(response)
         }
         val isLong = body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
-        val response = generateAnalysis(buildAnalyzePrompt(input, body.text, isLong, existingTags, scope))
+        val response = generateAnalysis(buildAnalyzePrompt(input, body.text, isLong, existingTags, scope), "final")
         return AnalysisParser.parse(response, input.combinedText())
     }
 
@@ -203,9 +442,8 @@ class LocalLlmProvider @Inject constructor(
         history: List<ChatMessage>
     ): Flow<String> = callbackFlow {
         val prompt = buildChatPrompt(userMessage, context, history)
-        inferenceMutex.withLock {
-            val (model, engine) = engineLocked()
-            newSession(model, engine).use { session ->
+        withEngine { loaded ->
+            newSession(loaded).use { session ->
                 session.addQueryChunk(prompt)
                 val finished = AtomicBoolean(false)
                 val future = session.generateResponseAsync(ProgressListener<String> { partial, done ->
@@ -271,6 +509,17 @@ class LocalLlmProvider @Inject constructor(
         private const val MAX_TOKENS = 4096
         private const val MAX_INPUT_CHARS = 2000
 
+        private const val NANOS_PER_MILLI = 1_000_000L
+
+        /** 演算装置(GPU / CPU)の記録のファイル名。`filesDir/models/` に置く */
+        private const val BACKEND_FILE_NAME = "local_llm_backend.json"
+
+        /**
+         * 最後に使ってからこの時間が経ったら、エンジン(モデルのメモリ)を解放する。
+         * 連続して保存したときの再読み込みは避けつつ、使っていないのにメモリを持ち続けない長さ。
+         */
+        private const val IDLE_RELEASE_MS = 2 * 60 * 1000L
+
         /**
          * 解析(要約・タグ)の生成にかける時間の上限。通常は CPU でも 1 分程度で終わるが、小型モデルは同じ文の繰り返しに陥ると
          * MAX_TOKENS まで生成を続け、数分〜十数分かかることがある。WorkManager は約 10 分でワーカーを止めるため、
@@ -278,20 +527,40 @@ class LocalLlmProvider @Inject constructor(
          */
         private const val ANALYZE_TIMEOUT_MS = 3 * 60 * 1000L
 
-        /** 長い本文の部分要約1回の時間の上限。出力が短いため、まとめ([ANALYZE_TIMEOUT_MS])より短くする */
-        private const val PART_TIMEOUT_MS = 90 * 1000L
+        /**
+         * 解析の出力の文字数の上限。要約・タグ・カテゴリの JSON は数百文字で、閉じる前にこれを超えるのは繰り返しに陥ったとき。
+         * 上限の時間([ANALYZE_TIMEOUT_MS])まで待たずに打ち切る(日本語は 1 文字 1 トークン前後のため、上限はおよそ 2,000 トークン)
+         */
+        private const val ANALYZE_MAX_OUTPUT_CHARS = 2_000
+
+        /** 部分要約の出力の文字数の上限。メモは [LongTextConfig.noteMaxChars](300)文字が目安の短い JSON */
+        private const val PART_MAX_OUTPUT_CHARS = 800
 
         /**
-         * 長い本文の分割要約。入力の上限(2,000 文字)ごとに最大 4 部分(約 8,000 文字。超える分は均等に間引く)。
-         * 部分要約(最長 [PART_TIMEOUT_MS])の時間の目安と、まとめ([ANALYZE_TIMEOUT_MS])を合わせても、
-         * WorkManager の実行時間の上限(約 10 分)に収まるようにする
+         * 長い本文の分割要約。入力の上限(2,000 文字)ごとに最大 3 部分(約 6,000 文字。超える分は均等に間引く)。
+         * 部分要約1回の時間の上限は [partTimeoutMillis](GPU 60 秒 / CPU 90 秒)。CPU の最悪でも
+         * 部分要約 3 回(4.5 分。時間の目安 4 分を超えると残りは飛ばす)+ まとめ([ANALYZE_TIMEOUT_MS] 3 分)で、
+         * WorkManager の実行時間の上限(約 10 分)に収まる。
+         * (測った速度に応じて時間の目安を変えることも考えられるが、まず `AiPerf` のログで実測してから調整する)
          */
         private val LONG_TEXT = LongTextConfig(
             chunkChars = MAX_INPUT_CHARS,
-            maxChunks = 4,
+            maxChunks = 3,
             noteMaxChars = 300,
             timeBudgetMillis = 4 * 60 * 1000L
         )
+
+        /** 最後に作られたインスタンス([trimMemory] の宛先)。アプリで1つだけ(@Singleton)のため、弱参照で持つ。 */
+        @Volatile
+        private var latest: WeakReference<LocalLlmProvider>? = null
+
+        /**
+         * `Application.onTrimMemory` から呼ぶ。メモリが逼迫したとき、使っていない端末内モデルを手放す。
+         * まだ作られていなければ(モデルを読み込んでいなければ)何もしない。インスタンスを新たに作らないため静的に受ける。
+         */
+        fun trimMemory(level: Int) {
+            latest?.get()?.releaseOnTrim(level)
+        }
 
         /** Gemma の対話形式(https://ai.google.dev/gemma/docs/core/prompt-structure)。 */
         private val GEMMA_TEMPLATES: PromptTemplates = PromptTemplates.builder()

@@ -75,6 +75,9 @@ object AiPerfLog {
         }
     }
 
+    /** 呼び出し元のコンテキストの [Trace] が示すブックマークの ID。無ければ null。 */
+    suspend fun currentBookmarkId(): Long? = coroutineContext[Trace]?.bookmarkId
+
     /** 直近の記録(古い順)。 */
     fun recent(): List<Entry> = synchronized(lock) { entries.toList() }
 
