@@ -178,8 +178,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
     }
 
     /**
-     * WorkManager が通知を求めたときの内容(Android 11 以前のエクスペディットなど。このアプリの最小は Android 12 だが、
-     * 取り違えて落ちないよう用意する)。ブックマークのタイトルが分かれば出す。
+     * WorkManager が通知を求めたときの内容(Android 11 以前のエクスペディットなど)。最小が Android 12 のこのアプリでは
+     * 通常は呼ばれないが、CoroutineWorker の既定の実装は例外を投げるため用意する。ブックマークのタイトルが分かれば出す。
      */
     override suspend fun getForegroundInfo(): ForegroundInfo {
         val bookmarkId = inputData.getLong(KEY_BOOKMARK_ID, -1L)
