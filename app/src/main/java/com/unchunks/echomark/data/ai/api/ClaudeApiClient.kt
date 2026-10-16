@@ -252,10 +252,16 @@ class ClaudeApiClient internal constructor(
                 .build()
         private const val FALLBACK_SEPARATOR = "\n\n"
 
-        /** Haiku 4.5 以前は effort 非対応(送ると 400)。 */
+        /**
+         * effort を受け付けるモデル。Haiku 4.5 以前(と Claude 3 系)は非対応で、送ると 400 になる。
+         * Haiku 5.5 以降は対応(送らないと既定の medium で動くため、要約では low を明示して速くする)。
+         */
         internal fun supportsEffort(model: String): Boolean =
-            model.startsWith("claude-") && !model.startsWith("claude-haiku") &&
-                !model.contains("-4-5") && !model.startsWith("claude-3")
+            model.startsWith("claude-") && !model.startsWith("claude-3") && !model.contains("-4-5") &&
+                !LEGACY_HAIKU.containsMatchIn(model)
+
+        /** effort 非対応の Haiku(`claude-haiku-4-…` 以前)。 */
+        private val LEGACY_HAIKU = Regex("^claude-haiku-[1-4](-|$)")
 
         /** fallbacks: "default" を受け付けるモデル。 */
         internal fun supportsDefaultFallbacks(model: String): Boolean = model in setOf(
