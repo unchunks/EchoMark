@@ -91,6 +91,10 @@ class OpenAiApiClient internal constructor(
             .put("store", false)
             .put("max_output_tokens", maxOutputTokens(request.purpose))
         if (request.system.isNotBlank()) body.put("instructions", request.system)
+        if (request.purpose != ApiPurpose.CHAT && supportsReasoningEffort(credentials.model)) {
+            // 要約・接続テストは深く推論させない(チャットは既定のまま)
+            body.put("reasoning", JSONObject().put("effort", "low"))
+        }
         if (request.purpose == ApiPurpose.ANALYZE) {
             // json_object はプロンプトに "JSON" の語が必要(分析プロンプトに含まれる)
             body.put("text", JSONObject().put("format", JSONObject().put("type", "json_object")))
@@ -161,13 +165,24 @@ class OpenAiApiClient internal constructor(
     }
 
     private fun maxOutputTokens(purpose: ApiPurpose): Int = when (purpose) {
-        // 推論モデルは推論トークンもこの上限に含まれるため、短い応答でも余裕を持たせる
-        ApiPurpose.ANALYZE -> 8192
+        // 推論モデルは推論トークンもこの上限に含まれるため、短い応答でも余裕を持たせる(要約は短いので、暴走を早めに止める)
+        ApiPurpose.ANALYZE -> 6000
         ApiPurpose.CHAT -> 16384
         ApiPurpose.CONNECTION_TEST -> 1024
     }
 
     companion object {
         const val DEFAULT_BASE_URL = "https://api.openai.com/"
+
+        private val REASONING_MODEL = Regex("^(?:gpt-(?:[5-9]|\\d{2,})|o\\d)")
+
+        /**
+         * reasoning.effort を受け付ける推論モデル(GPT-5 以降と o シリーズ)。
+         * GPT-4.1 以前や、推論しない `-chat` 系のモデルに送ると 400 になる。
+         */
+        internal fun supportsReasoningEffort(model: String): Boolean {
+            val id = model.trim().lowercase()
+            return REASONING_MODEL.containsMatchIn(id) && !id.contains("chat")
+        }
     }
 }

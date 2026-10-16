@@ -100,6 +100,10 @@ class GeminiApiClient internal constructor(
         }
         val generationConfig = JSONObject().put("maxOutputTokens", maxOutputTokens(request.purpose))
         if (request.purpose == ApiPurpose.ANALYZE) generationConfig.put("responseMimeType", "application/json")
+        if (request.purpose != ApiPurpose.CHAT && supportsThinkingLevel(credentials.model)) {
+            // 要約・接続テストは深く考えさせない(Gemini 3 以降。thinkingBudget は 2.5 系の指定で、併用すると 400)
+            generationConfig.put("thinkingConfig", JSONObject().put("thinkingLevel", "low"))
+        }
         val body = JSONObject()
             .put("contents", contents)
             .put("generationConfig", generationConfig)
@@ -135,14 +139,23 @@ class GeminiApiClient internal constructor(
     }
 
     private fun maxOutputTokens(purpose: ApiPurpose): Int = when (purpose) {
-        // 思考モデルは思考分もこの上限に含まれるため、短い応答でも余裕を持たせる
-        ApiPurpose.ANALYZE -> 8192
+        // 思考モデルは思考分もこの上限に含まれるため、短い応答でも余裕を持たせる(要約は短いので、暴走を早めに止める)
+        ApiPurpose.ANALYZE -> 6144
         ApiPurpose.CHAT -> 16384
         ApiPurpose.CONNECTION_TEST -> 1024
     }
 
     companion object {
         const val DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/"
+        private val GEMINI_MAJOR_VERSION = Regex("^gemini-(\\d+)")
+
+        /**
+         * thinkingConfig.thinkingLevel を受け付けるモデル(Gemini 3 以降)。
+         * Gemini 2.5 系は thinkingBudget で指定する別の仕組みで、thinkingLevel を送ると 400 になる。
+         */
+        internal fun supportsThinkingLevel(model: String): Boolean =
+            (GEMINI_MAJOR_VERSION.find(model.trim().lowercase())?.groupValues?.get(1)?.toIntOrNull() ?: 0) >= 3
+
         private val SAFETY_FINISH_REASONS = setOf(
             "SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION", "IMAGE_SAFETY"
         )

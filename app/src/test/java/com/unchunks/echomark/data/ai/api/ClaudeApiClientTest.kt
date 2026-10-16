@@ -93,6 +93,20 @@ class ClaudeApiClientTest {
     }
 
     @Test
+    fun 用途ごとのmax_tokens() = runBlocking {
+        fun maxTokensOf(purpose: ApiPurpose): Long {
+            server.enqueue(jsonResponse(messageJson("回答")))
+            runBlocking { client.complete(analyzeRequest.copy(purpose = purpose), credentials) }
+            return JSONObject(server.takeRequest().body!!.utf8()).getLong("max_tokens")
+        }
+
+        // 要約は短い(思考の余裕を残して 6,000)。チャットは長い応答に備える
+        assertEquals(6_000L, maxTokensOf(ApiPurpose.ANALYZE))
+        assertEquals(32_000L, maxTokensOf(ApiPurpose.CHAT))
+        assertEquals(2_000L, maxTokensOf(ApiPurpose.CONNECTION_TEST))
+    }
+
+    @Test
     fun Haikuにはeffortとfallbacksを送らない() = runBlocking {
         server.enqueue(jsonResponse(messageJson("回答")))
 

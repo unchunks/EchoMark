@@ -76,6 +76,45 @@ class OpenAiApiClientTest {
         assertFalse(body.has("stream"))
     }
 
+    private val completedJson = """{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{}"}]}]}"""
+
+    private fun bodyOf(purpose: ApiPurpose, model: String): JSONObject = runBlocking {
+        server.enqueue(json(completedJson))
+        client.complete(analyzeRequest.copy(purpose = purpose), ApiCredentials("sk-proj-testkey123456", model))
+        JSONObject(server.takeRequest().body!!.utf8())
+    }
+
+    @Test
+    fun 要約は推論をlowにし_出力を短く抑える() {
+        val body = bodyOf(ApiPurpose.ANALYZE, "gpt-6.1-sol")
+
+        assertEquals("low", body.getJSONObject("reasoning").getString("effort"))
+        assertEquals(6000, body.getInt("max_output_tokens"))
+    }
+
+    @Test
+    fun チャットは推論の深さを指定しない() {
+        val body = bodyOf(ApiPurpose.CHAT, "gpt-6.1-sol")
+
+        assertFalse(body.has("reasoning"))
+        assertEquals(16384, body.getInt("max_output_tokens"))
+    }
+
+    @Test
+    fun 推論モデルでないIDにはreasoningを送らない() {
+        listOf("gpt-4.1", "gpt-4o", "gpt-5-chat-latest", "my-model").forEach { model ->
+            assertFalse(model, bodyOf(ApiPurpose.ANALYZE, model).has("reasoning"))
+        }
+    }
+
+    @Test
+    fun reasoningを受け付けるモデルの判定() {
+        listOf("gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna", "gpt-5", "gpt-5.1", "gpt-10", "o3", "o4-mini", " GPT-6-luna ")
+            .forEach { assertTrue(it, OpenAiApiClient.supportsReasoningEffort(it)) }
+        listOf("gpt-4.1", "gpt-4o", "gpt-4", "gpt-5-chat-latest", "chatgpt-4o-latest", "omni", "")
+            .forEach { assertFalse(it, OpenAiApiClient.supportsReasoningEffort(it)) }
+    }
+
     @Test
     fun 拒否はRefused() = runBlocking {
         server.enqueue(
