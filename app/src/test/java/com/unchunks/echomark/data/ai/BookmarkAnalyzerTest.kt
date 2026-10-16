@@ -13,7 +13,11 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -109,14 +113,76 @@ class BookmarkAnalyzerTest {
         assertTrue(apiByTask.getValue(AiTask.SUMMARY).scopes.isEmpty())
     }
 
-    /** 呼び出された範囲を記録し、[name] 入りの結果を返す LLM。[failure] があれば記録した後に投げる。 */
+    @Test
+    fun 両方がクラウドAPIなら要約とタグを同時に呼ぶ() = runTest {
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+        settings.setLlmBackend(AiTask.TAGGING, LlmBackend.API)
+        settings.setApiProvider(AiTask.TAGGING, ApiProvider.GEMINI)
+        keys.setKey(ApiProvider.GEMINI, "AIzaKey")
+        apiByTask.getValue(AiTask.SUMMARY).delayMillis = 3_000
+        apiByTask.getValue(AiTask.TAGGING).delayMillis = 2_000
+
+        val analysis = analyzer.analyze(input, listOf("既存"))
+
+        // 順番なら 5,000ms。同時なら長い方の 3,000ms
+        assertEquals(3_000L, currentTime)
+        assertEquals(BookmarkAnalysis("API-SUMMARYの要約", listOf("API-TAGGINGのタグ"), "API-TAGGINGのカテゴリ"), analysis)
+        assertEquals(listOf(AnalysisScope.SUMMARY), apiByTask.getValue(AiTask.SUMMARY).scopes)
+        assertEquals(listOf(AnalysisScope.TAGS), apiByTask.getValue(AiTask.TAGGING).scopes)
+        assertEquals(listOf("既存"), apiByTask.getValue(AiTask.TAGGING).lastExistingTags)
+    }
+
+    @Test
+    fun 同時に呼んだ片方が失敗したらもう片方はキャンセルして失敗を投げる() = runTest {
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+        settings.setLlmBackend(AiTask.TAGGING, LlmBackend.API)
+        settings.setApiModel(AiTask.TAGGING, ApiProvider.CLAUDE, "claude-haiku-4-5")
+        val summarizer = apiByTask.getValue(AiTask.SUMMARY).apply { delayMillis = 10_000 }
+        apiByTask.getValue(AiTask.TAGGING).apply {
+            delayMillis = 500
+            failure = LlmException.ServerError(503)
+        }
+
+        try {
+            analyzer.analyze(input, emptyList())
+            fail("例外が投げられるはず")
+        } catch (e: LlmException.ServerError) {
+            // 先に失敗した方の例外を投げる
+        }
+        assertEquals(500L, currentTime)
+        assertEquals(1, summarizer.cancelledCalls)
+    }
+
+    @Test
+    fun 端末内とクラウドAPIは同時に呼ばず_端末内を先に1つずつ進める() = runTest {
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+        local.delayMillis = 2_000
+        apiByTask.getValue(AiTask.SUMMARY).delayMillis = 3_000
+
+        analyzer.analyze(input, emptyList())
+
+        assertEquals(5_000L, currentTime)
+    }
+
+    /**
+     * 呼び出された範囲を記録し、[name] 入りの結果を返す LLM。[failure] があれば記録した後に投げる。
+     * [delayMillis] だけ(仮想時間で)待ってから返す。
+     */
     private class RecordingLlm(private val name: String) : LlmProvider {
         val scopes = mutableListOf<AnalysisScope>()
         var lastExistingTags: List<String>? = null
         var failure: Exception? = null
+        var delayMillis = 0L
+        var cancelledCalls = 0
 
         override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis {
             scopes += scope
+            try {
+                delay(delayMillis)
+            } catch (e: CancellationException) {
+                cancelledCalls++
+                throw e
+            }
             failure?.let { throw it }
             lastExistingTags = existingTags
             return BookmarkAnalysis("${name}の要約", listOf("${name}のタグ"), "${name}のカテゴリ")

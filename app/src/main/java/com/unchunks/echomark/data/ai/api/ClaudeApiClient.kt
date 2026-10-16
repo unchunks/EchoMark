@@ -48,6 +48,7 @@ import javax.inject.Singleton
 /**
  * Claude API(Messages API)。公式 Java SDK(anthropic-java)を使う。
  * - thinking は常時オン(Opus 5.5 は無効化できない)。深さは effort で調整する(要約 low / チャット medium)
+ * - 要約(JSON)の応答は ApiLlmProvider がストリーミングで受け、JSON が閉じた時点で打ち切る
  * - 拒否(stop_reason = refusal)に備え、対応モデルではサーバー側フォールバック(fallbacks: "default")を有効にする
  */
 @Singleton
@@ -233,14 +234,18 @@ class ClaudeApiClient internal constructor(
     private fun refusalReason(category: Any?): String? = category?.toString()
 
     private fun maxTokens(purpose: ApiPurpose): Long = when (purpose) {
+        // 要約・タグ・部分要約のメモ(約 1,200 文字)は短い。effort low の思考の余裕を残しつつ、暴走を早めに止める
+        ApiPurpose.ANALYZE -> ANALYZE_MAX_TOKENS
         // 思考トークンも max_tokens に含まれるため、低く設定しすぎない
-        ApiPurpose.ANALYZE -> 16_000L
         ApiPurpose.CHAT -> 32_000L
         ApiPurpose.CONNECTION_TEST -> 2_000L
     }
 
     companion object {
         private const val DEFAULT_MAX_RETRIES = 2
+
+        /** 要約の応答の max_tokens(思考込み) */
+        internal const val ANALYZE_MAX_TOKENS = 6_000L
         private const val TIMEOUT_SECONDS = 300L
 
         internal fun newClient(apiKey: String, baseUrl: String?, maxRetries: Int): AnthropicClient =
@@ -252,10 +257,16 @@ class ClaudeApiClient internal constructor(
                 .build()
         private const val FALLBACK_SEPARATOR = "\n\n"
 
-        /** Haiku 4.5 以前は effort 非対応(送ると 400)。 */
+        /**
+         * effort を受け付けるモデル。Haiku 4.5 以前(と Claude 3 系)は非対応で、送ると 400 になる。
+         * Haiku 5.5 以降は対応(送らないと既定の medium で動くため、要約では low を明示して速くする)。
+         */
         internal fun supportsEffort(model: String): Boolean =
-            model.startsWith("claude-") && !model.startsWith("claude-haiku") &&
-                !model.contains("-4-5") && !model.startsWith("claude-3")
+            model.startsWith("claude-") && !model.startsWith("claude-3") && !model.contains("-4-5") &&
+                !LEGACY_HAIKU.containsMatchIn(model)
+
+        /** effort 非対応の Haiku(`claude-haiku-4-…` 以前)。 */
+        private val LEGACY_HAIKU = Regex("^claude-haiku-[1-4](-|$)")
 
         /** fallbacks: "default" を受け付けるモデル。 */
         internal fun supportsDefaultFallbacks(model: String): Boolean = model in setOf(

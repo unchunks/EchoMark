@@ -94,6 +94,45 @@ class GeminiApiClientTest {
         assertEquals("application/json", body.getJSONObject("generationConfig").getString("responseMimeType"))
     }
 
+    private fun generationConfigOf(purpose: ApiPurpose, model: String): JSONObject = runBlocking {
+        server.enqueue(json("""{"candidates":[{"content":{"parts":[{"text":"{}"}]},"finishReason":"STOP"}]}"""))
+        client.complete(chatRequest.copy(purpose = purpose), ApiCredentials("AIzaTestKey1234567890", model))
+        JSONObject(server.takeRequest().body!!.utf8()).getJSONObject("generationConfig")
+    }
+
+    @Test
+    fun 要約は出力を短く抑え_Gemini3以降は思考をlowにする() {
+        val config = generationConfigOf(ApiPurpose.ANALYZE, "gemini-3.8-flash")
+
+        assertEquals(6144, config.getInt("maxOutputTokens"))
+        assertEquals("low", config.getJSONObject("thinkingConfig").getString("thinkingLevel"))
+        // thinkingBudget(2.5 系の指定)とは併用しない
+        assertFalse(config.getJSONObject("thinkingConfig").has("thinkingBudget"))
+    }
+
+    @Test
+    fun チャットは思考の深さを指定しない() {
+        val config = generationConfigOf(ApiPurpose.CHAT, "gemini-3.8-flash")
+
+        assertEquals(16384, config.getInt("maxOutputTokens"))
+        assertFalse(config.has("thinkingConfig"))
+    }
+
+    @Test
+    fun Gemini2_5以前とカスタムIDにはthinkingLevelを送らない() {
+        listOf("gemini-2.5-flash", "gemini-1.5-pro", "my-tuned-model").forEach { model ->
+            assertFalse(model, generationConfigOf(ApiPurpose.ANALYZE, model).has("thinkingConfig"))
+        }
+    }
+
+    @Test
+    fun thinkingLevelを受け付けるモデルの判定() {
+        listOf("gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview", "Gemini-4-pro", " gemini-3-flash ")
+            .forEach { assertTrue(it, GeminiApiClient.supportsThinkingLevel(it)) }
+        listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemma-3", "gpt-6.1-sol", "")
+            .forEach { assertFalse(it, GeminiApiClient.supportsThinkingLevel(it)) }
+    }
+
     @Test
     fun プロンプトがブロックされたらRefused() = runBlocking {
         server.enqueue(json("""{"promptFeedback":{"blockReason":"SAFETY"}}"""))

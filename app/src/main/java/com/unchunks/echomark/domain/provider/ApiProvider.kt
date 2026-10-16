@@ -20,6 +20,7 @@ enum class ApiProvider(
         presets = listOf(
             ApiModelPreset("claude-opus-5-5", "Claude Opus 5.5(高性能・既定)"),
             ApiModelPreset("claude-sonnet-5-5", "Claude Sonnet 5.5(バランス)"),
+            ApiModelPreset("claude-haiku-5-5", "Claude Haiku 5.5(最速・低コスト)"),
             ApiModelPreset("claude-haiku-4-5", "Claude Haiku 4.5(高速・低コスト)")
         ),
         keyConsoleUrl = "https://platform.claude.com/"

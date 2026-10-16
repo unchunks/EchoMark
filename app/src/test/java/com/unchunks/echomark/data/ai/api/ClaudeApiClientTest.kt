@@ -93,6 +93,20 @@ class ClaudeApiClientTest {
     }
 
     @Test
+    fun 用途ごとのmax_tokens() = runBlocking {
+        fun maxTokensOf(purpose: ApiPurpose): Long {
+            server.enqueue(jsonResponse(messageJson("回答")))
+            runBlocking { client.complete(analyzeRequest.copy(purpose = purpose), credentials) }
+            return JSONObject(server.takeRequest().body!!.utf8()).getLong("max_tokens")
+        }
+
+        // 要約は短い(思考の余裕を残して 6,000)。チャットは長い応答に備える
+        assertEquals(6_000L, maxTokensOf(ApiPurpose.ANALYZE))
+        assertEquals(32_000L, maxTokensOf(ApiPurpose.CHAT))
+        assertEquals(2_000L, maxTokensOf(ApiPurpose.CONNECTION_TEST))
+    }
+
+    @Test
     fun Haikuにはeffortとfallbacksを送らない() = runBlocking {
         server.enqueue(jsonResponse(messageJson("回答")))
 
@@ -103,6 +117,30 @@ class ClaudeApiClientTest {
         assertFalse(body.has("output_config"))
         assertFalse(body.has("fallbacks"))
         assertTrue(recorded.headers["anthropic-beta"].orEmpty().isEmpty())
+    }
+
+    @Test
+    fun Haiku5_5にはeffortを送る_既定のmediumで動かさない() = runBlocking {
+        server.enqueue(jsonResponse(messageJson("回答")))
+
+        client.complete(analyzeRequest, ApiCredentials("sk-ant-test-key", "claude-haiku-5-5"))
+
+        val body = JSONObject(server.takeRequest().body!!.utf8())
+        assertEquals("low", body.getJSONObject("output_config").getString("effort"))
+    }
+
+    @Test
+    fun effortを送るモデルの判定() {
+        // 送るモデル
+        listOf(
+            "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-sonnet-5",
+            "claude-haiku-5-5", "claude-haiku-5", "claude-fable-5-1"
+        ).forEach { assertTrue(it, ClaudeApiClient.supportsEffort(it)) }
+        // Haiku 4.5 以前・Claude 3 系・Claude 以外は 400 になるため送らない
+        listOf(
+            "claude-haiku-4-5", "claude-haiku-4-5-20251001", "claude-haiku-4", "claude-haiku-3-5",
+            "claude-3-5-haiku-latest", "claude-3-haiku-20240307", "claude-sonnet-4-5", "gemini-3.8-flash", ""
+        ).forEach { assertFalse(it, ClaudeApiClient.supportsEffort(it)) }
     }
 
     @Test
