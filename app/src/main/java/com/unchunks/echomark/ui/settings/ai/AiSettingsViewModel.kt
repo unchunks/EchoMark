@@ -59,7 +59,9 @@ data class AiSettingsUiState(
     /** API キーが保存済みの提供元 */
     val configuredProviders: Set<ApiProvider> = emptySet(),
     /** クラウド API にファイル(画像・PDF・音声・動画)そのものも送って解析するか */
-    val sendFilesToCloud: Boolean = true
+    val sendFilesToCloud: Boolean = true,
+    /** 端末内 AI を GPU で動かすか(実験的。既定はオフ = CPU) */
+    val localLlmUseGpu: Boolean = false
 ) {
     fun setting(task: AiTask): AiTaskSetting = tasks[task] ?: AiTaskSetting()
 
@@ -129,9 +131,9 @@ class AiSettingsViewModel @Inject constructor(
             ::ModelsSnapshot
         ),
         selectedKeyProvider,
-        appSettings.sendFilesToCloud,
+        combine(appSettings.sendFilesToCloud, appSettings.localLlmUseGpu, ::Pair),
         apiKeyRepository.configuredProviders
-    ) { tasks, models, keyProvider, sendFiles, configured ->
+    ) { tasks, models, keyProvider, (sendFiles, useGpu), configured ->
         AiSettingsUiState(
             tasks = tasks,
             localModel = models.llm,
@@ -143,7 +145,8 @@ class AiSettingsViewModel @Inject constructor(
                 ?: AiTask.entries.mapNotNull { tasks[it] }.firstOrNull { it.backend == LlmBackend.API }?.apiProvider
                 ?: ApiProvider.CLAUDE,
             configuredProviders = configured,
-            sendFilesToCloud = sendFiles
+            sendFilesToCloud = sendFiles,
+            localLlmUseGpu = useGpu
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AiSettingsUiState())
 
@@ -196,6 +199,10 @@ class AiSettingsViewModel @Inject constructor(
 
     fun setSendFilesToCloud(enabled: Boolean) {
         viewModelScope.launch { appSettings.setSendFilesToCloud(enabled) }
+    }
+
+    fun setLocalLlmUseGpu(enabled: Boolean) {
+        viewModelScope.launch { appSettings.setLocalLlmUseGpu(enabled) }
     }
 
     /** キーを暗号化して保存する。入力欄の平文は呼び出し側で消すこと。 */

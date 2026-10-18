@@ -188,14 +188,19 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
     }
 
     /**
-     * 使うモデルの読み込みを先に始める(完了は待たない)。要約を作る間に、端末内 LLM の読み込みが済んでいなければ重ねて進め、
-     * 要約の後の埋め込みモデルの読み込みも LLM の推論と重ねる(埋め込みは要約ができるまで始められないため、読み込みだけ先にする)。
+     * 使うモデルの読み込みを先に始める(完了は待たない)。要約を作る間に、端末内 LLM の読み込みが済んでいなければ重ねて進める。
      * 前段の本文取得・取り出しのワーカーが先に始めていれば、ここでは何も起きない。
+     *
+     * 埋め込みモデルの先読みは、端末内 LLM を使わないとき(クラウド API で要約するとき)だけ要約と重ねる。
+     * 端末内 LLM(数百MB〜数GB)と同時に読み込むとメモリの使用量が一気に増え、端末によってはアプリが強制終了されるため、
+     * そのときは要約の後に埋め込みの中で読み込む。
      */
     private suspend fun prewarm(bookmarkId: Long, bookmark: Bookmark) {
         val needsSummary = bookmark.summary.isNullOrBlank()
-        if (needsSummary) aiPrewarmer.prewarmLocalLlmIfUsed()
-        if (needsSummary || repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion) {
+        val localLlmRuns = needsSummary && aiPrewarmer.prewarmLocalLlmIfUsed()
+        if (!localLlmRuns &&
+            (needsSummary || repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion)
+        ) {
             embeddingProvider.prewarm()
         }
     }

@@ -223,13 +223,14 @@ class BookmarkAiProcessingWorkerTest {
     }
 
     @Test
-    fun 要約を作るときは端末内モデルと埋め込みモデルの読み込みを先に始める() = runBlocking {
+    fun 端末内モデルで要約するときは端末内モデルだけ先読みし_埋め込みモデルは同時に読み込まない() = runBlocking {
         val id = insertBookmark()
 
         runWorker(id, runAttemptCount = 0)
 
         assertEquals(1, localLlmForPrewarm.prewarmCalls)
-        assertEquals(1, embedding.prewarmCalls)
+        // 端末内 LLM と同時に読み込むとメモリが一気に増えて強制終了されうるため、要約の後に読み込む
+        assertEquals(0, embedding.prewarmCalls)
     }
 
     @Test
@@ -250,9 +251,9 @@ class BookmarkAiProcessingWorkerTest {
 
         runWorker(id, runAttemptCount = 0)
 
-        // 2回目は要約も現行版の埋め込みも済み。1回目の分だけ
+        // 2回目は要約も現行版の埋め込みも済み。1回目の分だけ(端末内モデルで要約したため埋め込みモデルは先読みしていない)
         assertEquals(1, localLlmForPrewarm.prewarmCalls)
-        assertEquals(1, embedding.prewarmCalls)
+        assertEquals(0, embedding.prewarmCalls)
     }
 
     @Test

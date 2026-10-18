@@ -85,6 +85,18 @@ class AppSettingsRepositoryImplTest {
     }
 
     @Test
+    fun 端末内AIのGPUは既定でオフ_オンにでき_初期化でオフに戻る() = runTest {
+        val repository = createRepository()
+        assertFalse(repository.localLlmUseGpu.first())
+
+        repository.setLocalLlmUseGpu(true)
+        assertTrue(repository.localLlmUseGpu.first())
+
+        repository.resetToDefaults()
+        assertFalse(repository.localLlmUseGpu.first())
+    }
+
+    @Test
     fun AIの設定は用途ごとに保存し_ほかの用途に影響しない() = runTest {
         val repository = createRepository()
         repository.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
