@@ -15,6 +15,7 @@ import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -56,7 +57,11 @@ class OnDeviceEmbeddingProvider @Inject constructor(
     private val embedMutex = Mutex()
 
     /** [prewarm] の読み込みを動かす(呼び出し元のワーカーが終わっても読み込みは続ける)。 */
-    private val prewarmScope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
+    private val prewarmScope = CoroutineScope(
+        SupervisorJob() + dispatcherProvider.io +
+            // 想定外の失敗(Error を含む)でアプリを落とさない。埋め込みの側で改めて読み込む
+            CoroutineExceptionHandler { _, e -> Timber.e(e, "埋め込みモデルの先読みに失敗") }
+    )
     private var prewarmJob: Job? = null
 
     /**
@@ -146,7 +151,7 @@ class OnDeviceEmbeddingProvider @Inject constructor(
                 } catch (e: EmbeddingUnavailableException) {
                     // モデルが無い環境。本番の埋め込みで同じ扱いになる
                     Timber.d("埋め込みモデルを先読みできない: ${e.message}")
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Timber.w(e, "埋め込みモデルの先読みに失敗")
                 }
             }

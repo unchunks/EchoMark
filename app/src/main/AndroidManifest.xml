@@ -136,6 +136,15 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!--
+            端末内 AI(MediaPipe LLM Inference)を GPU で動かすときに使う、端末のベンダーの OpenCL ライブラリ。
+            Android 12 以降は宣言しないとアプリから読み込めない。無い端末でも動くよう required="false"
+            (https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference/android)
+        -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-car.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
     </application>
 
 </manifest>
