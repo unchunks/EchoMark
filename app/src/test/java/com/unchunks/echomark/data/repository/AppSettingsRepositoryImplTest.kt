@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.defaultApiModel
+import com.unchunks.echomark.domain.repository.SUMMARY_DEFAULT_CLAUDE_MODEL
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -73,14 +75,44 @@ class AppSettingsRepositoryImplTest {
     }
 
     @Test
-    fun AIの既定値は全用途で端末内_Claudeの既定モデル() = runTest {
+    fun AIの既定値は全用途で端末内_Claudeの既定モデル_要約だけHaiku() = runTest {
         val settings = createRepository().aiTaskSettings.first()
 
         assertEquals(AiTask.entries.toSet(), settings.keys)
         settings.values.forEach {
             assertEquals(LlmBackend.LOCAL, it.backend)
             assertEquals(ApiProvider.CLAUDE, it.apiProvider)
-            assertEquals(ApiProvider.CLAUDE.defaultModel, it.apiModel)
+        }
+        assertEquals(SUMMARY_DEFAULT_CLAUDE_MODEL, settings.getValue(AiTask.SUMMARY).apiModel)
+        assertEquals(ApiProvider.CLAUDE.defaultModel, settings.getValue(AiTask.TAGGING).apiModel)
+        assertEquals(ApiProvider.CLAUDE.defaultModel, settings.getValue(AiTask.CHAT).apiModel)
+    }
+
+    @Test
+    fun 要約の既定モデルはClaudeのときだけHaiku_ほかの提供元は提供元の既定() = runTest {
+        val repository = createRepository()
+        repository.setApiProvider(AiTask.SUMMARY, ApiProvider.GEMINI)
+        assertEquals(ApiProvider.GEMINI.defaultModel, repository.aiTaskSettings.first().getValue(AiTask.SUMMARY).apiModel)
+
+        // 選んだモデルが優先され、空白に戻すと要約の既定(Haiku)に戻る
+        repository.setApiProvider(AiTask.SUMMARY, ApiProvider.CLAUDE)
+        repository.setApiModel(AiTask.SUMMARY, ApiProvider.CLAUDE, "claude-opus-5-5")
+        assertEquals("claude-opus-5-5", repository.aiTaskSettings.first().getValue(AiTask.SUMMARY).apiModel)
+        repository.setApiModel(AiTask.SUMMARY, ApiProvider.CLAUDE, " ")
+        assertEquals(SUMMARY_DEFAULT_CLAUDE_MODEL, repository.aiTaskSettings.first().getValue(AiTask.SUMMARY).apiModel)
+    }
+
+    @Test
+    fun AiTaskのdefaultApiModelは要約とClaudeの組み合わせだけHaiku() {
+        AiTask.entries.forEach { task ->
+            ApiProvider.entries.forEach { provider ->
+                val expected = if (task == AiTask.SUMMARY && provider == ApiProvider.CLAUDE) {
+                    "claude-haiku-5-5"
+                } else {
+                    provider.defaultModel
+                }
+                assertEquals("$task/$provider", expected, task.defaultApiModel(provider))
+            }
         }
     }
 

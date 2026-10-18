@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.domain.repository.defaultApiModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -48,7 +49,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
                     ?: ApiProvider.CLAUDE,
                 apiModels = ApiProvider.entries.associateWith { provider ->
                     (prefs[apiModelKey(task, provider)] ?: prefs[legacyApiModelKey(provider)])
-                        ?.takeIf { it.isNotBlank() } ?: provider.defaultModel
+                        ?.takeIf { it.isNotBlank() } ?: task.defaultApiModel(provider)
                 }
             )
         }
