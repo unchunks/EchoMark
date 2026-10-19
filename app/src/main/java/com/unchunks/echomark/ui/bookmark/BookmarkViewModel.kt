@@ -330,7 +330,7 @@ class BookmarkViewModel @Inject constructor(
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             runSave(isLink = false, onSaved) {
-                repository.saveBookmarkWithResult(
+                repository.saveBookmark(
                     Bookmark(
                         type = BookmarkType.TEXT,
                         content = content?.takeIf { it.isNotBlank() },

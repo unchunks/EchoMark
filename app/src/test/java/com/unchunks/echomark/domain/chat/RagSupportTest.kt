@@ -1,7 +1,5 @@
 package com.unchunks.echomark.domain.chat
 
-import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Tag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -49,17 +47,6 @@ class RagSupportTest {
     fun formatContextEntry_truncatesBody() {
         val entry = RagSupport.formatContextEntry(1, "T", "a".repeat(1000))
         assertEquals("[1] T: ".length + RagSupport.MAX_SNIPPET_CHARS, entry.length)
-    }
-
-    @Test
-    fun recentHistory_keepsLastNInOrder() {
-        val msgs = (1..10).map {
-            ChatMessage(
-                id = it.toLong(), conversationId = 1, role = ChatRole.USER,
-                content = "m$it", createdAt = it.toLong()
-            )
-        }
-        assertEquals((5..10).map { it.toLong() }, RagSupport.recentHistory(msgs, 6).map { it.id })
     }
 
     @Test

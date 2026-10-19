@@ -2,7 +2,6 @@ package com.unchunks.echomark.ui.common
 
 import android.content.ContentResolver
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.Audiotrack
@@ -14,6 +13,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.unchunks.echomark.data.attachment.extensionOf
 import com.unchunks.echomark.data.attachment.fallbackMimeTypeOf
+import com.unchunks.echomark.data.storage.OpenableInfo
+import com.unchunks.echomark.data.storage.queryOpenableInfo
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.MAX_ATTACHMENT_BYTES
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
@@ -115,22 +116,14 @@ data class SelectedFile(
  * (共有の intent の種類など)、それも無ければファイル名の拡張子から推定する。
  */
 fun querySelectedFile(resolver: ContentResolver, uri: Uri, fallbackMimeType: String? = null): SelectedFile {
-    var name: String? = null
-    var size: Long? = null
-    try {
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
-                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
-            }
-        }
+    val info = try {
+        resolver.queryOpenableInfo(uri)
     } catch (e: Exception) {
         // 権限の失効・提供元の不具合。名前とサイズは分からないまま続ける(保存時に改めて確かめる)
         Timber.w(e, "ファイルの情報を取得できない")
+        OpenableInfo(displayName = null, sizeBytes = null)
     }
-    val displayName = name ?: uri.lastPathSegment
+    val displayName = info.displayName ?: uri.lastPathSegment
     val reported = runCatching { normalizeMimeType(resolver.getType(uri)) }.getOrNull()
         ?.takeUnless { it == "application/octet-stream" }
     val fallback = normalizeMimeType(fallbackMimeType)?.takeUnless { it.endsWith("/*") || it == "application/octet-stream" }
@@ -138,6 +131,6 @@ fun querySelectedFile(resolver: ContentResolver, uri: Uri, fallbackMimeType: Str
         uri = uri.toString(),
         mimeType = reported ?: fallback ?: fallbackMimeTypeOf(extensionOf(displayName)),
         displayName = displayName,
-        sizeBytes = size
+        sizeBytes = info.sizeBytes
     )
 }

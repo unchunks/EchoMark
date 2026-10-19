@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.createBitmap
-import com.unchunks.echomark.data.attachment.attachmentFileName
+import com.unchunks.echomark.data.attachment.attachmentFile
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -63,7 +63,7 @@ fun rememberAttachmentFile(bookmark: Bookmark): File? {
     val context = LocalContext.current
     val path = bookmark.filePath
     return remember(path) {
-        attachmentFileName(path)?.let { File(File(context.filesDir, "attachments"), it) }?.takeIf { it.isFile }
+        attachmentFile(context.filesDir, path)?.takeIf { it.isFile }
     }
 }
 

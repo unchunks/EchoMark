@@ -61,8 +61,6 @@ class ModelManager @Inject constructor(
         return File(modelsDir, info.fileName).takeIf { it.isFile && it.length() > 0 }
     }
 
-    fun isAvailable(): Boolean = modelFile() != null
-
     /**
      * [uri] のファイルを取り込む(アプリのスコープで実行し、画面を離れても続く)。
      * 進捗・結果は [importState] で通知する。取り込み中なら何もしない。

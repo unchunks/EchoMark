@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.time.DayOfWeek
-import java.util.Locale
 import javax.inject.Inject
 
 /** 設定画面の「AI」行に出す、今の AI の状態。 */
@@ -264,17 +263,3 @@ class SettingsViewModel @Inject constructor(
 /** 取り込み元のファイル名から拡張子を除いた表示名。 */
 internal fun modelDisplayName(fileName: String): String =
     fileName.substringBeforeLast('.').ifBlank { fileName }
-
-/** 12 KB / 3.4 MB / 1.2 GB のような表示。小さいサイズも 0 にならないようにする。 */
-internal fun formatStorageSize(bytes: Long): String {
-    val kb = bytes / 1024.0
-    val mb = kb / 1024.0
-    val gb = mb / 1024.0
-    return when {
-        bytes <= 0 -> "0 KB"
-        gb >= 1 -> String.format(Locale.ROOT, "%.1f GB", gb)
-        mb >= 10 -> String.format(Locale.ROOT, "%.0f MB", mb)
-        mb >= 1 -> String.format(Locale.ROOT, "%.1f MB", mb)
-        else -> String.format(Locale.ROOT, "%.0f KB", kb.coerceAtLeast(1.0))
-    }
-}

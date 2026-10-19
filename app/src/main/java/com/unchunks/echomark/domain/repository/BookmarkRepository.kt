@@ -25,9 +25,8 @@ data class BookmarkSearchResult(
 
 interface BookmarkRepository {
     // Create / Save
-    suspend fun saveBookmark(bookmark: Bookmark): Long
+    suspend fun saveBookmark(bookmark: Bookmark): SaveResult
     suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult
-    suspend fun saveBookmarkWithResult(bookmark: Bookmark): SaveResult
     /**
      * アプリ内に取り込んだファイル([StoredAttachment])をブックマークとして保存し、
      * 「中身の取り出し(OCR・文字起こしなど) → AI 処理」を登録する。
@@ -109,7 +108,6 @@ interface BookmarkRepository {
 
     // Observe / Search
     fun observeBookmarks(): Flow<List<Bookmark>>
-    fun observeBookmarksByTag(tagId: Long): Flow<List<Bookmark>>
     fun observeAllTags(): Flow<List<Tag>>
     fun observeBookmark(id: Long): Flow<Bookmark?>
 

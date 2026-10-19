@@ -330,7 +330,6 @@ private class FakeConversationDao : ConversationDao {
     }
     override suspend fun getById(id: Long): ConversationEntity? = null
     override fun observeById(id: Long): Flow<ConversationEntity?> = MutableStateFlow(null)
-    override fun getAll(): Flow<List<ConversationEntity>> = MutableStateFlow(emptyList())
     override fun observeAllWithLastMessage(): Flow<List<ConversationWithLastMessage>> =
         MutableStateFlow(emptyList())
     override suspend fun touch(id: Long, updatedAt: Long) = Unit

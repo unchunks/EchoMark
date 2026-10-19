@@ -2,10 +2,10 @@ package com.unchunks.echomark.data.attachment
 
 import android.content.Context
 import android.net.Uri
-import android.os.storage.StorageManager
-import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
+import com.unchunks.echomark.data.storage.allocatableBytes
+import com.unchunks.echomark.data.storage.queryOpenableInfo
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
@@ -122,7 +122,7 @@ class AttachmentStore @Inject constructor(
     }
 
     /** 保存先のファイル(存在するとは限らない)。添付ファイルの置き場所でないパスなら null */
-    fun fileOf(filePath: String?): File? = attachmentFileName(filePath)?.let { File(directory, it) }
+    fun fileOf(filePath: String?): File? = attachmentFile(context.filesDir, filePath)
 
     /** 保存してあるファイル。無ければ null */
     fun existingFile(filePath: String?): File? = fileOf(filePath)?.takeIf { it.isFile }
@@ -189,19 +189,8 @@ class AttachmentStore @Inject constructor(
 
     /** 表示名とサイズ(不明なら -1)。 */
     private fun queryNameAndSize(uri: Uri): Pair<String?, Long> {
-        var name: String? = null
-        var size = -1L
-        context.contentResolver.query(
-            uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
-                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
-            }
-        }
-        return (name ?: uri.lastPathSegment) to size
+        val info = context.contentResolver.queryOpenableInfo(uri)
+        return (info.displayName ?: uri.lastPathSegment) to (info.sizeBytes ?: -1L)
     }
 
     /** 取り込める大きさの空きがあるか確かめる(サイズ不明なら余裕の分だけ) */
@@ -212,16 +201,7 @@ class AttachmentStore @Inject constructor(
     }
 
     /** 保存先に確保できる容量。消去可能なキャッシュ分も含めて見積もる。 */
-    private fun allocatableBytes(): Long {
-        val dir = directory
-        return try {
-            val storageManager = context.getSystemService(StorageManager::class.java)
-            storageManager.getAllocatableBytes(storageManager.getUuidForPath(dir))
-        } catch (e: Exception) {
-            // 保存先の情報を取れない場合(IOException など)は、通常の空き容量で見積もる
-            dir.usableSpace
-        }
-    }
+    private fun allocatableBytes(): Long = context.allocatableBytes(directory)
 
     companion object {
         private const val PART_SUFFIX = ".part"
@@ -248,7 +228,7 @@ class AttachmentStore @Inject constructor(
         /** 保存するファイルの拡張子。MIME タイプから決め、分からなければ元のファイル名のものを使う */
         internal fun extensionFor(mimeType: String, fileName: String?): String? {
             val fromMap = runCatching { MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) }.getOrNull()
-            return fromMap?.lowercase()?.takeIf { it.matches(Regex("[a-z0-9]{1,10}")) }
+            return fromMap?.lowercase()?.takeIf { isSafeExtension(it) }
                 ?: fallbackExtensionOf(mimeType)
                 ?: extensionOf(fileName)
         }

@@ -18,9 +18,6 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE id = :id")
     fun observeById(id: Long): Flow<ConversationEntity?>
 
-    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
-    fun getAll(): Flow<List<ConversationEntity>>
-
     /**
      * 会話一覧用。最終更新の新しい順に、各会話の最後のメッセージと質問の対象のブックマーク名を添えて返す。
      * スキーマを変えずに済むよう、相関サブクエリで最新の1件を引く(chat_messages.conversationId に索引あり)。

@@ -116,17 +116,7 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE id IN (:ids)")
     suspend fun getByIds(ids: List<Long>): List<BookmarkEntity>
 
-
     // タグ付きブックマークの取得
-    @Transaction
-    @Query("""
-        SELECT bookmarks.* FROM bookmarks
-        INNER JOIN bookmark_tag_cross_ref ON bookmarks.id = bookmark_tag_cross_ref.bookmarkId
-        WHERE bookmark_tag_cross_ref.tagId = :tagId
-        ORDER BY bookmarks.createdAt DESC
-    """)
-    fun getByTag(tagId: Long): Flow<List<BookmarkWithTags>>
-
     @Transaction
     @Query("SELECT * FROM bookmarks ORDER BY createdAt DESC")
     fun getAllWithTags(): Flow<List<BookmarkWithTags>>

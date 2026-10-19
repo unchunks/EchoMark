@@ -8,7 +8,6 @@ import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.provider.LlmException
-import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiSetupRepository
@@ -214,11 +213,6 @@ class ChatViewModel @Inject constructor(
         sendJob?.cancel()
     }
 
-    /** エラー表示を閉じる。 */
-    fun dismissError() {
-        errorFlow.value = null
-    }
-
     fun rename(title: String) {
         val id = conversationIdFlow.value ?: return
         if (title.isBlank()) return
@@ -258,8 +252,6 @@ class ChatViewModel @Inject constructor(
     companion object {
         /** ナビゲーション引数(と SavedStateHandle)のキー。 */
         const val ARG_CONVERSATION_ID = "conversationId"
-
-        const val MODEL_NOT_AVAILABLE_MESSAGE = MODEL_NOT_AVAILABLE_USER_MESSAGE
 
         private const val SEND_FAILED_PREFIX = "送信に失敗しました"
 

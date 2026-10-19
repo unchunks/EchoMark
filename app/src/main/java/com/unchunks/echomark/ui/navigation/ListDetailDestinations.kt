@@ -12,7 +12,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.core.os.bundleOf
 import androidx.lifecycle.SavedStateHandle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
@@ -54,7 +53,7 @@ internal object ChatPaneSession {
     /** ViewModel に渡す引数(既存の会話なら conversationId) */
     fun args(session: String): Bundle =
         session.removePrefix(CONVERSATION_PREFIX).takeIf { session.startsWith(CONVERSATION_PREFIX) }?.toLongOrNull()
-            ?.let { bundleOf(ChatViewModel.ARG_CONVERSATION_ID to it) }
+            ?.let { id -> Bundle().apply { putLong(ChatViewModel.ARG_CONVERSATION_ID, id) } }
             ?: Bundle()
 }
 
@@ -153,7 +152,7 @@ internal fun BookmarkListDetailDestination(
                         showBackButton = false,
                         viewModel = paneViewModel(
                             key = "bookmark_detail_pane:$id",
-                            args = bundleOf(BookmarkDetailViewModel.ARG_BOOKMARK_ID to id)
+                            args = Bundle().apply { putLong(BookmarkDetailViewModel.ARG_BOOKMARK_ID, id) }
                         )
                     )
                 }

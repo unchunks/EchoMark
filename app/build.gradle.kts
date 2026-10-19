@@ -24,7 +24,7 @@ fun releaseSigningValue(property: String, env: String): String? =
 
 android {
     namespace = "com.unchunks.echomark"
-    compileSdk =37
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.unchunks.echomark"
@@ -167,9 +167,6 @@ dependencies {
     implementation(libs.mediapipe.tasks.genai)
     // Claude API 公式 SDK
     implementation(libs.anthropic.java)
-
-    // Network
-    implementation(libs.okhttp)
 
     // 画像読み込み(OG 画像のサムネイル)。通信は共通の OkHttpClient を使う(EchoMarkApplication)
     implementation(libs.coil.compose)

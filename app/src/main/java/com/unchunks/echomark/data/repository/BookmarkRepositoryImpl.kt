@@ -33,7 +33,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
-import kotlin.collections.map
 
 class BookmarkRepositoryImpl @Inject constructor(
     private val bookmarkDao: BookmarkDao,
@@ -45,10 +44,7 @@ class BookmarkRepositoryImpl @Inject constructor(
     private val attachmentStore: AttachmentStore
 ) : BookmarkRepository {
 
-    override suspend fun saveBookmark(bookmark: Bookmark): Long =
-        saveBookmarkWithResult(bookmark).id
-
-    override suspend fun saveBookmarkWithResult(bookmark: Bookmark): SaveResult =
+    override suspend fun saveBookmark(bookmark: Bookmark): SaveResult =
         withContext(dispatcherProvider.io) {
             val contentUri = bookmark.contentUri
             if (contentUri == null) {
@@ -73,7 +69,7 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult {
         val trimmedUrl = url.trim()
         val now = System.currentTimeMillis()
-        return saveBookmarkWithResult(
+        return saveBookmark(
             Bookmark(
                 type = BookmarkType.URL,
                 content = memo?.takeIf { it.isNotBlank() }?.trim(),
@@ -92,7 +88,7 @@ class BookmarkRepositoryImpl @Inject constructor(
         val text = if (type == BookmarkType.TEXT) attachmentStore.readText(attachment.filePath, MAX_TEXT_FILE_CHARS) else null
         val content = listOfNotNull(memo?.trim(), text?.trim()).filter { it.isNotEmpty() }.joinToString("\n\n")
         val now = System.currentTimeMillis()
-        return saveBookmarkWithResult(
+        return saveBookmark(
             Bookmark(
                 type = type,
                 content = content.ifEmpty { null },
@@ -314,8 +310,6 @@ class BookmarkRepositoryImpl @Inject constructor(
             bookmarkDao.updateTitleAndContent(id, title, content)
         }
 
-
-
     override suspend fun deleteBookmark(bookmark: Bookmark) =
         withContext(dispatcherProvider.io) {
             // 処理待ち・実行中の本文取得・AI 処理を止める(削除後にクラウドへ送ったり、書き込んだりしない)
@@ -331,8 +325,6 @@ class BookmarkRepositoryImpl @Inject constructor(
             Unit
         }
 
-
-
     override suspend fun getBookmarkById(id: Long): Bookmark? =
         withContext(dispatcherProvider.io) {
             bookmarkDao.getById(id)?.toDomain()
@@ -342,7 +334,6 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             bookmarkDao.getByIds(ids).map { it.toDomain() }
         }
-
 
     override suspend fun getStaleBookmarks(threshold: Long, limit: Int): List<Bookmark> =
         withContext(dispatcherProvider.io) {
@@ -386,15 +377,8 @@ class BookmarkRepositoryImpl @Inject constructor(
             EmbeddingProgress(embedded = embedded.coerceAtMost(total), total = total)
         }
 
-
-
     override fun observeBookmarks(): Flow<List<Bookmark>> =
         bookmarkDao.getAllWithTags()
-            .map { list -> list.map { it.toDomain() } }
-            .flowOn(dispatcherProvider.io)
-
-    override fun observeBookmarksByTag(tagId: Long): Flow<List<Bookmark>> =
-        bookmarkDao.getByTag(tagId)
             .map { list -> list.map { it.toDomain() } }
             .flowOn(dispatcherProvider.io)
 

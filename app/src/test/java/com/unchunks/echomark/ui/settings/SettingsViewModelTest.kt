@@ -189,13 +189,7 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun サイズと表示名の整形() {
-        assertEquals("0 KB", formatStorageSize(0))
-        assertEquals("1 KB", formatStorageSize(100))
-        assertEquals("410 KB", formatStorageSize(420_000))
-        assertEquals("1.2 MB", formatStorageSize(1_300_000))
-        assertEquals("530 MB", formatStorageSize(556_000_000))
-        assertEquals("1.5 GB", formatStorageSize(1_610_612_736))
+    fun モデルの表示名の整形() {
         assertEquals("gemma3-1b-it-int4", modelDisplayName("gemma3-1b-it-int4.task"))
     }
 }

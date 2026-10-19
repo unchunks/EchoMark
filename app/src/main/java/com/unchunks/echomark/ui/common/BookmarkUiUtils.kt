@@ -8,10 +8,9 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
-import com.unchunks.echomark.data.attachment.attachmentFileName
+import com.unchunks.echomark.data.attachment.attachmentFile
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import timber.log.Timber
-import java.io.File
 
 /** URLからドメイン(www.除去)を取り出す。取れなければURLをそのまま返す */
 fun extractDomain(url: String): String =
@@ -78,8 +77,7 @@ fun openAttachment(context: Context, bookmark: Bookmark) {
 
 /** 保存したファイルを、ほかのアプリへ渡せる content:// の URI にする(ファイルが無ければ null) */
 private fun attachmentUri(context: Context, bookmark: Bookmark): Uri? {
-    val name = attachmentFileName(bookmark.filePath) ?: return null
-    val file = File(File(context.filesDir, "attachments"), name).takeIf { it.isFile } ?: return null
+    val file = attachmentFile(context.filesDir, bookmark.filePath)?.takeIf { it.isFile } ?: return null
     return try {
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     } catch (e: IllegalArgumentException) {

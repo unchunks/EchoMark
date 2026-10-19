@@ -32,7 +32,6 @@ interface ChatRepository {
      * @param aboutBookmarkId 「このブックマークについて質問」の対象。会話に保存し、開き直したときも固定する
      */
     suspend fun createConversation(title: String? = null, aboutBookmarkId: Long? = null): Long
-    fun observeConversations(): Flow<List<Conversation>>
 
     /** 会話一覧用。最終更新の新しい順に、最後のメッセージを添えて流す。 */
     fun observeConversationPreviews(): Flow<List<ConversationPreview>>
@@ -42,14 +41,8 @@ interface ChatRepository {
     fun observeMessages(conversationId: Long): Flow<List<ChatMessage>>
 
     /**
-     * ユーザー発言を保存し、関連ブックマークを根拠に回答を生成して保存する。
-     * @throws com.unchunks.echomark.domain.provider.ModelNotAvailableException LLM モデルが未取得のとき
-     *   (この場合アシスタントのメッセージは保存しない)
-     */
-    suspend fun sendMessage(conversationId: Long, userMessage: String)
-
-    /**
-     * [sendMessage] のストリーミング版。ユーザー発言は即保存し、回答は完了時に保存する。
+     * ユーザー発言を保存し、関連ブックマークを根拠に回答を生成して、生成途中の回答を流す。
+     * ユーザー発言は即保存し、回答は完了時に保存する。
      * - 失敗時は [ChatStreamEvent.Failed] を流して終了する(例外は投げない)
      * - 収集側がキャンセルした場合は、途中までの回答があれば末尾に「(停止)」を付けて保存する
      *
