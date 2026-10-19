@@ -208,7 +208,7 @@ class ApiLlmProviderTest {
     }
 
     @Test
-    fun 1回で渡せる上限を超える本文は並行して部分要約しメモの順にまとめる() = runBlocking {
+    fun 一回で渡せる上限を超える本文は並行して部分要約しメモの順にまとめる() = runBlocking {
         respondByPrompt("""{"summary":"全体の要約","tags":[],"category":"学習"}""")
         // 160,000 文字: 上限(150,000 文字)を超えるため、約 4 万文字ずつ 4 部分に分ける
         val text = (1..160).joinToString("\n\n") { "段落$it" + "あ".repeat(990) }
@@ -224,7 +224,7 @@ class ApiLlmProviderTest {
     }
 
     @Test
-    fun 1回で渡した本文が文脈長を超えて拒否されたら従来の単位で分けて要約し直す() = runBlocking {
+    fun 一回で渡した本文が文脈長を超えて拒否されたら従来の単位で分けて要約し直す() = runBlocking {
         val calls = AtomicInteger()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {

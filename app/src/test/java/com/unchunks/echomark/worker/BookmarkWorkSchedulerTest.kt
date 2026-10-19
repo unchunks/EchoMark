@@ -157,7 +157,7 @@ class BookmarkWorkSchedulerTest {
     }
 
     @Test
-    fun 1件の処理はチェーンのすべてのワークをエクスペディットにする() = runBlocking {
+    fun 一件の処理はチェーンのすべてのワークをエクスペディットにする() = runBlocking {
         scheduler.enqueue(1L, fetchContent = true, extractContent = true)
 
         val specs = expeditedSettings(BookmarkWorkScheduler.uniqueWorkName(1L))
@@ -188,7 +188,8 @@ class BookmarkWorkSchedulerTest {
         )
 
         val specs = expeditedSettings(BookmarkWorkScheduler.BULK_WORK_NAME)
-        assertEquals(5, specs.size)
+        // 1件目は取得・取り出し・AI 処理、2件目は AI 処理だけ
+        assertEquals(4, specs.size)
         assertTrue(specs.toString(), specs.none { it.first })
     }
 
