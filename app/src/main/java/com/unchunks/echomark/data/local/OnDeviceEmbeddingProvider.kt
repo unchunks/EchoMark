@@ -89,6 +89,11 @@ class OnDeviceEmbeddingProvider @Inject constructor(
             // assets 未同梱(gitignore 対象)の開発ビルドや、MediaPipe が読めない取り込みファイルで発生する
             Timber.w(e, "埋め込みモデルの初期化に失敗")
             throw EmbeddingUnavailableException(e)
+        } catch (e: LinkageError) {
+            // MediaPipe のクラスの静的初期化・ネイティブライブラリの読み込みに失敗したとき(ExceptionInInitializerError、
+            // 2回目以降は NoClassDefFoundError)。Error のまま投げるとプロセスごと落ちるため、埋め込みなしとして扱う
+            Timber.e(e, "埋め込みモデルのライブラリを初期化できない")
+            throw EmbeddingUnavailableException(e)
         }
     }
 
@@ -201,6 +206,12 @@ class OnDeviceEmbeddingProvider @Inject constructor(
         } catch (e: MediaPipeException) {
             closeEmbedder()
             throw e
+        } catch (e: LinkageError) {
+            // 推論の途中で MediaPipe のクラス・ネイティブのメソッドが見つからない(UnsatisfiedLinkError など)。
+            // 初期化のときと同じく、プロセスを落とさず埋め込みなしとして扱う
+            Timber.e(e, "埋め込みモデルのライブラリで推論できない")
+            closeEmbedder()
+            throw EmbeddingUnavailableException(e)
         }
     }
 

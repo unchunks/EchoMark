@@ -10,9 +10,12 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.unchunks.echomark.domain.provider.EmbeddingInputBuilder
 import com.unchunks.echomark.domain.provider.EmbeddingProvider
+import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
+import timber.log.Timber
 
 @HiltWorker
 class ReembedAllWorker @AssistedInject constructor(
@@ -37,6 +40,13 @@ class ReembedAllWorker @AssistedInject constructor(
                 )
                 val vector = embeddingProvider.embedDocument(text)
                 bookmarkRepository.saveEmbedding(id, vector, currentVersion)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: EmbeddingUnavailableException) {
+                // モデルが無い・ライブラリを初期化できない。残りも同じ結果になるため、1件ごとに読み込みを試さずにやめる
+                // (次の起動・モデルの切り替えで積み直される)
+                Timber.i("埋め込みモデルを使えないため、埋め込みの作り直しをやめる")
+                return Result.success()
             } catch (e: Exception) {
                 continue // 1件失敗しても他のブックマークの処理は止めない
             }

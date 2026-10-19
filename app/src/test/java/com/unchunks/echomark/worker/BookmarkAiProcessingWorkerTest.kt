@@ -383,6 +383,37 @@ class BookmarkAiProcessingWorkerTest {
     }
 
     @Test
+    fun 解析のライブラリを初期化できなくても処理中のまま残さず失敗にし_埋め込みは作る() = runBlocking {
+        val id = insertBookmark()
+        // release で MediaPipe の静的初期化が失敗したときの Error(LlmProvider で例外に変えていない経路の備え)
+        llm.failure = ExceptionInInitializerError(IllegalStateException("no caller found on the stack"))
+
+        // Error でワークを失敗させない(失敗させると表示が「処理中」のまま残り、一括の列の後続も止まる)
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+        assertEquals(AiStatus.FAILED, statusOf(id))
+        assertEquals(1, embedding.documents.size)
+    }
+
+    @Test
+    fun 端末内AIが使えない例外は再試行せず失敗にする() = runBlocking {
+        val id = insertBookmark()
+        llm.failure = LlmException.EngineUnavailable(NoClassDefFoundError("LlmInference"))
+
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+        assertEquals(AiStatus.FAILED, statusOf(id))
+        assertEquals(1, llm.calls)
+    }
+
+    @Test
+    fun 埋め込みのライブラリを初期化できなくても処理中のまま残さず失敗にする() = runBlocking {
+        val id = insertBookmark()
+        embedding.failure = NoClassDefFoundError("com.google.mediapipe.framework.Graph")
+
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+        assertEquals(AiStatus.FAILED, statusOf(id))
+    }
+
+    @Test
     fun 中断されたら処理中のまま残さず処理待ちに戻す() = runBlocking {
         val id = insertBookmark()
         llm.hang = true
@@ -399,7 +430,8 @@ class BookmarkAiProcessingWorkerTest {
 
 /** analyze の結果を差し替えられる LLM。渡された既存タグを記録する。 */
 private class ScriptedLlmProvider : LlmProvider {
-    var failure: Exception? = null
+    /** analyze で投げるもの。Error(ライブラリの初期化の失敗)も投げられる */
+    var failure: Throwable? = null
     var calls = 0
     /** true なら analyze は取り消されるまで終わらない。 */
     var hang = false
@@ -426,8 +458,11 @@ private class ScriptedLlmProvider : LlmProvider {
 private class RecordingEmbeddingProvider : EmbeddingProvider {
     private val delegate = FakeEmbeddingProvider()
     val documents = mutableListOf<String>()
+    /** embedDocument で投げるもの */
+    var failure: Throwable? = null
     override val profile: EmbeddingModelProfile = delegate.profile
     override suspend fun embedDocument(text: String): FloatArray {
+        failure?.let { throw it }
         documents += text
         return delegate.embedDocument(text)
     }

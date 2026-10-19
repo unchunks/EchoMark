@@ -31,6 +31,15 @@ class AnalysisOutcomeTest {
     }
 
     @Test
+    fun 端末内AIのライブラリを初期化できないときは再試行しない() {
+        // 同じプロセスでは何度試しても NoClassDefFoundError になるため、試行回数を使い切るまで繰り返さない
+        assertEquals(
+            AnalysisOutcome.GIVE_UP,
+            classifyAnalysisError(LlmException.EngineUnavailable(ExceptionInInitializerError()))
+        )
+    }
+
+    @Test
     fun 一時的な失敗は再試行() {
         listOf(
             LlmException.RateLimited(),

@@ -75,6 +75,11 @@ class PdfContentExtractor @Inject constructor(
     } catch (e: OutOfMemoryError) {
         Timber.w(e, "PdfContentExtractor: メモリ不足でテキストを取り出せません")
         null
+    } catch (e: LinkageError) {
+        // PdfBox のクラスの静的初期化(同梱のフォント・CMap の読み込みなど)に失敗した(ExceptionInInitializerError、
+        // 2回目以降は NoClassDefFoundError)。テキストは取り出せないものとして、ページの画像化と OCR に進む
+        Timber.e(e, "PdfContentExtractor: PdfBox を初期化できません")
+        null
     }
 
     private data class OcrResult(val text: String, val pageCount: Int, val truncated: Boolean)
@@ -102,6 +107,10 @@ class PdfContentExtractor @Inject constructor(
                     throw e
                 } catch (e: Exception) {
                     Timber.w(e, "PdfContentExtractor: %d ページの OCR に失敗", index + 1)
+                    ""
+                } catch (e: LinkageError) {
+                    // ML Kit を初期化できない。取り出せたテキスト(少なくても)を捨てないよう、OCR できなかったものとして続ける
+                    Timber.e(e, "PdfContentExtractor: OCR のライブラリを初期化できません")
                     ""
                 } finally {
                     bitmap.recycle()
