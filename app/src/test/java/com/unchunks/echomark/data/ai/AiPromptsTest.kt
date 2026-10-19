@@ -74,6 +74,27 @@ class AiPromptsTest {
     }
 
     @Test
+    fun 本文に出てこない既存のタグは渡さない() {
+        // 端末内の小さいモデルは、渡した「技術」「AI」を選挙の記事にもそのまま付けてしまう
+        val text = "米中間選挙\n選挙前に物価を下げる政策が打たれ、日本株や為替に影響する"
+
+        assertEquals(
+            listOf("選挙", "日本株"),
+            AiPrompts.existingTagsMentionedIn(listOf("技術", "選挙", "AI", "日本株", "仕事"), text)
+        )
+    }
+
+    @Test
+    fun 本文に出てくるかは全角半角_大文字小文字を区別せず_1文字のタグは渡さない() {
+        val text = "Ｋｏｔｌｉｎ のコルーチンを Android で使う。本の紹介"
+
+        assertEquals(
+            listOf("kotlin", "ANDROID"),
+            AiPrompts.existingTagsMentionedIn(listOf("kotlin", "本", "ANDROID", "#ios"), text)
+        )
+    }
+
+    @Test
     fun ローカル向けはクラウド向けより少なく入れる() {
         val tags = (1..100).map { "タグ$it" }
         val local = AiPrompts.existingTagsForPrompt(

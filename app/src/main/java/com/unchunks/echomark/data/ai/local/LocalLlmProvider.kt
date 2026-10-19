@@ -504,7 +504,9 @@ class LocalLlmProvider @Inject constructor(
     ): String = listOf(
         AiPrompts.analyzeInstructions(
             input.kind,
-            existingTags,
+            // 小さいモデルは渡した既存のタグを内容に関係なく写すため、タイトルか本文に出てくるものだけを渡す
+            // (続けて保存したブックマークのタグが、関係ないブックマークに付くのを防ぐ)
+            AiPrompts.existingTagsMentionedIn(existingTags, input.combinedText()),
             summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
             maxExistingTags = AiPrompts.LOCAL_MAX_EXISTING_TAGS,
             maxExistingTagChars = AiPrompts.LOCAL_MAX_EXISTING_TAG_CHARS,
