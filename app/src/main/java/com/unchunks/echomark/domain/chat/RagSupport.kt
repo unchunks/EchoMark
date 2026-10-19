@@ -1,6 +1,5 @@
 package com.unchunks.echomark.domain.chat
 
-import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Tag
 
 /**
@@ -110,10 +109,6 @@ object RagSupport {
         titleFrom(bookmarkTitle, maxChars - ABOUT_SUFFIX.length) + ABOUT_SUFFIX
 
     private const val ABOUT_SUFFIX = "について"
-
-    /** 履歴のうち直近 [limit] 件を古い順で返す。 */
-    fun recentHistory(history: List<ChatMessage>, limit: Int = HISTORY_LIMIT): List<ChatMessage> =
-        history.takeLast(limit)
 
     /** 最初のユーザー発言から自動タイトルを作る(改行は空白化し、超過分は省略記号)。 */
     fun titleFrom(firstUserMessage: String, maxChars: Int = TITLE_MAX_CHARS): String {

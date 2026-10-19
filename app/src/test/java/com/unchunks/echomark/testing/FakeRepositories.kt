@@ -49,7 +49,6 @@ class FakeBookmarkRepository : BookmarkRepository {
     val tags = MutableStateFlow<List<Tag>>(emptyList())
 
     val searchCalls = mutableListOf<Pair<String, Long?>>()
-    val observedTagIds = mutableListOf<Long>()
     val deleted = mutableListOf<Bookmark>()
     val restored = mutableListOf<Bookmark>()
 
@@ -59,11 +58,6 @@ class FakeBookmarkRepository : BookmarkRepository {
     }
 
     override fun observeBookmarks(): Flow<List<Bookmark>> = bookmarks
-
-    override fun observeBookmarksByTag(tagId: Long): Flow<List<Bookmark>> {
-        observedTagIds += tagId
-        return bookmarks.map { list -> list.filter { tagId.toString() in it.tags } }
-    }
 
     override fun observeAllTags(): Flow<List<Tag>> = tags
 
@@ -118,7 +112,7 @@ class FakeBookmarkRepository : BookmarkRepository {
         bookmarks.value = bookmarks.value + bookmark
     }
 
-    override suspend fun saveBookmarkWithResult(bookmark: Bookmark): SaveResult {
+    override suspend fun saveBookmark(bookmark: Bookmark): SaveResult {
         val id = (bookmarks.value.maxOfOrNull { it.id } ?: 0L) + 1L
         bookmarks.value = bookmarks.value + bookmark.copy(id = id)
         return SaveResult(id, isDuplicate = false)
@@ -129,7 +123,7 @@ class FakeBookmarkRepository : BookmarkRepository {
         val trimmed = url.trim()
         savedUrls += Triple(trimmed, title, memo)
         bookmarks.value.firstOrNull { it.contentUri == trimmed }?.let { return SaveResult(it.id, isDuplicate = true) }
-        return saveBookmarkWithResult(
+        return saveBookmark(
             Bookmark(
                 type = BookmarkType.URL,
                 contentUri = trimmed,
@@ -148,7 +142,7 @@ class FakeBookmarkRepository : BookmarkRepository {
         savedFiles += Triple(attachment, title, memo)
         val type = bookmarkTypeOfMimeType(attachment.mimeType)
             ?: throw AttachmentException(AttachmentError.Unsupported(attachment.mimeType))
-        return saveBookmarkWithResult(
+        return saveBookmark(
             Bookmark(
                 type = type,
                 content = memo?.takeIf { it.isNotBlank() },
@@ -219,7 +213,6 @@ class FakeBookmarkRepository : BookmarkRepository {
 
     override suspend fun getRelatedBookmarks(bookmarkId: Long, limit: Int): List<Bookmark> = related.take(limit)
 
-    override suspend fun saveBookmark(bookmark: Bookmark): Long = TODO("not used")
     override suspend fun saveAiTags(bookmarkId: Long, tagNames: List<String>) = TODO("not used")
     override suspend fun getTagNamesForAi(): List<String> = TODO("not used")
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String) = TODO("not used")
@@ -293,7 +286,7 @@ open class FakeChatRepository : ChatRepository {
     val deletedIds = mutableListOf<Long>()
     val restored = mutableListOf<Pair<Conversation, List<ChatMessage>>>()
 
-    /** 非 null なら sendMessage がこの例外を投げる。 */
+    /** 非 null なら sendMessageStream がこの例外で Failed を流す。 */
     var sendFailure: Throwable? = null
 
     override suspend fun createConversation(title: String?, aboutBookmarkId: Long?): Long {
@@ -308,11 +301,6 @@ open class FakeChatRepository : ChatRepository {
     override fun observeConversation(conversationId: Long): Flow<Conversation?> = conversation
 
     override fun observeConversationPreviews(): Flow<List<ConversationPreview>> = previews
-
-    override suspend fun sendMessage(conversationId: Long, userMessage: String) {
-        sent += conversationId to userMessage
-        sendFailure?.let { throw it }
-    }
 
     /** 既定: sendFailure があれば Failed、無ければ Started → Delta → Completed を流す。 */
     override fun sendMessageStream(
@@ -352,8 +340,6 @@ open class FakeChatRepository : ChatRepository {
         previews.value = (previews.value + ConversationPreview(conversation))
             .sortedByDescending { it.conversation.updatedAt }
     }
-
-    override fun observeConversations(): Flow<List<Conversation>> = TODO("not used")
 }
 
 /** AI の準備状態の Fake。 */

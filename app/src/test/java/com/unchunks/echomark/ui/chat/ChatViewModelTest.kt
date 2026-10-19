@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.LlmException
+import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
@@ -52,7 +53,7 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertEquals(ChatViewModel.MODEL_NOT_AVAILABLE_MESSAGE, state.error?.message)
+        assertEquals(MODEL_NOT_AVAILABLE_USER_MESSAGE, state.error?.message)
         val error = state.error!!
         assertTrue(error.needsAiSettings)
         assertEquals("こんにちは", error.failedMessage)

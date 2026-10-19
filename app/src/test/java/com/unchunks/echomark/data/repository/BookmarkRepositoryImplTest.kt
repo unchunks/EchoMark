@@ -140,7 +140,7 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 再処理を連打しても同じブックマークの処理は1つだけ() = runBlocking {
-        val id = repository.saveBookmark(textBookmark())
+        val id = repository.saveBookmark(textBookmark()).id
 
         repository.reprocess(id)
         repository.reprocess(id)
@@ -347,7 +347,7 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun AIのタグは前回の分を置き換え_ユーザーのタグは残す() = runBlocking {
-        val id = repository.saveBookmark(textBookmark())
+        val id = repository.saveBookmark(textBookmark()).id
         repository.addTag(id, "自分")
 
         repository.saveAiTags(id, listOf("kotlin", "android"))
@@ -360,7 +360,7 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 削除するとAIだけのタグは消え_取り消すと付けた人ごと元に戻る() = runBlocking {
-        val id = repository.saveBookmark(textBookmark())
+        val id = repository.saveBookmark(textBookmark()).id
         repository.addTag(id, "自分")
         repository.saveAiTags(id, listOf("AI"))
         val bookmark = repository.observeBookmark(id).first()!!
@@ -376,7 +376,7 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun AIのタグだけを外すとタグも消える() = runBlocking {
-        val id = repository.saveBookmark(textBookmark())
+        val id = repository.saveBookmark(textBookmark()).id
         repository.addTag(id, "自分")
         repository.saveAiTags(id, listOf("AI"))
 
@@ -396,7 +396,7 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 既存のブックマークの埋め込みは保存する() = runBlocking {
-        val id = repository.saveBookmark(textBookmark())
+        val id = repository.saveBookmark(textBookmark()).id
 
         repository.saveEmbedding(id, vector, "v1")
 
@@ -405,10 +405,10 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 関連ブックマークは近い順に並ぶ() = runBlocking {
-        val self = repository.saveBookmark(textBookmark("自分"))
+        val self = repository.saveBookmark(textBookmark("自分")).id
         // ID の小さいほうを遠くし、ID 順と近い順を逆にする
-        val far = repository.saveBookmark(textBookmark("遠い"))
-        val near = repository.saveBookmark(textBookmark("近い"))
+        val far = repository.saveBookmark(textBookmark("遠い")).id
+        val near = repository.saveBookmark(textBookmark("近い")).id
         repository.saveEmbedding(self, vector, currentVersion)
         repository.saveEmbedding(far, FloatArray(768) { if (it <= 1) 1f else 0f }, currentVersion)
         repository.saveEmbedding(near, FloatArray(768) { if (it == 0) 1f else if (it == 1) 0.1f else 0f }, currentVersion)
@@ -418,9 +418,9 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 関連ブックマークは旧モデルのベクトルを混ぜない() = runBlocking {
-        val self = repository.saveBookmark(textBookmark("自分"))
-        val sameVersion = repository.saveBookmark(textBookmark("新しい版"))
-        val oldVersion = repository.saveBookmark(textBookmark("旧版"))
+        val self = repository.saveBookmark(textBookmark("自分")).id
+        val sameVersion = repository.saveBookmark(textBookmark("新しい版")).id
+        val oldVersion = repository.saveBookmark(textBookmark("旧版")).id
         repository.saveEmbedding(self, vector, currentVersion)
         repository.saveEmbedding(sameVersion, FloatArray(768) { if (it <= 1) 1f else 0f }, currentVersion)
         // 自分と全く同じ向きでも、版が違えば比べない
@@ -431,8 +431,8 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 自分のベクトルが旧モデルのものなら関連ブックマークは空() = runBlocking {
-        val self = repository.saveBookmark(textBookmark("自分"))
-        val other = repository.saveBookmark(textBookmark("他"))
+        val self = repository.saveBookmark(textBookmark("自分")).id
+        val other = repository.saveBookmark(textBookmark("他")).id
         repository.saveEmbedding(self, vector, "old-model")
         repository.saveEmbedding(other, vector, currentVersion)
 
@@ -441,8 +441,8 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 意味検索は旧モデルのベクトルを混ぜない() = runBlocking {
-        val current = repository.saveBookmark(textBookmark("あ"))
-        val old = repository.saveBookmark(textBookmark("い"))
+        val current = repository.saveBookmark(textBookmark("あ")).id
+        val old = repository.saveBookmark(textBookmark("い")).id
         // FakeEmbeddingProvider の質問ベクトル(vector)と同じ向き。版だけが違う
         repository.saveEmbedding(current, vector, currentVersion)
         repository.saveEmbedding(old, vector, "old-model")
@@ -454,8 +454,8 @@ class BookmarkRepositoryImplTest {
 
     @Test
     fun 埋め込みの進捗は現在の版で保存済みの件数を数える() = runBlocking {
-        val a = repository.saveBookmark(textBookmark("a"))
-        val b = repository.saveBookmark(textBookmark("b"))
+        val a = repository.saveBookmark(textBookmark("a")).id
+        val b = repository.saveBookmark(textBookmark("b")).id
         repository.saveBookmark(textBookmark("c"))
         repository.saveEmbedding(a, vector, currentVersion)
         repository.saveEmbedding(b, vector, "old-model")
@@ -485,7 +485,7 @@ class BookmarkRepositoryImplTest {
     @Test
     fun ワークが無いまま処理待ち_処理中のものだけを積み直す() = runBlocking {
         // 保存時に登録した処理が残っているもの
-        val live = repository.saveBookmark(textBookmark())
+        val live = repository.saveBookmark(textBookmark()).id
         // 処理が失われたもの、完了・準備待ちのもの
         val (stalledPending, stalledProcessing, done, waiting) =
             listOf(AiStatus.PENDING, AiStatus.PROCESSING, AiStatus.DONE, AiStatus.WAITING_MODEL).map { status ->

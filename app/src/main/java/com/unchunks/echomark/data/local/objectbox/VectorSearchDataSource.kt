@@ -49,8 +49,6 @@ class VectorSearchDataSource @Inject constructor(
         }
     }
 
-    fun getVector(bookmarkId: Long): FloatArray? = findByBookmarkId(bookmarkId)?.vector
-
     fun getModelVersion(bookmarkId: Long): String? = findByBookmarkId(bookmarkId)?.modelVersion
 
     /**

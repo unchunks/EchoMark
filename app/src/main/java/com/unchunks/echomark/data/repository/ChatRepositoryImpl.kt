@@ -62,9 +62,6 @@ class ChatRepositoryImpl @Inject constructor(
             )
         }
 
-    override fun observeConversations(): Flow<List<Conversation>> =
-        conversationDao.getAll().map { list -> list.map { it.toDomain() } }
-
     override fun observeConversationPreviews(): Flow<List<ConversationPreview>> =
         conversationDao.observeAllWithLastMessage().map { list -> list.map { it.toDomain() } }
 
@@ -73,17 +70,6 @@ class ChatRepositoryImpl @Inject constructor(
 
     override fun observeMessages(conversationId: Long): Flow<List<ChatMessage>> =
         chatMessageDao.observeMessages(conversationId).map { list -> list.map { it.toDomain() } }
-
-    override suspend fun sendMessage(conversationId: Long, userMessage: String): Unit =
-        withContext(dispatcherProvider.io) {
-            val prepared = prepare(conversationId, userMessage)
-
-            // 4. LLMに問い合わせ(モデル未取得なら ModelNotAvailableException をそのまま伝播)
-            val answer = llmProviderResolver.resolve(AiTask.CHAT).chat(userMessage, prepared.context, prepared.history)
-
-            // 5. 回答を保存(実際に文脈として使ったブックマークIDだけを記録)
-            saveAssistantMessage(conversationId, answer, prepared.referencedIds)
-        }
 
     override fun sendMessageStream(
         conversationId: Long,
@@ -148,8 +134,8 @@ class ChatRepositoryImpl @Inject constructor(
     private suspend fun prepare(
         conversationId: Long,
         userMessage: String,
-        pinnedBookmarkId: Long? = null,
-        isRetry: Boolean = false
+        pinnedBookmarkId: Long?,
+        isRetry: Boolean
     ): PreparedChat {
         // 0. 今回の発言を保存する前に、直近の会話履歴を取得しておく(今回分を含めないため)。
         //    再試行で、失敗した同じ発言が最後に残っているなら、それを履歴から外して使い回す(二重に保存しない)

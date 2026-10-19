@@ -66,7 +66,7 @@ class ShareViewModel @Inject constructor(
                     // URL がなければテキストとして保存(本文 = 共有テキスト、メモがあれば追記)
                     val now = System.currentTimeMillis()
                     val content = if (memo.isBlank()) shared.text else shared.text + "\n\n" + memo.trim()
-                    repository.saveBookmarkWithResult(
+                    repository.saveBookmark(
                         Bookmark(
                             type = BookmarkType.TEXT,
                             content = content,

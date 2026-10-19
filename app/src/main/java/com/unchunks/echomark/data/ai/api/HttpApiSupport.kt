@@ -1,7 +1,6 @@
 package com.unchunks.echomark.data.ai.api
 
 import com.unchunks.echomark.domain.provider.LlmException
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -199,15 +198,4 @@ internal fun parseEventJson(data: String): JSONObject = try {
     JSONObject(data)
 } catch (e: Exception) {
     throw LlmException.Unexpected("ストリームの形式が不正", e)
-}
-
-/** キャンセルは素通しし、それ以外の想定外の例外を [LlmException] に包む。 */
-internal inline fun <T> wrapUnexpected(block: () -> T): T = try {
-    block()
-} catch (e: CancellationException) {
-    throw e
-} catch (e: LlmException) {
-    throw e
-} catch (e: Exception) {
-    throw LlmException.Unexpected(e.javaClass.simpleName, e)
 }

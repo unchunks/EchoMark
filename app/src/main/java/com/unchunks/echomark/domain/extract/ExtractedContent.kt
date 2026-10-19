@@ -50,9 +50,6 @@ data class ExtractedContent(
     val truncated: Boolean = false,
     val engine: String? = null
 ) {
-    /** 本文の見出し(例: "読み取った文字")。 */
-    val sourceLabel: String get() = source.label
-
     companion object {
         /** 本文に入れる取り出したテキストの上限(字) */
         const val MAX_TEXT_LENGTH = 50_000
