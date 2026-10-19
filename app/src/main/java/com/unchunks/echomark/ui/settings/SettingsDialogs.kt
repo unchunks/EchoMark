@@ -241,19 +241,41 @@ private fun PrivacyPoint(title: String, body: String) {
     }
 }
 
-/** 使っている主なライブラリとライセンス。 */
+/**
+ * アプリに同梱されるオープンソースのライブラリとライセンス(プロジェクトごとにまとめたもの)。
+ * 依存との対応と出典は docs/third-party-licenses.md。依存を変えたら両方を直す。
+ */
 private val OPEN_SOURCE_LIBRARIES = listOf(
-    "Android Jetpack(Compose・Room・WorkManager・DataStore・Navigation ほか)" to "Apache License 2.0",
-    "Kotlin・kotlinx.coroutines" to "Apache License 2.0",
+    "Android Jetpack(Compose・Room・WorkManager・DataStore・Navigation・Glance・ExifInterface ほか)" to "Apache License 2.0",
+    "Kotlin・kotlinx.coroutines・kotlinx.serialization" to "Apache License 2.0",
     "Dagger / Hilt" to "Apache License 2.0",
-    "Material Components / Material Icons" to "Apache License 2.0",
+    "Material Icons" to "Apache License 2.0",
     "MediaPipe Tasks(テキスト埋め込み・LLM 推論)" to "Apache License 2.0",
     "ObjectBox Java" to "Apache License 2.0",
-    "OkHttp" to "Apache License 2.0",
+    "OkHttp・Okio" to "Apache License 2.0",
     "Coil" to "Apache License 2.0",
     "Timber" to "Apache License 2.0",
+    "PdfBox-Android" to "Apache License 2.0",
+    "Guava・Flogger" to "Apache License 2.0",
+    "Jackson・ClassMate・JSON Schema Generator・Swagger Annotations" to "Apache License 2.0",
+    "Firebase Components・Firebase Encoders・Google Data Transport" to "Apache License 2.0",
+    "Accompanist・greenrobot Essentials" to "Apache License 2.0",
+    "javax.inject・Jakarta Inject・JSR 305・JSpecify・Error Prone・J2ObjC・JetBrains のアノテーション" to "Apache License 2.0",
     "jsoup" to "MIT License",
     "Anthropic Java SDK" to "MIT License",
+    "Standard Webhooks・SLF4J" to "MIT License",
+    "Animal Sniffer のアノテーション" to "MIT License",
+    "Checker Framework のアノテーション" to "MIT License / GPL 2.0 with Classpath Exception",
+    "Protocol Buffers" to "BSD 3-Clause License",
+    "Bouncy Castle" to "Bouncy Castle Licence",
+    "LMDB(ObjectBox のネイティブライブラリに含まれる)" to "OpenLDAP Public License 2.8"
+)
+
+/** アプリに同梱される、オープンソースでないライブラリ・モデルと利用規約。 */
+private val NON_OPEN_SOURCE_COMPONENTS = listOf(
+    "ML Kit(文字認識・画像ラベル)" to "ML Kit Terms of Service",
+    "Google Play 開発者サービス・ODML Image" to "Android Software Development Kit License",
+    "ObjectBox(ネイティブライブラリ)" to "ObjectBox Binary Licence",
     "EmbeddingGemma(埋め込みモデル)" to "Gemma Terms of Use"
 )
 
@@ -272,20 +294,26 @@ internal fun LicensesDialog(onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
                 )
                 HorizontalDivider()
-                OPEN_SOURCE_LIBRARIES.forEach { (name, license) ->
-                    Column {
-                        Text(name, style = MaterialTheme.typography.bodyMedium.japaneseParagraph())
-                        Text(
-                            license,
-                            style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                OPEN_SOURCE_LIBRARIES.forEach { (name, license) -> LicenseEntry(name, license) }
+                HorizontalDivider()
+                Text("オープンソースでないもの(利用規約)", style = MaterialTheme.typography.titleSmall)
+                NON_OPEN_SOURCE_COMPONENTS.forEach { (name, terms) -> LicenseEntry(name, terms) }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } }
     )
+}
+
+@Composable
+private fun LicenseEntry(name: String, license: String) {
+    Column {
+        Text(name, style = MaterialTheme.typography.bodyMedium.japaneseParagraph())
+        Text(
+            license,
+            style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 /** バックアップ・削除の実行中表示と、読み込み結果・エラーのダイアログ。 */
