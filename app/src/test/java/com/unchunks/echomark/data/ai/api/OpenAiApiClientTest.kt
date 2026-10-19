@@ -154,7 +154,6 @@ class OpenAiApiClientTest {
             fail("例外が投げられるはず")
         } catch (e: LlmException.ServerError) {
             assertEquals(503, e.statusCode)
-            assertTrue(e.isRetryable)
         }
     }
 

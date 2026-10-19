@@ -9,9 +9,6 @@ sealed class LlmException(
     cause: Throwable? = null
 ) : Exception(userMessage, cause) {
 
-    /** 再試行で回復しうるか(レート制限・サーバー障害・通信断)。 */
-    open val isRetryable: Boolean = false
-
     /** API キーが未設定。 */
     class ApiKeyMissing(val provider: ApiProvider) : LlmException(
         "${provider.displayName} の API キーが未設定です。設定 > AI 設定 で入力してください"
@@ -27,25 +24,19 @@ sealed class LlmException(
     class RateLimited(val retryAfterSeconds: Long? = null, cause: Throwable? = null) : LlmException(
         "API の利用上限に達しました。しばらく待ってから再度お試しください",
         cause
-    ) {
-        override val isRetryable = true
-    }
+    )
 
     /** 提供元のサーバー障害・過負荷(HTTP 5xx / 529)。 */
     class ServerError(val statusCode: Int, cause: Throwable? = null) : LlmException(
         "AI サービス側でエラーが発生しました($statusCode)。時間をおいて再度お試しください",
         cause
-    ) {
-        override val isRetryable = true
-    }
+    )
 
     /** 通信できなかった(オフライン・タイムアウトなど)。 */
     class Network(cause: Throwable? = null) : LlmException(
         "AI サービスに接続できませんでした。ネットワーク接続を確認してください",
         cause
-    ) {
-        override val isRetryable = true
-    }
+    )
 
     /** モデルの拒否・安全フィルタで回答が得られなかった。 */
     class Refused(val reason: String? = null) : LlmException(
