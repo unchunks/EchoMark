@@ -7,8 +7,9 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.pdf.PdfRenderer
-import android.media.ExifInterface
 import android.os.ParcelFileDescriptor
+import androidx.core.graphics.createBitmap
+import androidx.exifinterface.media.ExifInterface
 import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import kotlinx.coroutines.withContext
@@ -89,7 +90,7 @@ class AndroidAttachmentLoader @Inject constructor(
         val oriented = rotateByExif(decoded, file)
         val (width, height) = AttachmentPolicy.scaledSize(oriented.width, oriented.height)
         // 縮小と白い下地への描画を一度に行う(JPEG は透過を持てず、そのままだと透過部分が黒になる)
-        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val output = createBitmap(width, height, Bitmap.Config.ARGB_8888)
         Canvas(output).apply {
             drawColor(Color.WHITE)
             val matrix = Matrix().apply { setScale(width / oriented.width.toFloat(), height / oriented.height.toFloat()) }

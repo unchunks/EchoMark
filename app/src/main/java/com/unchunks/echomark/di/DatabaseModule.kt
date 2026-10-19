@@ -59,7 +59,7 @@ object DatabaseModule {
     }
 
     @Provides
-    fun provideCharMessageDao(database: AppDatabase): ChatMessageDao {
+    fun provideChatMessageDao(database: AppDatabase): ChatMessageDao {
         return database.chatMessageDao()
     }
 

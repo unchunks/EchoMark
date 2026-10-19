@@ -34,7 +34,7 @@ object HtmlContentExtractor {
         // ノイズ要素を除去してから本文を取り出す
         document.select("script, style, noscript, nav, header, footer, aside, form, iframe, svg").remove()
         val root = document.selectFirst("article") ?: document.selectFirst("main") ?: document.body()
-        var text = root?.text().orEmpty().trim().take(MAX_TEXT_CHARS)
+        var text = root.text().trim().take(MAX_TEXT_CHARS)
 
         if (youtube != null && youtubeText != null) {
             // YouTube のページ本体は JS アプリで本文が空に近い。og:title が無ければ動画タイトルを使う
