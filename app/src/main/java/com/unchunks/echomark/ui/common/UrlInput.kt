@@ -26,7 +26,18 @@ fun normalizeUrlInput(input: String): String? {
 }
 
 /** 文章の中から最初の http/https の URL を取り出す(末尾の句読点・閉じ括弧は除く)。見つからなければ null。 */
-fun findUrlInText(text: String): String? =
-    URL_IN_TEXT.find(text)?.value
-        ?.trimEnd { it in TRAILING_PUNCTUATION }
-        ?.takeIf { it.length > "https://".length }
+fun findUrlInText(text: String): String? = findUrlMatchInText(text)?.url
+
+/**
+ * 文章の中で見つけた URL。
+ * @property url 末尾の句読点・閉じ括弧を除いた URL
+ * @property matched 文章に現れたままの部分(句読点を含む)。文章から URL を取り除くときに使う
+ */
+data class UrlInText(val url: String, val matched: String)
+
+/** 文章の中から最初の http/https の URL を探す([findUrlInText] と同じ規則)。見つからなければ null。 */
+fun findUrlMatchInText(text: String): UrlInText? {
+    val matched = URL_IN_TEXT.find(text)?.value ?: return null
+    val url = matched.trimEnd { it in TRAILING_PUNCTUATION }.takeIf { it.length > "https://".length } ?: return null
+    return UrlInText(url, matched)
+}

@@ -86,6 +86,7 @@ import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.common.MessageSnackbarEffect
 import com.unchunks.echomark.ui.common.ReadableLazyColumn
+import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.SectionHeader
 import java.time.DayOfWeek
@@ -459,10 +460,10 @@ private val DayOfWeek.fullLabel: String get() = getDisplayName(TextStyle.FULL, L
 
 private val StorageUsage.label: String
     get() = buildList {
-        add("データ ${formatStorageSize(databaseBytes)}")
-        add("検索用 ${formatStorageSize(embeddingBytes)}")
-        if (attachmentBytes > 0) add("ファイル ${formatStorageSize(attachmentBytes)}")
-        if (modelBytes > 0) add("モデル ${formatStorageSize(modelBytes)}")
+        add("データ ${formatFileSize(databaseBytes)}")
+        add("検索用 ${formatFileSize(embeddingBytes)}")
+        if (attachmentBytes > 0) add("ファイル ${formatFileSize(attachmentBytes)}")
+        if (modelBytes > 0) add("モデル ${formatFileSize(modelBytes)}")
     }.joinToString("・")
 
 // ---- ダイアログ ----

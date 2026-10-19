@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.attachment
 
 import com.unchunks.echomark.domain.bookmark.model.normalizeMimeType
+import java.io.File
 
 /*
  * 添付ファイルの保存先の名前と、MIME タイプ・拡張子の対応。Android に依存しない(単体テスト・バックアップの検証でも使う)。
@@ -21,6 +22,13 @@ internal fun attachmentFileName(filePath: String?): String? {
     val name = filePath.removePrefix("$ATTACHMENT_DIRECTORY/")
     return name.takeIf { SAFE_FILE_NAME.matches(it) }
 }
+
+/**
+ * [filePath](filesDir からの相対パス)が指す添付ファイル(存在するとは限らない)。
+ * 添付ファイルの置き場所でないパスなら null([attachmentFileName] と同じ確認)。
+ */
+internal fun attachmentFile(filesDir: File, filePath: String?): File? =
+    attachmentFileName(filePath)?.let { File(File(filesDir, ATTACHMENT_DIRECTORY), it) }
 
 /** 添付ファイルの置き場所として正しい相対パスか */
 internal fun isValidAttachmentPath(filePath: String?): Boolean = attachmentFileName(filePath) != null
@@ -63,12 +71,18 @@ private val MIME_TYPES_BY_EXTENSION: Map<String, String> = mapOf(
 private val EXTENSIONS_BY_MIME_TYPE: Map<String, String> =
     MIME_TYPES_BY_EXTENSION.entries.reversed().associate { (ext, mime) -> mime to ext }
 
+/** 拡張子として受け付ける形(小文字の英数字のみ) */
+private val SAFE_EXTENSION = Regex("[a-z0-9]{1,10}")
+
+/** 保存するファイルの拡張子として使える形か */
+internal fun isSafeExtension(extension: String): Boolean = SAFE_EXTENSION.matches(extension)
+
 /** ファイル名の拡張子(小文字)。無い・おかしな形なら null */
 internal fun extensionOf(fileName: String?): String? =
     fileName?.substringAfterLast('/', fileName)
         ?.substringAfterLast('.', "")
         ?.lowercase()
-        ?.takeIf { it.matches(Regex("[a-z0-9]{1,10}")) }
+        ?.takeIf { isSafeExtension(it) }
 
 /** 拡張子から MIME タイプを推定する(表にあるものだけ) */
 internal fun fallbackMimeTypeOf(extension: String?): String? = extension?.let { MIME_TYPES_BY_EXTENSION[it.lowercase()] }

@@ -422,8 +422,11 @@ private fun AboutBookmarkLabel(bookmarkTitle: String) {
  */
 internal fun conversationExcerpt(preview: ConversationPreview, maxChars: Int = EXCERPT_MAX_CHARS): String? {
     val raw = preview.lastMessage?.takeIf { it.isNotBlank() } ?: return null
-    val text = ChatMarkdown.toPlainText(raw).replace(Regex("\\s+"), " ").trim().take(maxChars)
+    val text = ChatMarkdown.toPlainText(raw).replace(WHITESPACE, " ").trim().take(maxChars)
     return if (preview.lastMessageRole == ChatRole.USER) "あなた: $text" else text
 }
 
 private const val EXCERPT_MAX_CHARS = 120
+
+/** 改行・連続する空白(1つの空白にまとめる) */
+private val WHITESPACE = Regex("\\s+")

@@ -54,6 +54,9 @@ object RagSupport {
 
     private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
 
+    /** 改行・連続する空白(1つの空白にまとめる) */
+    private val WHITESPACE = Regex("\\s+")
+
     /**
      * 文脈に載せるタイトル。いつ保存したかを添え、「最近保存したもの」「今週保存したもの」のような質問に答えられるようにする
      * (AI は今日の日付を知らないため、日付ではなく何日前かで示す)。例: "タイトル(3日前に保存)"
@@ -66,7 +69,7 @@ object RagSupport {
 
     /** 引用しやすい "[n] タイトル: 要約or本文冒頭" 形式の文脈1件を作る。 */
     fun formatContextEntry(index: Int, title: String, body: String?, maxChars: Int = MAX_SNIPPET_CHARS): String {
-        val text = body.orEmpty().trim().replace(Regex("\\s+"), " ").take(maxChars)
+        val text = body.orEmpty().trim().replace(WHITESPACE, " ").take(maxChars)
         return if (text.isEmpty()) "[$index] $title" else "[$index] $title: $text"
     }
 
@@ -112,7 +115,7 @@ object RagSupport {
 
     /** 最初のユーザー発言から自動タイトルを作る(改行は空白化し、超過分は省略記号)。 */
     fun titleFrom(firstUserMessage: String, maxChars: Int = TITLE_MAX_CHARS): String {
-        val oneLine = firstUserMessage.trim().replace(Regex("\\s+"), " ")
+        val oneLine = firstUserMessage.trim().replace(WHITESPACE, " ")
         return if (oneLine.length <= maxChars) oneLine else oneLine.take(maxChars) + "…"
     }
 }

@@ -2,8 +2,8 @@ package com.unchunks.echomark.data.ai.model
 
 import android.content.Context
 import android.net.Uri
-import android.os.storage.StorageManager
-import android.provider.OpenableColumns
+import com.unchunks.echomark.data.storage.allocatableBytes
+import com.unchunks.echomark.data.storage.queryOpenableInfo
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
@@ -18,29 +18,12 @@ internal class SafModelCopier(private val context: Context) {
 
     /** 表示名とサイズ(不明なら -1)。 */
     fun queryNameAndSize(uri: Uri): Pair<String, Long> {
-        var name: String? = null
-        var size = -1L
-        context.contentResolver.query(
-            uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
-                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
-            }
-        }
-        return (name ?: uri.lastPathSegment.orEmpty()) to size
+        val info = context.contentResolver.queryOpenableInfo(uri)
+        return (info.displayName ?: uri.lastPathSegment.orEmpty()) to (info.sizeBytes ?: -1L)
     }
 
     /** [dir] に確保できる容量。消去可能なキャッシュ分も含めて見積もる。 */
-    fun allocatableBytes(dir: File): Long = try {
-        val storageManager = context.getSystemService(StorageManager::class.java)
-        storageManager.getAllocatableBytes(storageManager.getUuidForPath(dir))
-    } catch (e: Exception) {
-        // 保存先の情報を取れない場合(IOException など)は、通常の空き容量で見積もる
-        dir.usableSpace
-    }
+    fun allocatableBytes(dir: File): Long = context.allocatableBytes(dir)
 
     /**
      * [uri] の中身を [dest] へコピーし、コピーしたバイト数を返す。

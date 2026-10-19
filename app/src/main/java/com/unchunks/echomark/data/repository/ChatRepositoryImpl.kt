@@ -223,13 +223,13 @@ class ChatRepositoryImpl @Inject constructor(
     ): Long {
         val answerTime = System.currentTimeMillis()
         val id = chatMessageDao.insert(
-            ChatMessageEntity(
+            ChatMessage(
                 conversationId = conversationId,
                 role = ChatRole.ASSISTANT,
                 content = content,
-                referencedBookmarkIds = referencedIds.takeIf { it.isNotEmpty() }?.joinToString(","),
+                referencedBookmarkIds = referencedIds,
                 createdAt = answerTime
-            )
+            ).toEntity()
         )
         conversationDao.touch(conversationId, answerTime)
 

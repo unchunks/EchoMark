@@ -90,7 +90,10 @@ data class ExtractedContent(
             .replace('\u0000', ' ')
             .lines()
             .joinToString("\n") { it.trimEnd() }
-            .replace(Regex("\n{3,}"), "\n\n")
+            .replace(EXCESS_BLANK_LINES, "\n\n")
             .trim()
+
+        /** 3つ以上続く改行(空行が2行以上続くところ) */
+        private val EXCESS_BLANK_LINES = Regex("\n{3,}")
     }
 }

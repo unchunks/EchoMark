@@ -40,7 +40,7 @@ fun Bookmark.contentKind(): ContentKind = when (type) {
 
 /** MIME タイプから種類を決める。HTML・不明なら null。 */
 fun contentKindOfMimeType(mimeType: String?): ContentKind? {
-    val type = mimeType?.substringBefore(';')?.trim()?.lowercase() ?: return null
+    val type = normalizeMimeType(mimeType) ?: return null
     return when {
         type == "application/pdf" -> ContentKind.DOCUMENT
         type.startsWith("image/") -> ContentKind.IMAGE
