@@ -18,12 +18,19 @@ class LocalEnginePolicyTest {
     val temp = TemporaryFolder()
 
     /** メモリ上の記録。書き込みの回数も数える。 */
-    private class MemoryStore(var saved: Pair<String, EngineBackend>? = null) : BackendStore {
+    private class MemoryStore(
+        var saved: Pair<String, EngineBackend>? = null,
+        var trial: String? = null
+    ) : BackendStore {
         var writes = 0
         override fun read(modelKey: String): EngineBackend? = saved?.takeIf { it.first == modelKey }?.second
         override fun write(modelKey: String, backend: EngineBackend) {
             writes++
             saved = modelKey to backend
+        }
+        override fun readGpuTrial(): String? = trial
+        override fun writeGpuTrial(modelKey: String?) {
+            trial = modelKey
         }
     }
 
@@ -201,5 +208,108 @@ class LocalEnginePolicyTest {
         val created = BackendSelector(MemoryStore()).create("model-a") { engine }
 
         assertSame(engine, created.engine)
+    }
+
+    @Test
+    fun GPUを使う設定でなければCPUだけを試す() {
+        assertEquals(listOf(EngineBackend.CPU), backendOrder(null, allowGpu = false))
+        assertEquals(listOf(EngineBackend.CPU), backendOrder(EngineBackend.GPU, allowGpu = false))
+
+        val store = MemoryStore("model-a" to EngineBackend.GPU)
+        val factory = Factory()
+        val created = BackendSelector(store).create("model-a", allowGpu = false, factory = factory)
+
+        assertEquals(EngineBackend.CPU, created.backend)
+        assertEquals(listOf(EngineBackend.CPU), factory.tried)
+        assertNull(store.trial)
+    }
+
+    @Test
+    fun GPUのライブラリが読めないErrorでもCPUに落とす() {
+        val store = MemoryStore()
+        val created = BackendSelector(store).create("model-a") { backend ->
+            if (backend == EngineBackend.GPU) throw UnsatisfiedLinkError("libOpenCL.so が無い")
+            "engine-$backend"
+        }
+
+        assertEquals(EngineBackend.CPU, created.backend)
+        assertEquals("model-a" to EngineBackend.CPU, store.saved)
+        // 失敗した GPU の試行の印は残さない
+        assertNull(store.trial)
+    }
+
+    @Test
+    fun GPUを試す間は印を残し_最初の推論に成功したら消す() {
+        val store = MemoryStore()
+        val selector = BackendSelector(store)
+
+        selector.create("model-a", Factory())
+        assertEquals("model-a", store.trial)
+
+        selector.confirmGpu()
+        assertNull(store.trial)
+    }
+
+    @Test
+    fun 前回GPUを試している最中に落ちていれば以後CPUだけを使う() {
+        // 前のプロセスが GPU で作った直後(推論の成功前)にネイティブのクラッシュで終了した跡
+        val store = MemoryStore("model-a" to EngineBackend.GPU, trial = "model-a")
+        val factory = Factory()
+
+        val created = BackendSelector(store).create("model-a", factory)
+
+        assertEquals(EngineBackend.CPU, created.backend)
+        assertEquals(listOf(EngineBackend.CPU), factory.tried)
+        assertEquals("model-a" to EngineBackend.CPU, store.saved)
+        assertNull(store.trial)
+    }
+
+    @Test
+    fun 同じプロセスで作り直すときは自分の印を落ちた跡とみなさない() {
+        val store = MemoryStore()
+        val selector = BackendSelector(store)
+        selector.create("model-a", Factory())
+
+        // 推論の前にアイドルで解放され、作り直す
+        val second = Factory()
+        val created = selector.create("model-a", second)
+
+        assertEquals(EngineBackend.GPU, created.backend)
+        assertEquals(listOf(EngineBackend.GPU), second.tried)
+    }
+
+    @Test
+    fun 別のモデルの試行の印は消すだけでCPUにしない() {
+        val store = MemoryStore(trial = "old-model")
+        val factory = Factory()
+
+        val created = BackendSelector(store).create("model-a", factory)
+
+        assertEquals(EngineBackend.GPU, created.backend)
+        assertEquals("model-a" to EngineBackend.GPU, store.saved)
+    }
+
+    @Test
+    fun GPUで推論に失敗したら試行の印も消す() {
+        val store = MemoryStore()
+        val selector = BackendSelector(store)
+        selector.create("model-a", Factory())
+
+        selector.demoteToCpu("model-a")
+
+        assertNull(store.trial)
+    }
+
+    @Test
+    fun GPUの試行の印をファイルに残して読み戻せる() {
+        val file = File(temp.root, "models/local_llm_backend.json")
+        val store = FileBackendStore(file)
+        assertNull(store.readGpuTrial())
+
+        store.writeGpuTrial("model-a")
+        assertEquals("model-a", FileBackendStore(file).readGpuTrial())
+
+        store.writeGpuTrial(null)
+        assertNull(FileBackendStore(file).readGpuTrial())
     }
 }

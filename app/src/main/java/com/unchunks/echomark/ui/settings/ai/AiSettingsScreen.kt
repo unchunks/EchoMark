@@ -134,6 +134,7 @@ class AiSettingsActions(
     val onClearKey: (ApiProvider) -> Unit = {},
     val onTestConnection: (String) -> Unit = {},
     val onSetSendFilesToCloud: (Boolean) -> Unit = {},
+    val onSetLocalLlmUseGpu: (Boolean) -> Unit = {},
     val onReprocess: () -> Unit = {}
 )
 
@@ -201,6 +202,7 @@ fun AiSettingsScreen(
             onClearKey = viewModel::clearApiKey,
             onTestConnection = viewModel::testConnection,
             onSetSendFilesToCloud = viewModel::setSendFilesToCloud,
+            onSetLocalLlmUseGpu = viewModel::setLocalLlmUseGpu,
             onReprocess = viewModel::reprocessPending
         )
     )
@@ -282,6 +284,9 @@ fun AiSettingsContent(
                 onCancelImport = actions.onCancelImport,
                 onDelete = actions.onDeleteModel
             )
+            if (uiState.localModel != null) {
+                LocalLlmGpuSetting(checked = uiState.localLlmUseGpu, onCheckedChange = actions.onSetLocalLlmUseGpu)
+            }
 
             SectionDivider()
             SectionHeader("検索用の埋め込みモデル")
@@ -934,6 +939,29 @@ private fun SendFilesToCloudSetting(providers: List<ApiProvider>, checked: Boole
         modifier = Modifier.padding(top = 8.dp)
     )
     SettingsNotice(text = sendFilesNotice(providers, checked), icon = Icons.Outlined.Info)
+}
+
+/**
+ * 端末内 AI を GPU で動かすかのスイッチ(実験的)。速くなるが、端末・モデルによってはアプリが終了することがあるため既定はオフ。
+ * GPU で落ちたモデルは次から自動で CPU に戻ることも伝える。
+ */
+@Composable
+private fun LocalLlmGpuSetting(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    SettingsSwitchItem(
+        title = "GPU で動かす(実験的)",
+        icon = Icons.Outlined.Memory,
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        summary = "対応する端末とモデルでは要約・タグ付けが速くなります",
+        modifier = Modifier.padding(top = 8.dp)
+    )
+    if (checked) {
+        SettingsNotice(
+            text = "端末やモデルによっては、GPU で動かすとアプリが終了することがあります。" +
+                "そのときは次から自動で CPU に戻します。",
+            icon = Icons.Outlined.Info
+        )
+    }
 }
 
 /** ファイルの送信について、提供元ごとに送れる種類・料金・オフのときの動きを説明する。 */

@@ -81,6 +81,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { it[KEY_SEND_FILES_TO_CLOUD] = enabled }
     }
 
+    override val localLlmUseGpu: Flow<Boolean> = data.map { it[KEY_LOCAL_LLM_USE_GPU] ?: false }
+
+    override suspend fun setLocalLlmUseGpu(enabled: Boolean) {
+        dataStore.edit { it[KEY_LOCAL_LLM_USE_GPU] = enabled }
+    }
+
     override suspend fun setThemeMode(mode: ThemeMode) {
         dataStore.edit { it[KEY_THEME_MODE] = mode.name }
     }
@@ -158,6 +164,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_SEND_FILES_TO_CLOUD = booleanPreferencesKey("send_files_to_cloud")
+        val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
     }
 }

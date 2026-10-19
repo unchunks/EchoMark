@@ -26,9 +26,11 @@ import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
+import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -39,6 +41,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -61,9 +64,11 @@ import kotlin.coroutines.resume
  * 取り込み直し・削除を検知したらエンジンを作り直す。
  *
  * 速度とメモリの方針:
- * - 演算装置: まず GPU でエンジンを作り、作れなければ CPU にする([BackendSelector])。動いた装置はモデルごとに覚え
- *   (メモリ + `filesDir/models/local_llm_backend.json`)、CPU に落ちたモデルは次から GPU を試さない。
- *   GPU で作れても最初の推論が失敗したら、以後は CPU を使う。どちらを使ったかは Timber(`AiPerf` タグ含む)に出す
+ * - 演算装置: 既定は CPU。AI 設定で GPU を使う([AppSettingsRepository.localLlmUseGpu])ときだけ GPU を先に試し、
+ *   作れなければ CPU にする([BackendSelector])。GPU は端末・モデルによってはネイティブのコードで落ちる(例外にならず
+ *   アプリごと終了する)ため既定にはしない。動いた装置はモデルごとに覚え(メモリ + `filesDir/models/local_llm_backend.json`)、
+ *   CPU に落ちたモデルは次から GPU を試さない。GPU で作れても最初の推論が失敗した・その途中でアプリが落ちたら、以後は CPU を使う。
+ *   どちらを使ったかは Timber(`AiPerf` タグ含む)に出す
  * - 先読み: [prewarm] で、AI 処理の前段(本文取得など)と重ねてエンジンを読み込んでおく(数秒〜十数秒の短縮)
  * - 解放: エンジンはジョブの間は保持するが、最後に使ってから [IDLE_RELEASE_MS] 経つか、メモリが逼迫したとき
  *   ([trimMemory]。使用中は解放しない)に閉じる。モデルは数百MB〜数GBあり、持ち続けるとバックグラウンドの
@@ -76,6 +81,7 @@ import kotlin.coroutines.resume
 class LocalLlmProvider @Inject constructor(
     @ApplicationContext private val context: Context,
     private val modelManager: ModelManager,
+    private val appSettings: AppSettingsRepository,
     private val dispatcherProvider: DispatcherProvider
 ) : LlmProvider {
 
@@ -102,7 +108,11 @@ class LocalLlmProvider @Inject constructor(
     private val inferenceMutex = Mutex()
 
     /** 先読み・アイドル時の解放など、呼び出し元を待たせないバックグラウンドの処理を動かす。 */
-    private val backgroundScope = CoroutineScope(SupervisorJob() + dispatcherProvider.default)
+    // 想定外の失敗(Error を含む)でアプリを落とさない。先読み・解放は失敗しても推論の側でやり直せる
+    private val backgroundScope = CoroutineScope(
+        SupervisorJob() + dispatcherProvider.default +
+            CoroutineExceptionHandler { _, e -> Timber.e(e, "端末内モデルのバックグラウンド処理に失敗") }
+    )
 
     private val backendSelector by lazy {
         // models/ はバックアップの対象外(GPU の性能が違う別の端末に復元されない)
@@ -131,11 +141,13 @@ class LocalLlmProvider @Inject constructor(
             releaseLocked("モデルが無い")
             throw ModelNotAvailableException()
         }
-        loaded?.let { if (it.model == model) return it }
-        releaseLocked("モデルが切り替わった")
+        val allowGpu = appSettings.localLlmUseGpu.first()
+        // GPU の設定をオフにしたら、GPU で読み込んだエンジンは CPU で作り直す
+        loaded?.let { if (it.model == model && (allowGpu || it.backend == EngineBackend.CPU)) return it }
+        releaseLocked("モデルか演算装置の設定が変わった")
         val modelKey = "${model.fileName}:${model.sizeBytes}:${model.importedAt}"
         val start = System.nanoTime()
-        val created = backendSelector.create(modelKey) { backend ->
+        val created = backendSelector.create(modelKey, allowGpu) { backend ->
             LlmInference.createFromOptions(context, engineOptions(file, backend))
         }
         val millis = (System.nanoTime() - start) / NANOS_PER_MILLI
@@ -203,13 +215,17 @@ class LocalLlmProvider @Inject constructor(
             try {
                 val current = engineLocked()
                 try {
-                    block(current).also { current.verified = true }
+                    block(current).also {
+                        if (!current.verified && current.backend == EngineBackend.GPU) backendSelector.confirmGpu()
+                        current.verified = true
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: LlmException.Timeout) {
                     // 時間切れは装置の不具合とは限らない(遅い端末・繰り返し)ため、装置は変えない
                     throw e
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
+                    // GPU のライブラリの読み込み失敗(UnsatisfiedLinkError)などの Error も CPU に切り替える
                     if (current.backend == EngineBackend.GPU && !current.verified) {
                         Timber.w(e, "GPU での最初の推論に失敗したため、以後は CPU を使う")
                         backendSelector.demoteToCpu(current.modelKey)
@@ -246,7 +262,8 @@ class LocalLlmProvider @Inject constructor(
                     throw e
                 } catch (e: ModelNotAvailableException) {
                     Timber.d("端末内モデルが無いため先読みしない")
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
+                    // Error(ライブラリの読み込み失敗・メモリ不足など)でもアプリを落とさない。推論の側で改めて失敗として扱う
                     Timber.w(e, "端末内モデルの先読みに失敗")
                 }
             }

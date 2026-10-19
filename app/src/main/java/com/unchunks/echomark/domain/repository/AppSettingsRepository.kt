@@ -75,6 +75,12 @@ interface AppSettingsRepository {
      */
     val sendFilesToCloud: Flow<Boolean>
 
+    /**
+     * 端末内 AI(LLM)を GPU で動かしてよいか(実験的)。速くなるが、端末・モデルによっては GPU のドライバの中で落ちて
+     * アプリごと終了することがあるため、既定は false(CPU)。オンでも GPU で落ちたモデルは自動で CPU に戻す。
+     */
+    val localLlmUseGpu: Flow<Boolean>
+
     suspend fun setLlmBackend(task: AiTask, backend: LlmBackend)
     suspend fun setApiProvider(task: AiTask, provider: ApiProvider)
 
@@ -84,6 +90,7 @@ interface AppSettingsRepository {
     suspend fun setDynamicColor(enabled: Boolean)
     suspend fun setOnboardingCompleted(completed: Boolean)
     suspend fun setSendFilesToCloud(enabled: Boolean)
+    suspend fun setLocalLlmUseGpu(enabled: Boolean)
     suspend fun setRediscoverEnabled(enabled: Boolean)
     suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int)
 
