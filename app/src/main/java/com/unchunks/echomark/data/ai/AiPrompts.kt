@@ -2,6 +2,7 @@ package com.unchunks.echomark.data.ai
 
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.TagNames
 
 /**
  * ローカル LLM とクラウド API で共通のプロンプト文言。
@@ -157,6 +158,22 @@ object AiPrompts {
 
     /** これより長いタグ名はプロンプトに入れない(予算を食うだけで、使い回されることもまず無い) */
     private const val MAX_PROMPT_TAG_NAME_CHARS = 30
+
+    /** 本文に出てくるかで絞り込む既存タグの、名前の最小の文字数(1文字のタグは偶然含まれやすい) */
+    private const val MIN_MENTIONED_TAG_CHARS = 2
+
+    /**
+     * 既存のタグのうち、名前が [text](タイトルと本文)に出てくるもの(全角/半角・大文字/小文字は区別しない)。順番は保つ。
+     * 端末内の小さいモデルは、渡した既存のタグを内容に関係なく写してしまう(「技術」「AI」のような汎用的なタグほど)ため、
+     * 本文に根拠のあるタグだけを渡す。
+     */
+    fun existingTagsMentionedIn(existingTags: List<String>, text: String): List<String> {
+        val haystack = TagNames.key(text)
+        return existingTags.filter { name ->
+            val key = TagNames.key(name)
+            key.length >= MIN_MENTIONED_TAG_CHARS && haystack.contains(key)
+        }
+    }
 
     /** プロンプトに入れる既存タグを、先頭から個数と合計文字数の予算に収まる分だけ選ぶ。 */
     internal fun existingTagsForPrompt(existingTags: List<String>, maxCount: Int, maxChars: Int): List<String> {
