@@ -15,6 +15,16 @@ enum class AiTask(val label: String) {
     CHAT("チャット")
 }
 
+/** 要約に Claude を使うときの既定モデル。要約は件数が多く待ち時間が目立つため、速さを優先する */
+const val SUMMARY_DEFAULT_CLAUDE_MODEL = "claude-haiku-5-5"
+
+/**
+ * この用途で [provider] を選んだときの既定モデル。モデルを選んでいない(または空白に戻した)ときに使う。
+ * 要約で Claude を使うときだけ [SUMMARY_DEFAULT_CLAUDE_MODEL]、それ以外は提供元の既定([ApiProvider.defaultModel])。
+ */
+fun AiTask.defaultApiModel(provider: ApiProvider): String =
+    if (this == AiTask.SUMMARY && provider == ApiProvider.CLAUDE) SUMMARY_DEFAULT_CLAUDE_MODEL else provider.defaultModel
+
 /**
  * 1つの用途の AI の設定。端末内モデルは全用途で共通(取り込めるのは1つだけ)。
  * @property apiModels 提供元ごとのモデル ID(提供元を切り替えても、提供元ごとの選択を覚えておく)
