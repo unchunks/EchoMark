@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AI 処理(要約・タグ付け)が長くかかるときの通知(フォアグラウンド実行中だけ表示) -->
+    <string name="notification_channel_ai_processing">AI処理</string>
+    <string name="notification_channel_ai_processing_desc">端末内 AI などで要約・タグ付けに時間がかかる間、進行中であることを表示します</string>
+    <string name="ai_processing_notification_title">AI処理中</string>
+    <string name="ai_processing_notification_summarizing">要約を作成中: %1$s</string>
+    <string name="ai_processing_notification_summarizing_untitled">要約を作成中…</string>
+</resources>

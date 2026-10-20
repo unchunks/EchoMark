@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ファイルの中身の取り出し(長い音声・動画の文字起こし中の通知) -->
+    <string name="notification_channel_extraction">ファイルの読み取り</string>
+    <string name="notification_channel_extraction_desc">長い音声・動画の文字起こし中に表示します</string>
+    <string name="extraction_notification_title">ファイルの内容を読み取っています…</string>
+</resources>

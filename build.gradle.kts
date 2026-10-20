@@ -7,4 +7,5 @@ plugins {
     alias(libs.plugins.androidx.room) apply false
     alias(libs.plugins.kotlin.legacy.kapt) apply false
     alias(libs.plugins.objectbox) apply false
+    alias(libs.plugins.roborazzi) apply false
 }
