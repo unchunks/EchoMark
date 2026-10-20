@@ -69,6 +69,34 @@
 -keep class com.google.common.flogger.backend.system.DefaultPlatform {
     <init>();
 }
+# FluentLogger.forEnclosingClass() は、スタックから「FluentLogger を呼んだクラス」を探してロガーを作る。
+# R8 がこの呼び出しを MediaPipe の Graph の静的初期化に埋め込む(インライン化)と、スタックに FluentLogger の段が無くなり
+# 「no caller found on the stack」で Graph の初期化が失敗する(release で埋め込みモデルの読み込みが毎回落ちていた)。
+# Flogger は小さいので、インライン化・名前の変更をせず丸ごと残す
+-keep class com.google.common.flogger.** { *; }
+
+# ---- ML Kit(OCR・画像のラベル) ----
+# ML Kit は AndroidManifest に並ぶ ComponentRegistrar を、クラス名からリフレクションで生成する(引数なしコンストラクタ)。
+# 縮小でコンストラクタが消えると、起動時に ComponentDiscovery が NoSuchMethodException を出し、OCR・ラベルが使えない
+-keep class * implements com.google.firebase.components.ComponentRegistrar {
+    <init>();
+}
+
+# ---- ObjectBox(ベクトル検索) ----
+# 近傍検索の結果(Query.findWithScores / findIdsWithScores)の ObjectWithScore / IdWithScore は、
+# ネイティブ(libobjectbox-jni.so)が FindClass と コンストラクタ (Ljava/lang/Object;D)V / (JD)V で作る。
+# Java 側に生成箇所が無いため、R8 は「作られない型」とみなしてクラスごと削除し、結果を読む箇所を
+# ClassCastException を投げるコードに置き換えていた(release で、意味の近さの検索・チャットの文脈探し・関連ブックマークが
+# 結果が1件以上あると必ず失敗していた。usage.txt に ObjectWithScore が載り、dex の nearestNeighbors が
+# 要素ごとに ClassCastException を投げることを確認)。ObjectBox 5.4.2 同梱のルールには含まれていない
+-keep class io.objectbox.query.ObjectWithScore {
+    <init>(java.lang.Object, double);
+    <fields>;
+}
+-keep class io.objectbox.query.IdWithScore {
+    <init>(long, double);
+    <fields>;
+}
 
 # ---- PdfBox-Android(PDF のテキスト抽出) ----
 # 同梱の consumer rules(暗号化ハンドラのコンストラクタ等)で動作上は足りる。

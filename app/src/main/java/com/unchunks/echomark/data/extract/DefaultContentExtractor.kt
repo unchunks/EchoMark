@@ -42,6 +42,11 @@ class DefaultContentExtractor @Inject constructor(
         } catch (e: OutOfMemoryError) {
             Timber.w(e, "DefaultContentExtractor: メモリ不足 kind=%s", kind)
             null
+        } catch (e: LinkageError) {
+            // 取り出しに使うライブラリ(ML Kit・PdfBox)のクラスの初期化・ネイティブライブラリの読み込みに失敗した。
+            // Error のまま投げるとワーカーが失敗し、後続の AI 処理まで実行されなくなるため、取り出せなかったものとして扱う
+            Timber.e(e, "DefaultContentExtractor: ライブラリを初期化できません kind=%s", kind)
+            null
         }.also { result ->
             Timber.d(
                 "DefaultContentExtractor: kind=%s engine=%s chars=%d %dms",

@@ -58,5 +58,9 @@ class ImageContentExtractor @Inject constructor(
     } catch (e: Exception) {
         Timber.w(e, "ImageContentExtractor: %s に失敗", name)
         default
+    } catch (e: LinkageError) {
+        // ML Kit のクラスの初期化・ネイティブライブラリの読み込みに失敗した。その機能は使えないものとして扱う
+        Timber.e(e, "ImageContentExtractor: %s のライブラリを初期化できません", name)
+        default
     }
 }

@@ -51,6 +51,15 @@ sealed class LlmException(
         "AI の応答に時間がかかりすぎたため中断しました"
     )
 
+    /**
+     * 端末内 AI のライブラリ(MediaPipe のクラス・ネイティブライブラリ)を初期化できなかった。
+     * 同じプロセスでは何度試しても同じ失敗になる(2回目以降は NoClassDefFoundError)ため、自動では再試行しない。
+     */
+    class EngineUnavailable(cause: Throwable? = null) : LlmException(
+        "端末内 AI を起動できませんでした。設定 > AI 設定 でクラウド API を選んでください",
+        cause
+    )
+
     /** リクエストが不正(存在しないモデル ID など。HTTP 400/404/422)。 */
     class BadRequest(val statusCode: Int, detail: String? = null, cause: Throwable? = null) : LlmException(
         buildString {

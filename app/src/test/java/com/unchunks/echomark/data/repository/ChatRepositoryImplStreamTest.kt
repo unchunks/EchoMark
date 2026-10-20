@@ -26,6 +26,7 @@ import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
+import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeLlmProvider
@@ -74,12 +75,13 @@ class ChatRepositoryImplStreamTest {
 
     private fun repository(
         llm: LlmProvider,
-        settings: FakeAppSettingsRepository = FakeAppSettingsRepository(LlmBackend.LOCAL)
+        settings: FakeAppSettingsRepository = FakeAppSettingsRepository(LlmBackend.LOCAL),
+        embeddingProvider: EmbeddingProvider = noEmbedding
     ) = ChatRepositoryImpl(
         conversationDao = conversationDao,
         chatMessageDao = messageDao,
         vectorSearch = unusedVectorSearch(),
-        embeddingProvider = noEmbedding,
+        embeddingProvider = embeddingProvider,
         llmProviderResolver = LlmProviderResolver(llm, { llm }, settings, FakeApiKeyRepository()),
         bookmarkRepository = bookmarkRepository,
         dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
@@ -101,6 +103,17 @@ class ChatRepositoryImplStreamTest {
         assertEquals("5", saved[1].referencedBookmarkIds)
         assertEquals(saved[1].id, completed.messageId)
         assertEquals("Kotlin", conversationDao.autoTitle)
+    }
+
+    @Test
+    fun ベクトル検索が失敗してもチャットは失敗にせず_キーワード検索で文脈を探す() = runBlocking {
+        // 埋め込みはできるが、近傍検索が例外になる(release で ObjectWithScore が縮小で消え、
+        // 結果を読むたびに ClassCastException になっていたときと同じ)。未初期化のインスタンスは NullPointerException を投げる
+        val events = repository(FakeLlmProvider(listOf("回答")), embeddingProvider = FakeEmbeddingProvider())
+            .sendMessageStream(1L, "Kotlin").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
+        assertTrue(events.last() is ChatStreamEvent.Completed)
     }
 
     @Test
@@ -287,7 +300,8 @@ class ChatRepositoryImplStreamTest {
 
     /**
      * ObjectBox(ネイティブライブラリ)に依存するため JVM では生成できない。
-     * このテストは埋め込み無しの経路だけを通り、ベクトル検索は呼ばれないので未初期化のインスタンスで足りる。
+     * このテストは埋め込み無しの経路だけを通り、ベクトル検索は呼ばれないので未初期化のインスタンスで足りる
+     * (呼ばれると NullPointerException になる。ベクトル検索の失敗を試すテストではそれを使う)。
      */
     private fun unusedVectorSearch(): VectorSearchDataSource {
         val unsafeClass = Class.forName("sun.misc.Unsafe")

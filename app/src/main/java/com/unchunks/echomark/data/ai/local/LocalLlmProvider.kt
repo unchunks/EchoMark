@@ -233,6 +233,12 @@ class LocalLlmProvider @Inject constructor(
                     }
                     throw e
                 }
+            } catch (e: LinkageError) {
+                // MediaPipe のクラスの静的初期化・ネイティブライブラリの読み込みに失敗した(ExceptionInInitializerError、
+                // 2回目以降は NoClassDefFoundError / UnsatisfiedLinkError)。Error のまま投げると、ワーカーは状態を
+                // 「処理中」のまま残して失敗し、画面からの呼び出しではアプリごと落ちるため、端末内 AI が使えない例外にする
+                Timber.e(e, "端末内 AI のライブラリを初期化できない")
+                throw LlmException.EngineUnavailable(e)
             } finally {
                 markUsedLocked()
             }

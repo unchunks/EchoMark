@@ -113,6 +113,11 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     if (analysisOutcome == AnalysisOutcome.RETRY) throw e
                     // モデル未取得・キー未設定などでも埋め込みは実行する。設定後に再実行される
                     Timber.i("解析を保留/中止: id=$bookmarkId outcome=$analysisOutcome (${e.javaClass.simpleName})")
+                } catch (e: LinkageError) {
+                    // AI のライブラリのクラスの初期化・ネイティブライブラリの読み込みに失敗した(各 LlmProvider で
+                    // 例外に変えているが、変えていない経路の備え)。再試行しても同じ結果になるため諦め、埋め込みは続ける
+                    Timber.e(e, "解析のライブラリを初期化できない: id=$bookmarkId")
+                    analysisOutcome = AnalysisOutcome.GIVE_UP
                 }
             }
 
@@ -149,6 +154,12 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             // 再実行されればそこで処理中に戻り、取り消されたまま再実行されなければ起動時に積み直す
             withContext(NonCancellable) { repository.markProcessingInterrupted(bookmarkId) }
             throw e
+        } catch (e: LinkageError) {
+            // ライブラリの初期化の失敗(埋め込みなど)。Error のまま投げるとワークは失敗し、表示が「処理中」のまま残る。
+            // 同じプロセスでは再試行しても同じ結果になるため、失敗として終える(設定画面から再処理できる)
+            Timber.e(e, "AI 処理のライブラリを初期化できない: id=$bookmarkId")
+            repository.updateAiStatus(bookmarkId, AiStatus.FAILED)
+            Result.success()
         } catch (e: Exception) {
             Timber.e(e, "AI 処理に失敗: id=$bookmarkId attempt=$runAttemptCount")
             // 再試行の間隔は WorkManager の指数バックオフ(30 秒から倍々、最大 5 時間)に任せる
@@ -253,7 +264,9 @@ internal fun classifyAnalysisError(e: Exception): AnalysisOutcome = when (e) {
     is LlmException.InvalidApiKey,
     is LlmException.BadRequest -> AnalysisOutcome.WAITING_SETUP
     is LlmException.Refused,
-    is LlmException.Timeout -> AnalysisOutcome.GIVE_UP
+    is LlmException.Timeout,
+    // 端末内 AI のライブラリを初期化できない。同じプロセスでは何度試しても同じ失敗になる
+    is LlmException.EngineUnavailable -> AnalysisOutcome.GIVE_UP
     else -> AnalysisOutcome.RETRY
 }
 

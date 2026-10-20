@@ -208,8 +208,16 @@ class ChatRepositoryImpl @Inject constructor(
         // score は COSINE 距離。RagSupport 側で類似度へ変換して判定する
         // 現在のモデルの版のベクトルだけを比べる(再埋め込みの途中は旧版を除く)
         val profile = embeddingProvider.profile
-        val hits = vectorSearch.nearestNeighbors(queryVector, RagSupport.SEARCH_LIMIT, profile.modelVersion)
-            .map { it.bookmarkId to it.score }
+        val hits = try {
+            vectorSearch.nearestNeighbors(queryVector, RagSupport.SEARCH_LIMIT, profile.modelVersion)
+                .map { it.bookmarkId to it.score }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 近傍検索が失敗しても(ObjectBox の不具合・release の縮小で結果の型が消えたなど)、チャット全体は失敗にしない
+            Timber.w(e, "ベクトル検索に失敗したため、チャットの文脈はキーワード検索で探す")
+            return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
+        }
         val relevantIds = RagSupport.selectRelevantIds(hits, profile.minRagSimilarity)
         val byId = bookmarkRepository.getBookmarksByIds(relevantIds).associateBy { it.id }
         return relevantIds.mapNotNull { byId[it] }

@@ -265,6 +265,8 @@ internal fun Throwable.needsAiSettings(): Boolean = when (this) {
     is ModelNotAvailableException,
     is LlmException.ApiKeyMissing,
     is LlmException.InvalidApiKey,
-    is LlmException.BadRequest -> true
+    is LlmException.BadRequest,
+    // 端末内 AI がこの端末で起動できない。クラウド API に切り替えれば使える
+    is LlmException.EngineUnavailable -> true
     else -> false
 }
