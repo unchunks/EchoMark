@@ -1,6 +1,5 @@
 package com.unchunks.echomark.worker
 
-import com.unchunks.echomark.data.attachment.AttachmentStore
 import android.app.Notification
 import android.content.Context
 import android.content.pm.ServiceInfo
@@ -14,12 +13,17 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.embedding.EmbeddingProvider
+import com.unchunks.components.llm.LlmException
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.R
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.data.ai.LlmProviderResolver
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toEntity
@@ -27,25 +31,20 @@ import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.model.AnalysisInput
-import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
-import com.unchunks.echomark.domain.provider.EmbeddingProvider
-import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
-import java.io.File
+import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.TagSource
-import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
+import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.FakeLlmProvider
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
 import com.unchunks.echomark.testing.initTestWorkManager
@@ -55,8 +54,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -64,6 +63,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /** AI 処理ワーカーの再試行・失敗の判断と、削除済みのブックマークの扱い。 */
 @RunWith(AndroidJUnit4::class)

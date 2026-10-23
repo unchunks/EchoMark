@@ -1,7 +1,6 @@
-import java.util.Properties
-
 plugins {
-    alias(libs.plugins.android.application)
+    // SDK・Java の版、release の R8 と署名、JVM テストの設定(components/build-logic)
+    id("unchunks.android.application")
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.devtools.ksp)
     alias(libs.plugins.hilt.android)
@@ -11,29 +10,13 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
-/**
- * リリース用の署名鍵の設定。リポジトリ直下の keystore.properties(コミットしない。keystore.properties.example を参照)か、
- * 環境変数(ECHOMARK_KEYSTORE_FILE など)から読む。鍵のパスワードはコードやリポジトリに置かない。
- */
-val releaseKeystoreProperties: Properties? = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { file ->
-    Properties().apply { file.inputStream().use { load(it) } }
-}
-
-fun releaseSigningValue(property: String, env: String): String? =
-    releaseKeystoreProperties?.getProperty(property)?.takeIf { it.isNotBlank() } ?: System.getenv(env)?.takeIf { it.isNotBlank() }
-
 android {
     namespace = "com.unchunks.echomark"
-    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.unchunks.echomark"
-        minSdk = 31
-        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // ネイティブライブラリ(MediaPipe / ObjectBox など)を入れる ABI。
         // 実機は arm64-v8a、エミュレータ用に x86_64。32bit(armeabi-v7a / x86)は対象外にする
@@ -43,48 +26,8 @@ android {
         }
     }
 
-    signingConfigs {
-        // 鍵の場所が設定されているときだけ作る(無ければ release も debug 署名で仮に署名する)
-        releaseSigningValue("storeFile", "ECHOMARK_KEYSTORE_FILE")?.let { storePath ->
-            create("release") {
-                storeFile = rootProject.file(storePath)
-                storePassword = releaseSigningValue("storePassword", "ECHOMARK_KEYSTORE_PASSWORD")
-                keyAlias = releaseSigningValue("keyAlias", "ECHOMARK_KEY_ALIAS")
-                keyPassword = releaseSigningValue("keyPassword", "ECHOMARK_KEY_PASSWORD")
-            }
-        }
-    }
-
-    buildTypes {
-        release {
-            // R8 によるコードの縮小・難読化・最適化とリソースの縮小。
-            // (AGP 9 の optimization { enable = true } は android.r8.gradual.support(実験的フラグ)が必須のため、安定版の DSL を使う)
-            // アプリ固有の keep ルールは src/main/keepRules/*.keep に置く(AGP が自動で R8 に渡す)。
-            // ライブラリ同梱の consumer rules も自動で合流する
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // リリース用の鍵が設定されていればそれで署名する。無ければ端末へ入れて動作確認できるよう
-            // debug 署名で仮に署名する(配布には使わない)
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
-        }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
     buildFeatures {
         compose = true
-        buildConfig = true
-    }
-
-    testOptions {
-        unitTests {
-            // SavedStateHandle 等が触る Android スタブで落ちないようにする
-            isReturnDefaultValues = true
-            // Robolectric(スクリーンショットテスト等)でリソース・assets を読めるようにする
-            isIncludeAndroidResources = true
-        }
     }
 
     androidResources {
@@ -125,6 +68,20 @@ room {
 }
 
 dependencies {
+    // 再利用する部品(components)
+    implementation(libs.unchunks.core)
+    implementation(libs.unchunks.llm.core)
+    implementation(libs.unchunks.llm.cloud)
+    implementation(libs.unchunks.embedding)
+    implementation(libs.unchunks.search)
+    implementation(libs.unchunks.web.content)
+    implementation(libs.unchunks.secure.storage)
+    implementation(libs.unchunks.speech)
+    implementation(libs.unchunks.document.text)
+    implementation(libs.unchunks.llm.ondevice)
+    implementation(libs.unchunks.file.storage)
+    implementation(libs.unchunks.compose.ui)
+
     // Core / Lifecycle
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -192,6 +149,7 @@ dependencies {
     implementation(libs.androidx.exifinterface)
 
     // Testing
+    testImplementation(libs.unchunks.testing)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver3)
@@ -216,14 +174,6 @@ dependencies {
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-}
-
-// Robolectric が JDK 17 以降で FileDescriptor 等の JDK 内部へアクセスできるようにする
-tasks.withType<Test>().configureEach {
-    jvmArgs(
-        "--add-opens=java.base/java.io=ALL-UNNAMED",
-        "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED"
-    )
 }
 
 // ObjectBoxのタスクをConfiguration Cacheの対象外にする

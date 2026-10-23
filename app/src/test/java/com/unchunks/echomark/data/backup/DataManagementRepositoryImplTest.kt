@@ -1,28 +1,26 @@
 package com.unchunks.echomark.data.backup
 
-import com.unchunks.echomark.data.attachment.AttachmentStore
 import android.content.Context
 import android.net.Uri
-import org.robolectric.Shadows.shadowOf
-import java.io.File
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
 import com.unchunks.echomark.testing.initTestWorkManager
-import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesByTag
+import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import io.objectbox.BoxStore
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +31,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
+import java.io.File
 
 /** 全データ削除・バックアップの読み込みと、ワーク(WorkManager)の整合のテスト。 */
 @RunWith(AndroidJUnit4::class)

@@ -8,8 +8,9 @@
 | 場所 | 役割 |
 | --- | --- |
 | `app/src/test/resources/eval/ja_bookmarks.json` | 評価データ。日本語のブックマーク 20 件と質問 14 件(各質問の正解の文書 ID 付き) |
-| `app/src/main/java/.../domain/search/RetrievalEval.kt` | 指標(Recall@k・MRR・nDCG@k)、コサイン距離、しきい値の提案。アプリの実行では使わない純粋なロジック |
-| `app/src/test/java/.../domain/search/RetrievalEvalTest.kt` | 上の計算の単体テスト(固定のベクトル)と、評価データの整合性の確認。モデル不要 |
+| `../components/search/src/main/kotlin/.../RetrievalEval.kt` | 指標(Recall@k・MRR・nDCG@k)、コサイン距離、しきい値の提案。アプリの実行では使わない純粋なロジック(部品 [search](../../components/search/)) |
+| `../components/search/src/test/kotlin/.../RetrievalEvalTest.kt` | 上の計算の単体テスト(固定のベクトル)。モデル不要 |
+| `app/src/test/java/.../domain/search/EvalFixtureTest.kt` | 評価データの整合性と、評価の流れが通ることの確認。モデル不要 |
 | `app/src/androidTest/java/.../EmbeddingEvalInstrumentedTest.kt` | 実際の埋め込みモデルで評価データを埋め込み、指標としきい値の提案を出す |
 
 評価データは `app/build.gradle.kts` の設定で androidTest の assets としても読める(同じファイルを共有)。
@@ -19,7 +20,8 @@
 ### 単体テスト(モデル不要)
 
 ```sh
-./gradlew :app:testDebugUnitTest --tests "com.unchunks.echomark.domain.search.RetrievalEvalTest"
+./gradlew :app:testDebugUnitTest --tests "com.unchunks.echomark.domain.search.EvalFixtureTest"
+# 指標の計算そのものは部品の側(../components で ./gradlew :search:test)
 ```
 
 ### 実際のモデルでの計測(実機・エミュレータ)

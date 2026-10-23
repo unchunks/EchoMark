@@ -9,7 +9,7 @@ object RagSupport {
 
     /**
      * 文脈として採用する最小の類似度(コサイン類似度)は埋め込みモデルごとに異なるため、
-     * [com.unchunks.echomark.domain.provider.EmbeddingModelProfile.minRagSimilarity] を使う。
+     * [com.unchunks.components.embedding.EmbeddingModelProfile.minRagSimilarity] を使う。
      * ObjectBox の COSINE は「類似度」ではなく距離(1 - cos類似度、0〜2)を返すため、
      * [distanceToSimilarity] で変換してから比較する。
      */

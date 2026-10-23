@@ -77,8 +77,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.components.composeui.readableWidth
 import com.unchunks.echomark.domain.repository.RediscoverSettings
-import com.unchunks.echomark.ui.common.readableWidth
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import kotlinx.coroutines.launch
 import java.time.format.TextStyle

@@ -42,7 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.ui.common.openUrl
 import com.unchunks.echomark.ui.settings.shortName
 import kotlinx.coroutines.launch

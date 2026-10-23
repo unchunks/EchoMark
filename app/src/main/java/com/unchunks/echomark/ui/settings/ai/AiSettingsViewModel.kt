@@ -3,6 +3,8 @@ package com.unchunks.echomark.ui.settings.ai
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
@@ -10,8 +12,6 @@ import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.model.EmbeddingProgress
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
@@ -24,12 +24,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch

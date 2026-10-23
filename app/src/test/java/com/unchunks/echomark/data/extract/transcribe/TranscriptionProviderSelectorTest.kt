@@ -2,12 +2,15 @@ package com.unchunks.echomark.data.extract.transcribe
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.speech.GeminiTranscriptionClient
+import com.unchunks.components.speech.OnDeviceSpeechTranscriber
+import com.unchunks.components.speech.OpenAiTranscriptionClient
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient

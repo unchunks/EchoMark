@@ -1,9 +1,9 @@
 package com.unchunks.echomark.data.extract
 
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.extract.image.ImageContentExtractor
 import com.unchunks.echomark.data.extract.media.MediaContentExtractor
 import com.unchunks.echomark.data.extract.pdf.PdfContentExtractor
-import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.extract.ContentExtractor
 import com.unchunks.echomark.domain.extract.ExtractedContent

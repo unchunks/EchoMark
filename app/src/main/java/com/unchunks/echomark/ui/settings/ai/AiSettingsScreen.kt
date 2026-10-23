@@ -42,13 +42,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.components.composeui.MessageSnackbarEffect
+import com.unchunks.components.composeui.readableWidth
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.model.ModelImportState
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
+import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
-import com.unchunks.echomark.ui.common.MessageSnackbarEffect
-import com.unchunks.echomark.ui.common.readableWidth
 import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.settings.SettingsItem
 import com.unchunks.echomark.ui.settings.SettingsNotice
@@ -114,7 +115,7 @@ fun AiSettingsScreen(
     // 埋め込みモデルは、取り込む種類を選んでからファイルを選ぶ(画面の再生成でも選んだ種類を失わない)
     var pendingEmbeddingProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     val embeddingPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        val profile = pendingEmbeddingProfileId?.let { EmbeddingModelProfile.findById(it) }
+        val profile = pendingEmbeddingProfileId?.let { EmbeddingModels.findById(it) }
         pendingEmbeddingProfileId = null
         if (uri != null && profile != null) viewModel.importEmbeddingModel(uri, profile)
     }

@@ -6,9 +6,12 @@ import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.core.graphics.createBitmap
-import com.unchunks.echomark.data.extract.image.ImageSupport
-import com.unchunks.echomark.data.extract.vision.TextRecognizerEngine
-import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.documenttext.ImageSupport
+import com.unchunks.components.documenttext.PdfText
+import com.unchunks.components.documenttext.PdfTextQuality
+import com.unchunks.components.documenttext.PdfTextReader
+import com.unchunks.components.documenttext.TextRecognizerEngine
 import com.unchunks.echomark.domain.extract.ExtractedContent
 import com.unchunks.echomark.domain.extract.ExtractionSource
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -67,7 +70,7 @@ class PdfContentExtractor @Inject constructor(
 
     private fun readText(file: File): PdfText? = try {
         PdfTextReader.ensureInitialized(context)
-        PdfTextReader.read(file, tempDir = context.cacheDir)
+        PdfTextReader.read(file, tempDir = context.cacheDir, maxChars = ExtractedContent.MAX_TEXT_LENGTH)
     } catch (e: Exception) {
         // パスワード付き(InvalidPasswordException)・壊れた PDF・メモリ不足以外の想定外の例外
         Timber.w(e, "PdfContentExtractor: テキストを取り出せません")

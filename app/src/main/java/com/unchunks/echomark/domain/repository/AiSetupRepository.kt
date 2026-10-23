@@ -1,6 +1,6 @@
 package com.unchunks.echomark.domain.repository
 
-import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.components.llm.ApiProvider
 import kotlinx.coroutines.flow.Flow
 
 /** チャットで AI を使える状態か(「チャット」の用途の設定で判断する)。設定画面へ案内するかどうかの判断に使う。 */

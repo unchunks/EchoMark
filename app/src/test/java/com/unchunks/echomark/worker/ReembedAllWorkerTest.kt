@@ -7,10 +7,10 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.embedding.EmbeddingProvider
+import com.unchunks.components.embedding.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
-import com.unchunks.echomark.domain.provider.EmbeddingProvider
-import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.testBookmark

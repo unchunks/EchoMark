@@ -1,16 +1,16 @@
 package com.unchunks.echomark.ui.chat
 
 import androidx.lifecycle.SavedStateHandle
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.llm.LlmException
+import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.model.Conversation
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.testing.FakeAiSetupRepository
 import com.unchunks.echomark.testing.FakeChatRepository
-import com.unchunks.echomark.testing.MainDispatcherRule
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.navigation.Routes
 import kotlinx.coroutines.CompletableDeferred
@@ -290,7 +290,7 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         val error = viewModel.uiState.value.error!!
-        assertEquals(LlmException.ApiKeyMissing(ApiProvider.GEMINI).userMessage, error.message)
+        assertEquals("Gemini (Google) の API キーが未設定です。設定 > AI 設定 で入力してください", error.message)
         assertTrue(error.needsAiSettings)
         assertFalse(viewModel.uiState.value.isSending)
     }

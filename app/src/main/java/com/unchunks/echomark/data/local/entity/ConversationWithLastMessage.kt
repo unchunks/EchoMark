@@ -1,7 +1,7 @@
 package com.unchunks.echomark.data.local.entity
 
 import androidx.room.Embedded
-import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.components.llm.ChatRole
 
 /** 会話一覧用。会話と、その最後のメッセージ(本文とロール。メッセージが無ければ null)と、質問の対象のブックマーク名。 */
 data class ConversationWithLastMessage(

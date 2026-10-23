@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.components.llm.ChatRole
 
 @Entity(
     tableName = "chat_messages",

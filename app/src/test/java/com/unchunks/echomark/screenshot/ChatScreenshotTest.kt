@@ -6,11 +6,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.ChatRole
+import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
-import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.ui.chat.ChatContent
