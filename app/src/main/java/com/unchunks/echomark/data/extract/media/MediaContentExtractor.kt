@@ -2,11 +2,14 @@ package com.unchunks.echomark.data.extract.media
 
 import android.content.Context
 import android.media.MediaMetadataRetriever
-import com.unchunks.echomark.data.extract.image.ImageSupport
-import com.unchunks.echomark.data.extract.transcribe.Transcriber
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.documenttext.ImageSupport
+import com.unchunks.components.documenttext.TextRecognizerEngine
+import com.unchunks.components.speech.AudioDecoder
+import com.unchunks.components.speech.PcmChunker
+import com.unchunks.components.speech.PcmFormat
+import com.unchunks.components.speech.Transcriber
 import com.unchunks.echomark.data.extract.transcribe.TranscriptionProviderSelector
-import com.unchunks.echomark.data.extract.vision.TextRecognizerEngine
-import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.extract.ExtractedContent
 import com.unchunks.echomark.domain.extract.ExtractionSource
 import dagger.hilt.android.qualifiers.ApplicationContext

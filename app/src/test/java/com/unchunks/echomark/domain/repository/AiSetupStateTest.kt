@@ -1,6 +1,6 @@
 package com.unchunks.echomark.domain.repository
 
-import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.components.llm.ApiProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

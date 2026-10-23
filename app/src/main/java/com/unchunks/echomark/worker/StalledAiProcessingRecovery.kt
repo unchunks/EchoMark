@@ -1,7 +1,7 @@
 package com.unchunks.echomark.worker
 
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.ai.AiPrewarmer
-import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.Lazy
 import kotlinx.coroutines.CancellationException

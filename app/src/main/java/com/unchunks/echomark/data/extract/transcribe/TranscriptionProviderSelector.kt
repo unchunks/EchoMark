@@ -1,9 +1,13 @@
 package com.unchunks.echomark.data.extract.transcribe
 
-import com.unchunks.echomark.data.extract.media.PcmChunk
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.repository.ApiKeyRepository
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.speech.GeminiTranscriptionClient
+import com.unchunks.components.speech.OnDeviceSpeechTranscriber
+import com.unchunks.components.speech.OpenAiTranscriptionClient
+import com.unchunks.components.speech.PcmChunk
+import com.unchunks.components.speech.TranscriptionProvider
 import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.aiTaskSetting

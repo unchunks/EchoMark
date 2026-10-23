@@ -7,7 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.ui.theme.EchoMarkTheme

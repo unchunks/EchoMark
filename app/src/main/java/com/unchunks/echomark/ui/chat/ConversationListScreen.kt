@@ -64,9 +64,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.components.composeui.ChatMarkdown
+import com.unchunks.components.composeui.formatRelativeTime
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.ConversationPreview
-import com.unchunks.echomark.ui.common.formatRelativeTime
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState
 import kotlinx.coroutines.launch

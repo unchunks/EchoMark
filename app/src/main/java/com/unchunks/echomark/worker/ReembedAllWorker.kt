@@ -8,9 +8,9 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.unchunks.echomark.domain.provider.EmbeddingInputBuilder
-import com.unchunks.echomark.domain.provider.EmbeddingProvider
-import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
+import com.unchunks.components.embedding.EmbeddingInputBuilder
+import com.unchunks.components.embedding.EmbeddingProvider
+import com.unchunks.components.embedding.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject

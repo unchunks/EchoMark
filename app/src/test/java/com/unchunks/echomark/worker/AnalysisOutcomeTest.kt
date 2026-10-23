@@ -1,7 +1,7 @@
 package com.unchunks.echomark.worker
 
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.provider.LlmException
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import org.junit.Assert.assertEquals

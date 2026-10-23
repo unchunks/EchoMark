@@ -1,8 +1,8 @@
 package com.unchunks.echomark.data.ai
 
+import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.data.ai.api.ApiLlmProviderFactory
 import com.unchunks.echomark.di.qualifier.LocalAi
-import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.ApiKeyRepository

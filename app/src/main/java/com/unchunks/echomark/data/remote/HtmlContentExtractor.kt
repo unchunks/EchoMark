@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.components.web.CaptionTranscript
 import org.json.JSONObject
 import org.json.JSONTokener
 import org.jsoup.nodes.Document

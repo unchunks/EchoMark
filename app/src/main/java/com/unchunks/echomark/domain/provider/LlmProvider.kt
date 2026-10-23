@@ -1,5 +1,6 @@
 package com.unchunks.echomark.domain.provider
 
+import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis

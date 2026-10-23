@@ -2,9 +2,9 @@ package com.unchunks.echomark.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.BuildConfig
 import com.unchunks.echomark.data.ai.model.ModelManager
-import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository

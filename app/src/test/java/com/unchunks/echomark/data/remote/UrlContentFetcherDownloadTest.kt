@@ -1,7 +1,7 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse

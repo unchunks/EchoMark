@@ -1,13 +1,13 @@
 package com.unchunks.echomark.ui.chat
 
+import com.unchunks.components.llm.ChatRole
+import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.testing.FakeAiSetupRepository
 import com.unchunks.echomark.testing.FakeChatRepository
-import com.unchunks.echomark.testing.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch

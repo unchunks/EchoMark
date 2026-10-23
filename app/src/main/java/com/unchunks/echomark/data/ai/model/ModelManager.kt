@@ -2,7 +2,8 @@ package com.unchunks.echomark.data.ai.model
 
 import android.content.Context
 import android.net.Uri
-import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.filestorage.SafFileCopier
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -38,7 +39,7 @@ class ModelManager @Inject constructor(
             CoroutineExceptionHandler { _, e -> Timber.e(e, "モデルの管理処理に失敗") }
     )
 
-    private val copier = SafModelCopier(context)
+    private val copier = SafFileCopier(context)
 
     private val modelsDir: File
         get() = File(context.filesDir, "models").also { it.mkdirs() }

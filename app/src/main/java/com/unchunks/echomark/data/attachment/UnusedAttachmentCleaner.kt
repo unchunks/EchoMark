@@ -1,7 +1,7 @@
 package com.unchunks.echomark.data.attachment
 
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.local.dao.BookmarkDao
-import com.unchunks.echomark.di.DispatcherProvider
 import dagger.Lazy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

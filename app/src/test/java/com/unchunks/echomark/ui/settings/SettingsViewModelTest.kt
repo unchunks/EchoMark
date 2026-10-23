@@ -2,8 +2,10 @@ package com.unchunks.echomark.ui.settings
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.ai.model.ModelManager
-import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.DataOperationException
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -13,8 +15,6 @@ import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeDataManagementRepository
 import com.unchunks.echomark.testing.FakeRediscoverScheduleController
-import com.unchunks.echomark.testing.MainDispatcherRule
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
