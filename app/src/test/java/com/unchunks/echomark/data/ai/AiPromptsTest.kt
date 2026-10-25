@@ -27,6 +27,13 @@ class AiPromptsTest {
     }
 
     @Test
+    fun 要約にはチャンネル名や動画名を書かせない() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.VIDEO, emptyList())
+
+        assertTrue(prompt, prompt.contains("チャンネル名・投稿者名・動画や記事のタイトルを書かず"))
+    }
+
+    @Test
     fun 要約だけのときはタグとカテゴリの指示を入れない() {
         val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, listOf("Android"), scope = AnalysisScope.SUMMARY)
 
