@@ -199,8 +199,14 @@ class ChatRepositoryImpl @Inject constructor(
         // 2. 質問文をembedding化。埋め込みモデルが無い環境ではキーワード検索で代替する
         val queryVector = try {
             embeddingProvider.embedQuery(userMessage)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: EmbeddingUnavailableException) {
             Timber.i("埋め込みモデルが無いため、チャットの文脈はキーワード検索で探す")
+            return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
+        } catch (e: Exception) {
+            // 質問の埋め込みだけが失敗しても(MediaPipe が縮めても入力を受け付けないなど)、チャット全体は失敗にしない
+            Timber.w(e, "質問の埋め込みに失敗したため、チャットの文脈はキーワード検索で探す")
             return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
         }
 

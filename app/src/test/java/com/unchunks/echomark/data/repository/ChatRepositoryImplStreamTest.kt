@@ -117,6 +117,19 @@ class ChatRepositoryImplStreamTest {
     }
 
     @Test
+    fun 質問の埋め込みが例外で失敗してもチャットは失敗にせず_キーワード検索で文脈を探す() = runBlocking {
+        // 埋め込みモデルが読めても、MediaPipe が入力を受け付けないときの失敗(MediaPipeException など)
+        val failingEmbedding = object : EmbeddingProvider by FakeEmbeddingProvider() {
+            override suspend fun embedQuery(text: String): FloatArray = throw IllegalStateException("embed failed")
+        }
+        val events = repository(FakeLlmProvider(listOf("回答")), embeddingProvider = failingEmbedding)
+            .sendMessageStream(1L, "Kotlin").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
     fun 生成途中の失敗はFailedで_途中までの回答は保存しない() = runBlocking {
         val refused = LlmException.Refused("cyber")
         val events = repository(FakeLlmProvider(listOf("途中"), failure = refused))
