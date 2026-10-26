@@ -8,9 +8,9 @@ import org.junit.Test
 class ResourceSelectionTest {
 
     private val candidates = listOf(
-        PageLink("https://example.com/1", "Kotlin 入門"),
-        PageLink("https://example.com/2", "ログイン"),
-        PageLink("https://example.com/3", "Compose の使い方")
+        ResourceCandidate.web(PageLink("https://example.com/1", "Kotlin 入門")),
+        ResourceCandidate.web(PageLink("https://example.com/2", "ログイン")),
+        ResourceCandidate.web(PageLink("https://example.com/3", "Compose の使い方"))
     )
 
     @Test

@@ -1,6 +1,5 @@
 package com.unchunks.echomark.data.ai.discover
 
-import com.unchunks.echomark.data.remote.PageLink
 import org.json.JSONObject
 
 /**
@@ -14,7 +13,7 @@ object ResourceSelection {
     private const val MAX_CANDIDATE_CHARS = 80
 
     /** 調べたいことと候補から、役立つものの番号を JSON で選ばせる指示。 */
-    fun prompt(topic: String, candidates: List<PageLink>, maxPicks: Int = MAX_PICKS): String = buildList {
+    fun prompt(topic: String, candidates: List<ResourceCandidate>, maxPicks: Int = MAX_PICKS): String = buildList {
         add("あなたは資料を選ぶアシスタントです。次の候補から、調べたいことに役立つものを最大${maxPicks}個選び、番号だけを JSON で出力してください。")
         add("説明文やコードブロックは出力しないでください。")
         add("")
@@ -29,8 +28,8 @@ object ResourceSelection {
         add("調べたいこと: ${topic.trim()}")
         add("")
         add("候補:")
-        candidates.forEachIndexed { index, link ->
-            add("[${index + 1}] ${link.text.take(MAX_CANDIDATE_CHARS)}")
+        candidates.forEachIndexed { index, candidate ->
+            add("[${index + 1}] ${candidate.title.take(MAX_CANDIDATE_CHARS)}")
         }
     }.joinToString("\n")
 

@@ -46,6 +46,8 @@ class AttachmentStore @Inject constructor(
 
     override suspend fun importFile(uri: String): StoredAttachment = importFromUri(uri.toUri())
 
+    override fun displayNameOf(uri: String): String? = queryNameAndSize(uri.toUri()).first
+
     /** [uri](content:// など)のファイルをコピーする。失敗は [AttachmentException]。 */
     suspend fun importFromUri(uri: Uri, maxBytes: Long = MAX_ATTACHMENT_BYTES): StoredAttachment =
         withContext(dispatcherProvider.io) {
