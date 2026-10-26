@@ -494,6 +494,11 @@ class LocalLlmProvider @Inject constructor(
         history: List<ChatMessage>
     ): String = chatStream(userMessage, context, history).fold("") { acc, chunk -> acc + chunk }.trim()
 
+    /** 資料の選択など、画面で結果を待つ JSON の生成。背景の解析より先に動かす。 */
+    override suspend fun complete(prompt: String): String = asInteractive {
+        generateAnalysisOnce(prompt, "complete", ANALYZE_MAX_OUTPUT_CHARS, { ANALYZE_TIMEOUT_MS }, preemptible = false)!!
+    }
+
     /**
      * 回答を増分で流す。背景の解析より先に動かす([asInteractive])。
      * - 入力が文脈長を超えたと言われたら(文字数の見積もりが外れた)、文脈と履歴を減らして組み立て直す
