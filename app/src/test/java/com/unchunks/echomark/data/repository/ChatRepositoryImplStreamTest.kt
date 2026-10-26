@@ -117,6 +117,45 @@ class ChatRepositoryImplStreamTest {
     }
 
     @Test
+    fun 質問の埋め込みが失敗してもチャットは失敗にせず_キーワード検索で文脈を探す() = runBlocking {
+        // 埋め込みモデルはあるが推論が失敗する(MediaPipe のグラフのエラーなど。EmbeddingUnavailableException ではない)
+        val failingEmbedding = object : EmbeddingProvider {
+            override val profile = EmbeddingModelProfile.GEMMA_V1.copy(modelVersion = "test")
+            override suspend fun embedDocument(text: String): FloatArray = throw IllegalStateException("graph error")
+            override suspend fun embedQuery(text: String): FloatArray = throw IllegalStateException("graph error")
+        }
+
+        val events = repository(FakeLlmProvider(listOf("回答")), embeddingProvider = failingEmbedding)
+            .sendMessageStream(1L, "Kotlin").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
+    fun 文脈の検索そのものが失敗しても最近保存したものを渡して答える() = runBlocking {
+        val brokenSearch = object : BookmarkRepository by bookmarkRepository {
+            override suspend fun search(query: String, tagId: Long?): List<Bookmark> = throw IllegalStateException("db error")
+        }
+        val repository = ChatRepositoryImpl(
+            conversationDao = conversationDao,
+            chatMessageDao = messageDao,
+            vectorSearch = unusedVectorSearch(),
+            embeddingProvider = noEmbedding,
+            llmProviderResolver = LlmProviderResolver(
+                FakeLlmProvider(listOf("回答")), { FakeLlmProvider() }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()
+            ),
+            bookmarkRepository = brokenSearch,
+            dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
+        )
+
+        val events = repository.sendMessageStream(1L, "最近の保存は？").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
     fun 生成途中の失敗はFailedで_途中までの回答は保存しない() = runBlocking {
         val refused = LlmException.Refused("cyber")
         val events = repository(FakeLlmProvider(listOf("途中"), failure = refused))

@@ -41,7 +41,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.fold
+import kotlinx.coroutines.flow.transformWhile
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -127,6 +132,17 @@ class LocalLlmProvider @Inject constructor(
 
     @Volatile
     private var lastUsedNanos = 0L
+
+    /**
+     * 画面で結果を待っている生成(チャット・資料の選択)の数。0 でない間、背景の解析(要約・タグ)は新しい生成を始めず、
+     * 生成中なら [preemptBackground] で中断して、画面での生成が終わってからやり直す
+     * (背景の解析は1回に数十秒〜数分かかり、終わるまでチャットの回答が始まらないと、止まっているように見えるため)。
+     */
+    private val interactiveCount = MutableStateFlow(0)
+
+    /** 生成中の背景の解析を中断する処理。生成中でなければ null。 */
+    @Volatile
+    private var preemptBackground: (() -> Unit)? = null
 
     init {
         latest = WeakReference(this)
@@ -306,18 +322,8 @@ class LocalLlmProvider @Inject constructor(
         return LlmInferenceSession.createFromOptions(loaded.engine, options)
     }
 
-    private suspend fun generate(prompt: String): String =
-        withContext(dispatcherProvider.default) {
-            withEngine { loaded ->
-                newSession(loaded).use { session ->
-                    session.addQueryChunk(prompt)
-                    session.generateResponse()
-                }
-            }
-        }
-
     /**
-     * 解析用の生成。[generate] と違い、時間の上限([timeoutMillis]。既定は [ANALYZE_TIMEOUT_MS])と出力の文字数の上限
+     * 解析用の生成。時間の上限([timeoutMillis]。既定は [ANALYZE_TIMEOUT_MS])と出力の文字数の上限
      * ([maxOutputChars])を設け、コルーチンのキャンセルでも生成を中断する
      * (ブロッキングの generateResponse はキャンセルできず、止まらない生成がロックを持ち続けて後続の処理まで止めるため)。
      * 出力の JSON オブジェクトが閉じたら、それ以降の生成(小型モデルが繰り返しに陥った続きなど)は待たずに打ち切る。
@@ -333,12 +339,34 @@ class LocalLlmProvider @Inject constructor(
         maxOutputChars: Int = ANALYZE_MAX_OUTPUT_CHARS,
         timeoutMillis: (EngineBackend) -> Long = { ANALYZE_TIMEOUT_MS }
     ): String {
+        // 画面で待っている生成(チャットなど)があれば、それが終わるまで始めない。生成中に割り込まれたら、終わるのを待ってやり直す
+        while (true) {
+            interactiveCount.first { it == 0 }
+            generateAnalysisOnce(prompt, label, maxOutputChars, timeoutMillis, preemptible = true)?.let { return it }
+            Timber.i("画面での生成を先にするため、解析の生成を中断した。後でやり直す: %s", label)
+        }
+    }
+
+    /**
+     * [generateAnalysis] の1回分。[preemptible] なら、画面での生成([asInteractive])が始まったときに中断して null を返す
+     * (始める前に画面での生成が待っていれば、何もせずに null を返す)。
+     */
+    private suspend fun generateAnalysisOnce(
+        prompt: String,
+        label: String,
+        maxOutputChars: Int,
+        timeoutMillis: (EngineBackend) -> Long,
+        preemptible: Boolean
+    ): String? {
         val bookmarkId = AiPerfLog.currentBookmarkId()
         return withContext(dispatcherProvider.default) {
             withEngine { loaded ->
+                if (preemptible && interactiveCount.value > 0) return@withEngine null
                 val timeoutMs = timeoutMillis(loaded.backend)
                 newSession(loaded).use { session ->
                     session.addQueryChunk(prompt)
+                    // 画面での生成に割り込まれたか(中断の後は時間切れ・出力の上限の扱いをせず、やり直させる)
+                    val preempted = AtomicBoolean(false)
                     // 出力と JSON の検出は MediaPipe のスレッドで更新し、生成が終わってから読む
                     val output = StringBuilder()
                     val jsonEnd = JsonObjectEndDetector()
@@ -363,14 +391,24 @@ class LocalLlmProvider @Inject constructor(
                         if (finished) stop.complete(Unit)
                     })
                     future.addListener({ stop.complete(Unit) }, Runnable::run)
+                    if (preemptible) {
+                        preemptBackground = {
+                            preempted.set(true)
+                            runCatching { session.cancelGenerateResponseAsync() }
+                        }
+                        // 中断の処理を置く前に画面での生成が始まっていたら、ここで中断する
+                        if (interactiveCount.value > 0) preemptBackground?.invoke()
+                    }
                     val timedOut = try {
                         withTimeoutOrNull(timeoutMs) { stop.await() } == null
                     } finally {
+                        if (preemptible) preemptBackground = null
                         // 時間切れ・JSON の完成・キャンセルで止める場合は生成を中断し、終わるのを待ってからセッションを閉じる
                         if (!future.isDone) runCatching { session.cancelGenerateResponseAsync() }
                         withContext(NonCancellable) { future.awaitDone() }
                     }
                     val endNanos = System.nanoTime()
+                    if (preempted.get()) return@withEngine null
                     // 生成を止めた後は、MediaPipe のスレッドからの更新は無いため、まとめて読む
                     val stats = synchronized(output) {
                         GenerationStats(
@@ -454,17 +492,64 @@ class LocalLlmProvider @Inject constructor(
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>
-    ): String {
-        return generate(buildChatPrompt(userMessage, context, history)).trim()
-    }
+    ): String = chatStream(userMessage, context, history).fold("") { acc, chunk -> acc + chunk }.trim()
 
-    /** generateResponseAsync の部分結果(増分)を流す。収集側のキャンセルで生成を中断する。 */
+    /**
+     * 回答を増分で流す。背景の解析より先に動かす([asInteractive])。
+     * - 入力が文脈長を超えたと言われたら(文字数の見積もりが外れた)、文脈と履歴を減らして組み立て直す
+     * - 何も出力されなかったら一度だけやり直す(小型モデルはまれに、すぐ終わりの印を出す)
+     * - 同じ行の繰り返し・長すぎる出力は [ChatOutputGuard] で止め、そこまでを回答にする
+     * 収集側のキャンセルで生成を中断する。
+     */
     override fun chatStream(
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>
-    ): Flow<String> = callbackFlow {
-        val prompt = buildChatPrompt(userMessage, context, history)
+    ): Flow<String> = flow {
+        asInteractive {
+            var maxChars = LocalChatPrompt.MAX_PROMPT_CHARS
+            for (attempt in 1..MAX_CHAT_ATTEMPTS) {
+                var emitted = false
+                try {
+                    val guard = ChatOutputGuard()
+                    streamOnce(LocalChatPrompt.build(userMessage, context, history, maxChars))
+                        .transformWhile { chunk ->
+                            emit(guard.accept(chunk))
+                            !guard.stopped
+                        }
+                        .collect { text ->
+                            if (text.isNotBlank()) emitted = true
+                            if (text.isNotEmpty()) emit(text)
+                        }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (emitted || attempt == MAX_CHAT_ATTEMPTS || !isInputTooLong(e)) throw e
+                    maxChars = maxChars * PROMPT_SHRINK_PERCENT / 100
+                    Timber.w(e, "端末内 AI の入力が長すぎたため、文脈を減らしてやり直す: %d 文字まで", maxChars)
+                    continue
+                }
+                if (emitted) return@asInteractive
+                Timber.w("端末内 AI の回答が空だったため、やり直す(%d 回目)", attempt)
+            }
+        }
+    }
+
+    /**
+     * [block] を、画面で結果を待つ生成として動かす。動いている間は背景の解析の生成を中断させ、新しく始めさせない。
+     */
+    private suspend fun <T> asInteractive(block: suspend () -> T): T {
+        interactiveCount.update { it + 1 }
+        try {
+            preemptBackground?.invoke()
+            return block()
+        } finally {
+            interactiveCount.update { it - 1 }
+        }
+    }
+
+    /** generateResponseAsync の部分結果(増分)を流す。収集側のキャンセルで生成を中断する。 */
+    private fun streamOnce(prompt: String): Flow<String> = callbackFlow {
         withEngine { loaded ->
             newSession(loaded).use { session ->
                 session.addQueryChunk(prompt)
@@ -522,16 +607,16 @@ class LocalLlmProvider @Inject constructor(
         AiPrompts.analyzeInput(input.title, body, MAX_INPUT_CHARS)
     ).joinToString("\n")
 
-    // 指示・文脈・履歴・質問を、MAX_TOKENS に収まる文字数の予算で組み立てる
-    private fun buildChatPrompt(
-        userMessage: String,
-        context: List<String>,
-        history: List<ChatMessage>
-    ): String = LocalChatPrompt.build(userMessage, context, history)
-
     companion object {
         /** 入力と出力の合計トークン数の上限。プロンプトの文字数の予算は LocalChatPrompt を参照 */
         private const val MAX_TOKENS = 4096
+
+        /** チャットの生成を試す回数(入力が長すぎた・回答が空だったときのやり直しを含む) */
+        private const val MAX_CHAT_ATTEMPTS = 3
+
+        /** 入力が長すぎたときに、プロンプトの文字数の予算を何 % に減らすか */
+        private const val PROMPT_SHRINK_PERCENT = 60
+
         private const val MAX_INPUT_CHARS = 2000
 
         private const val NANOS_PER_MILLI = 1_000_000L

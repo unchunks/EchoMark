@@ -163,7 +163,15 @@ class ChatRepositoryImpl @Inject constructor(
         // 2〜3. 関連ブックマークを検索(削除済み等で取得できなかったものは除き、近い順を保つ)。
         //    質問の対象が固定されていれば、それを必ず先頭に含める
         val pinned = pinnedBookmarkId?.let { bookmarkRepository.getBookmarksByIds(listOf(it)).firstOrNull() }
-        val searched = findRelevantBookmarks(RagSupport.searchQueryFor(userMessage, pinned?.title))
+        val searched = try {
+            findRelevantBookmarks(RagSupport.searchQueryFor(userMessage, pinned?.title))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 文脈の検索が失敗しても回答はできる(最近保存したものを渡す)ため、チャット全体は失敗にしない
+            Timber.w(e, "チャットの文脈の検索に失敗したため、最近保存したものを渡す")
+            emptyList()
+        }
             // 質問に近いものもタグで絞れるものも無ければ(「最近保存した記事の要点は？」のような保存全体についての質問)、
             // 最近保存したものを渡す。関係があるかは AI に判断させる
             .ifEmpty { if (pinned == null) getRecentBookmarks(RagSupport.SEARCH_LIMIT) else emptyList() }
@@ -201,6 +209,15 @@ class ChatRepositoryImpl @Inject constructor(
             embeddingProvider.embedQuery(userMessage)
         } catch (e: EmbeddingUnavailableException) {
             Timber.i("埋め込みモデルが無いため、チャットの文脈はキーワード検索で探す")
+            return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 埋め込みの推論の失敗(MediaPipe のエラーなど)でも、チャット全体は失敗にしない
+            Timber.w(e, "質問の埋め込みに失敗したため、チャットの文脈はキーワード検索で探す")
+            return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
+        } catch (e: LinkageError) {
+            Timber.e(e, "埋め込みのライブラリを使えないため、チャットの文脈はキーワード検索で探す")
             return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
         }
 
