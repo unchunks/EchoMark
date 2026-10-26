@@ -1,6 +1,7 @@
 package com.unchunks.echomark.domain.repository
 
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
@@ -48,12 +49,14 @@ interface ChatRepository {
      *
      * @param pinnedBookmarkId 必ず文脈に含めるブックマーク(「このブックマークについて質問」)。検索結果より先頭に置き、重複は除く
      * @param isRetry 失敗した質問の再試行。会話の最後が同じ内容のユーザー発言なら、それを使い回して二重に保存しない
+     * @param attachment 質問に添付したファイルの内容。この回答の根拠にだけ使い、会話には保存しない(ユーザー発言は本文だけ保存する)
      */
     fun sendMessageStream(
         conversationId: Long,
         userMessage: String,
         pinnedBookmarkId: Long? = null,
-        isRetry: Boolean = false
+        isRetry: Boolean = false,
+        attachment: ChatAttachmentContext? = null
     ): Flow<ChatStreamEvent>
 
     /** 会話を手動でリネームする(以降は自動タイトルで上書きしない)。 */

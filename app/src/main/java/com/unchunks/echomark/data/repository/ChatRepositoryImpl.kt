@@ -13,6 +13,7 @@ import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
+import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
@@ -75,10 +76,11 @@ class ChatRepositoryImpl @Inject constructor(
         conversationId: Long,
         userMessage: String,
         pinnedBookmarkId: Long?,
-        isRetry: Boolean
+        isRetry: Boolean,
+        attachment: ChatAttachmentContext?
     ): Flow<ChatStreamEvent> = flow {
         val prepared = try {
-            prepare(conversationId, userMessage, pinnedBookmarkId, isRetry)
+            prepare(conversationId, userMessage, pinnedBookmarkId, isRetry, attachment)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -135,7 +137,8 @@ class ChatRepositoryImpl @Inject constructor(
         conversationId: Long,
         userMessage: String,
         pinnedBookmarkId: Long?,
-        isRetry: Boolean
+        isRetry: Boolean,
+        attachment: ChatAttachmentContext?
     ): PreparedChat {
         // 0. 今回の発言を保存する前に、直近の会話履歴を取得しておく(今回分を含めないため)。
         //    再試行で、失敗した同じ発言が最後に残っているなら、それを履歴から外して使い回す(二重に保存しない)
@@ -167,9 +170,11 @@ class ChatRepositoryImpl @Inject constructor(
             // 質問に近いものもタグで絞れるものも無ければ(「最近保存した記事の要点は？」のような保存全体についての質問)、
             // 最近保存したものを渡す。関係があるかは AI に判断させる
             .ifEmpty { if (pinned == null) getRecentBookmarks(RagSupport.SEARCH_LIMIT) else emptyList() }
+        // 添付があるときは、資料を減らして添付の分の文脈を残す。添付は資料の後ろに置き、引用の番号を資料と揃える
         val usedBookmarks = RagSupport.pinFirst(pinned, searched, idOf = { it.id })
+            .let { if (attachment == null) it else it.take(MAX_CONTEXT_BOOKMARKS_WITH_ATTACHMENT) }
         val now = System.currentTimeMillis()
-        val context = usedBookmarks.mapIndexed { i, b ->
+        val bookmarkContext = usedBookmarks.mapIndexed { i, b ->
             val title = RagSupport.contextTitle(b.title, b.createdAt, now)
             if (b.id == pinned?.id) {
                 RagSupport.formatPinnedContextEntry(i + 1, title, b.summary, b.content)
@@ -177,7 +182,10 @@ class ChatRepositoryImpl @Inject constructor(
                 RagSupport.formatContextEntry(i + 1, title, b.summary ?: b.content)
             }
         }
-        return PreparedChat(history, context, usedBookmarks.map { it.id })
+        val attachmentContext = attachment?.let {
+            RagSupport.formatContextEntry(usedBookmarks.size + 1, "添付「${it.name}」", it.text)
+        }
+        return PreparedChat(history, bookmarkContext + listOfNotNull(attachmentContext), usedBookmarks.map { it.id })
     }
 
     /**
@@ -290,6 +298,9 @@ class ChatRepositoryImpl @Inject constructor(
     companion object {
         /** 生成を途中で止めた回答の末尾に付ける印。 */
         const val STOPPED_SUFFIX = "\n\n(停止)"
+
+        /** 添付がある質問で、文脈に入れる保存済みの資料の上限(残りは添付の本文に使う) */
+        private const val MAX_CONTEXT_BOOKMARKS_WITH_ATTACHMENT = 3
 
         /** 最初の発言が来るまでの会話タイトル。 */
         const val DEFAULT_TITLE = "新しいチャット"
