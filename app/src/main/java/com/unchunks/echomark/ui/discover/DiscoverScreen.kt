@@ -46,8 +46,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -66,12 +66,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.unchunks.echomark.data.discover.DiscoveredResource
-import com.unchunks.echomark.data.discover.DiscoveryStep
-import com.unchunks.echomark.data.discover.ResourceSource
-import com.unchunks.echomark.ui.chat.AiSetupBanner
 import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.components.composeui.ReadableLazyColumn
+import com.unchunks.components.websearch.ResourceSource
+import com.unchunks.echomark.data.discover.DiscoveredResource
+import com.unchunks.echomark.data.discover.DiscoveryStep
+import com.unchunks.echomark.ui.chat.AiSetupBanner
 import com.unchunks.echomark.ui.components.SectionHeader
 import kotlinx.coroutines.flow.map
 

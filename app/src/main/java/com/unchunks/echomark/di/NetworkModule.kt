@@ -1,5 +1,6 @@
 package com.unchunks.echomark.di
 
+import com.unchunks.components.websearch.SearchUserAgents
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,4 +23,11 @@ object NetworkModule {
             .callTimeout(15, TimeUnit.SECONDS)
             .followRedirects(true)
             .build()
+
+    /** 資料を探すときに検索先へ名乗る User-Agent */
+    @Provides
+    fun provideSearchUserAgents(): SearchUserAgents = SearchUserAgents(
+        app = "EchoMark/1.0 (Android; +https://github.com/unchunks/EchoMark)",
+        browser = "${SearchUserAgents.DEFAULT_BROWSER} EchoMark/1.0"
+    )
 }

@@ -1,11 +1,12 @@
 package com.unchunks.echomark.ui.discover
 
+import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.components.websearch.ResourceCandidate
+import com.unchunks.components.websearch.ResourceSearchClient
+import com.unchunks.components.websearch.ResourceSearcher
+import com.unchunks.components.websearch.ResourceSource
 import com.unchunks.echomark.data.ai.LlmProviderResolver
-import com.unchunks.echomark.data.discover.ResourceCandidate
 import com.unchunks.echomark.data.discover.ResourceDiscovery
-import com.unchunks.echomark.data.discover.ResourceSearchClient
-import com.unchunks.echomark.data.discover.ResourceSearcher
-import com.unchunks.echomark.data.discover.ResourceSource
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
@@ -18,7 +19,6 @@ import com.unchunks.echomark.testing.FakeAiSetupRepository
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
-import com.unchunks.components.testing.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle

@@ -1,6 +1,6 @@
 package com.unchunks.echomark.data.ai.discover
 
-import com.unchunks.echomark.data.remote.PageLink
+import com.unchunks.components.web.PageLink
 
 /**
  * AI に選ばせる資料の候補。Web のリンクと端末内のファイルを同じ形で扱う。

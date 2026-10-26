@@ -1,5 +1,7 @@
 package com.unchunks.echomark.data.discover
 
+import com.unchunks.components.websearch.ResourceCandidate
+import com.unchunks.components.websearch.ResourceSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

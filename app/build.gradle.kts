@@ -1,5 +1,5 @@
 plugins {
-    // SDK・Java の版、release の R8 と署名、JVM テストの設定(components/build-logic)
+    // SDK・Java の版、release の R8 と署名、JVM テストの設定(components/android/build-logic)
     id("unchunks.android.application")
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.devtools.ksp)
@@ -75,6 +75,7 @@ dependencies {
     implementation(libs.unchunks.embedding)
     implementation(libs.unchunks.search)
     implementation(libs.unchunks.web.content)
+    implementation(libs.unchunks.web.search)
     implementation(libs.unchunks.secure.storage)
     implementation(libs.unchunks.speech)
     implementation(libs.unchunks.document.text)

@@ -3,10 +3,10 @@ package com.unchunks.echomark.screenshot
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.websearch.ResourceCandidate
+import com.unchunks.components.websearch.ResourceSource
 import com.unchunks.echomark.data.discover.DiscoveredResource
 import com.unchunks.echomark.data.discover.DiscoveryStep
-import com.unchunks.echomark.data.discover.ResourceCandidate
-import com.unchunks.echomark.data.discover.ResourceSource
 import com.unchunks.echomark.ui.discover.DiscoverContent
 import com.unchunks.echomark.ui.discover.DiscoverUiState
 import org.junit.Rule

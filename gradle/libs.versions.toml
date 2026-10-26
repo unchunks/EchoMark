@@ -34,7 +34,7 @@ pdfboxAndroid = "2.0.27.0"
 mlkitTextRecognitionJapanese = "16.0.1"
 mlkitImageLabeling = "16.0.8"
 exifinterface = "1.4.2"
-# 再利用する部品(../components)。composite build で components のプロジェクトに置き換わるため、版は components/build.gradle.kts と同じにする
+# 再利用する部品(components リポジトリの android/)。composite build で components のプロジェクトに置き換わるため、版は components/android/build.gradle.kts と同じにする
 unchunksComponents = "0.1.0"
 
 [libraries]
@@ -98,6 +98,7 @@ unchunks-llm-cloud = { group = "com.unchunks.components", name = "llm-cloud", ve
 unchunks-embedding = { group = "com.unchunks.components", name = "embedding", version.ref = "unchunksComponents" }
 unchunks-search = { group = "com.unchunks.components", name = "search", version.ref = "unchunksComponents" }
 unchunks-web-content = { group = "com.unchunks.components", name = "web-content", version.ref = "unchunksComponents" }
+unchunks-web-search = { group = "com.unchunks.components", name = "web-search", version.ref = "unchunksComponents" }
 unchunks-secure-storage = { group = "com.unchunks.components", name = "secure-storage", version.ref = "unchunksComponents" }
 unchunks-speech = { group = "com.unchunks.components", name = "speech", version.ref = "unchunksComponents" }
 unchunks-document-text = { group = "com.unchunks.components", name = "document-text", version.ref = "unchunksComponents" }

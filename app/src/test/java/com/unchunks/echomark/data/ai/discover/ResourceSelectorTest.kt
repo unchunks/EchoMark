@@ -1,7 +1,7 @@
 package com.unchunks.echomark.data.ai.discover
 
+import com.unchunks.components.web.PageLink
 import com.unchunks.echomark.data.ai.LlmProviderResolver
-import com.unchunks.echomark.data.remote.PageLink
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment

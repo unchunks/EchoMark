@@ -2,10 +2,10 @@ package com.unchunks.echomark.ui.discover
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.websearch.ResourceSource
 import com.unchunks.echomark.data.discover.DiscoveredResource
 import com.unchunks.echomark.data.discover.DiscoveryStep
 import com.unchunks.echomark.data.discover.ResourceDiscovery
-import com.unchunks.echomark.data.discover.ResourceSource
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
