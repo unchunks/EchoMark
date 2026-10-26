@@ -104,12 +104,52 @@ class AnalysisParserTest {
     }
 
     @Test
+    fun 短い指示の出力形式の例を写したタグとカテゴリは使わない() {
+        val result = AnalysisParser.parse(
+            """{"summary": "s", "tags": ["語", "語", "Kotlin"], "category": "分類"}""",
+            "元"
+        )
+        assertEquals(listOf("Kotlin"), result.tags)
+        assertEquals("未分類", result.category)
+    }
+
+    @Test
+    fun 保存内容に出てこないタグは除く() {
+        // 端末内の小さいモデルは、カテゴリの候補の「技術」や指示の例の「照り焼き」を関係ない保存に写す
+        val analysis = AnalysisParser.parse(
+            """{"summary": "s", "tags": ["技術", "肉じゃが", "照り焼き"], "category": "レシピ"}""",
+            "元"
+        )
+        val kept = AnalysisParser.keepMentionedTags(analysis, "echomark_recipe\n肉じゃがの作り方(4人分)")
+
+        assertEquals(listOf("肉じゃが"), kept.tags)
+        assertEquals("レシピ", kept.category)
+    }
+
+    @Test
+    fun 保存内容に出てくるかは全角半角_大文字小文字を区別しない() {
+        val analysis = AnalysisParser.parse("""{"summary": "s", "tags": ["kotlin", "Java"], "category": "技術"}""", "元")
+
+        assertEquals(listOf("kotlin", "Java"), AnalysisParser.keepMentionedTags(analysis, "Ｋｏｔｌｉｎ は JAVA と相互に呼び出せる").tags)
+    }
+
+    @Test
     fun どの保存にも付く汎用の語や文になったタグは使わない() {
         val result = AnalysisParser.parse(
             """{"summary": "s", "tags": ["動画", "YouTube", "まとめ", "コルーチンの使い方を説明している。", "Jetpack Compose"], "category": "技術"}""",
             "元"
         )
         assertEquals(listOf("Jetpack Compose"), result.tags)
+    }
+
+    @Test
+    fun 書類の項目名はタグにしない() {
+        // 議事録の「日時:」「出席者:」の見出しをそのままタグにすることがある
+        val result = AnalysisParser.parse(
+            """{"summary": "s", "tags": ["日時", "出席者", "広告予算"], "category": "会議"}""",
+            "元"
+        )
+        assertEquals(listOf("広告予算"), result.tags)
     }
 
     @Test

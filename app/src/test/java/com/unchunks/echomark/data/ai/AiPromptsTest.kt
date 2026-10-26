@@ -171,6 +171,37 @@ class AiPromptsTest {
     }
 
     @Test
+    fun 端末内向けの短い指示は出力の例を1つ見せ_カテゴリは候補から選ばせる() {
+        val prompt = AiPrompts.compactAnalyzeInstructions(ContentKind.MEMO, emptyList(), summaryMaxChars = 150)
+
+        assertTrue(prompt, prompt.contains("""{"summary": "要約", "tags": ["語", "語"], "category": "分類"}"""))
+        assertTrue(prompt, prompt.contains("150文字以内"))
+        assertTrue(prompt, prompt.contains("本文に出てくる、この内容に固有の語"))
+        assertTrue(prompt, prompt.contains("category: 「アイデア」「ToDo」「技術」"))
+        assertTrue(prompt, prompt.contains("""出力: {"summary": "鶏もも肉を甘辛いたれで焼く照り焼きの作り方。", "tags": ["照り焼き", "鶏もも肉"], "category": "レシピ"}"""))
+        assertFalse(prompt, prompt.contains("既存のタグ"))
+        assertFalse(prompt, prompt.contains("[部分 1/3]"))
+        // クラウド向けの指示より短い(遅い端末ではプロンプトの読み込みの時間が文字数に比例する)
+        assertTrue(prompt.length < AiPrompts.analyzeInstructions(ContentKind.MEMO, emptyList()).length * 2 / 3)
+    }
+
+    @Test
+    fun 端末内向けの短い指示も既存のタグと部分ごとのメモと出力する項目に合わせる() {
+        val withTags = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, listOf("Android"), digest = true)
+        assertTrue(withTags, withTags.contains("既存のタグに合うものがあれば表記を変えずに使う: [\"Android\"]"))
+        assertTrue(withTags, withTags.contains("[部分 1/3]"))
+
+        val summaryOnly = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, listOf("Android"), scope = AnalysisScope.SUMMARY)
+        assertFalse(summaryOnly, summaryOnly.contains("tags"))
+        assertFalse(summaryOnly, summaryOnly.contains("category"))
+        assertTrue(summaryOnly, summaryOnly.contains("""出力: {"summary": "鶏もも肉を甘辛いたれで焼く照り焼きの作り方。"}"""))
+
+        val tagsOnly = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, emptyList(), scope = AnalysisScope.TAGS)
+        assertFalse(tagsOnly, tagsOnly.contains("summary"))
+        assertTrue(tagsOnly, tagsOnly.contains("""出力: {"tags": ["照り焼き", "鶏もも肉"], "category": "レシピ"}"""))
+    }
+
+    @Test
     fun 長い動画や文書は要約を長めにする() {
         assertEquals(100, AiPrompts.summaryMaxChars(ContentKind.VIDEO, isLong = false))
         assertEquals(200, AiPrompts.summaryMaxChars(ContentKind.VIDEO, isLong = true))

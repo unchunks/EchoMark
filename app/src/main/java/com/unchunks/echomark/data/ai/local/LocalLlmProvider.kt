@@ -498,9 +498,11 @@ class LocalLlmProvider @Inject constructor(
             )
             AnalysisParser.parseNotes(response)
         }
-        val isLong = body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
-        val response = generateAnalysis(buildAnalyzePrompt(input, body.text, isLong, existingTags, scope), "final")
-        return AnalysisParser.parse(response, input.combinedText())
+        val digest = body is PreparedBody.Digest
+        val isLong = digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
+        val response = generateAnalysis(buildAnalyzePrompt(input, body.text, isLong, digest, existingTags, scope), "final")
+        // 小さいモデルは指示の例やカテゴリの候補の語をタグに写すため、保存内容に出てくるタグだけを残す
+        return AnalysisParser.keepMentionedTags(AnalysisParser.parse(response, input.combinedText()), input.combinedText())
     }
 
     override suspend fun chat(
@@ -596,18 +598,18 @@ class LocalLlmProvider @Inject constructor(
         input: AnalysisInput,
         body: String,
         isLong: Boolean,
+        digest: Boolean,
         existingTags: List<String>,
         scope: AnalysisScope
     ): String = listOf(
-        AiPrompts.analyzeInstructions(
+        AiPrompts.compactAnalyzeInstructions(
             input.kind,
             // 小さいモデルは渡した既存のタグを内容に関係なく写すため、タイトルか本文に出てくるものだけを渡す
             // (続けて保存したブックマークのタグが、関係ないブックマークに付くのを防ぐ)
             AiPrompts.existingTagsMentionedIn(existingTags, input.combinedText()),
             summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
-            maxExistingTags = AiPrompts.LOCAL_MAX_EXISTING_TAGS,
-            maxExistingTagChars = AiPrompts.LOCAL_MAX_EXISTING_TAG_CHARS,
-            scope = scope
+            scope = scope,
+            digest = digest
         ),
         "",
         AiPrompts.analyzeInput(input.title, body, MAX_INPUT_CHARS)
