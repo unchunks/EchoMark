@@ -1,5 +1,7 @@
 package com.unchunks.echomark.domain.model
 
+import com.unchunks.components.llm.ChatRole
+
 data class ChatMessage(
     val id: Long = 0,
     val conversationId: Long,

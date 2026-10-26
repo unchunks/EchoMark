@@ -10,14 +10,14 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
-import androidx.work.testing.SynchronousExecutor
 import androidx.work.impl.WorkManagerImpl
 import androidx.work.impl.model.WorkSpec
+import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.echomark.data.local.objectbox.EmbeddingEntity
 import com.unchunks.echomark.data.local.objectbox.MyObjectBox
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
-import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import io.objectbox.Box
 import io.objectbox.BoxStore
 import kotlinx.coroutines.awaitCancellation

@@ -6,13 +6,14 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.domain.model.TagWithCount
-import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.testing.aiTasks
 import com.unchunks.echomark.ui.bookmark.AddBookmarkSheet
 import com.unchunks.echomark.ui.onboarding.AiSetupChoice
 import com.unchunks.echomark.ui.onboarding.OnboardingActions
@@ -31,7 +32,6 @@ import com.unchunks.echomark.ui.share.ShareSheetContent
 import com.unchunks.echomark.ui.share.SharedContent
 import com.unchunks.echomark.ui.tags.TagManagementContent
 import com.unchunks.echomark.ui.tags.TagManagementUiState
-import com.unchunks.echomark.testing.aiTasks
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -44,7 +44,7 @@ import java.util.TimeZone
 
 /**
  * タブレット・折りたたみ端末の展開時(幅 940dp)と、スマートフォンの横向き(800x360dp)の見た目。
- * 本文が [com.unchunks.echomark.ui.common.ReadableMaxWidth] までに収まって中央に寄り、
+ * 本文が [com.unchunks.components.composeui.ReadableMaxWidth] までに収まって中央に寄り、
  * 低い画面でもスクロールで全部に届くことを確認する。ボトムシートは実際の ModalBottomSheet で撮る
  * (最大幅 640dp で中央に出る)。
  */

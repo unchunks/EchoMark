@@ -3,11 +3,11 @@ package com.unchunks.echomark.ui.chat
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
-import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiSetupRepository

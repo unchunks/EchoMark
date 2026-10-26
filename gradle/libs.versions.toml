@@ -33,6 +33,8 @@ pdfboxAndroid = "2.0.27.0"
 mlkitTextRecognitionJapanese = "16.0.1"
 mlkitImageLabeling = "16.0.8"
 exifinterface = "1.4.2"
+# 再利用する部品(../components)。composite build で components のプロジェクトに置き換わるため、版は components/build.gradle.kts と同じにする
+unchunksComponents = "0.1.0"
 
 [libraries]
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -86,6 +88,21 @@ pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref
 mlkit-text-recognition-japanese = { group = "com.google.mlkit", name = "text-recognition-japanese", version.ref = "mlkitTextRecognitionJapanese" }
 mlkit-image-labeling = { group = "com.google.android.gms", name = "play-services-mlkit-image-labeling", version.ref = "mlkitImageLabeling" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
+
+# 再利用する部品(components)
+unchunks-core = { group = "com.unchunks.components", name = "core", version.ref = "unchunksComponents" }
+unchunks-llm-core = { group = "com.unchunks.components", name = "llm-core", version.ref = "unchunksComponents" }
+unchunks-llm-cloud = { group = "com.unchunks.components", name = "llm-cloud", version.ref = "unchunksComponents" }
+unchunks-embedding = { group = "com.unchunks.components", name = "embedding", version.ref = "unchunksComponents" }
+unchunks-search = { group = "com.unchunks.components", name = "search", version.ref = "unchunksComponents" }
+unchunks-web-content = { group = "com.unchunks.components", name = "web-content", version.ref = "unchunksComponents" }
+unchunks-secure-storage = { group = "com.unchunks.components", name = "secure-storage", version.ref = "unchunksComponents" }
+unchunks-speech = { group = "com.unchunks.components", name = "speech", version.ref = "unchunksComponents" }
+unchunks-document-text = { group = "com.unchunks.components", name = "document-text", version.ref = "unchunksComponents" }
+unchunks-llm-ondevice = { group = "com.unchunks.components", name = "llm-ondevice", version.ref = "unchunksComponents" }
+unchunks-file-storage = { group = "com.unchunks.components", name = "file-storage", version.ref = "unchunksComponents" }
+unchunks-compose-ui = { group = "com.unchunks.components", name = "compose-ui", version.ref = "unchunksComponents" }
+unchunks-testing = { group = "com.unchunks.components", name = "testing", version.ref = "unchunksComponents" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -30,12 +30,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.filestorage.formatBytes
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportState
-import com.unchunks.echomark.data.ai.model.formatBytes
 import com.unchunks.echomark.domain.model.EmbeddingProgress
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
+import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.ui.common.openUrl
 import com.unchunks.echomark.ui.settings.SettingsItem
 import com.unchunks.echomark.ui.settings.SettingsNotice
@@ -182,7 +183,7 @@ internal fun EmbeddingModelSection(
     var showProfileDialog by remember { mutableStateOf(false) }
 
     SettingsItem(
-        title = model?.file?.displayName ?: "${EmbeddingModelProfile.BUNDLED.displayName}(同梱)",
+        title = model?.file?.displayName ?: "${EmbeddingModels.BUNDLED.displayName}(同梱)",
         icon = Icons.Outlined.Memory,
         iconTint = if (model != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         summary = if (model == null) {

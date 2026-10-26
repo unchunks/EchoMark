@@ -14,6 +14,8 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.unchunks.components.core.ComponentLog
+import com.unchunks.components.core.LogSink
 import com.unchunks.echomark.data.ai.local.LocalLlmProvider
 import com.unchunks.echomark.data.attachment.UnusedAttachmentCleaner
 import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
@@ -46,6 +48,8 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
 
         // ログは debug ビルドだけ Logcat に出す(release では本文や URL を残さない)
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+        // 部品(components)のうち Android に依存しないもののログも Timber に流す
+        ComponentLog.sink = LogSink { level, tag, message, error -> Timber.tag(tag).log(level.priority, error, message) }
 
         createNotificationChannels()
         // ブックマークの保存・削除・閲覧に合わせて、ホーム画面ウィジェットを描き直す

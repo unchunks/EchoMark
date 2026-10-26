@@ -1,17 +1,17 @@
 package com.unchunks.echomark.ui.bookmark
 
+import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.TagWithCount
-import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
-import com.unchunks.echomark.ui.common.SelectedFile
 import com.unchunks.echomark.testing.FakeTagRepository
-import com.unchunks.echomark.testing.MainDispatcherRule
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
+import com.unchunks.echomark.ui.common.SelectedFile
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch

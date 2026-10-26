@@ -26,8 +26,8 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PrivacyTip
-import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -58,10 +58,10 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.unchunks.components.composeui.MessageSnackbarEffect
+import com.unchunks.components.composeui.ReadableLazyColumn
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
-import com.unchunks.echomark.ui.common.MessageSnackbarEffect
-import com.unchunks.echomark.ui.common.ReadableLazyColumn
 import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.SectionHeader

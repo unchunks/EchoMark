@@ -1,5 +1,7 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.components.web.CaptionTranscript
+import com.unchunks.components.web.YouTubeCaptions
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

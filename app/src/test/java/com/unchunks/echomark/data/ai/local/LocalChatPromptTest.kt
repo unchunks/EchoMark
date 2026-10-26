@@ -1,8 +1,8 @@
 package com.unchunks.echomark.data.ai.local
 
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

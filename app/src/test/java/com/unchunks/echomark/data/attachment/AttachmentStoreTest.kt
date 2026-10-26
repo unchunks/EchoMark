@@ -5,12 +5,12 @@ import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking

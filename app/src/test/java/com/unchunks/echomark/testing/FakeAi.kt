@@ -1,12 +1,12 @@
 package com.unchunks.echomark.testing
 
-import com.unchunks.echomark.data.security.SecretCipher
-import com.unchunks.echomark.data.security.UnrecoverableSecretException
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.securestorage.SecretCipher
+import com.unchunks.components.securestorage.UnrecoverableSecretException
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting

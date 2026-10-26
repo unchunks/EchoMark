@@ -11,8 +11,9 @@ import android.provider.OpenableColumns
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.WorkManager
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
-import com.unchunks.echomark.testing.TestDispatcherProvider
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.testing.initTestWorkManager
 import com.unchunks.echomark.testing.statesOf
 import com.unchunks.echomark.testing.tearDownTestWorkManager
@@ -64,7 +65,7 @@ class EmbeddingModelManagerTest {
     fun 何も取り込んでいなければ同梱のモデルを使う() {
         assertNull(manager.installedModel.value)
         assertNull(manager.modelFile())
-        assertEquals(EmbeddingModelProfile.BUNDLED, manager.activeProfile())
+        assertEquals(EmbeddingModels.BUNDLED, manager.activeProfile())
         assertEquals("bundled", manager.sourceKey())
     }
 
@@ -121,7 +122,7 @@ class EmbeddingModelManagerTest {
 
         assertNull(manager.installedModel.value)
         assertFalse(file.exists())
-        assertEquals(EmbeddingModelProfile.BUNDLED, manager.activeProfile())
+        assertEquals(EmbeddingModels.BUNDLED, manager.activeProfile())
         assertEquals("bundled", manager.sourceKey())
         assertTrue(reembedStates().any { !it.isFinished })
     }
@@ -142,7 +143,7 @@ class EmbeddingModelManagerTest {
         manager.modelFile()!!.delete()
 
         // 同梱のモデルで作ったベクトルに、取り込んだモデルの版を付けない
-        assertEquals(EmbeddingModelProfile.BUNDLED, manager.activeProfile())
+        assertEquals(EmbeddingModels.BUNDLED, manager.activeProfile())
         assertEquals("bundled", manager.sourceKey())
     }
 

@@ -11,10 +11,10 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.unchunks.components.filestorage.OpenableInfo
+import com.unchunks.components.filestorage.queryOpenableInfo
 import com.unchunks.echomark.data.attachment.extensionOf
 import com.unchunks.echomark.data.attachment.fallbackMimeTypeOf
-import com.unchunks.echomark.data.storage.OpenableInfo
-import com.unchunks.echomark.data.storage.queryOpenableInfo
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.MAX_ATTACHMENT_BYTES
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType

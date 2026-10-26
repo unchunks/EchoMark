@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.local.dao
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.backup.BackupData
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
@@ -12,7 +13,6 @@ import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.TagSource
 import kotlinx.coroutines.test.runTest
 import org.junit.After

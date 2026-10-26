@@ -1,10 +1,10 @@
 package com.unchunks.echomark.ui.detail
 
 import androidx.lifecycle.SavedStateHandle
+import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.testing.FakeBookmarkRepository
-import com.unchunks.echomark.testing.MainDispatcherRule
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import kotlinx.coroutines.ExperimentalCoroutinesApi

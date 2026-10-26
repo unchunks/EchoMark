@@ -1,8 +1,8 @@
 package com.unchunks.echomark.data.ai.local
 
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
 
 /**
  * ローカル LLM のチャット用プロンプトを組み立てる。Android に依存しない純粋な処理で、単体テストできる。

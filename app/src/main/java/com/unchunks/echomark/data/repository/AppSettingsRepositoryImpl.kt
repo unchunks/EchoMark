@@ -8,7 +8,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting

@@ -1,14 +1,21 @@
 package com.unchunks.echomark.data.ai.api
 
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.llm.ChatRole
+import com.unchunks.components.llm.LlmException
+import com.unchunks.components.llm.cloud.ApiAttachment
+import com.unchunks.components.llm.cloud.AttachmentKind
+import com.unchunks.components.llm.cloud.AttachmentPolicy
+import com.unchunks.components.llm.cloud.ClaudeApiClient
+import com.unchunks.components.llm.cloud.GeminiApiClient
+import com.unchunks.components.llm.cloud.OpenAiApiClient
+import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
-import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.AiTask
@@ -16,7 +23,6 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeLlmProvider
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.Dispatcher

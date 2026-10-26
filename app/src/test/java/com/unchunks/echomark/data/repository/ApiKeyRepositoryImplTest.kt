@@ -5,9 +5,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
-import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.FakeSecretCipher
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow

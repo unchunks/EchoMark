@@ -3,8 +3,8 @@ package com.unchunks.echomark.data.local.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
-import com.unchunks.echomark.domain.model.ChatRole
 import kotlinx.coroutines.flow.Flow
 
 @Dao
