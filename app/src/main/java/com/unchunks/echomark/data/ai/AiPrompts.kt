@@ -49,7 +49,10 @@ object AiPrompts {
             addAll(inputHeadingGuide(kind))
             add("")
             add("ルール:")
-            if (withSummary) add("- summary は日本語で簡潔に。")
+            if (withSummary) {
+                add("- summary は日本語で簡潔に。")
+                add("- summary には要約の本文だけを書く。チャンネル名・投稿者名・サイト名、動画や記事のタイトル、「この動画では」「この記事は」のような前置きは書かない。")
+            }
             if (withTags) {
                 add("- tags は内容を表す短い単語を1〜${MAX_TAGS}個。")
                 if (tags.isNotEmpty()) {

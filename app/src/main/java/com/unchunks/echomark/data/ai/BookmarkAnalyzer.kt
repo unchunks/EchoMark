@@ -26,9 +26,16 @@ class BookmarkAnalyzer @Inject constructor(
     /**
      * 推論を始める前に両方の用途の準備(API キー)を確かめる。どちらかが失敗したら全体を失敗にし、
      * 要約だけ・タグだけが保存されることはない(再処理で両方を作り直す)。
+     * 要約からは、書き出しに写されたタイトル・チャンネル名・「この動画では」のような前置きを除く([SummaryCleaner])。
      * 例外は [LlmProvider.analyze] と同じ。
      */
     suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
+        val analysis = analyzeWithTaskSettings(input, existingTags)
+        val summary = SummaryCleaner.clean(analysis.summary, input.title, SummaryCleaner.channelOf(input.text))
+        return analysis.copy(summary = summary)
+    }
+
+    private suspend fun analyzeWithTaskSettings(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
         val settings = appSettings.aiTaskSettings.first()
         val summary = settings[AiTask.SUMMARY] ?: AiTaskSetting()
         val tagging = settings[AiTask.TAGGING] ?: AiTaskSetting()

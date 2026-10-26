@@ -48,6 +48,19 @@ class AiPromptsTest {
     }
 
     @Test
+    fun 要約にはタイトルやチャンネル名や前置きを書かせない() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.VIDEO, emptyList())
+
+        assertTrue(prompt, prompt.contains("summary には要約の本文だけを書く"))
+        assertTrue(prompt, prompt.contains("チャンネル名"))
+        // タグだけを作るときは要約のルールを入れない
+        assertFalse(
+            AiPrompts.analyzeInstructions(ContentKind.VIDEO, emptyList(), scope = AnalysisScope.TAGS)
+                .contains("summary には")
+        )
+    }
+
+    @Test
     fun 既存のタグが無ければ既存タグの指示を入れない() {
         val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList())
 
