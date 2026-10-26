@@ -138,7 +138,8 @@ class AppSettingsRepositoryImplTest {
 
         val settings = repository.aiTaskSettings.first()
         val summary = settings.getValue(AiTask.SUMMARY)
-        assertEquals(LlmBackend.API, summary.backend)
+        // クラウドを無効にしている間は、保存した API の設定も端末内として読む(提供元・モデルは保存されたまま)
+        assertEquals(LlmBackend.LOCAL, summary.backend)
         assertEquals("gemini-3.5-flash-lite", summary.apiModel)
         assertEquals(AiTaskSetting(), settings.getValue(AiTask.TAGGING).copy(apiModels = emptyMap()))
         assertEquals(LlmBackend.LOCAL, settings.getValue(AiTask.CHAT).backend)
@@ -160,7 +161,7 @@ class AppSettingsRepositoryImplTest {
         val repository = createRepository(dataStore)
 
         repository.aiTaskSettings.first().values.forEach {
-            assertEquals(LlmBackend.API, it.backend)
+            assertEquals(LlmBackend.LOCAL, it.backend)
             assertEquals(ApiProvider.OPENAI, it.apiProvider)
             assertEquals("gpt-6-luna", it.apiModel)
         }
