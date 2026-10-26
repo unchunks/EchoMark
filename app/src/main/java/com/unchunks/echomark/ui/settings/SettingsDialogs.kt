@@ -251,6 +251,8 @@ private val OPEN_SOURCE_LIBRARIES = listOf(
     "Dagger / Hilt" to "Apache License 2.0",
     "Material Icons" to "Apache License 2.0",
     "MediaPipe Tasks(テキスト埋め込み・LLM 推論)" to "Apache License 2.0",
+    "LiteRT-LM(端末内 AI の .litertlm モデルの実行)" to "Apache License 2.0",
+    "Gson" to "Apache License 2.0",
     "ObjectBox Java" to "Apache License 2.0",
     "OkHttp・Okio" to "Apache License 2.0",
     "Coil" to "Apache License 2.0",

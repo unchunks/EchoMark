@@ -71,6 +71,65 @@ object AiPrompts {
         }.joinToString("\n")
     }
 
+    /**
+     * 端末内 AI 向けの短い解析の指示(出力の形は [analyzeInstructions] と同じ)。
+     * 小さいモデルは規則の列挙を読み取れず、カテゴリの候補の語(「技術」など)をタグやカテゴリにそのまま写しやすい。
+     * 出力の例を1つ見せると、本文に固有の語をタグに選ぶようになる(例を2つにすると、例のカテゴリを関係ない保存に写すことがあった)。
+     * 遅い端末ではプロンプトの読み込みに 100 文字あたり数秒かかるため、規則は要点だけにする。
+     * 例のタグを写したものは、保存内容に出てこないタグを除く処理(AnalysisParser.keepMentionedTags)で落とす。
+     * @param digest 本文が、長い本文を部分ごとに要約したメモのとき true
+     */
+    fun compactAnalyzeInstructions(
+        kind: ContentKind,
+        existingTags: List<String>,
+        summaryMaxChars: Int = DEFAULT_SUMMARY_CHARS,
+        scope: AnalysisScope = AnalysisScope.ALL,
+        digest: Boolean = false
+    ): String {
+        val withSummary = scope != AnalysisScope.TAGS
+        val withTags = scope != AnalysisScope.SUMMARY
+        val tags = if (withTags) {
+            existingTagsForPrompt(existingTags, LOCAL_MAX_EXISTING_TAGS, LOCAL_MAX_EXISTING_TAG_CHARS)
+        } else {
+            emptyList()
+        }
+        fun output(summary: String, tagValues: String, category: String) = "{" + listOfNotNull(
+            """"summary": "$summary"""".takeIf { withSummary },
+            """"tags": [$tagValues], "category": "$category"""".takeIf { withTags }
+        ).joinToString(", ") + "}"
+        return buildList {
+            add("次の保存内容(${kindLabel(kind)})を読み、JSONだけを出力してください。")
+            add(output("要約", "\"語\", \"語\"", "分類"))
+            if (withSummary) {
+                add("- summary: ${compactGuidance(kind)}。${summaryMaxChars}文字以内の日本語。本文を写さず短く言い換える。" +
+                    "タイトル・サイト名・チャンネル名・前置きは書かない。")
+                if (digest) add("- 本文が「[部分 1/3]」のように分かれたメモなら、全体を通してまとめる。")
+            }
+            if (withTags) {
+                add("- tags: 本文に出てくる、この内容に固有の語(料理名・製品名・技術名・人名・地名など)を1〜${MAX_TAGS}個。")
+                if (tags.isNotEmpty()) {
+                    add("- tags は、次の既存のタグに合うものがあれば表記を変えずに使う: " +
+                        tags.joinToString(prefix = "[", postfix = "]", separator = ", ") { quote(it) })
+                }
+                add("- category: ${categoryExamples(kind).joinToString("") { "「$it」" }}から1つ選ぶ。")
+            }
+            add("")
+            add("例:")
+            add("保存内容: 鶏もも肉にしょうゆ・みりん・砂糖のたれを絡めて、皮目から焼く。")
+            add("出力: " + output("鶏もも肉を甘辛いたれで焼く照り焼きの作り方。", "\"照り焼き\", \"鶏もも肉\"", "レシピ"))
+        }.joinToString("\n")
+    }
+
+    /** 種類ごとの要約の主役([compactAnalyzeInstructions] 用の短い言い方)。 */
+    private fun compactGuidance(kind: ContentKind): String = when (kind) {
+        ContentKind.WEB_PAGE -> "記事の主張と要点をまとめる"
+        ContentKind.VIDEO -> "動画で話している内容の要点をまとめる。あいさつ・宣伝・チャンネル登録のお願いは書かない"
+        ContentKind.MEMO -> "書かれている要点をそのまま短くまとめる"
+        ContentKind.IMAGE -> "何の画像か(レシート・スクショなど)と、重要な文字や数値(店名・金額・日付)を書く"
+        ContentKind.DOCUMENT -> "文書の種類と目的、重要な数値や日付を書く"
+        ContentKind.AUDIO -> "話の主題と要点、決まったことを書く"
+    }
+
     /** 種類の呼び名(プロンプト用)。 */
     internal fun kindLabel(kind: ContentKind): String = when (kind) {
         ContentKind.WEB_PAGE -> "Web ページ"
@@ -242,16 +301,24 @@ object AiPrompts {
     /**
      * RAG チャットの指示。context は呼び出し側で "[n] タイトル(何日前に保存): 要約" に整形済み
      * (番号は呼び出し側の付番をそのまま使う)。質問に近いものが無ければ、最近保存したものが渡される。
+     * @param compact 端末内 AI 向けの短い指示にする(プロンプトの読み込みの時間を減らす)
      */
-    fun chatInstructions(context: List<String>): String = buildList {
-        add("あなたは EchoMark のアシスタントです。ユーザーが保存したブックマーク(記事・動画・メモ・ファイル)を手がかりに、質問へ日本語で的確に答えます。")
-        add("")
-        add("答え方:")
-        add("- 最初に答えを1〜2文で書き、必要なときだけ箇条書きや短い見出し(Markdown)で補う。前置きや質問の繰り返しは書かない。")
-        add("- 保存内容から答えた文には、その番号を [1] のように付ける。保存内容に無いことを、保存内容にあるように書かない。")
-        add("- 保存内容に答えが無ければそう伝え、一般的な知識で答えられるときは「一般的には」と分けて答える。")
-        add("- あいさつや雑談、保存と関係の無い質問には、保存内容に触れずに自然に答える。")
-        add("- 続きの質問は前の会話を踏まえて答える。何を聞かれているか分からないときは、確認の質問を1つ返す。")
+    fun chatInstructions(context: List<String>, compact: Boolean = false): String = buildList {
+        if (compact) {
+            // 端末内 AI 向けの短い指示。遅い端末ではプロンプトの読み込みに 100 文字あたり数秒かかるため、要点だけにする
+            add("あなたは EchoMark のアシスタントです。保存したブックマークを手がかりに、質問へ日本語で簡潔に答えます。")
+            add("- 保存内容を使った文には [1] のように番号を付ける。保存内容に無いことは「一般的には」と分けて答える。")
+            add("- あいさつや雑談には、保存内容に触れずに自然に答える。")
+        } else {
+            add("あなたは EchoMark のアシスタントです。ユーザーが保存したブックマーク(記事・動画・メモ・ファイル)を手がかりに、質問へ日本語で的確に答えます。")
+            add("")
+            add("答え方:")
+            add("- 最初に答えを1〜2文で書き、必要なときだけ箇条書きや短い見出し(Markdown)で補う。前置きや質問の繰り返しは書かない。")
+            add("- 保存内容から答えた文には、その番号を [1] のように付ける。保存内容に無いことを、保存内容にあるように書かない。")
+            add("- 保存内容に答えが無ければそう伝え、一般的な知識で答えられるときは「一般的には」と分けて答える。")
+            add("- あいさつや雑談、保存と関係の無い質問には、保存内容に触れずに自然に答える。")
+            add("- 続きの質問は前の会話を踏まえて答える。何を聞かれているか分からないときは、確認の質問を1つ返す。")
+        }
         add("")
         if (context.isEmpty()) {
             add("この質問に関係する保存内容は見つかりませんでした。")

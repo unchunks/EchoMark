@@ -20,9 +20,10 @@ timber = "5.0.1"
 datastore = "1.2.1"
 mediapipeTasksText = "1.0.0"
 mediapipeTasksGenai = "0.10.35"
+litertlm = "0.18.0"
 okhttp = "5.5.0"
 jsoup = "1.23.2"
-coroutines = "1.10.2"
+coroutines = "1.11.0"
 orgJson = "20260814"
 anthropicJava = "2.66.0"
 robolectric = "4.17"
@@ -75,6 +76,7 @@ org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 mediapipe-tasks-text = { group = "com.google.mediapipe", name = "tasks-text", version.ref = "mediapipeTasksText" }
 mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeTasksGenai" }
+litertlm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litertlm" }
 anthropic-java = { group = "com.anthropic", name = "anthropic-java", version.ref = "anthropicJava" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }

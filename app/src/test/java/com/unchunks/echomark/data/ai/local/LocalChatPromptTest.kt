@@ -22,7 +22,7 @@ class LocalChatPromptTest {
         )
 
         val expected = listOf(
-            AiPrompts.chatInstructions(listOf("[1] 記事: 要約")),
+            AiPrompts.chatInstructions(listOf("[1] 記事: 要約"), compact = true),
             "",
             "これまでの会話:",
             "ユーザー: こんにちは",
@@ -48,7 +48,7 @@ class LocalChatPromptTest {
     @Test
     fun 履歴は新しいものを優先して予算内に収める() {
         val history = (1..6).map { message(if (it % 2 == 1) ChatRole.USER else ChatRole.ASSISTANT, "発言$it " + "い".repeat(500)) }
-        val context = (1..5).map { "[$it] 記事$it: " + "う".repeat(300) }
+        val context = (1..3).map { "[$it] 記事$it: " + "う".repeat(300) }
 
         val prompt = LocalChatPrompt.build("質問です", context, history)
 

@@ -122,6 +122,9 @@ dependencies {
     // AI
     implementation(libs.mediapipe.tasks.text)
     implementation(libs.mediapipe.tasks.genai)
+    // 端末内 AI の .litertlm 形式のモデル(Qwen など、SentencePiece 以外のトークナイザーのモデル)。
+    // MediaPipe の LLM Inference は .litertlm のうち SentencePiece のモデルしか読めないため、こちらで動かす
+    implementation(libs.litertlm.android)
     // Claude API 公式 SDK
     implementation(libs.anthropic.java)
 
