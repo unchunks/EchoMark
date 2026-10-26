@@ -70,8 +70,8 @@ import com.unchunks.echomark.data.discover.DiscoveredResource
 import com.unchunks.echomark.data.discover.DiscoveryStep
 import com.unchunks.echomark.data.discover.ResourceSource
 import com.unchunks.echomark.ui.chat.AiSetupBanner
-import com.unchunks.echomark.ui.common.MessageSnackbarEffect
-import com.unchunks.echomark.ui.common.ReadableLazyColumn
+import com.unchunks.components.composeui.MessageSnackbarEffect
+import com.unchunks.components.composeui.ReadableLazyColumn
 import com.unchunks.echomark.ui.components.SectionHeader
 import kotlinx.coroutines.flow.map
 

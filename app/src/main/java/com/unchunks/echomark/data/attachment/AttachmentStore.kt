@@ -4,9 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
-import com.unchunks.echomark.data.storage.allocatableBytes
-import com.unchunks.echomark.data.storage.queryOpenableInfo
-import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.filestorage.allocatableBytes
+import com.unchunks.components.filestorage.queryOpenableInfo
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.MAX_ATTACHMENT_BYTES

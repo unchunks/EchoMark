@@ -1,8 +1,8 @@
 package com.unchunks.echomark.ui.tags
 
+import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.testing.FakeTagRepository
-import com.unchunks.echomark.testing.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch

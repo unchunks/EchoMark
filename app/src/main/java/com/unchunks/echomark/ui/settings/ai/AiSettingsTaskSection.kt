@@ -35,7 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.provider.presets
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend

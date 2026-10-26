@@ -3,7 +3,7 @@ package com.unchunks.echomark.ui.widget
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.updateAll
-import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository

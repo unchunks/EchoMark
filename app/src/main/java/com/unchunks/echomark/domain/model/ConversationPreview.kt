@@ -1,5 +1,7 @@
 package com.unchunks.echomark.domain.model
 
+import com.unchunks.components.llm.ChatRole
+
 /** 会話一覧の1行分。会話と、最後のメッセージ(まだ無ければ null)と、質問の対象のブックマーク名。 */
 data class ConversationPreview(
     val conversation: Conversation,

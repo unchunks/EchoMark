@@ -84,7 +84,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.components.composeui.ChatMarkdown
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.navigation.WideContentMaxWidth
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth

@@ -4,8 +4,11 @@ import android.content.Context
 import android.net.Uri
 import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkManager
-import com.unchunks.echomark.di.DispatcherProvider
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.embedding.EmbeddingModelSource
+import com.unchunks.components.filestorage.SafFileCopier
+import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.worker.ReembedAllWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -32,11 +35,11 @@ data class EmbeddingModelInfo(
 
 /**
  * 埋め込みモデルのファイルを管理する。オンデバイス LLM の枠([ModelManager])とは別の枠で、
- * 取り込んだモデルが無いときはアセット同梱のモデル([EmbeddingModelProfile.BUNDLED])を使う。
+ * 取り込んだモデルが無いときはアセット同梱のモデル([EmbeddingModels.BUNDLED])を使う。
  *
  * ユーザーが SAF で選んだ `.task` / `.tflite` を `filesDir/models/` へコピーして取り込む。1つだけ保持し、
  * 取り込み直すと置き換える。ファイルの形式からはどのモデルか分からないため、取り込み時に
- * [EmbeddingModelProfile.IMPORTABLE] から選んでもらい、それが保存するベクトルの版としきい値を決める。
+ * [EmbeddingModels.IMPORTABLE] から選んでもらい、それが保存するベクトルの版としきい値を決める。
  * 取り込み・削除で有効なモデルが変わったら、全ブックマークの埋め込みを作り直す。
  *
  * [ModelManager] は BookmarkRepository に依存するが、BookmarkRepository は EmbeddingProvider に依存するため、
@@ -47,13 +50,13 @@ class EmbeddingModelManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val workManager: WorkManager,
     dispatcherProvider: DispatcherProvider
-) {
+) : EmbeddingModelSource {
     private val scope = CoroutineScope(
         SupervisorJob() + dispatcherProvider.io +
             CoroutineExceptionHandler { _, e -> Timber.e(e, "埋め込みモデルの管理処理に失敗") }
     )
 
-    private val copier = SafModelCopier(context)
+    private val copier = SafFileCopier(context)
 
     private val modelsDir: File
         get() = File(context.filesDir, "models").also { it.mkdirs() }
@@ -71,7 +74,7 @@ class EmbeddingModelManager @Inject constructor(
     private var importJob: Job? = null
 
     /** いま使う埋め込みモデルのファイル。取り込んだモデルが無い・ファイル欠損なら null(同梱のモデルを使う)。 */
-    fun modelFile(): File? {
+    override fun modelFile(): File? {
         val info = _installedModel.value ?: return null
         return File(modelsDir, info.file.fileName).takeIf { it.isFile && it.length() > 0 }
     }
@@ -80,14 +83,14 @@ class EmbeddingModelManager @Inject constructor(
      * いま使う埋め込みモデルの性質。取り込んだファイルが使えるときだけその profile、それ以外は同梱のもの。
      * ファイルが欠けているのに取り込み時の profile を返すと、同梱のモデルで作ったベクトルに別の版を付けてしまう。
      */
-    fun activeProfile(): EmbeddingModelProfile =
-        if (modelFile() != null) _installedModel.value!!.profile else EmbeddingModelProfile.BUNDLED
+    override fun activeProfile(): EmbeddingModelProfile =
+        if (modelFile() != null) _installedModel.value!!.profile else EmbeddingModels.BUNDLED
 
     /**
      * 使うモデルが変わったかを見分けるための識別子。変わったら読み込み済みのモデルを作り直す。
      * 取り込み直すと [LocalModelInfo.importedAt] が変わるので、同じ profile のファイルの入れ替えも検知できる。
      */
-    fun sourceKey(): String {
+    override fun sourceKey(): String {
         val info = _installedModel.value
         return if (info != null && modelFile() != null) "file:${info.file.fileName}:${info.file.importedAt}" else "bundled"
     }
@@ -126,7 +129,7 @@ class EmbeddingModelManager @Inject constructor(
         val part = File(modelsDir, PART_FILE_NAME)
         try {
             // 一覧に無いプロファイルは取り込まない(版としきい値が決まらないモデルでベクトルを作らない)
-            if (profile !in EmbeddingModelProfile.IMPORTABLE) {
+            if (profile !in EmbeddingModels.IMPORTABLE) {
                 _importState.value = ModelImportState.Failed(ModelImportError.UnknownModelProfile)
                 return
             }
@@ -207,7 +210,7 @@ class EmbeddingModelManager @Inject constructor(
         } else {
             val json = JSONObject(file.readText())
             // 一覧に無い profile(将来削除されたものなど)は、版を決められないので使わない
-            val profile = EmbeddingModelProfile.findById(json.getString("profileId"))
+            val profile = EmbeddingModels.findById(json.getString("profileId"))
             val info = profile?.let {
                 EmbeddingModelInfo(
                     file = LocalModelInfo(

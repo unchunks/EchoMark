@@ -10,7 +10,10 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.core.graphics.createBitmap
 import androidx.exifinterface.media.ExifInterface
-import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.llm.cloud.ApiAttachment
+import com.unchunks.components.llm.cloud.AttachmentKind
+import com.unchunks.components.llm.cloud.AttachmentPolicy
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import kotlinx.coroutines.withContext
 import timber.log.Timber

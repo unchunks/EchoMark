@@ -1,7 +1,7 @@
 package com.unchunks.echomark.domain.chat
 
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.Tag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

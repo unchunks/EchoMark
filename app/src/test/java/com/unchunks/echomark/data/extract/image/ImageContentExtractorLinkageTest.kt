@@ -4,9 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.unchunks.echomark.data.extract.vision.ImageLabelerEngine
-import com.unchunks.echomark.data.extract.vision.TextRecognizerEngine
-import com.unchunks.echomark.testing.TestDispatcherProvider
+import com.unchunks.components.documenttext.ImageLabelerEngine
+import com.unchunks.components.documenttext.TextRecognizerEngine
+import com.unchunks.components.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After

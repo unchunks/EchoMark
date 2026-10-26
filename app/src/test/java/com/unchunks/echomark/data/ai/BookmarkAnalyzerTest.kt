@@ -1,12 +1,12 @@
 package com.unchunks.echomark.data.ai
 
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.repository.AiTask

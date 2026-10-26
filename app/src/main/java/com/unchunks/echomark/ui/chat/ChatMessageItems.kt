@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.unchunks.components.composeui.MarkdownText
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.ui.components.BookmarkThumbnail

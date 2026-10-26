@@ -10,8 +10,8 @@ import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.testing.FakeBookmarkRepository
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

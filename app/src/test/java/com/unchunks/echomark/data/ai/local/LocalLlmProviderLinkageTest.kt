@@ -3,13 +3,13 @@ package com.unchunks.echomark.data.ai.local
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.LlmException
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisInput
-import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject

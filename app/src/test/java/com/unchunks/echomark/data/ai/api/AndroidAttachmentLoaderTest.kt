@@ -4,8 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.cloud.AttachmentKind
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.domain.model.AnalysisAttachment
-import com.unchunks.echomark.testing.TestDispatcherProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals

@@ -20,7 +20,7 @@ sealed interface ChatStreamEvent {
 
     /**
      * 失敗した。ユーザー発言は保存済み、アシスタントの回答は保存しない(途中までの出力も破棄)。
-     * [error] は [com.unchunks.echomark.domain.provider.LlmException] や
+     * [error] は [com.unchunks.components.llm.LlmException] や
      * [com.unchunks.echomark.domain.provider.ModelNotAvailableException] など。
      */
     data class Failed(val error: Throwable) : ChatStreamEvent

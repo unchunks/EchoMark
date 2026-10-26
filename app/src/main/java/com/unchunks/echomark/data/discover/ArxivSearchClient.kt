@@ -1,6 +1,6 @@
 package com.unchunks.echomark.data.discover
 
-import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl

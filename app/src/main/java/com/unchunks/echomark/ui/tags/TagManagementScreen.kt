@@ -47,8 +47,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.components.composeui.ReadableLazyColumn
 import com.unchunks.echomark.domain.model.TagWithCount
-import com.unchunks.echomark.ui.common.ReadableLazyColumn
 import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState

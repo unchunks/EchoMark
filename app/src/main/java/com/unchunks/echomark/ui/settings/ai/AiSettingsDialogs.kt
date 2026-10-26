@@ -16,8 +16,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.unchunks.echomark.domain.provider.ApiProvider
-import com.unchunks.echomark.domain.provider.EmbeddingModelProfile
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import com.unchunks.echomark.ui.settings.shortName
 
@@ -28,7 +29,7 @@ import com.unchunks.echomark.ui.settings.shortName
 /** 取り込むファイルがどのモデルかを選ぶ(ファイルからは判別できず、ベクトルの版としきい値がこれで決まる)。 */
 @Composable
 internal fun EmbeddingProfileDialog(onSelect: (EmbeddingModelProfile) -> Unit, onDismiss: () -> Unit) {
-    var selected by remember { mutableStateOf(EmbeddingModelProfile.IMPORTABLE.first()) }
+    var selected by remember { mutableStateOf(EmbeddingModels.IMPORTABLE.first()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("取り込むモデルの種類") },
@@ -38,7 +39,7 @@ internal fun EmbeddingProfileDialog(onSelect: (EmbeddingModelProfile) -> Unit, o
                     "ファイルの種類を選んでから、取り込むファイルを選びます。選んだ種類と実際のファイルが違うと、検索の精度が落ちます。",
                     style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
                 )
-                EmbeddingModelProfile.IMPORTABLE.forEach { profile ->
+                EmbeddingModels.IMPORTABLE.forEach { profile ->
                     RadioItem(
                         title = profile.displayName,
                         description = "${profile.dimensions} 次元・最大 ${profile.maxInputTokens} トークン",

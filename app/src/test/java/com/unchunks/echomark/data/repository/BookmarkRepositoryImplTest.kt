@@ -1,6 +1,5 @@
 package com.unchunks.echomark.data.repository
 
-import com.unchunks.echomark.data.attachment.AttachmentStore
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -8,24 +7,25 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
-import com.unchunks.echomark.testing.TestDispatcherProvider
+import com.unchunks.echomark.testing.assertSequential
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
-import com.unchunks.echomark.testing.assertSequential
 import com.unchunks.echomark.testing.initTestWorkManager
-import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesOf
+import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.worker.BookmarkAiProcessingWorker
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import io.objectbox.BoxStore

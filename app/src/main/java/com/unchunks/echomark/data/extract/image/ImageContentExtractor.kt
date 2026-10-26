@@ -1,9 +1,11 @@
 package com.unchunks.echomark.data.extract.image
 
 import androidx.exifinterface.media.ExifInterface
-import com.unchunks.echomark.data.extract.vision.ImageLabelerEngine
-import com.unchunks.echomark.data.extract.vision.TextRecognizerEngine
-import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.documenttext.ImageLabelerEngine
+import com.unchunks.components.documenttext.ImageLabelsJa
+import com.unchunks.components.documenttext.ImageSupport
+import com.unchunks.components.documenttext.TextRecognizerEngine
 import com.unchunks.echomark.domain.extract.ExtractedContent
 import com.unchunks.echomark.domain.extract.ExtractionSource
 import kotlinx.coroutines.CancellationException

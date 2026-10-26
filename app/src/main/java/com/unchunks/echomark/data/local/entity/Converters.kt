@@ -1,9 +1,9 @@
 package com.unchunks.echomark.data.local.entity
 
 import androidx.room.TypeConverter
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.model.ChatRole
 
 // enumとDB間での変換
 class Converters {

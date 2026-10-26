@@ -1,12 +1,12 @@
 package com.unchunks.echomark.ui.share
 
-import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.ui.common.SelectedFile
-import com.unchunks.echomark.testing.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest

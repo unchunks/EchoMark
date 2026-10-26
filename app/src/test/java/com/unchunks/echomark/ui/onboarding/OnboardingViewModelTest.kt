@@ -1,10 +1,10 @@
 package com.unchunks.echomark.ui.onboarding
 
+import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeRediscoverScheduleController
-import com.unchunks.echomark.testing.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle

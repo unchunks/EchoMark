@@ -6,13 +6,13 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.di.DatabaseModule
-import com.unchunks.echomark.di.DispatcherProvider
-import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupExportSummary

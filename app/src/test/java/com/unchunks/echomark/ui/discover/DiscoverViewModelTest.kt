@@ -18,7 +18,7 @@ import com.unchunks.echomark.testing.FakeAiSetupRepository
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
-import com.unchunks.echomark.testing.MainDispatcherRule
+import com.unchunks.components.testing.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle

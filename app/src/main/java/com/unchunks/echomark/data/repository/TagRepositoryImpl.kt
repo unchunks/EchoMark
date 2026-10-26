@@ -1,7 +1,7 @@
 package com.unchunks.echomark.data.repository
 
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.local.dao.TagDao
-import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.repository.TagRenameResult
 import com.unchunks.echomark.domain.repository.TagRepository

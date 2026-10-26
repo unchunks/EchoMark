@@ -1,7 +1,7 @@
 package com.unchunks.echomark.data.chat
 
 import com.unchunks.echomark.data.attachment.AttachmentStore
-import com.unchunks.echomark.di.DispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.bookmark.model.contentKindOfMimeType

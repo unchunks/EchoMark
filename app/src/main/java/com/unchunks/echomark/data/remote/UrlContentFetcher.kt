@@ -1,8 +1,13 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.web.PublicAddressInterceptor
+import com.unchunks.components.web.PublicOnlyDns
+import com.unchunks.components.web.YouTubeTranscriptFetcher
+import com.unchunks.components.web.isAllowedRedirect
+import com.unchunks.components.web.isPublicAddress
 import com.unchunks.echomark.data.attachment.extensionOf
 import com.unchunks.echomark.data.attachment.fallbackMimeTypeOf
-import com.unchunks.echomark.di.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.MAX_DOWNLOAD_BYTES
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.bookmark.model.isDownloadableMimeType
@@ -90,8 +95,8 @@ class UrlContentFetcher internal constructor(
         .build()
 
     private val transcriptFetcher = youtubePlayerEndpoint
-        ?.let { YouTubeTranscriptFetcher(client, it) }
-        ?: YouTubeTranscriptFetcher(client)
+        ?.let { YouTubeTranscriptFetcher(client, it, USER_AGENT) }
+        ?: YouTubeTranscriptFetcher(client, userAgent = USER_AGENT)
 
     /**
      * 失敗時は Result.failure(例外) を返す。呼び出し側はタイトル=URLのまま続行できる。

@@ -1,6 +1,6 @@
 package com.unchunks.echomark.data.ai.model
 
-import java.util.Locale
+import com.unchunks.components.filestorage.formatBytes
 
 /** 取り込み済みのオンデバイス LLM モデル。 */
 data class LocalModelInfo(
@@ -92,11 +92,4 @@ object ModelImportValidator {
         }
         return null
     }
-}
-
-/** 1.2 GB / 530 MB のような表示用の文字列。 */
-fun formatBytes(bytes: Long): String {
-    val mb = bytes / (1024.0 * 1024.0)
-    return if (mb >= 1024) String.format(Locale.ROOT, "%.1f GB", mb / 1024)
-    else String.format(Locale.ROOT, "%.0f MB", mb)
 }

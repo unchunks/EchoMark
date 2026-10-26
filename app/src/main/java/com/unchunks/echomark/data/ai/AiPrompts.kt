@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.ai
 
+import com.unchunks.components.llm.TextPart
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.TagNames
@@ -236,24 +237,6 @@ object AiPrompts {
         if (title.isNotBlank()) add("タイトル: ${title.trim()}")
         add("[部分 ${part.number}/${part.total}]")
         add(part.text)
-    }.joinToString("\n")
-
-    /**
-     * 部分ごとの要約メモを、最終の要約に渡す本文にまとめる。
-     * @param notes (部分の番号, メモ) の番号順のリスト
-     * @param totalParts 本文を分けた部分の数(間引いて要約しなかった部分も含む)
-     */
-    fun digestBody(notes: List<Pair<Int, String>>, totalParts: Int): String = buildList {
-        val omitted = totalParts - notes.size
-        add(
-            "長い本文を${totalParts}個の部分に分けて要約したメモです" +
-                if (omitted > 0) "(長さと時間の都合で${omitted}個の部分は省略)。" else "。"
-        )
-        notes.forEach { (number, note) ->
-            add("")
-            add("[部分 $number/$totalParts]")
-            add(note)
-        }
     }.joinToString("\n")
 
     /**
