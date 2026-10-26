@@ -41,6 +41,14 @@
     <fields>;
 }
 
+# ---- LiteRT-LM(.litertlm 形式の端末内モデル) ----
+# litertlm-android の AAR にも consumer rules(proguard.txt)が入っていないため、ここで補う。
+# liblitertlm_jni.so は LiteRtLmJni の native メソッドを名前(Java_com_google_ai_edge_litertlm_LiteRtLmJni_*)で結び、
+# InputData$Text / BenchmarkInfo / LiteRtLmJniException などを FindClass で、生成の途中経過のコールバックを名前で呼ぶ。
+# 会話の設定・メッセージは Gson で JSON にしてネイティブ側へ渡す。名前の変更・削除は端末でしか分からない失敗になるため、
+# パッケージを丸ごと残す
+-keep class com.google.ai.edge.litertlm.** { *; }
+
 # ---- Anthropic Java SDK(Claude API) ----
 # SDK 同梱のルール(anthropic-java-core.pro)は Jackson のアノテーション付きメンバーとコンストラクタを残すが、
 # 合成アノテーション @ExcludeMissing 自体は残さない。R8(full モード)は keep されていないクラスの

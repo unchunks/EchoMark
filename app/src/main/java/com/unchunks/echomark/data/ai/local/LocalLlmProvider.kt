@@ -3,12 +3,8 @@
 package com.unchunks.echomark.data.ai.local
 
 import android.content.Context
-import com.google.common.util.concurrent.ListenableFuture
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
-import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
-import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession.LlmInferenceSessionOptions
-import com.google.mediapipe.tasks.genai.llminference.ProgressListener
 import com.google.mediapipe.tasks.genai.llminference.PromptTemplates
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.llm.JsonObjectEndDetector
@@ -54,7 +50,6 @@ import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -62,11 +57,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.io.File
 import java.lang.ref.WeakReference
-import java.util.concurrent.ExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
 
 /**
  * MediaPipe LLM Inference (Gemma 等) によるローカル LLM。
@@ -98,7 +91,7 @@ class LocalLlmProvider @Inject constructor(
     /** 読み込み済みのエンジン。[verified] は、このエンジンで推論に成功したことがあるか。 */
     private class LoadedEngine(
         val model: LocalModelInfo,
-        val engine: LlmInference,
+        val engine: LocalTextEngine,
         val backend: EngineBackend,
         val modelKey: String
     ) {
@@ -168,9 +161,7 @@ class LocalLlmProvider @Inject constructor(
         releaseLocked("モデルか演算装置の設定が変わった")
         val modelKey = "${model.fileName}:${model.sizeBytes}:${model.importedAt}"
         val start = System.nanoTime()
-        val created = backendSelector.create(modelKey, allowGpu) { backend ->
-            LlmInference.createFromOptions(context, engineOptions(file, backend))
-        }
+        val created = backendSelector.create(modelKey, allowGpu) { backend -> createEngine(file, model, backend) }
         val millis = (System.nanoTime() - start) / NANOS_PER_MILLI
         Timber.i("端末内モデルを読み込み: backend=%s %d ms (%s)", created.backend, millis, model.displayName)
         AiPerfLog.record(
@@ -179,6 +170,21 @@ class LocalLlmProvider @Inject constructor(
         )
         return LoadedEngine(model, created.engine, created.backend, modelKey).also { loaded = it }
     }
+
+    /**
+     * モデルの形式に合うエンジンを作る。.litertlm は LiteRT-LM、.task は MediaPipe の LLM Inference
+     * (.litertlm のうち Qwen などは MediaPipe では読み込めないため)。
+     */
+    private fun createEngine(file: File, model: LocalModelInfo, backend: EngineBackend): LocalTextEngine =
+        if (file.name.endsWith(LITERT_LM_EXTENSION, ignoreCase = true)) {
+            LiteRtLmTextEngine.create(file.absolutePath, backend, MAX_TOKENS, context.cacheDir.path)
+        } else {
+            // Gemma 系はチャットテンプレートを明示し、ユーザーターン/モデルターンの区切りを正しく付ける
+            MediaPipeTextEngine(
+                LlmInference.createFromOptions(context, engineOptions(file, backend)),
+                templates = if (model.isGemma) GEMMA_TEMPLATES else null
+            )
+        }
 
     private fun engineOptions(file: File, backend: EngineBackend): LlmInferenceOptions =
         LlmInferenceOptions.builder()
@@ -317,17 +323,6 @@ class LocalLlmProvider @Inject constructor(
     }
 
     /**
-     * 1回の生成ごとにセッションを作る(会話履歴はプロンプトに含めるため、セッションに状態を持たせない)。
-     * Gemma 系はチャットテンプレートを明示し、ユーザーターン/モデルターンの区切りを正しく付ける。
-     */
-    private fun newSession(loaded: LoadedEngine): LlmInferenceSession {
-        val options = LlmInferenceSessionOptions.builder()
-            .apply { if (loaded.model.isGemma) setPromptTemplates(GEMMA_TEMPLATES) }
-            .build()
-        return LlmInferenceSession.createFromOptions(loaded.engine, options)
-    }
-
-    /**
      * 解析用の生成。時間の上限([timeoutMillis]。既定は [ANALYZE_TIMEOUT_MS])と出力の文字数の上限
      * ([maxOutputChars])を設け、コルーチンのキャンセルでも生成を中断する
      * (ブロッキングの generateResponse はキャンセルできず、止まらない生成がロックを持ち続けて後続の処理まで止めるため)。
@@ -368,20 +363,23 @@ class LocalLlmProvider @Inject constructor(
             withEngine { loaded ->
                 if (preemptible && interactiveCount.value > 0) return@withEngine null
                 val timeoutMs = timeoutMillis(loaded.backend)
-                newSession(loaded).use { session ->
-                    session.addQueryChunk(prompt)
-                    // 画面での生成に割り込まれたか(中断の後は時間切れ・出力の上限の扱いをせず、やり直させる)
-                    val preempted = AtomicBoolean(false)
-                    // 出力と JSON の検出は MediaPipe のスレッドで更新し、生成が終わってから読む
-                    val output = StringBuilder()
-                    val jsonEnd = JsonObjectEndDetector()
-                    var runaway = false
-                    var firstOutputNanos = 0L
-                    // 生成の終了(失敗を含む)か、JSON が閉じた・出力が上限を超えたときに完了する
-                    val stop = CompletableDeferred<Unit>()
-                    val startNanos = System.nanoTime()
-                    val future = session.generateResponseAsync(ProgressListener<String> { partial, _ ->
-                        val finished = synchronized(output) {
+                // 画面での生成に割り込まれたか(中断の後は時間切れ・出力の上限の扱いをせず、やり直させる)
+                val preempted = AtomicBoolean(false)
+                // 出力と JSON の検出はエンジンのスレッドで更新し、生成が終わってから読む
+                val output = StringBuilder()
+                val jsonEnd = JsonObjectEndDetector()
+                var runaway = false
+                var firstOutputNanos = 0L
+                // 生成の終わり(失敗・中断を含む)。失敗ならその例外
+                val finished = CompletableDeferred<Throwable?>()
+                // 生成の終わりか、JSON が閉じた・出力が上限を超えたときに完了する
+                val stop = CompletableDeferred<Unit>()
+                val startNanos = System.nanoTime()
+                val generation = loaded.engine.start(
+                    prompt,
+                    GenerationKind.JSON,
+                    onPartial = { partial ->
+                        val done = synchronized(output) {
                             if (firstOutputNanos == 0L) firstOutputNanos = System.nanoTime()
                             // 閉じた後・上限を超えた後の出力は捨てる(中断が効くまでに届いた分)
                             if (jsonEnd.endIndex >= 0 || runaway) {
@@ -393,52 +391,64 @@ class LocalLlmProvider @Inject constructor(
                                 closed || runaway
                             }
                         }
-                        if (finished) stop.complete(Unit)
-                    })
-                    future.addListener({ stop.complete(Unit) }, Runnable::run)
-                    if (preemptible) {
-                        preemptBackground = {
-                            preempted.set(true)
-                            runCatching { session.cancelGenerateResponseAsync() }
-                        }
-                        // 中断の処理を置く前に画面での生成が始まっていたら、ここで中断する
-                        if (interactiveCount.value > 0) preemptBackground?.invoke()
+                        if (done) stop.complete(Unit)
+                    },
+                    onDone = { error ->
+                        finished.complete(error)
+                        stop.complete(Unit)
                     }
-                    val timedOut = try {
-                        withTimeoutOrNull(timeoutMs) { stop.await() } == null
-                    } finally {
-                        if (preemptible) preemptBackground = null
-                        // 時間切れ・JSON の完成・キャンセルで止める場合は生成を中断し、終わるのを待ってからセッションを閉じる
-                        if (!future.isDone) runCatching { session.cancelGenerateResponseAsync() }
-                        withContext(NonCancellable) { future.awaitDone() }
+                )
+                if (preemptible) {
+                    preemptBackground = {
+                        preempted.set(true)
+                        generation.cancel()
                     }
-                    val endNanos = System.nanoTime()
-                    if (preempted.get()) return@withEngine null
-                    // 生成を止めた後は、MediaPipe のスレッドからの更新は無いため、まとめて読む
-                    val stats = synchronized(output) {
-                        GenerationStats(
-                            outChars = jsonEnd.endIndex.takeIf { it >= 0 } ?: output.length,
-                            runaway = runaway,
-                            firstOutputNanos = firstOutputNanos
-                        )
-                    }
-                    logGeneration(label, loaded.backend, prompt.length, stats, startNanos, endNanos, bookmarkId, timedOut)
-                    if (timedOut) throw LlmException.Timeout(timeoutMs)
-                    if (stats.runaway) throw LlmException.Timeout((endNanos - startNanos) / NANOS_PER_MILLI)
-                    // JSON が閉じた時点で打ち切った場合は、そこまでの出力を使う(中断による future の失敗は無視する)
-                    val untilJsonEnd = synchronized(output) {
-                        jsonEnd.endIndex.takeIf { it >= 0 }?.let { output.substring(0, it) }
-                    }
-                    untilJsonEnd ?: try {
-                        future.get()
-                    } catch (e: ExecutionException) {
-                        throw e.cause ?: e
-                    } catch (e: CancellationException) {
-                        // こちらから止めていないのに生成が取り消された。コルーチンのキャンセルと区別するため別の例外にする
-                        throw IllegalStateException("端末内 AI の生成が中断されました", e)
-                    }
+                    // 中断の処理を置く前に画面での生成が始まっていたら、ここで中断する
+                    if (interactiveCount.value > 0) preemptBackground?.invoke()
                 }
+                val timedOut = try {
+                    withTimeoutOrNull(timeoutMs) { stop.await() } == null
+                } finally {
+                    if (preemptible) preemptBackground = null
+                    // 時間切れ・JSON の完成・キャンセルで止める場合は生成を中断し、終わるのを待つ
+                    if (!finished.isCompleted) generation.cancel()
+                    withContext(NonCancellable) { awaitFinished(finished) }
+                    generation.close()
+                }
+                val endNanos = System.nanoTime()
+                if (preempted.get()) return@withEngine null
+                // 生成を止めた後は、エンジンのスレッドからの更新は無いため、まとめて読む
+                val stats = synchronized(output) {
+                    GenerationStats(
+                        outChars = jsonEnd.endIndex.takeIf { it >= 0 } ?: output.length,
+                        runaway = runaway,
+                        firstOutputNanos = firstOutputNanos
+                    )
+                }
+                logGeneration(label, loaded.backend, prompt.length, stats, startNanos, endNanos, bookmarkId, timedOut)
+                if (timedOut) throw LlmException.Timeout(timeoutMs)
+                if (stats.runaway) throw LlmException.Timeout((endNanos - startNanos) / NANOS_PER_MILLI)
+                // JSON が閉じた時点で打ち切った場合は、そこまでの出力を使う(中断による失敗は無視する)
+                synchronized(output) { jsonEnd.endIndex.takeIf { it >= 0 }?.let { output.substring(0, it) } }
+                    ?: when (val error = if (finished.isCompleted) finished.await() else null) {
+                        null -> synchronized(output) { output.toString() }
+                        // こちらから止めていないのに生成が取り消された。コルーチンのキャンセルと区別するため別の例外にする
+                        is java.util.concurrent.CancellationException -> throw IllegalStateException("端末内 AI の生成が中断されました", error)
+                        else -> throw error
+                    }
             }
+        }
+    }
+
+    /**
+     * 中断を頼んだ生成が終わるのを待つ。終わる前に次の生成を始めると、2つの生成が同時に動いてメモリを2倍使い
+     * (端末内 AI のモデルは 1 つの生成で 1.6GB ほど使う)、遅い端末ではアプリごと止められるため、終わりの知らせまで待つ。
+     * LiteRT-LM はプロンプトの読み込みの途中では止まらず、読み込みが終わってから止まる(遅い端末では1分以上かかる)。
+     * 知らせが来ないエンジンの不具合で止まり続けないよう、[CANCEL_WAIT_MS] で待つのをやめる。
+     */
+    private suspend fun awaitFinished(finished: CompletableDeferred<Throwable?>) {
+        if (withTimeoutOrNull(CANCEL_WAIT_MS) { finished.await() } == null && !finished.isCompleted) {
+            Timber.w("端末内 AI の生成の終わりを待ちきれなかった")
         }
     }
 
@@ -558,43 +568,29 @@ class LocalLlmProvider @Inject constructor(
         }
     }
 
-    /** generateResponseAsync の部分結果(増分)を流す。収集側のキャンセルで生成を中断する。 */
+    /** 生成の増分を流す。収集側のキャンセルで生成を中断する。 */
     private fun streamOnce(prompt: String): Flow<String> = callbackFlow {
         withEngine { loaded ->
-            newSession(loaded).use { session ->
-                session.addQueryChunk(prompt)
-                val finished = AtomicBoolean(false)
-                val future = session.generateResponseAsync(ProgressListener<String> { partial, done ->
-                    if (partial.isNotEmpty()) trySend(partial)
-                    if (done) {
-                        finished.set(true)
-                        channel.close()
-                    }
-                })
-                future.addListener({
-                    try {
-                        future.get()
-                    } catch (e: ExecutionException) {
-                        close(e.cause ?: e)
-                    } catch (e: Exception) {
-                        close(e)
-                    }
-                }, Runnable::run)
-                try {
-                    awaitClose()
-                } finally {
-                    // 途中で止められた場合は生成を中断し、終わるのを待ってからセッションを閉じる
-                    if (!finished.get() && !future.isDone) runCatching { session.cancelGenerateResponseAsync() }
-                    withContext(NonCancellable) { future.awaitDone() }
+            val finished = CompletableDeferred<Throwable?>()
+            val generation = loaded.engine.start(
+                prompt,
+                GenerationKind.CHAT,
+                onPartial = { partial -> trySend(partial) },
+                onDone = { error ->
+                    finished.complete(error)
+                    close(error)
                 }
+            )
+            try {
+                awaitClose()
+            } finally {
+                // 途中で止められた場合は生成を中断し、終わるのを待ってから閉じる
+                if (!finished.isCompleted) generation.cancel()
+                withContext(NonCancellable) { awaitFinished(finished) }
+                generation.close()
             }
         }
     }.buffer(Channel.UNLIMITED).flowOn(dispatcherProvider.default)
-
-    private suspend fun ListenableFuture<*>.awaitDone() {
-        if (isDone) return
-        suspendCancellableCoroutine { cont -> addListener({ cont.resume(Unit) }, Runnable::run) }
-    }
 
     private fun buildAnalyzePrompt(
         input: AnalysisInput,
@@ -630,6 +626,12 @@ class LocalLlmProvider @Inject constructor(
         private const val MAX_INPUT_CHARS = 2000
 
         private const val NANOS_PER_MILLI = 1_000_000L
+
+        /** LiteRT-LM で動かすモデルの拡張子 */
+        private const val LITERT_LM_EXTENSION = ".litertlm"
+
+        /** 生成の中断を頼んでから、終わりの知らせを待つ時間の上限(プロンプトの読み込みが終わるまでは止まらないため長め) */
+        private const val CANCEL_WAIT_MS = 10 * 60 * 1000L
 
         /** 演算装置(GPU / CPU)の記録のファイル名。`filesDir/models/` に置く */
         private const val BACKEND_FILE_NAME = "local_llm_backend.json"
