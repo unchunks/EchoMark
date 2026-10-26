@@ -26,6 +26,12 @@ fun AiTask.defaultApiModel(provider: ApiProvider): String =
     if (this == AiTask.SUMMARY && provider == ApiProvider.CLAUDE) SUMMARY_DEFAULT_CLAUDE_MODEL else provider.defaultModel
 
 /**
+ * クラウド API の経路を使うか。false の間は、保存された設定に関係なく全用途を端末内 AI で動かす。
+ * クラウドのコード(API クライアント・設定画面)は残してあり、true に戻せば元の挙動になる。
+ */
+const val CLOUD_AI_ENABLED = false
+
+/**
  * 1つの用途の AI の設定。端末内モデルは全用途で共通(取り込めるのは1つだけ)。
  * @property apiModels 提供元ごとのモデル ID(提供元を切り替えても、提供元ごとの選択を覚えておく)
  */

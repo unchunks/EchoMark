@@ -10,10 +10,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.aiTasks
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assume
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -47,6 +49,8 @@ class AiSettingsTaskSettingTest {
 
     @Test
     fun 用途ごとの実行場所の切り替えをその用途として伝える() {
+        // 実行場所の切り替えはクラウドを有効にしているときだけ出す(CLOUD_AI_ENABLED)
+        Assume.assumeTrue(CLOUD_AI_ENABLED)
         setContent(AiSettingsUiState(tasks = aiTasks(LlmBackend.LOCAL)))
 
         // 「クラウド API」のボタンはタグ付け・要約・チャットの順に並ぶ

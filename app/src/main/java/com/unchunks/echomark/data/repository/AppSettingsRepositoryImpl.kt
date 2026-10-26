@@ -13,6 +13,7 @@ import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -41,9 +42,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
     override val aiTaskSettings: Flow<Map<AiTask, AiTaskSetting>> = data.map { prefs ->
         AiTask.entries.associateWith { task ->
             AiTaskSetting(
-                backend = (prefs[llmBackendKey(task)] ?: prefs[LEGACY_KEY_LLM_BACKEND])
-                    ?.let { name -> LlmBackend.entries.firstOrNull { it.name == name } }
-                    ?: LlmBackend.LOCAL,
+                // クラウドを無効にしている間は、保存された値に関係なく端末内で動かす(読む側はここだけを見る)
+                backend = if (!CLOUD_AI_ENABLED) LlmBackend.LOCAL else {
+                    (prefs[llmBackendKey(task)] ?: prefs[LEGACY_KEY_LLM_BACKEND])
+                        ?.let { name -> LlmBackend.entries.firstOrNull { it.name == name } }
+                        ?: LlmBackend.LOCAL
+                },
                 apiProvider = (prefs[apiProviderKey(task)] ?: prefs[LEGACY_KEY_API_PROVIDER])
                     ?.let { name -> ApiProvider.entries.firstOrNull { it.name == name } }
                     ?: ApiProvider.CLAUDE,

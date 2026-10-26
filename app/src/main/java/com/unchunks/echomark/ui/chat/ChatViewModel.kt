@@ -6,12 +6,16 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.chat.RagSupport
+import com.unchunks.echomark.domain.model.ChatAttachmentContext
+import com.unchunks.echomark.domain.model.ChatAttachmentException
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.ui.navigation.Routes
@@ -41,7 +45,8 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
     private val repository: ChatRepository,
     aiSetupRepository: AiSetupRepository,
-    private val savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle,
+    private val attachmentSource: ChatAttachmentSource
 ) : ViewModel() {
 
     // 既存会話は "chat/{conversationId}" の引数で渡る。"chat/new" では未設定(null)で、
@@ -59,6 +64,14 @@ class ChatViewModel @Inject constructor(
     private val streamingTextFlow = MutableStateFlow<String?>(null)
     private val pendingReferenceCountFlow = MutableStateFlow<Int?>(null)
     private val errorFlow = MutableStateFlow<ChatError?>(null)
+
+    /** 次の質問に添付するファイルの内容(添付していなければ null)。送信すると外れる。 */
+    private val attachmentFlow = MutableStateFlow<ChatAttachmentContext?>(null)
+    private val isAttachingFlow = MutableStateFlow(false)
+    private val attachmentErrorFlow = MutableStateFlow<String?>(null)
+
+    /** 直近の送信で使った添付。失敗した質問を送り直すときに同じ添付を使う。 */
+    private var lastAttachment: ChatAttachmentContext? = null
 
     /** 生成中の送信処理。停止ボタンでキャンセルする。 */
     private var sendJob: Job? = null
@@ -123,11 +136,16 @@ class ChatViewModel @Inject constructor(
         aiSetupRepository.setupState
     ) { conversation, about, suggestions, setup -> ContextState(conversation, about, suggestions, setup) }
 
+    private val attachmentState = combine(attachmentFlow, isAttachingFlow, attachmentErrorFlow) { attachment, attaching, error ->
+        AttachmentState(attachment?.name, attaching, error)
+    }
+
     val uiState: StateFlow<ChatUiState> = combine(
         messagesWithReferences,
         sendingState,
-        contextState
-    ) { messagesAndRefs, sending, context ->
+        contextState,
+        attachmentState
+    ) { messagesAndRefs, sending, context, attachment ->
         ChatUiState(
             title = context.conversation?.title,
             hasConversation = context.conversation != null,
@@ -140,7 +158,10 @@ class ChatViewModel @Inject constructor(
             streamingText = sending.streamingText,
             pendingReferenceCount = sending.pendingReferenceCount,
             error = sending.error,
-            aiSetup = context.aiSetup
+            aiSetup = context.aiSetup,
+            attachmentName = attachment.name,
+            isAttaching = attachment.isAttaching,
+            attachmentError = attachment.error
         )
     }.stateIn(
         viewModelScope,
@@ -158,8 +179,41 @@ class ChatViewModel @Inject constructor(
         send(failed, isRetry = true)
     }
 
+    /**
+     * ファイルを読み込んで、次の質問に添付する。読めなければ理由を [ChatUiState.attachmentError] に出す。
+     * 添付は回答の根拠にだけ使い、会話には保存しない。
+     */
+    fun attachFile(uri: String) {
+        if (isAttachingFlow.value) return
+        isAttachingFlow.value = true
+        attachmentErrorFlow.value = null
+        viewModelScope.launch {
+            try {
+                attachmentFlow.value = attachmentSource.load(uri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ChatAttachmentException) {
+                attachmentErrorFlow.value = e.message
+            } catch (e: Exception) {
+                Timber.w(e, "添付を読み込めなかった")
+                attachmentErrorFlow.value = "添付を読み込めませんでした"
+            } finally {
+                isAttachingFlow.value = false
+            }
+        }
+    }
+
+    fun removeAttachment() {
+        attachmentFlow.value = null
+        attachmentErrorFlow.value = null
+    }
+
     private fun send(text: String, isRetry: Boolean) {
         if (text.isBlank() || isSendingFlow.value) return
+        // 添付は、この質問に使ったら外す。失敗して送り直すときは、同じ添付を使う
+        val attachment = if (isRetry) lastAttachment else attachmentFlow.value
+        lastAttachment = attachment
+        attachmentFlow.value = null
         isSendingFlow.value = true
         errorFlow.value = null
         pendingReferenceCountFlow.value = null
@@ -175,7 +229,7 @@ class ChatViewModel @Inject constructor(
                         aboutBookmarkId = about?.id
                     ).also { savedStateHandle[ARG_CONVERSATION_ID] = it }
                 streamingTextFlow.value = ""
-                repository.sendMessageStream(id, text, about?.id, isRetry).collect { event ->
+                repository.sendMessageStream(id, text, about?.id, isRetry, attachment).collect { event ->
                     when (event) {
                         is ChatStreamEvent.Started ->
                             pendingReferenceCountFlow.value = event.referencedBookmarkIds.size
@@ -206,6 +260,35 @@ class ChatViewModel @Inject constructor(
             ?: conversationIdFlow.value?.let { repository.observeConversation(it).first()?.aboutBookmarkId }
             ?: return null
         return repository.getBookmarks(listOf(id))[id]
+    }
+
+    /** 回答の作り直し・質問の編集で、古いメッセージを消している処理(二重に押されたときに重ねない)。 */
+    private var rewriteJob: Job? = null
+
+    /** 最後の回答を消して、同じ質問への回答を作り直す。最後のメッセージが回答でなければ何もしない。 */
+    fun regenerate() {
+        val id = conversationIdFlow.value ?: return
+        if (isSendingFlow.value || rewriteJob?.isActive == true) return
+        rewriteJob = viewModelScope.launch {
+            val messages = repository.observeMessages(id).first()
+            val last = messages.lastOrNull()?.takeIf { it.role == ChatRole.ASSISTANT } ?: return@launch
+            val question = messages.lastOrNull { it.role == ChatRole.USER } ?: return@launch
+            repository.deleteMessagesFrom(last)
+            // 最後に残った同じ質問を使い回して送る(質問を二重に保存しない)
+            send(question.content, isRetry = true)
+        }
+    }
+
+    /** 最後の質問を [text] に直して送り直す。その質問から先の会話(回答)は消す。 */
+    fun editLastMessage(text: String) {
+        val trimmed = text.trim()
+        val id = conversationIdFlow.value ?: return
+        if (trimmed.isBlank() || isSendingFlow.value || rewriteJob?.isActive == true) return
+        rewriteJob = viewModelScope.launch {
+            val question = repository.observeMessages(id).first().lastOrNull { it.role == ChatRole.USER } ?: return@launch
+            repository.deleteMessagesFrom(question)
+            send(trimmed, isRetry = false)
+        }
     }
 
     /** 生成を止める。途中までの回答は「(停止)」付きで保存される。 */
@@ -240,6 +323,12 @@ class ChatViewModel @Inject constructor(
         val streamingText: String?,
         val pendingReferenceCount: Int?,
         val error: ChatError?
+    )
+
+    private class AttachmentState(
+        val name: String?,
+        val isAttaching: Boolean,
+        val error: String?
     )
 
     private class ContextState(

@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
@@ -129,6 +130,7 @@ fun BookmarkListScreen(
     onOpenTagManagement: () -> Unit = {},
     selectedBookmarkId: Long? = null,
     onBookmarkRemoved: (Long) -> Unit = {},
+    onOpenDiscover: () -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -224,6 +226,7 @@ fun BookmarkListScreen(
             onLongPress = { actionTarget = it },
             onAddClick = { showAddSheet = true },
             onOpenTagManagement = onOpenTagManagement,
+            onOpenDiscover = onOpenDiscover,
             onRetry = viewModel::retry
         ),
         selectedBookmarkId = selectedBookmarkId
@@ -265,6 +268,7 @@ class BookmarkListCallbacks(
     val onLongPress: (Bookmark) -> Unit = {},
     val onAddClick: () -> Unit = {},
     val onOpenTagManagement: () -> Unit = {},
+    val onOpenDiscover: () -> Unit = {},
     val onRetry: () -> Unit = {}
 )
 
@@ -315,7 +319,8 @@ fun BookmarkListContent(
                     scrollBehavior = scrollBehavior,
                     onSearchClick = { callbacks.onSearchActiveChange(true) },
                     onSortOrderChange = callbacks.onSortOrderChange,
-                    onOpenTagManagement = callbacks.onOpenTagManagement
+                    onOpenTagManagement = callbacks.onOpenTagManagement,
+                    onOpenDiscover = callbacks.onOpenDiscover
                 )
             }
         },
@@ -440,7 +445,8 @@ private fun ListTopBar(
     scrollBehavior: TopAppBarScrollBehavior,
     onSearchClick: () -> Unit,
     onSortOrderChange: (BookmarkSortOrder) -> Unit,
-    onOpenTagManagement: () -> Unit
+    onOpenTagManagement: () -> Unit,
+    onOpenDiscover: () -> Unit
 ) {
     var sortMenuOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
@@ -480,6 +486,14 @@ private fun ListTopBar(
                     Icon(Icons.Outlined.MoreVert, contentDescription = "その他のメニュー")
                 }
                 DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("資料を探す") },
+                        leadingIcon = { Icon(Icons.Outlined.TravelExplore, contentDescription = null) },
+                        onClick = {
+                            overflowOpen = false
+                            onOpenDiscover()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("タグを管理") },
                         leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Label, contentDescription = null) },

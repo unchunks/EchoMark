@@ -41,7 +41,9 @@ data class FetchedContent(
     /** YouTube の動画ページなら、ページ内の JSON から取り出した動画情報(字幕の取得と本文の組み立てに使う) */
     val youtube: YouTubeVideo? = null,
     /** リンク先が PDF・画像・音声・動画で、ダウンロードして保存したファイル(HTML なら null) */
-    val file: StoredAttachment? = null
+    val file: StoredAttachment? = null,
+    /** ページ内のリンク(資料を探すときの候補。HTML 以外や、リンクを取らない取得では空) */
+    val links: List<PageLink> = emptyList()
 )
 
 /** リンク先が PDF・画像・音声・動画だったときに、本体を保存する先。 */
@@ -195,7 +197,7 @@ class UrlContentFetcher internal constructor(
                 mediaType?.charset()?.name(),
                 response.request.url.toString()
             )
-            return FetchStep.Done(HtmlContentExtractor.extract(document))
+            return FetchStep.Done(HtmlContentExtractor.extract(document).copy(links = PageLinks.collect(document)))
         }
     }
 

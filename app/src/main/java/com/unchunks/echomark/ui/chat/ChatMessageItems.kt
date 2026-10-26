@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Refresh
@@ -83,11 +84,34 @@ private fun Modifier.copyOnLongPress(onCopy: () -> Unit): Modifier {
         .semantics { customActions = listOf(CustomAccessibilityAction("コピー") { onCopy(); true }) }
 }
 
-/** ユーザーの発言。右寄せの吹き出し(右下だけ角を小さくして、話し手の側を示す)。 */
+/**
+ * ユーザーの発言。右寄せの吹き出し(右下だけ角を小さくして、話し手の側を示す)。
+ * [onEdit] を渡すと(最後の質問)、吹き出しの左に編集ボタンを出す。
+ */
 @Composable
-internal fun UserMessageItem(text: String, onCopy: () -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Spacer(Modifier.width(48.dp))
+internal fun UserMessageItem(
+    text: String,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier,
+    onEdit: (() -> Unit)? = null
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.Bottom
+    ) {
+        if (onEdit != null) {
+            IconButton(onClick = onEdit) {
+                Icon(
+                    Icons.Outlined.Edit,
+                    contentDescription = "質問を編集",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        } else {
+            Spacer(Modifier.width(48.dp))
+        }
         Surface(
             color = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -143,7 +167,8 @@ internal fun AssistantMessageItem(
     referencedBookmarks: Map<Long, Bookmark>,
     onOpenBookmark: (Long) -> Unit,
     onCopy: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRegenerate: (() -> Unit)? = null
 ) {
     val ids = message.referencedBookmarkIds
     AssistantRow(modifier = modifier) {
@@ -166,6 +191,16 @@ internal fun AssistantMessageItem(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
+            }
+            if (onRegenerate != null) {
+                IconButton(onClick = onRegenerate) {
+                    Icon(
+                        Icons.Outlined.Refresh,
+                        contentDescription = "回答を作り直す",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

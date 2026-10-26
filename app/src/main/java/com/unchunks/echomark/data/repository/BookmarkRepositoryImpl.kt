@@ -408,6 +408,13 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun search(query: String, tagId: Long?): List<Bookmark> =
         searchWithDetails(query, tagId).bookmarks
 
+    override suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> =
+        withContext(dispatcherProvider.io) {
+            val q = query.trim()
+            if (q.isEmpty()) return@withContext emptyList()
+            bookmarkDao.searchByKeyword(escapeLike(q), tagId = null).take(limit).map { it.toDomain() }
+        }
+
     override fun observeBookmarkCount(): Flow<Int> =
         bookmarkDao.observeCount().flowOn(dispatcherProvider.io)
 

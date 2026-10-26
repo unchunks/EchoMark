@@ -73,6 +73,16 @@ class ApiLlmProvider @Inject constructor(
 
         override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> =
             chatStream(task, userMessage, context, history)
+
+        override suspend fun complete(prompt: String): String {
+            val (client, credentials) = current(task)
+            val request = ApiRequest(
+                purpose = ApiPurpose.ANALYZE,
+                system = prompt,
+                messages = listOf(ApiMessage(ChatRole.USER, "上の指示に従い、JSON だけを出力してください。"))
+            )
+            return client.completeJson(request, credentials)
+        }
     }
 
     private val clients: Map<ApiProvider, ApiLlmClient> =

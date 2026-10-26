@@ -56,11 +56,13 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.unchunks.echomark.ui.bookmark.ListLaunchAction
+import com.unchunks.echomark.ui.discover.ResourceFinderScreen
 import com.unchunks.echomark.ui.tags.TagManagementScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailViewModel
+import com.unchunks.echomark.ui.discover.DiscoverScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
@@ -211,8 +213,29 @@ fun EchoMarkNavHost(
                     onOpenBookmarkRoute = { navController.navigate(Routes.bookmarkDetail(it)) },
                     onOpenTagManagement = { navController.navigate(Routes.TAGS) },
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
-                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
+                    onOpenDiscover = { navController.navigate(Routes.DISCOVER) }
                 )
+            }
+            // 資料を探す。AI が選んだ資料をまとめて追加し、戻ると一覧に追加したものが並ぶ
+            composable(
+                route = Routes.DISCOVER,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                DiscoverScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
+                    onOpenPageOrFiles = { navController.navigate(Routes.DISCOVER_FROM_PAGE_OR_FILES) }
+                )
+            }
+            // 一覧ページのリンク・端末内のファイルから、AI が選んで保存する(資料を探す画面から開く)
+            composable(
+                route = Routes.DISCOVER_FROM_PAGE_OR_FILES,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                ResourceFinderScreen(onBack = navController.popBackAction())
             }
             // タグ管理。タグをタップしたら、そのタグで絞り込んだ一覧へ戻る
             composable(

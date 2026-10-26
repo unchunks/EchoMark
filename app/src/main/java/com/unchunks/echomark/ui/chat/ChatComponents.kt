@@ -146,6 +146,45 @@ internal fun RenameConversationDialog(
     )
 }
 
+/**
+ * 最後の質問を直して送り直すダイアログ。送るとその質問から先の会話(回答)は消え、直した質問への回答を作り直す。
+ */
+@Composable
+internal fun EditMessageDialog(
+    initialText: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by rememberSaveable { mutableStateOf(initialText) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("質問を編集") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    minLines = 2,
+                    maxLines = 8,
+                    label = { Text("質問") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "送ると、この質問への回答を作り直します。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank()) { Text("送信") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
+}
+
 /** 会話を削除する前の確認ダイアログ(チャット画面から削除するとき)。 */
 @Composable
 internal fun DeleteConversationDialog(

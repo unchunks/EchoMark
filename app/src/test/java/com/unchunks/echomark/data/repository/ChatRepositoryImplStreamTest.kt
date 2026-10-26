@@ -14,11 +14,13 @@ import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.ConversationWithLastMessage
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
+import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
+import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.provider.LlmProvider
@@ -64,6 +66,8 @@ class ChatRepositoryImplStreamTest {
 
         override suspend fun search(query: String, tagId: Long?): List<Bookmark> =
             if (searchReturnsAll) fakeBookmarks.bookmarks.value else fakeBookmarks.search(query, tagId)
+
+        override suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> = search(query, null).take(limit)
     }
 
     /** 埋め込みモデルが無い環境(assets 未同梱)を再現する。 */
@@ -114,6 +118,68 @@ class ChatRepositoryImplStreamTest {
 
         assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
         assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
+    fun 質問の埋め込みが失敗してもチャットは失敗にせず_キーワード検索で文脈を探す() = runBlocking {
+        // 埋め込みモデルはあるが推論が失敗する(MediaPipe のグラフのエラー・入力を受け付けないなど。EmbeddingUnavailableException ではない)
+        val failingEmbedding = object : EmbeddingProvider {
+            override val profile = EmbeddingModelProfile.GEMMA_V1.copy(modelVersion = "test")
+            override suspend fun embedDocument(text: String): FloatArray = throw IllegalStateException("graph error")
+            override suspend fun embedQuery(text: String): FloatArray = throw IllegalStateException("graph error")
+        }
+
+        val events = repository(FakeLlmProvider(listOf("回答")), embeddingProvider = failingEmbedding)
+            .sendMessageStream(1L, "Kotlin").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
+    fun 文脈の検索そのものが失敗しても最近保存したものを渡して答える() = runBlocking {
+        val brokenSearch = object : BookmarkRepository by bookmarkRepository {
+            override suspend fun search(query: String, tagId: Long?): List<Bookmark> = throw IllegalStateException("db error")
+        }
+        val repository = ChatRepositoryImpl(
+            conversationDao = conversationDao,
+            chatMessageDao = messageDao,
+            vectorSearch = unusedVectorSearch(),
+            embeddingProvider = noEmbedding,
+            llmProviderResolver = LlmProviderResolver(
+                FakeLlmProvider(listOf("回答")), { FakeLlmProvider() }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()
+            ),
+            bookmarkRepository = brokenSearch,
+            dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
+        )
+
+        val events = repository.sendMessageStream(1L, "最近の保存は？").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
+    fun 添付の本文は今回の回答の根拠にだけ使い_会話には本文を保存しない() = runBlocking {
+        var seenContext: List<String> = emptyList()
+        val llm: LlmProvider = object : LlmProvider by FakeLlmProvider() {
+            override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> {
+                seenContext = context
+                return flow { emit("回答") }
+            }
+        }
+
+        val events = repository(llm).sendMessageStream(
+            1L,
+            "この資料の要点は?",
+            attachment = ChatAttachmentContext("資料.txt", "添付の本文です")
+        ).toList()
+
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+        // 添付は文脈の末尾に入り、名前も一緒に見せる
+        assertTrue(seenContext.last(), seenContext.last().contains("添付の本文です"))
+        assertTrue(seenContext.last(), seenContext.last().contains("資料.txt"))
+        assertEquals(listOf("この資料の要点は?", "回答"), messageDao.all.value.map { it.content })
     }
 
     @Test
@@ -251,6 +317,43 @@ class ChatRepositoryImplStreamTest {
     }
 
     @Test
+    fun 文の質問でも語ごとのキーワード検索で文脈を探す() = runBlocking {
+        // 質問の文全体はタイトルに含まれないが、語「Kotlin」は含まれる
+        val events = repository(RecordingLlm()).sendMessageStream(1L, "Kotlin について教えて").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events.first())
+    }
+
+    @Test
+    fun 上位の文脈には本文の質問に関係する部分を添える() = runBlocking {
+        val content = "前置き。".repeat(100) + "Gradle の configuration cache を有効にするとビルドが速くなる。" + "後書き。".repeat(100)
+        fakeBookmarks.bookmarks.value = listOf(testBookmark(id = 9, title = "Gradle の高速化").copy(summary = "ビルドを速くする設定の紹介", content = content))
+        val llm = RecordingLlm()
+
+        repository(llm).sendMessageStream(1L, "Gradle の configuration cache とは").toList()
+
+        assertTrue(llm.lastContext[0], llm.lastContext[0].contains("ビルドを速くする設定の紹介 関連する部分: 「"))
+        assertTrue(llm.lastContext[0], llm.lastContext[0].contains("configuration cache を有効にする"))
+    }
+
+    @Test
+    fun 続きの質問は前の回答で使った保存を文脈に入れる() = runBlocking {
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 5, title = "Kotlin 入門"),
+            testBookmark(id = 6, title = "Compose メモ")
+        )
+        messageDao.insert(ChatMessageEntity(conversationId = 1L, role = ChatRole.USER, content = "Compose の話", createdAt = 1))
+        messageDao.insert(
+            ChatMessage(conversationId = 1L, role = ChatRole.ASSISTANT, content = "回答 [1]", referencedBookmarkIds = listOf(6L), createdAt = 2)
+                .toEntity()
+        )
+
+        val events = repository(RecordingLlm()).sendMessageStream(1L, "もっと詳しく").toList()
+
+        assertEquals(6L, (events.first() as ChatStreamEvent.Started).referencedBookmarkIds.first())
+    }
+
+    @Test
     fun 再試行では失敗した同じ発言を使い回し_二重に保存しない() = runBlocking {
         val llm = RecordingLlm(failure = LlmException.Network())
         val repo = repository(llm)
@@ -329,6 +432,12 @@ private class FakeChatMessageDao : ChatMessageDao {
 
     override suspend fun getRecentMessages(conversationId: Long, limit: Int): List<ChatMessageEntity> =
         all.value.filter { it.conversationId == conversationId }.takeLast(limit)
+
+    override suspend fun deleteFrom(conversationId: Long, createdAt: Long, id: Long) {
+        all.value = all.value.filterNot {
+            it.conversationId == conversationId && (it.createdAt > createdAt || (it.createdAt == createdAt && it.id >= id))
+        }
+    }
 
     override suspend fun getFirstByRole(conversationId: Long, role: ChatRole): ChatMessageEntity? =
         all.value.firstOrNull { it.conversationId == conversationId && it.role == role }

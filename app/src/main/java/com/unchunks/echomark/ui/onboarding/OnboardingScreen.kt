@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.components.composeui.readableWidth
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.ui.settings.japaneseParagraph
@@ -445,7 +446,8 @@ private fun AiSetupPage(selected: AiSetupChoice?, onChoose: (AiSetupChoice) -> U
                 selected = selected == AiSetupChoice.LOCAL,
                 onClick = { onChoose(AiSetupChoice.LOCAL) }
             )
-            ChoiceCard(
+            // クラウドを無効にしている間は、クラウドの選択肢を出さない(CLOUD_AI_ENABLED)
+            if (CLOUD_AI_ENABLED) ChoiceCard(
                 icon = Icons.Outlined.Cloud,
                 title = "クラウド API を使う",
                 description = "すぐ使えます。Claude・Gemini・OpenAI の API キーが必要です",

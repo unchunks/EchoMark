@@ -12,7 +12,9 @@ import com.unchunks.echomark.data.repository.TagRepositoryImpl
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.AttachmentRepository
+import com.unchunks.echomark.data.chat.ChatAttachmentLoader
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.TagRepository
@@ -61,6 +63,11 @@ abstract class RepositoryModule {
     abstract fun bindAttachmentRepository(
         impl: AttachmentStore
     ): AttachmentRepository
+
+    @Binds
+    abstract fun bindChatAttachmentSource(
+        impl: ChatAttachmentLoader
+    ): ChatAttachmentSource
 
     companion object {
         /** API キーの暗号化に使う Keystore の鍵。名前を変えると保存済みのキーを復号できなくなる */

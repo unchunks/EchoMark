@@ -29,11 +29,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.MoreVert
@@ -44,6 +48,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
@@ -107,6 +112,9 @@ fun ChatScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.attachFile(it.toString()) }
+    }
 
     ChatContent(
         uiState = uiState,
@@ -118,6 +126,8 @@ fun ChatScreen(
         },
         onStop = viewModel::stopGenerating,
         onRetry = viewModel::retry,
+        onRegenerate = viewModel::regenerate,
+        onEditLastMessage = viewModel::editLastMessage,
         onBack = onBack,
         onOpenBookmark = onOpenBookmark,
         onOpenAiSettings = onOpenAiSettings,
@@ -130,7 +140,9 @@ fun ChatScreen(
             }
         },
         snackbarHostState = snackbarHostState,
-        showBackButton = showBackButton
+        showBackButton = showBackButton,
+        onAttachClick = { pickFile.launch(arrayOf("*/*")) },
+        onRemoveAttachment = viewModel::removeAttachment
     )
 }
 
@@ -163,11 +175,17 @@ fun ChatContent(
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     listState: LazyListState = rememberLazyListState(),
-    showBackButton: Boolean = true
+    showBackButton: Boolean = true,
+    onRegenerate: () -> Unit = {},
+    onEditLastMessage: (String) -> Unit = {},
+    onAttachClick: () -> Unit = {},
+    onRemoveAttachment: () -> Unit = {}
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
     var showDelete by rememberSaveable { mutableStateOf(false) }
+    // 編集中の最後の質問(編集していなければ null)
+    var editingText by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     // 自動スクロール: 最下部付近にいる間だけ新しい内容に追従する。
@@ -258,6 +276,11 @@ fun ChatContent(
                         onOpenBookmark = onOpenBookmark,
                         onOpenAiSettings = onOpenAiSettings,
                         onCopy = onCopy,
+                        onRegenerate = {
+                            autoFollow = true
+                            onRegenerate()
+                        },
+                        onEditLast = { editingText = it },
                         modifier = Modifier.nestedScroll(userScrollConnection)
                     )
                 }
@@ -274,6 +297,12 @@ fun ChatContent(
                 )
             }
 
+            ChatAttachmentStatus(
+                name = uiState.attachmentName,
+                isAttaching = uiState.isAttaching,
+                error = uiState.attachmentError,
+                onRemove = onRemoveAttachment
+            )
             ChatInputBar(
                 value = input,
                 onValueChange = onInputChange,
@@ -282,7 +311,8 @@ fun ChatContent(
                     autoFollow = true
                     onSend(input)
                 },
-                onStop = onStop
+                onStop = onStop,
+                onAttachClick = onAttachClick
             )
         }
     }
@@ -292,6 +322,17 @@ fun ChatContent(
             initialTitle = title,
             onConfirm = { onRename(it); showRename = false },
             onDismiss = { showRename = false }
+        )
+    }
+    editingText?.let { initial ->
+        EditMessageDialog(
+            initialText = initial,
+            onConfirm = { text ->
+                editingText = null
+                autoFollow = true
+                onEditLastMessage(text)
+            },
+            onDismiss = { editingText = null }
         )
     }
     if (showDelete) {
@@ -391,8 +432,14 @@ private fun ChatMessageList(
     onOpenBookmark: (Long) -> Unit,
     onOpenAiSettings: () -> Unit,
     onCopy: (String) -> Unit,
+    onRegenerate: () -> Unit,
+    onEditLast: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 生成中でなければ、最後の質問は編集でき、最後が回答なら作り直せる(失敗の表示中は再試行のボタンを使う)
+    val lastUserId = uiState.messages.lastOrNull { it.role == ChatRole.USER }?.id.takeIf { !uiState.isSending }
+    val regeneratableId = uiState.messages.lastOrNull()
+        ?.takeIf { it.role == ChatRole.ASSISTANT && !uiState.isSending && uiState.error == null }?.id
     // 広い画面では左右の余白を広げて、メッセージを中央の読みやすい幅に収める(スクロールは幅全体で受ける)
     BoxWithConstraints(modifier.fillMaxSize()) {
         val side = maxOf(16.dp, (maxWidth - WideContentMaxWidth) / 2 + 16.dp)
@@ -404,13 +451,18 @@ private fun ChatMessageList(
         ) {
             items(uiState.messages, key = { it.id }, contentType = { it.role }) { message ->
                 if (message.role == ChatRole.USER) {
-                    UserMessageItem(text = message.content, onCopy = { onCopy(message.content) })
+                    UserMessageItem(
+                        text = message.content,
+                        onCopy = { onCopy(message.content) },
+                        onEdit = if (message.id == lastUserId) ({ onEditLast(message.content) }) else null
+                    )
                 } else {
                     AssistantMessageItem(
                         message = message,
                         referencedBookmarks = uiState.referencedBookmarks,
                         onOpenBookmark = onOpenBookmark,
-                        onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) }
+                        onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) },
+                        onRegenerate = if (message.id == regeneratableId) onRegenerate else null
                     )
                 }
             }
@@ -443,6 +495,41 @@ private fun ChatMessageList(
  * 入力欄。複数行の丸い入力欄と、送信ボタン(空なら無効)。生成中は送信ボタンが停止ボタンに変わる。
  * 生成中も次の質問を打ち始められるよう、入力欄自体は無効にしない。
  */
+/**
+ * 次の質問に添付したファイルの名前(外せる)と、添付の読み込み中・失敗の表示。入力欄の上に出す。
+ * 添付していない・読み込みも失敗もないときは何も出さない。
+ */
+@Composable
+internal fun ChatAttachmentStatus(
+    name: String?,
+    isAttaching: Boolean,
+    error: String?,
+    onRemove: () -> Unit
+) {
+    if (name == null && !isAttaching && error == null) return
+    Column(modifier = Modifier.centeredMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp)) {
+        if (isAttaching) {
+            Text(
+                "ファイルを読み込んでいます…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (name != null) {
+            InputChip(
+                selected = true,
+                onClick = onRemove,
+                label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = { Icon(Icons.Outlined.AttachFile, contentDescription = null) },
+                trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "添付を外す") }
+            )
+        }
+        error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
 @Composable
 internal fun ChatInputBar(
     value: String,
@@ -450,7 +537,8 @@ internal fun ChatInputBar(
     isSending: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAttachClick: () -> Unit = {}
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxWidth()) {
         Row(
@@ -460,6 +548,14 @@ internal fun ChatInputBar(
                 .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.Bottom
         ) {
+            // 添付はこの質問の根拠にだけ使う(会話には保存しない)
+            IconButton(
+                onClick = onAttachClick,
+                enabled = !isSending,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Icon(Icons.Outlined.AttachFile, contentDescription = "ファイルを添付")
+            }
             TextField(
                 value = value,
                 onValueChange = onValueChange,

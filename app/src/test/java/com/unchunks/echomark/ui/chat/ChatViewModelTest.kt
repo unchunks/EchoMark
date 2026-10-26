@@ -2,9 +2,14 @@ package com.unchunks.echomark.ui.chat
 
 import androidx.lifecycle.SavedStateHandle
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
 import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.echomark.domain.model.ChatAttachmentContext
+import com.unchunks.echomark.domain.model.ChatAttachmentException
+import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.repository.AiSetupState
@@ -37,11 +42,14 @@ class ChatViewModelTest {
 
     private val repository = FakeChatRepository()
     private val aiSetup = FakeAiSetupRepository()
+    private val attachmentSource = object : ChatAttachmentSource {
+        override suspend fun load(uri: String): ChatAttachmentContext = ChatAttachmentContext("資料.txt", "添付の本文")
+    }
 
     private fun createViewModel(
         savedState: SavedStateHandle = SavedStateHandle(),
         repo: FakeChatRepository = repository
-    ) = ChatViewModel(repo, aiSetup, savedState)
+    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource)
 
     @Test
     fun モデル未取得のときは専用メッセージとAI設定への導線を出しisSendingが戻る() = runTest {
@@ -148,7 +156,8 @@ class ChatViewModelTest {
                 conversationId: Long,
                 userMessage: String,
                 pinnedBookmarkId: Long?,
-                isRetry: Boolean
+                isRetry: Boolean,
+                attachment: ChatAttachmentContext?
             ): Flow<ChatStreamEvent> = flow {
                 sent += conversationId to userMessage
                 gate.await()
@@ -221,7 +230,8 @@ class ChatViewModelTest {
                 conversationId: Long,
                 userMessage: String,
                 pinnedBookmarkId: Long?,
-                isRetry: Boolean
+                isRetry: Boolean,
+                attachment: ChatAttachmentContext?
             ): Flow<ChatStreamEvent> = flow {
                 emit(ChatStreamEvent.Started(listOf(1L, 2L)))
                 emit(ChatStreamEvent.Delta("こんに"))
@@ -255,7 +265,8 @@ class ChatViewModelTest {
                 conversationId: Long,
                 userMessage: String,
                 pinnedBookmarkId: Long?,
-                isRetry: Boolean
+                isRetry: Boolean,
+                attachment: ChatAttachmentContext?
             ): Flow<ChatStreamEvent> = flow {
                 emit(ChatStreamEvent.Delta("途中"))
                 try {
@@ -430,6 +441,50 @@ class ChatViewModelTest {
         assertTrue(closed)
     }
 
+    private fun conversationMessages() = listOf(
+        ChatMessage(id = 1, conversationId = 7, role = ChatRole.USER, content = "最初の質問", createdAt = 1),
+        ChatMessage(id = 2, conversationId = 7, role = ChatRole.ASSISTANT, content = "最初の回答", createdAt = 2),
+        ChatMessage(id = 3, conversationId = 7, role = ChatRole.USER, content = "次の質問", createdAt = 3),
+        ChatMessage(id = 4, conversationId = 7, role = ChatRole.ASSISTANT, content = "次の回答", createdAt = 4)
+    )
+
+    @Test
+    fun 回答を作り直すと最後の回答を消して同じ質問を再試行として送る() = runTest {
+        repository.messages.value = conversationMessages()
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.regenerate()
+        advanceUntilIdle()
+
+        assertEquals(listOf(4L), repository.deletedFrom.map { it.id })
+        // 残った最後の質問を使い回す(isRetry)
+        assertEquals(listOf(FakeChatRepository.SendCall(7L, "次の質問", null, true)), repository.sendCalls)
+    }
+
+    @Test
+    fun 最後が質問なら作り直さない() = runTest {
+        repository.messages.value = conversationMessages().dropLast(1)
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.regenerate()
+        advanceUntilIdle()
+
+        assertTrue(repository.deletedFrom.isEmpty())
+        assertTrue(repository.sendCalls.isEmpty())
+    }
+
+    @Test
+    fun 最後の質問を編集するとその質問から先を消して直した質問を送る() = runTest {
+        repository.messages.value = conversationMessages()
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.editLastMessage("  直した質問 ")
+        advanceUntilIdle()
+
+        assertEquals(listOf(3L), repository.deletedFrom.map { it.id })
+        assertEquals(listOf(FakeChatRepository.SendCall(7L, "直した質問", null, false)), repository.sendCalls)
+    }
+
     @Test
     fun 未作成の会話では名前変更も削除もしない() = runTest {
         val viewModel = createViewModel()
@@ -441,4 +496,62 @@ class ChatViewModelTest {
         assertTrue(repository.renamed.isEmpty())
         assertTrue(repository.deletedIds.isEmpty())
     }
+
+    @Test
+    fun 添付したファイルは次の質問にだけ使い_送信すると入力欄から外れる() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.attachFile("content://docs/1")
+        advanceUntilIdle()
+        assertEquals("資料.txt", viewModel.uiState.value.attachmentName)
+
+        viewModel.sendMessage("この資料の要点は?")
+        advanceUntilIdle()
+
+        assertEquals(ChatAttachmentContext("資料.txt", "添付の本文"), repository.sentAttachments.last())
+        assertNull(viewModel.uiState.value.attachmentName)
+    }
+
+    @Test
+    fun 失敗した質問を送り直すときは同じ添付を使う() = runTest {
+        repository.sendFailure = IllegalStateException("boom")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.attachFile("content://docs/1")
+        advanceUntilIdle()
+        viewModel.sendMessage("この資料の要点は?")
+        advanceUntilIdle()
+
+        repository.sendFailure = null
+        viewModel.retry()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.sentAttachments.size)
+        assertEquals(repository.sentAttachments[0], repository.sentAttachments[1])
+        assertEquals(ChatAttachmentContext("資料.txt", "添付の本文"), repository.sentAttachments[1])
+    }
+
+    @Test
+    fun 添付を読めないときは理由を出し_質問は添付なしで送れる() = runTest {
+        val viewModel = createViewModelWithAttachmentFailure()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.attachFile("content://docs/broken")
+        advanceUntilIdle()
+
+        assertEquals("「壊れた.bin」の中身を読み取れませんでした", viewModel.uiState.value.attachmentError)
+        assertNull(viewModel.uiState.value.attachmentName)
+        assertFalse(viewModel.uiState.value.isAttaching)
+    }
+
+    private fun createViewModelWithAttachmentFailure() = ChatViewModel(
+        repository,
+        aiSetup,
+        SavedStateHandle(),
+        object : ChatAttachmentSource {
+            override suspend fun load(uri: String): ChatAttachmentContext =
+                throw ChatAttachmentException("「壊れた.bin」の中身を読み取れませんでした")
+        }
+    )
 }

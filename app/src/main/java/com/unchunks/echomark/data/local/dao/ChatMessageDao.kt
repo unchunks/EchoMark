@@ -30,6 +30,16 @@ interface ChatMessageDao {
     )
     suspend fun getRecentMessages(conversationId: Long, limit: Int): List<ChatMessageEntity>
 
+    /**
+     * [createdAt]・[id] のメッセージと、それより後のメッセージを削除する(回答の作り直し・質問の編集で、そこから先を消す)。
+     * 同じ時刻のメッセージは ID の順で前後を決める。
+     */
+    @Query(
+        "DELETE FROM chat_messages WHERE conversationId = :conversationId " +
+            "AND (createdAt > :createdAt OR (createdAt = :createdAt AND id >= :id))"
+    )
+    suspend fun deleteFrom(conversationId: Long, createdAt: Long, id: Long)
+
     /** 指定ロールの最初の発言(自動タイトル生成用)。 */
     @Query(
         "SELECT * FROM chat_messages WHERE conversationId = :conversationId AND role = :role " +

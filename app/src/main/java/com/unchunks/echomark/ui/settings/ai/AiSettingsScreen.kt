@@ -49,6 +49,7 @@ import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.settings.SettingsItem
@@ -244,16 +245,18 @@ fun AiSettingsContent(
             )
             uiState.embeddingProgress?.takeIf { !it.isComplete }?.let { EmbeddingIndexProgress(it) }
 
-            SectionDivider()
-            SectionHeader("クラウド API のキー")
-            ApiKeySection(
-                uiState = uiState,
-                connectionTest = connectionTest,
-                onSelectProvider = actions.onSelectKeyProvider,
-                onSaveKey = actions.onSaveKey,
-                onClearKey = actions.onClearKey,
-                onTestConnection = actions.onTestConnection
-            )
+            if (CLOUD_AI_ENABLED) {
+                SectionDivider()
+                SectionHeader("クラウド API のキー")
+                ApiKeySection(
+                    uiState = uiState,
+                    connectionTest = connectionTest,
+                    onSelectProvider = actions.onSelectKeyProvider,
+                    onSaveKey = actions.onSaveKey,
+                    onClearKey = actions.onClearKey,
+                    onTestConnection = actions.onTestConnection
+                )
+            }
 
             SectionDivider()
             SectionHeader("AI 処理")

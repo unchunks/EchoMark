@@ -164,6 +164,20 @@ class BookmarkAnalyzerTest {
         assertEquals(5_000L, currentTime)
     }
 
+    @Test
+    fun 要約の書き出しのタイトルとチャンネル名を除いて返す() = runBlocking {
+        local.summary = "Android開発チャンネルの動画で、コルーチンのキャンセルの仕組みを実例で説明している。"
+        val video = AnalysisInput(
+            title = "コルーチンのキャンセルを完全に理解する",
+            text = "チャンネル: Android開発チャンネル\n\n説明文",
+            kind = ContentKind.VIDEO
+        )
+
+        val analysis = analyzer.analyze(video, emptyList())
+
+        assertEquals("コルーチンのキャンセルの仕組みを実例で説明している。", analysis.summary)
+    }
+
     /**
      * 呼び出された範囲を記録し、[name] 入りの結果を返す LLM。[failure] があれば記録した後に投げる。
      * [delayMillis] だけ(仮想時間で)待ってから返す。
@@ -174,6 +188,9 @@ class BookmarkAnalyzerTest {
         var failure: Exception? = null
         var delayMillis = 0L
         var cancelledCalls = 0
+        /** 返す要約(null なら [name] 入りの要約) */
+        var summary: String? = null
+        var lastInput: AnalysisInput? = null
 
         override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis {
             scopes += scope
@@ -185,7 +202,8 @@ class BookmarkAnalyzerTest {
             }
             failure?.let { throw it }
             lastExistingTags = existingTags
-            return BookmarkAnalysis("${name}の要約", listOf("${name}のタグ"), "${name}のカテゴリ")
+            lastInput = input
+            return BookmarkAnalysis(summary ?: "${name}の要約", listOf("${name}のタグ"), "${name}のカテゴリ")
         }
 
         override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =
