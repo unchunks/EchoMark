@@ -324,6 +324,15 @@ open class FakeChatRepository : ChatRepository {
     override suspend fun getBookmarks(ids: List<Long>): Map<Long, Bookmark> =
         bookmarks.filter { it.id in ids }.associateBy { it.id }
 
+    /** deleteMessagesFrom に渡されたメッセージ。 */
+    val deletedFrom = mutableListOf<ChatMessage>()
+
+    override suspend fun deleteMessagesFrom(message: ChatMessage) {
+        deletedFrom += message
+        val index = messages.value.indexOfFirst { it.id == message.id }
+        if (index >= 0) messages.value = messages.value.take(index)
+    }
+
     override suspend fun getRecentBookmarks(limit: Int): List<Bookmark> = bookmarks.take(limit)
 
     override suspend fun renameConversation(conversationId: Long, title: String) {

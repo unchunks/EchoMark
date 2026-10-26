@@ -409,6 +409,12 @@ private class FakeChatMessageDao : ChatMessageDao {
     override suspend fun getRecentMessages(conversationId: Long, limit: Int): List<ChatMessageEntity> =
         all.value.filter { it.conversationId == conversationId }.takeLast(limit)
 
+    override suspend fun deleteFrom(conversationId: Long, createdAt: Long, id: Long) {
+        all.value = all.value.filterNot {
+            it.conversationId == conversationId && (it.createdAt > createdAt || (it.createdAt == createdAt && it.id >= id))
+        }
+    }
+
     override suspend fun getFirstByRole(conversationId: Long, role: ChatRole): ChatMessageEntity? =
         all.value.firstOrNull { it.conversationId == conversationId && it.role == role }
 }

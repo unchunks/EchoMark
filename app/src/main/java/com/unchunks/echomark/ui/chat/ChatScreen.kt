@@ -117,6 +117,8 @@ fun ChatScreen(
         },
         onStop = viewModel::stopGenerating,
         onRetry = viewModel::retry,
+        onRegenerate = viewModel::regenerate,
+        onEditLastMessage = viewModel::editLastMessage,
         onBack = onBack,
         onOpenBookmark = onOpenBookmark,
         onOpenAiSettings = onOpenAiSettings,
@@ -162,11 +164,15 @@ fun ChatContent(
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     listState: LazyListState = rememberLazyListState(),
-    showBackButton: Boolean = true
+    showBackButton: Boolean = true,
+    onRegenerate: () -> Unit = {},
+    onEditLastMessage: (String) -> Unit = {}
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
     var showDelete by rememberSaveable { mutableStateOf(false) }
+    // 編集中の最後の質問(編集していなければ null)
+    var editingText by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     // 自動スクロール: 最下部付近にいる間だけ新しい内容に追従する。
@@ -257,6 +263,11 @@ fun ChatContent(
                         onOpenBookmark = onOpenBookmark,
                         onOpenAiSettings = onOpenAiSettings,
                         onCopy = onCopy,
+                        onRegenerate = {
+                            autoFollow = true
+                            onRegenerate()
+                        },
+                        onEditLast = { editingText = it },
                         modifier = Modifier.nestedScroll(userScrollConnection)
                     )
                 }
@@ -291,6 +302,17 @@ fun ChatContent(
             initialTitle = title,
             onConfirm = { onRename(it); showRename = false },
             onDismiss = { showRename = false }
+        )
+    }
+    editingText?.let { initial ->
+        EditMessageDialog(
+            initialText = initial,
+            onConfirm = { text ->
+                editingText = null
+                autoFollow = true
+                onEditLastMessage(text)
+            },
+            onDismiss = { editingText = null }
         )
     }
     if (showDelete) {
@@ -390,8 +412,14 @@ private fun ChatMessageList(
     onOpenBookmark: (Long) -> Unit,
     onOpenAiSettings: () -> Unit,
     onCopy: (String) -> Unit,
+    onRegenerate: () -> Unit,
+    onEditLast: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 生成中でなければ、最後の質問は編集でき、最後が回答なら作り直せる(失敗の表示中は再試行のボタンを使う)
+    val lastUserId = uiState.messages.lastOrNull { it.role == ChatRole.USER }?.id.takeIf { !uiState.isSending }
+    val regeneratableId = uiState.messages.lastOrNull()
+        ?.takeIf { it.role == ChatRole.ASSISTANT && !uiState.isSending && uiState.error == null }?.id
     // 広い画面では左右の余白を広げて、メッセージを中央の読みやすい幅に収める(スクロールは幅全体で受ける)
     BoxWithConstraints(modifier.fillMaxSize()) {
         val side = maxOf(16.dp, (maxWidth - WideContentMaxWidth) / 2 + 16.dp)
@@ -403,13 +431,18 @@ private fun ChatMessageList(
         ) {
             items(uiState.messages, key = { it.id }, contentType = { it.role }) { message ->
                 if (message.role == ChatRole.USER) {
-                    UserMessageItem(text = message.content, onCopy = { onCopy(message.content) })
+                    UserMessageItem(
+                        text = message.content,
+                        onCopy = { onCopy(message.content) },
+                        onEdit = if (message.id == lastUserId) ({ onEditLast(message.content) }) else null
+                    )
                 } else {
                     AssistantMessageItem(
                         message = message,
                         referencedBookmarks = uiState.referencedBookmarks,
                         onOpenBookmark = onOpenBookmark,
-                        onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) }
+                        onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) },
+                        onRegenerate = if (message.id == regeneratableId) onRegenerate else null
                     )
                 }
             }

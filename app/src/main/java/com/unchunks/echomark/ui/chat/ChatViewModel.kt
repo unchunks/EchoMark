@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
@@ -206,6 +207,35 @@ class ChatViewModel @Inject constructor(
             ?: conversationIdFlow.value?.let { repository.observeConversation(it).first()?.aboutBookmarkId }
             ?: return null
         return repository.getBookmarks(listOf(id))[id]
+    }
+
+    /** 回答の作り直し・質問の編集で、古いメッセージを消している処理(二重に押されたときに重ねない)。 */
+    private var rewriteJob: Job? = null
+
+    /** 最後の回答を消して、同じ質問への回答を作り直す。最後のメッセージが回答でなければ何もしない。 */
+    fun regenerate() {
+        val id = conversationIdFlow.value ?: return
+        if (isSendingFlow.value || rewriteJob?.isActive == true) return
+        rewriteJob = viewModelScope.launch {
+            val messages = repository.observeMessages(id).first()
+            val last = messages.lastOrNull()?.takeIf { it.role == ChatRole.ASSISTANT } ?: return@launch
+            val question = messages.lastOrNull { it.role == ChatRole.USER } ?: return@launch
+            repository.deleteMessagesFrom(last)
+            // 最後に残った同じ質問を使い回して送る(質問を二重に保存しない)
+            send(question.content, isRetry = true)
+        }
+    }
+
+    /** 最後の質問を [text] に直して送り直す。その質問から先の会話(回答)は消す。 */
+    fun editLastMessage(text: String) {
+        val trimmed = text.trim()
+        val id = conversationIdFlow.value ?: return
+        if (trimmed.isBlank() || isSendingFlow.value || rewriteJob?.isActive == true) return
+        rewriteJob = viewModelScope.launch {
+            val question = repository.observeMessages(id).first().lastOrNull { it.role == ChatRole.USER } ?: return@launch
+            repository.deleteMessagesFrom(question)
+            send(trimmed, isRetry = false)
+        }
     }
 
     /** 生成を止める。途中までの回答は「(停止)」付きで保存される。 */

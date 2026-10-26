@@ -56,6 +56,12 @@ interface ChatRepository {
         isRetry: Boolean = false
     ): Flow<ChatStreamEvent>
 
+    /**
+     * [message] とそれより後のメッセージを削除する。回答の作り直し(最後の回答を消して同じ質問を送り直す)と、
+     * 最後の質問の編集(その質問から先を消して、直した質問を送る)に使う。
+     */
+    suspend fun deleteMessagesFrom(message: ChatMessage)
+
     /** 会話を手動でリネームする(以降は自動タイトルで上書きしない)。 */
     suspend fun renameConversation(conversationId: Long, title: String)
 

@@ -297,6 +297,11 @@ class ChatRepositoryImpl @Inject constructor(
         return id
     }
 
+    override suspend fun deleteMessagesFrom(message: ChatMessage): Unit =
+        withContext(dispatcherProvider.io) {
+            chatMessageDao.deleteFrom(message.conversationId, message.createdAt, message.id)
+        }
+
     override suspend fun renameConversation(conversationId: Long, title: String): Unit =
         withContext(dispatcherProvider.io) {
             val trimmed = title.trim()

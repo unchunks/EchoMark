@@ -1,6 +1,8 @@
 package com.unchunks.echomark.ui.chat
 
 import androidx.lifecycle.SavedStateHandle
+import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.provider.LlmException
@@ -428,6 +430,50 @@ class ChatViewModelTest {
         assertEquals(listOf(7L to "新しい名前"), repository.renamed)
         assertEquals(listOf(7L), repository.deletedIds)
         assertTrue(closed)
+    }
+
+    private fun conversationMessages() = listOf(
+        ChatMessage(id = 1, conversationId = 7, role = ChatRole.USER, content = "最初の質問", createdAt = 1),
+        ChatMessage(id = 2, conversationId = 7, role = ChatRole.ASSISTANT, content = "最初の回答", createdAt = 2),
+        ChatMessage(id = 3, conversationId = 7, role = ChatRole.USER, content = "次の質問", createdAt = 3),
+        ChatMessage(id = 4, conversationId = 7, role = ChatRole.ASSISTANT, content = "次の回答", createdAt = 4)
+    )
+
+    @Test
+    fun 回答を作り直すと最後の回答を消して同じ質問を再試行として送る() = runTest {
+        repository.messages.value = conversationMessages()
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.regenerate()
+        advanceUntilIdle()
+
+        assertEquals(listOf(4L), repository.deletedFrom.map { it.id })
+        // 残った最後の質問を使い回す(isRetry)
+        assertEquals(listOf(FakeChatRepository.SendCall(7L, "次の質問", null, true)), repository.sendCalls)
+    }
+
+    @Test
+    fun 最後が質問なら作り直さない() = runTest {
+        repository.messages.value = conversationMessages().dropLast(1)
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.regenerate()
+        advanceUntilIdle()
+
+        assertTrue(repository.deletedFrom.isEmpty())
+        assertTrue(repository.sendCalls.isEmpty())
+    }
+
+    @Test
+    fun 最後の質問を編集するとその質問から先を消して直した質問を送る() = runTest {
+        repository.messages.value = conversationMessages()
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.editLastMessage("  直した質問 ")
+        advanceUntilIdle()
+
+        assertEquals(listOf(3L), repository.deletedFrom.map { it.id })
+        assertEquals(listOf(FakeChatRepository.SendCall(7L, "直した質問", null, false)), repository.sendCalls)
     }
 
     @Test
