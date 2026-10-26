@@ -94,6 +94,54 @@ class AnalysisParserTest {
     }
 
     @Test
+    fun 出力形式の例を写したタグとカテゴリは使わない() {
+        val result = AnalysisParser.parse(
+            """{"summary": "s", "tags": ["タグ1", "タグ2", "Kotlin"], "category": "カテゴリ名1つ"}""",
+            "元"
+        )
+        assertEquals(listOf("Kotlin"), result.tags)
+        assertEquals("未分類", result.category)
+    }
+
+    @Test
+    fun どの保存にも付く汎用の語や文になったタグは使わない() {
+        val result = AnalysisParser.parse(
+            """{"summary": "s", "tags": ["動画", "YouTube", "まとめ", "コルーチンの使い方を説明している。", "Jetpack Compose"], "category": "技術"}""",
+            "元"
+        )
+        assertEquals(listOf("Jetpack Compose"), result.tags)
+    }
+
+    @Test
+    fun 文字列や1要素に詰められたタグも区切りで分ける() {
+        assertEquals(
+            listOf("Android", "Kotlin", "Gradle"),
+            AnalysisParser.parse("""{"summary": "s", "tags": "Android, Kotlin、Gradle", "category": "技術"}""", "元").tags
+        )
+        assertEquals(
+            listOf("Android", "Kotlin"),
+            AnalysisParser.parse("""{"summary": "s", "tags": ["#Android #Kotlin"], "category": "技術"}""", "元").tags
+        )
+    }
+
+    @Test
+    fun 記号を含むタグ名は分けない() {
+        assertEquals(
+            listOf("CI/CD", "C#"),
+            AnalysisParser.parse("""{"summary": "s", "tags": ["CI/CD", "C#"], "category": "技術"}""", "元").tags
+        )
+    }
+
+    @Test
+    fun 長い説明になったカテゴリは未分類にする() {
+        val result = AnalysisParser.parse(
+            """{"summary": "s", "tags": [], "category": "プログラミングと開発環境に関する技術情報"}""",
+            "元"
+        )
+        assertEquals("未分類", result.category)
+    }
+
+    @Test
     fun 部分要約のメモをJSONから取り出す() {
         assertEquals("要点です", AnalysisParser.parseNotes("```json\n{\"notes\": \" 要点です \"}\n```"))
         // 要点が無い部分は空
