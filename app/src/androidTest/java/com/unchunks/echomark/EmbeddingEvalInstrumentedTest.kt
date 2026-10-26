@@ -11,6 +11,7 @@ import com.unchunks.components.embedding.OnDeviceEmbeddingProvider
 import com.unchunks.components.search.RetrievalEvaluator
 import com.unchunks.components.search.RetrievalFixture
 import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
+import com.unchunks.echomark.domain.provider.EmbeddingModels
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeNoException
@@ -34,7 +35,7 @@ class EmbeddingEvalInstrumentedTest {
         val dispatchers = DefaultDispatcherProvider()
         // アプリと同じ構成。取り込み済みのモデルがあればそれが使われる(この計測では取り込み・削除はしない)
         val modelManager = EmbeddingModelManager(target, WorkManager.getInstance(target), dispatchers)
-        val provider = OnDeviceEmbeddingProvider(target, modelManager, dispatchers)
+        val provider = OnDeviceEmbeddingProvider(target, modelManager, dispatchers, bundledAssetPath = EmbeddingModels.BUNDLED_ASSET_PATH)
 
         val json = instrumentation.context.assets.open(FIXTURE_ASSET).use { it.readBytes().toString(Charsets.UTF_8) }
         val fixture = RetrievalFixture.parse(json)
