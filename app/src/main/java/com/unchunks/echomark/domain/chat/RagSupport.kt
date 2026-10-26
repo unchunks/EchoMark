@@ -1,6 +1,9 @@
 package com.unchunks.echomark.domain.chat
 
+import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Tag
+import java.text.Normalizer
 
 /**
  * チャット(RAG)で使う純粋なヘルパー群。Android 依存なしで単体テストできる。
@@ -106,6 +109,118 @@ object RagSupport {
      */
     fun searchQueryFor(userMessage: String, pinnedTitle: String?): String =
         if (pinnedTitle.isNullOrBlank()) userMessage else "$pinnedTitle $userMessage"
+
+    /** 質問から取り出す検索語の最大数 */
+    const val MAX_KEYWORDS = 5
+
+    /**
+     * 質問から、キーワード検索に使う語を出てきた順に取り出す(重複・質問によく出るだけの語は除く)。
+     * 日本語は単語に分けられないため、英数字の語・カタカナの語・漢字の語(2 文字以上)を語とみなす
+     * (「Kotlin のコルーチンの例外処理は？」→ Kotlin・コルーチン・例外処理)。
+     * 質問の文全体で探すと、文と同じ並びの文字列が無い限り何も見つからないため、語ごとに探す。
+     */
+    fun keywordsOf(message: String, max: Int = MAX_KEYWORDS): List<String> {
+        val normalized = Normalizer.normalize(message, Normalizer.Form.NFKC)
+        return KEYWORD.findAll(normalized)
+            .flatMap { splitQuestionWords(it.value) }
+            .distinctBy { it.lowercase() }
+            .take(max)
+            .toList()
+    }
+
+    /**
+     * 漢字・カタカナの語から、質問によく出るだけの語([QUESTION_WORDS])を除いた残り(2 文字以上)。
+     * 漢字は続けて書かれるため「最近保存」のように1つの語になるので、中に含まれるものも除く。
+     */
+    private fun splitQuestionWords(word: String): List<String> {
+        if (word.lowercase() in QUESTION_WORDS) return emptyList()
+        if (word.first().isLetterOrDigit() && word.first().code < ASCII_LIMIT) return listOf(word)
+        var rest = word
+        QUESTION_WORDS.forEach { rest = rest.replace(it, " ") }
+        return rest.split(' ').filter { it.length >= 2 }
+    }
+
+    private const val ASCII_LIMIT = 128
+
+    /** 英数字の語(C++・C#・Node.js なども)、カタカナの語、漢字の語 */
+    private val KEYWORD = Regex("""[A-Za-z0-9][A-Za-z0-9+#._-]*[A-Za-z0-9+#]|[ァ-ヶー]{2,}|[一-龠々〆ヵヶ]{2,}""")
+
+    /** 保存全体についての質問によく出るだけで、検索の手がかりにならない語 */
+    private val QUESTION_WORDS = setOf(
+        "保存", "記事", "動画", "内容", "要点", "要約", "最近", "今日", "昨日", "今週", "先週", "全部", "一覧",
+        "説明", "質問", "以前", "前回", "関連", "情報", "資料", "ブックマーク", "メモ", "ページ", "何件"
+    )
+
+    /** これ以下の長さの質問は、前の質問の続き(「もっと詳しく」「他には？」)とみなす */
+    private const val FOLLOW_UP_MAX_CHARS = 12
+
+    /** 前の話を指す言葉(「それ」「その記事」「2つ目」など) */
+    private val FOLLOW_UP_WORDS = Regex("""それ|これ|あれ|その|あの|もっと|詳しく|続き|ほかに|他に|さっき|先ほど|前の|上の|[1-9一二三]つ目|[1-9]番""")
+
+    /** 前の話の続きの質問か(短い・前の話を指す言葉がある)。続きなら、文脈の検索に前の質問も使う。 */
+    fun isFollowUp(message: String): Boolean {
+        val trimmed = message.trim()
+        return trimmed.length <= FOLLOW_UP_MAX_CHARS || FOLLOW_UP_WORDS.containsMatchIn(trimmed)
+    }
+
+    /**
+     * 文脈の検索に使う文。前の話の続きの質問([isFollowUp])なら、直前のユーザーの質問を前に足す
+     * (「それの使い方は？」だけでは何についての質問か分からず、関係のない保存が文脈になるため)。
+     * @param history 直近の会話履歴(古い順。今回の質問は含まない)
+     */
+    fun searchQueryWithHistory(userMessage: String, history: List<ChatMessage>): String {
+        if (!isFollowUp(userMessage)) return userMessage
+        val previous = history.lastOrNull { it.role == ChatRole.USER }?.content
+            ?: return userMessage
+        return "$previous $userMessage"
+    }
+
+    /**
+     * 前の話の続きの質問なら、直前の回答で使った(引用した)ブックマークの ID。続きでなければ空。
+     * 「それについてもっと詳しく」に、前の回答と同じ保存を根拠に答えられるよう、文脈の候補に足す。
+     */
+    fun previousReferenceIds(userMessage: String, history: List<ChatMessage>): List<Long> {
+        if (!isFollowUp(userMessage)) return emptyList()
+        return history.lastOrNull { it.role == ChatRole.ASSISTANT }
+            ?.referencedBookmarkIds.orEmpty()
+    }
+
+    /** 本文から取り出す「関連する部分」の最大文字数 */
+    const val PASSAGE_CHARS = 200
+
+    /**
+     * 本文のうち、[keywords] が最も多く出てくる [maxChars] 文字の部分。どの語も出てこなければ null。
+     * 要約だけでは答えられない細かい質問(「その記事で紹介されていたコマンドは？」)に、本文の該当する部分で答えられるようにする。
+     * 本文が [maxChars] 以下なら、部分ではなく本文そのものが文脈に入るため null。
+     */
+    fun bestPassage(content: String?, keywords: List<String>, maxChars: Int = PASSAGE_CHARS): String? {
+        val text = content?.trim()?.replace(WHITESPACE, " ") ?: return null
+        if (keywords.isEmpty() || text.length <= maxChars) return null
+        val lower = text.lowercase()
+        val keys = keywords.map { it.lowercase() }
+        var best: Pair<Int, Int>? = null
+        val step = (maxChars / 2).coerceAtLeast(1)
+        var start = 0
+        while (start < text.length) {
+            val window = lower.substring(start, minOf(text.length, start + maxChars))
+            val score = keys.count { window.contains(it) }
+            if (score > 0 && (best == null || score > best.second)) best = start to score
+            if (start + maxChars >= text.length) break
+            start += step
+        }
+        val from = best?.first ?: return null
+        val passage = text.substring(from, minOf(text.length, from + maxChars)).trim()
+        return (if (from > 0) "…" else "") + passage + (if (from + maxChars < text.length) "…" else "")
+    }
+
+    /**
+     * 要約に本文の「関連する部分」を添えた、文脈1件の本文。部分が無ければ要約(無ければ本文の冒頭)だけ。
+     * 例: "要約 関連する部分: 「…該当する本文…」"
+     */
+    fun contextBody(summary: String?, content: String?, passage: String?): String? {
+        val base = summary?.takeIf { it.isNotBlank() } ?: return content
+        return if (passage == null) base else "$base 関連する部分: 「$passage」"
+    }
 
     /** 「このブックマークについて質問」で作る会話の既定タイトル。 */
     fun aboutBookmarkTitle(bookmarkTitle: String, maxChars: Int = TITLE_MAX_CHARS): String =

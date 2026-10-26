@@ -24,6 +24,7 @@ import com.unchunks.echomark.domain.provider.EmbeddingProvider
 import com.unchunks.echomark.domain.provider.EmbeddingUnavailableException
 import com.unchunks.echomark.domain.provider.LlmException
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
+import com.unchunks.echomark.domain.search.RankFusion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -161,10 +162,13 @@ class ChatRepositoryImpl @Inject constructor(
         conversationDao.touch(conversationId, userTime)
 
         // 2〜3. 関連ブックマークを検索(削除済み等で取得できなかったものは除き、近い順を保つ)。
-        //    質問の対象が固定されていれば、それを必ず先頭に含める
+        //    質問の対象が固定されていれば、それを必ず先頭に含める。
+        //    「それについてもっと詳しく」のような続きの質問は、前の質問も合わせて探し、前の回答で使った保存も候補にする
         val pinned = pinnedBookmarkId?.let { bookmarkRepository.getBookmarksByIds(listOf(it)).firstOrNull() }
+        val query = RagSupport.searchQueryFor(RagSupport.searchQueryWithHistory(userMessage, history), pinned?.title)
+        val keywords = RagSupport.keywordsOf(query)
         val searched = try {
-            findRelevantBookmarks(RagSupport.searchQueryFor(userMessage, pinned?.title))
+            findRelevantBookmarks(query, keywords)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -172,53 +176,80 @@ class ChatRepositoryImpl @Inject constructor(
             Timber.w(e, "チャットの文脈の検索に失敗したため、最近保存したものを渡す")
             emptyList()
         }
+        val previous = RagSupport.previousReferenceIds(userMessage, history).takeIf { it.isNotEmpty() }
+            ?.let { ids -> bookmarkRepository.getBookmarksByIds(ids).sortedBy { ids.indexOf(it.id) } }
+            .orEmpty()
+        val candidates = (previous + searched).distinctBy { it.id }
             // 質問に近いものもタグで絞れるものも無ければ(「最近保存した記事の要点は？」のような保存全体についての質問)、
             // 最近保存したものを渡す。関係があるかは AI に判断させる
             .ifEmpty { if (pinned == null) getRecentBookmarks(RagSupport.SEARCH_LIMIT) else emptyList() }
-        val usedBookmarks = RagSupport.pinFirst(pinned, searched, idOf = { it.id })
+        val usedBookmarks = RagSupport.pinFirst(pinned, candidates, idOf = { it.id })
         val now = System.currentTimeMillis()
         val context = usedBookmarks.mapIndexed { i, b ->
             val title = RagSupport.contextTitle(b.title, b.createdAt, now)
             if (b.id == pinned?.id) {
-                RagSupport.formatPinnedContextEntry(i + 1, title, b.summary, b.content)
+                // 本文が長ければ、冒頭ではなく質問の語が出てくる辺りを渡す
+                val content = RagSupport.bestPassage(b.content, keywords, RagSupport.PINNED_SNIPPET_CHARS) ?: b.content
+                RagSupport.formatPinnedContextEntry(i + 1, title, b.summary, content)
             } else {
-                RagSupport.formatContextEntry(i + 1, title, b.summary ?: b.content)
+                // 上位のものには、要約に加えて本文の質問に関係する部分を添える(要約に無い細かいことにも答えられるように)
+                val passage = if (i < PASSAGE_ITEMS) RagSupport.bestPassage(b.content, keywords) else null
+                RagSupport.formatContextEntry(
+                    i + 1,
+                    title,
+                    RagSupport.contextBody(b.summary, b.content, passage),
+                    maxChars = if (passage == null) RagSupport.MAX_SNIPPET_CHARS else RagSupport.MAX_SNIPPET_CHARS + RagSupport.PASSAGE_CHARS + PASSAGE_LABEL_CHARS
+                )
             }
         }
         return PreparedChat(history, context, usedBookmarks.map { it.id })
     }
 
     /**
-     * 質問に意味の近いものと、質問に名前が出てくるタグ(「「技術」の保存をまとめて」など)の付いたものを、この順に返す。
-     * 意味の近さ(埋め込みの類似度)だけでは、タグで絞る質問の対象が見つからないため、タグでも探す。
+     * 質問に意味の近いもの(埋め込み)・質問の語を含むもの(キーワード)・質問に名前が出てくるタグ(「「技術」の保存をまとめて」など)の
+     * 付いたものを、順位を統合して(RRF)返す。意味の近さだけでは、固有名詞やタグで絞る質問の対象を取りこぼすため、3つを合わせる。
      */
-    private suspend fun findRelevantBookmarks(userMessage: String): List<Bookmark> {
-        val similar = findSimilarBookmarks(userMessage)
-        val tagged = RagSupport.tagsMentionedIn(userMessage, bookmarkRepository.observeAllTags().first())
+    private suspend fun findRelevantBookmarks(query: String, keywords: List<String>): List<Bookmark> {
+        val similar = findSimilarBookmarks(query)
+        val keywordHits = findKeywordBookmarks(query, keywords)
+        val tagged = RagSupport.tagsMentionedIn(query, bookmarkRepository.observeAllTags().first())
             .flatMap { tag ->
                 bookmarkRepository.observeBookmarks(BookmarkFilter.ACTIVE, BookmarkSortOrder.NEWEST, tag.id)
                     .first()
                     .take(RagSupport.SEARCH_LIMIT)
             }
-        return (similar + tagged).distinctBy { it.id }
+        val byId = (similar + keywordHits + tagged).associateBy { it.id }
+        return RankFusion.fuse(listOf(similar, keywordHits, tagged).map { list -> list.map { it.id } })
+            .mapNotNull { byId[it] }
+    }
+
+    /**
+     * 質問の文そのものと、質問から取り出した語([RagSupport.keywordsOf])ごとのキーワード検索の結果を、順位を統合して返す。
+     * 多くの語を含むものほど上位になる。
+     */
+    private suspend fun findKeywordBookmarks(query: String, keywords: List<String>): List<Bookmark> {
+        val lists = (listOf(query) + keywords).distinct().map { bookmarkRepository.searchByKeyword(it, KEYWORD_SEARCH_LIMIT) }
+        val byId = lists.flatten().associateBy { it.id }
+        return RankFusion.fuse(lists.map { list -> list.map { it.id } }).mapNotNull { byId[it] }.take(KEYWORD_SEARCH_LIMIT)
     }
 
     private suspend fun findSimilarBookmarks(userMessage: String): List<Bookmark> {
         // 2. 質問文をembedding化。埋め込みモデルが無い環境ではキーワード検索で代替する
+        // 使えなければ意味の近さでは探さない(キーワードとタグでは探す)
         val queryVector = try {
             embeddingProvider.embedQuery(userMessage)
         } catch (e: EmbeddingUnavailableException) {
             Timber.i("埋め込みモデルが無いため、チャットの文脈はキーワード検索で探す")
-            return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
+            return emptyList()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // 埋め込みの推論の失敗(MediaPipe のエラーなど)でも、チャット全体は失敗にしない
             Timber.w(e, "質問の埋め込みに失敗したため、チャットの文脈はキーワード検索で探す")
-            return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
+            return emptyList()
         } catch (e: LinkageError) {
             Timber.e(e, "埋め込みのライブラリを使えないため、チャットの文脈はキーワード検索で探す")
-            return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
+            return emptyList()
         }
 
         // 3. ObjectBoxで近傍検索し、類似度しきい値を下回る(無関係な)結果を除外
@@ -233,7 +264,7 @@ class ChatRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             // 近傍検索が失敗しても(ObjectBox の不具合・release の縮小で結果の型が消えたなど)、チャット全体は失敗にしない
             Timber.w(e, "ベクトル検索に失敗したため、チャットの文脈はキーワード検索で探す")
-            return bookmarkRepository.search(userMessage, null).take(RagSupport.SEARCH_LIMIT)
+            return emptyList()
         }
         val relevantIds = RagSupport.selectRelevantIds(hits, profile.minRagSimilarity)
         val byId = bookmarkRepository.getBookmarksByIds(relevantIds).associateBy { it.id }
@@ -299,6 +330,15 @@ class ChatRepositoryImpl @Inject constructor(
     )
 
     companion object {
+        /** 本文の「関連する部分」を添える、文脈の上位の件数(端末内 AI の文脈の予算に収まるよう、上位だけにする) */
+        private const val PASSAGE_ITEMS = 3
+
+        /** 「関連する部分: 「」」の見出しの分の文字数 */
+        private const val PASSAGE_LABEL_CHARS = 12
+
+        /** キーワード検索で1つの語あたりに見る件数 */
+        private const val KEYWORD_SEARCH_LIMIT = 10
+
         /** 生成を途中で止めた回答の末尾に付ける印。 */
         const val STOPPED_SUFFIX = "\n\n(停止)"
 

@@ -1,7 +1,10 @@
 package com.unchunks.echomark.domain.chat
 
+import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Tag
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -106,5 +109,62 @@ class RagSupportTest {
         assertEquals("記事(今日保存)", RagSupport.contextTitle("記事", now - day / 2, now))
         assertEquals("記事(3日前に保存)", RagSupport.contextTitle("記事", now - 3 * day, now))
         assertEquals("記事(今日保存)", RagSupport.contextTitle("記事", now + day, now))
+    }
+
+    @Test
+    fun 質問から英数字_カタカナ_漢字の語を取り出す() {
+        assertEquals(
+            listOf("Kotlin", "コルーチン", "例外処理"),
+            RagSupport.keywordsOf("Kotlin のコルーチンの例外処理はどう書く？")
+        )
+        // 全角の英数字もそろえ、C# や Node.js のような記号入りの語も1語にする
+        assertEquals(listOf("C#", "Node.js"), RagSupport.keywordsOf("Ｃ# と Node.js の違い"))
+    }
+
+    @Test
+    fun 保存全体についての質問によく出る語は検索語にしない() {
+        assertEquals(emptyList<String>(), RagSupport.keywordsOf("最近保存した記事の要点は？"))
+    }
+
+    @Test
+    fun 続きの質問は前の質問と合わせて探す() {
+        val history = listOf(
+            ChatMessage(conversationId = 1, role = ChatRole.USER, content = "Compose の再コンポーズを減らす方法", createdAt = 1),
+            ChatMessage(conversationId = 1, role = ChatRole.ASSISTANT, content = "remember を使います [1]", referencedBookmarkIds = listOf(7, 8), createdAt = 2)
+        )
+
+        assertEquals("Compose の再コンポーズを減らす方法 もっと詳しく", RagSupport.searchQueryWithHistory("もっと詳しく", history))
+        assertEquals(listOf(7L, 8L), RagSupport.previousReferenceIds("それの例は？", history))
+        // 続きでない質問はそのまま
+        assertEquals(
+            "Gradle のビルドを速くするにはどうすればいいですか",
+            RagSupport.searchQueryWithHistory("Gradle のビルドを速くするにはどうすればいいですか", history)
+        )
+        assertEquals(emptyList<Long>(), RagSupport.previousReferenceIds("Gradle のビルドを速くするにはどうすればいいですか", history))
+    }
+
+    @Test
+    fun 本文から質問の語が最も多く出てくる部分を取り出す() {
+        val content = "あ".repeat(500) + "Gradle の configuration cache を有効にするとビルドが速くなる。" + "い".repeat(500)
+
+        val passage = RagSupport.bestPassage(content, listOf("Gradle", "configuration"), maxChars = 100)!!
+
+        assertTrue(passage, passage.contains("configuration cache"))
+        assertTrue(passage.startsWith("…") && passage.endsWith("…"))
+    }
+
+    @Test
+    fun 語が出てこない本文や短い本文からは部分を取り出さない() {
+        assertNull(RagSupport.bestPassage("あ".repeat(500), listOf("Gradle")))
+        assertNull(RagSupport.bestPassage("Gradle の話", listOf("Gradle")))
+        assertNull(RagSupport.bestPassage("Gradle".repeat(100), emptyList()))
+    }
+
+    @Test
+    fun 要約に関連する部分を添える() {
+        assertEquals("要約 関連する部分: 「本文の一部」", RagSupport.contextBody("要約", "本文", "本文の一部"))
+        assertEquals("要約", RagSupport.contextBody("要約", "本文", null))
+        // 要約が無ければ本文
+        assertEquals("本文", RagSupport.contextBody(null, "本文", null))
     }
 }

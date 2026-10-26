@@ -10,6 +10,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
+import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
@@ -64,6 +65,8 @@ class ChatRepositoryImplStreamTest {
 
         override suspend fun search(query: String, tagId: Long?): List<Bookmark> =
             if (searchReturnsAll) fakeBookmarks.bookmarks.value else fakeBookmarks.search(query, tagId)
+
+        override suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> = search(query, null).take(limit)
     }
 
     /** 埋め込みモデルが無い環境(assets 未同梱)を再現する。 */
@@ -287,6 +290,43 @@ class ChatRepositoryImplStreamTest {
         val events = repository(llm).sendMessageStream(1L, "「技術」の保存をまとめて").toList()
 
         assertEquals(ChatStreamEvent.Started(listOf(1L)), events.first())
+    }
+
+    @Test
+    fun 文の質問でも語ごとのキーワード検索で文脈を探す() = runBlocking {
+        // 質問の文全体はタイトルに含まれないが、語「Kotlin」は含まれる
+        val events = repository(RecordingLlm()).sendMessageStream(1L, "Kotlin について教えて").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events.first())
+    }
+
+    @Test
+    fun 上位の文脈には本文の質問に関係する部分を添える() = runBlocking {
+        val content = "前置き。".repeat(100) + "Gradle の configuration cache を有効にするとビルドが速くなる。" + "後書き。".repeat(100)
+        fakeBookmarks.bookmarks.value = listOf(testBookmark(id = 9, title = "Gradle の高速化").copy(summary = "ビルドを速くする設定の紹介", content = content))
+        val llm = RecordingLlm()
+
+        repository(llm).sendMessageStream(1L, "Gradle の configuration cache とは").toList()
+
+        assertTrue(llm.lastContext[0], llm.lastContext[0].contains("ビルドを速くする設定の紹介 関連する部分: 「"))
+        assertTrue(llm.lastContext[0], llm.lastContext[0].contains("configuration cache を有効にする"))
+    }
+
+    @Test
+    fun 続きの質問は前の回答で使った保存を文脈に入れる() = runBlocking {
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 5, title = "Kotlin 入門"),
+            testBookmark(id = 6, title = "Compose メモ")
+        )
+        messageDao.insert(ChatMessageEntity(conversationId = 1L, role = ChatRole.USER, content = "Compose の話", createdAt = 1))
+        messageDao.insert(
+            ChatMessage(conversationId = 1L, role = ChatRole.ASSISTANT, content = "回答 [1]", referencedBookmarkIds = listOf(6L), createdAt = 2)
+                .toEntity()
+        )
+
+        val events = repository(RecordingLlm()).sendMessageStream(1L, "もっと詳しく").toList()
+
+        assertEquals(6L, (events.first() as ChatStreamEvent.Started).referencedBookmarkIds.first())
     }
 
     @Test

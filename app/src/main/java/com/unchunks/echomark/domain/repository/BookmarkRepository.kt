@@ -128,6 +128,12 @@ interface BookmarkRepository {
      */
     suspend fun search(query: String, tagId: Long?): List<Bookmark>
 
+    /**
+     * キーワード(LIKE)だけの検索。タイトル・要約・本文・タグ名に [query] を含むものを新しい順に最大 [limit] 件返す。
+     * 意味検索(埋め込み)はしない(チャットの文脈の検索で、語ごとに何度も呼ぶため)。
+     */
+    suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> = search(query, null).take(limit)
+
     /** [search] と同じ検索をして、意味検索が使えたか・意味だけで見つかったものも返す。 */
     suspend fun searchWithDetails(query: String, tagId: Long?): BookmarkSearchResult
 
