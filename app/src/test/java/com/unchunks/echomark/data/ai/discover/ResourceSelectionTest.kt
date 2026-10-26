@@ -1,6 +1,6 @@
 package com.unchunks.echomark.data.ai.discover
 
-import com.unchunks.echomark.data.remote.PageLink
+import com.unchunks.components.web.PageLink
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

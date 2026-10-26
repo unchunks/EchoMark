@@ -1,5 +1,9 @@
 package com.unchunks.echomark.data.discover
 
+import com.unchunks.components.websearch.ResourceCandidate
+import com.unchunks.components.websearch.ResourceSearcher
+import com.unchunks.components.websearch.ResourceSource
+import com.unchunks.components.websearch.SearchOutcome
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.BookmarkRepository
