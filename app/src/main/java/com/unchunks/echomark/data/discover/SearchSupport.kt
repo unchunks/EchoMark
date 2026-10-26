@@ -11,8 +11,15 @@ import java.io.InputStream
 /** 各検索先のクライアントが共有する、通信と文字列の整形(純粋関数を除き、通信は呼び出し元のスレッドで行う)。 */
 internal object SearchSupport {
 
+    /** YouTube の検索(InnerTube)用。ブラウザと同じ形でないと応答の形が変わるため、ブラウザの形にする */
     const val USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) EchoMark/1.0"
+
+    /**
+     * 公開 API(Wikipedia・arXiv・はてなブックマーク)用。Wikimedia の User-Agent の方針は、アプリ名と連絡先を名乗り、
+     * ブラウザの User-Agent を写さないことを求めている(<https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy>)
+     */
+    const val APP_USER_AGENT = "EchoMark/1.0 (Android; +https://github.com/unchunks/EchoMark)"
 
     /** 応答を読む上限(YouTube の検索結果が約 1.3MB あるため余裕を持たせる) */
     const val MAX_RESPONSE_BYTES = 3 * 1024 * 1024

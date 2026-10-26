@@ -40,7 +40,7 @@ class HatenaBookmarkSearchClient(
                 .build()
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", SearchSupport.USER_AGENT)
+                .header("User-Agent", SearchSupport.APP_USER_AGENT)
                 .header("Accept", "application/rss+xml, application/xml")
                 .build()
             HatenaRss.parse(SearchSupport.execute(client, request), limit)

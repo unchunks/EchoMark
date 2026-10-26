@@ -57,6 +57,17 @@
 | N3 | ObjectBox(ネイティブライブラリ) | ObjectBox Binary Licence | アプリを作るための利用を許可(第2条 a)。ObjectBox の競合にあたる者は除く。取り消しうるライセンスで、FAQ は「いまのライセンスは暫定」と書いている | 権利表示を消さない(第2条 b(iv)・第4条 b)。Schedule A の第三者ライセンス(O23 LMDB など)に従う(第3条) | `objectbox-android-db` の POM、<https://objectbox.io/0209-ob-binary-license/>、<https://objectbox.io/faq/> |
 | N4 | EmbeddingGemma(埋め込みモデル) | Gemma Terms of Use | 規約のページに明記なし(禁止の記載もなし) | 配布するとき(第3.1条): 受け取る人に規約の写しを渡す。`Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms` と書いた「Notice」ファイルを付ける。第3.2条の利用制限を利用条件に入れて、ユーザーに知らせる | <https://ai.google.dev/gemma/terms>。モデルは `app/src/main/assets/embeddinggemma-300m/embedding_gemma.task`(git の対象外)としてアプリに同梱する。ファイルの入手元はこの記録では確かめていない |
 
+## 通信先のサービス(資料を探す)
+
+「資料を探す」画面(`data/discover/`)は、次のサービスを API キー無しで検索する。アプリに同梱するものではないが、利用の条件をここに記録する。確認日: 2026-10-26。
+
+| 検索先 | 使う窓口 | 条件 | 確かめたこと / 確かめていないこと |
+|---|---|---|---|
+| はてなブックマーク(記事) | 全文検索の RSS(`b.hatena.ne.jp/q/{語}?mode=rss&target=text`) | はてなの利用規約に従う | RSS が鍵なしで返ることを curl で確かめた。RSS をアプリから使うことについての規約の条文は**確かめていない**(要確認) |
+| Wikipedia(百科事典) | MediaWiki の検索 API(`ja.wikipedia.org/w/api.php`) | 本文は CC BY-SA 4.0。API は User-Agent でアプリ名と連絡先を名乗る(<https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy>) | 方針の文面を確かめ、User-Agent を `EchoMark/1.0 (Android; +https://github.com/unchunks/EchoMark)` にした。画面には検索結果の抜粋(数十字)と「Wikipedia」を出し、記事へリンクする。抜粋の表示に CC BY-SA の表記がどこまで要るかは**確かめていない** |
+| arXiv(論文) | arXiv API(`export.arxiv.org/api/query`) | 3 秒に 1 回まで・同時に 1 接続まで。メタデータ(タイトル・概要・著者)は CC0。arXiv が後援しているように見せない(<https://info.arxiv.org/help/api/tou.html>) | 規約の文面を確かめた。検索はユーザーの操作ごとに 1 回なので、上限は超えない |
+| YouTube(動画) | InnerTube の検索(`youtubei/v1/search`。字幕の取得と同じ非公開の窓口) | 公開 API ではない。YouTube の利用規約は自動化された手段での利用を制限している | 字幕の取得(`YouTubeTranscriptFetcher`)と同じ扱いにした。規約との関係は**確かめていない**(要確認)。仕様が変わったときは検索先の失敗として扱い、ほかの検索先の結果は出す |
+
 ## ライブラリに含まれる部品(画面には載せていない)
 
 画面は artifact(POM)の単位でまとめている。artifact の中に入っている、別のライセンスの部品は次のとおり。
