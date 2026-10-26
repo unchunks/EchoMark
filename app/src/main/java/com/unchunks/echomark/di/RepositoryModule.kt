@@ -16,6 +16,8 @@ import com.unchunks.echomark.data.backup.DataManagementRepositoryImpl
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.domain.repository.AttachmentRepository
+import com.unchunks.echomark.data.chat.ChatAttachmentLoader
+import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -64,4 +66,9 @@ abstract class RepositoryModule {
     abstract fun bindSecretCipher(
         impl: KeystoreSecretCipher
     ): SecretCipher
+
+    @Binds
+    abstract fun bindChatAttachmentSource(
+        impl: ChatAttachmentLoader
+    ): ChatAttachmentSource
 }

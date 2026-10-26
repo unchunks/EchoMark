@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BookmarkAdded
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.School
@@ -77,11 +78,13 @@ import kotlinx.coroutines.flow.map
 /**
  * 資料を探す画面。テーマを入れると、Web の記事・動画・百科事典(と論文)を探して AI が役立つものを選び、
  * 選んだものをまとめてブックマークに追加できる。
+ * @param onOpenPageOrFiles 一覧ページのリンク・端末内のファイルから探す画面を開く
  */
 @Composable
 fun DiscoverScreen(
     onBack: () -> Unit,
     onOpenAiSettings: () -> Unit,
+    onOpenPageOrFiles: () -> Unit = {},
     viewModel: DiscoverViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -100,7 +103,8 @@ fun DiscoverScreen(
         onSearchExample = viewModel::searchTopic,
         onCancel = viewModel::cancel,
         onToggleSelection = viewModel::toggleSelection,
-        onSave = viewModel::saveSelected
+        onSave = viewModel::saveSelected,
+        onOpenPageOrFiles = onOpenPageOrFiles
     )
 }
 
@@ -119,7 +123,8 @@ fun DiscoverContent(
     onCancel: () -> Unit,
     onToggleSelection: (String) -> Unit,
     onSave: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenPageOrFiles: () -> Unit = {}
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
@@ -160,7 +165,8 @@ fun DiscoverContent(
                     uiState = uiState,
                     onTopicChange = onTopicChange,
                     onToggleSource = onToggleSource,
-                    onSearch = onSearch
+                    onSearch = onSearch,
+                    onOpenPageOrFiles = onOpenPageOrFiles
                 )
             }
             uiState.step?.let { step ->
@@ -226,7 +232,8 @@ private fun SearchForm(
     uiState: DiscoverUiState,
     onTopicChange: (String) -> Unit,
     onToggleSource: (ResourceSource) -> Unit,
-    onSearch: () -> Unit
+    onSearch: () -> Unit,
+    onOpenPageOrFiles: () -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         OutlinedTextField(
@@ -263,6 +270,12 @@ private fun SearchForm(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        // 検索先を使わずに、自分で見つけた一覧ページや端末内のファイルの中から選ばせる探し方
+        TextButton(onClick = onOpenPageOrFiles, enabled = !uiState.isBusy) {
+            Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("一覧ページ・端末内のファイルから探す")
         }
     }
 }

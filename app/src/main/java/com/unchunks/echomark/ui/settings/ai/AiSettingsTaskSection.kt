@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.provider.ApiProvider
 import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.settings.SettingsNotice
 import com.unchunks.echomark.ui.settings.SettingsSwitchItem
@@ -91,7 +92,8 @@ internal fun TaskSettingCard(
                 style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            // クラウドを無効にしている間は、実行場所の切り替えを出さない(端末内で動く)
+            if (CLOUD_AI_ENABLED) SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 LlmBackend.entries.forEachIndexed { index, backend ->
                     SegmentedButton(
                         selected = setting.backend == backend,

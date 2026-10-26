@@ -27,6 +27,15 @@ class AiPromptsTest {
     }
 
     @Test
+    fun 動画の要約は字幕の話の流れから要点を選び_前置きや宣伝を要点にしない() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.VIDEO, emptyList())
+
+        assertTrue(prompt, prompt.contains("話の流れ(導入・主な論点・結論"))
+        assertTrue(prompt, prompt.contains("冒頭や締めのあいさつ・自己紹介・チャンネルの紹介"))
+        assertTrue(prompt, prompt.contains("自動生成の字幕の誤認識"))
+    }
+
+    @Test
     fun 要約だけのときはタグとカテゴリの指示を入れない() {
         val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, listOf("Android"), scope = AnalysisScope.SUMMARY)
 

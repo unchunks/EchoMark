@@ -11,4 +11,7 @@ interface AttachmentRepository {
      * 呼び出し元のコルーチンを取り消すとコピーを止め、途中のファイルは消す。
      */
     suspend fun importFile(uri: String): StoredAttachment
+
+    /** [uri] のファイル名(分からなければ null)。コピーはしない。 */
+    fun displayNameOf(uri: String): String? = null
 }

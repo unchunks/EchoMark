@@ -56,6 +56,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.unchunks.echomark.ui.bookmark.ListLaunchAction
+import com.unchunks.echomark.ui.discover.ResourceFinderScreen
 import com.unchunks.echomark.ui.tags.TagManagementScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
@@ -224,8 +225,17 @@ fun EchoMarkNavHost(
             ) {
                 DiscoverScreen(
                     onBack = navController.popBackAction(),
-                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
+                    onOpenPageOrFiles = { navController.navigate(Routes.DISCOVER_FROM_PAGE_OR_FILES) }
                 )
+            }
+            // 一覧ページのリンク・端末内のファイルから、AI が選んで保存する(資料を探す画面から開く)
+            composable(
+                route = Routes.DISCOVER_FROM_PAGE_OR_FILES,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                ResourceFinderScreen(onBack = navController.popBackAction())
             }
             // タグ管理。タグをタップしたら、そのタグで絞り込んだ一覧へ戻る
             composable(

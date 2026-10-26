@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
+import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatRole
 import com.unchunks.echomark.domain.model.Tag
@@ -121,7 +122,7 @@ class ChatRepositoryImplStreamTest {
 
     @Test
     fun 質問の埋め込みが失敗してもチャットは失敗にせず_キーワード検索で文脈を探す() = runBlocking {
-        // 埋め込みモデルはあるが推論が失敗する(MediaPipe のグラフのエラーなど。EmbeddingUnavailableException ではない)
+        // 埋め込みモデルはあるが推論が失敗する(MediaPipe のグラフのエラー・入力を受け付けないなど。EmbeddingUnavailableException ではない)
         val failingEmbedding = object : EmbeddingProvider {
             override val profile = EmbeddingModelProfile.GEMMA_V1.copy(modelVersion = "test")
             override suspend fun embedDocument(text: String): FloatArray = throw IllegalStateException("graph error")
@@ -156,6 +157,29 @@ class ChatRepositoryImplStreamTest {
 
         assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
         assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
+    fun 添付の本文は今回の回答の根拠にだけ使い_会話には本文を保存しない() = runBlocking {
+        var seenContext: List<String> = emptyList()
+        val llm: LlmProvider = object : LlmProvider by FakeLlmProvider() {
+            override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> {
+                seenContext = context
+                return flow { emit("回答") }
+            }
+        }
+
+        val events = repository(llm).sendMessageStream(
+            1L,
+            "この資料の要点は?",
+            attachment = ChatAttachmentContext("資料.txt", "添付の本文です")
+        ).toList()
+
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+        // 添付は文脈の末尾に入り、名前も一緒に見せる
+        assertTrue(seenContext.last(), seenContext.last().contains("添付の本文です"))
+        assertTrue(seenContext.last(), seenContext.last().contains("資料.txt"))
+        assertEquals(listOf("この資料の要点は?", "回答"), messageDao.all.value.map { it.content })
     }
 
     @Test
