@@ -27,7 +27,13 @@ data class ChatUiState(
     /** 文脈に使うブックマークが決まったら、その件数。関連ブックマークを探している間は null。 */
     val pendingReferenceCount: Int? = null,
     val error: ChatError? = null,
-    val aiSetup: AiSetupState = AiSetupState.READY
+    val aiSetup: AiSetupState = AiSetupState.READY,
+    /** 次の質問に添付するファイルの名前(添付していなければ null)。送信すると外れる。 */
+    val attachmentName: String? = null,
+    /** 添付のファイルを読み込んでいる間 true */
+    val isAttaching: Boolean = false,
+    /** 添付を使えなかった理由(なければ null) */
+    val attachmentError: String? = null
 ) {
     /** 何もメッセージが無い新しい会話(挨拶と質問の例を出す)。 */
     val isEmptyConversation: Boolean

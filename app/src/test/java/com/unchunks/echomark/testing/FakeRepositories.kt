@@ -10,6 +10,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
@@ -303,14 +304,19 @@ open class FakeChatRepository : ChatRepository {
     override fun observeConversationPreviews(): Flow<List<ConversationPreview>> = previews
 
     /** 既定: sendFailure があれば Failed、無ければ Started → Delta → Completed を流す。 */
+    /** sendMessageStream に渡された添付(添付なしの送信は null)。 */
+    val sentAttachments = mutableListOf<ChatAttachmentContext?>()
+
     override fun sendMessageStream(
         conversationId: Long,
         userMessage: String,
         pinnedBookmarkId: Long?,
-        isRetry: Boolean
+        isRetry: Boolean,
+        attachment: ChatAttachmentContext?
     ): Flow<ChatStreamEvent> = flow {
         sent += conversationId to userMessage
         sendCalls += SendCall(conversationId, userMessage, pinnedBookmarkId, isRetry)
+        sentAttachments += attachment
         val failure = sendFailure
         if (failure != null) {
             emit(ChatStreamEvent.Failed(failure))
