@@ -61,6 +61,7 @@ import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailViewModel
+import com.unchunks.echomark.ui.discover.DiscoverScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
@@ -211,6 +212,18 @@ fun EchoMarkNavHost(
                     onOpenBookmarkRoute = { navController.navigate(Routes.bookmarkDetail(it)) },
                     onOpenTagManagement = { navController.navigate(Routes.TAGS) },
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
+                    onOpenDiscover = { navController.navigate(Routes.DISCOVER) }
+                )
+            }
+            // 資料を探す。AI が選んだ資料をまとめて追加し、戻ると一覧に追加したものが並ぶ
+            composable(
+                route = Routes.DISCOVER,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                DiscoverScreen(
+                    onBack = navController.popBackAction(),
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }

@@ -4,6 +4,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.createSavedStateHandle
@@ -65,10 +66,12 @@ class BookmarkListNavigationTest {
                             entry = entry,
                             onOpenBookmark = { controller.navigate(Routes.bookmarkDetail(it)) },
                             onOpenTagManagement = { controller.navigate(Routes.TAGS) },
+                            onOpenDiscover = { controller.navigate(Routes.DISCOVER) },
                             viewModel = viewModel
                         )
                     }
                     composable(Routes.TAGS) { Text("タグ管理(仮)") }
+                    composable(Routes.DISCOVER) { Text("資料を探す(仮)") }
                     composable(Routes.BOOKMARK_DETAIL) { Text("詳細(仮)") }
                     composable("chat") { Text("会話一覧(仮)") }
                     composable(CHAT_NEW_ROUTE) { Text("新しいチャット(仮)") }
@@ -108,6 +111,17 @@ class BookmarkListNavigationTest {
         assertEquals(listOf(1L), state.bookmarks.map { it.id })
         // 依頼は取り出したら消える(戻ってきたときに繰り返さない)
         assertNull(navController.currentBackStackEntry!!.savedStateHandle.get<Long>(BookmarkListRequests.KEY_SELECT_TAG_ID))
+    }
+
+    @Test
+    fun 一覧のメニューの資料を探すで資料を探す画面を開く() {
+        setContent()
+
+        composeRule.onNodeWithContentDescription("その他のメニュー").performClick()
+        composeRule.onNodeWithText("資料を探す").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(Routes.DISCOVER, currentRoute)
     }
 
     @Test
