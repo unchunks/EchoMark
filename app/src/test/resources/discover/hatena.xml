@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<rdf:RDF
+ xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+ xmlns="http://purl.org/rss/1.0/"
+ xmlns:content="http://purl.org/rss/1.0/modules/content/"
+ xmlns:dc="http://purl.org/dc/elements/1.1/"
+ xmlns:hatena="http://www.hatena.ne.jp/info/xmlns#"
+ xmlns:taxo="http://purl.org/rss/1.0/modules/taxonomy/"
+>
+
+<channel rdf:about="https://b.hatena.ne.jp/q/Kotlin%20coroutine?sort=popular&#x26;users=3&#x26;target=text">
+<title>&#x672C;&#x6587;&#x300C;Kotlin coroutine&#x300D;&#x3092;&#x691C;&#x7D22; - &#x306F;&#x3066;&#x306A;&#x30D6;&#x30C3;&#x30AF;&#x30DE;&#x30FC;&#x30AF;</title>
+<link>https://b.hatena.ne.jp/q/Kotlin%20coroutine?sort=popular&#x26;users=3&#x26;target=text</link>
+<description>&#x672C;&#x6587;&#x300C;Kotlin coroutine&#x300D;&#x3092;&#x691C;&#x7D22; - &#x306F;&#x3066;&#x306A;&#x30D6;&#x30C3;&#x30AF;&#x30DE;&#x30FC;&#x30AF;</description>
+<items>
+ <rdf:Seq>
+  <rdf:li rdf:resource="https://qiita.com/example/items/aaaaaaaaaaaaaaaaaaaa" />
+  <rdf:li rdf:resource="https://zenn.dev/example/articles/bbbbbbbbbbbbbb" />
+  <rdf:li rdf:resource="https://blog.example.co.jp/entry/2024/01/02/030405" />
+ </rdf:Seq>
+</items>
+</channel>
+
+<item rdf:about="https://qiita.com/example/items/aaaaaaaaaaaaaaaaaaaa">
+<title>Kotlin&#x30B3;&#x30EB;&#x30FC;&#x30C1;&#x30F3;&#x306E;&#x4ED5;&#x7D44;&#x307F;&#x3092;&#x7406;&#x89E3;&#x3059;&#x308B; - Qiita</title>
+<link>https://qiita.com/example/items/aaaaaaaaaaaaaaaaaaaa</link>
+<description>&#x306F;&#x3058;&#x3081;&#x306B; Kotlin &#x306E;&#x30B3;&#x30EB;&#x30FC;&#x30C1;&#x30F3;&#x306F;&#x3001;&#x4E2D;&#x65AD;&#x3068;&#x518D;&#x958B;&#x3092;&#x3067;&#x304D;&#x308B;&#x8EFD;&#x91CF;&#x306A;&#x30B9;&#x30EC;&#x30C3;&#x30C9;&#x306E;&#x3088;&#x3046;&#x306A;&#x3082;&#x306E;&#x3067;&#x3059;&#x3002;</description>
+<dc:date>2025-10-23T10:02:17Z</dc:date>
+<dc:subject>&#x30C6;&#x30AF;&#x30CE;&#x30ED;&#x30B8;&#x30FC;</dc:subject>
+<dc:subject>Kotlin</dc:subject>
+<dc:subject>&#x3042;&#x3068;&#x3067;&#x8AAD;&#x3080;</dc:subject>
+<dc:subject>Android</dc:subject>
+<taxo:topics>
+  <rdf:Bag>
+    <rdf:li resource="https://b.hatena.ne.jp/q/Kotlin" />
+    <rdf:li resource="https://b.hatena.ne.jp/q/Android" />
+  </rdf:Bag>
+</taxo:topics>
+<content:encoded>&#x3C;blockquote cite=&#x22;https://qiita.com/example/items/aaaaaaaaaaaaaaaaaaaa&#x22;&#x3E;&#x3C;p&#x3E;...&#x3C;/p&#x3E;&#x3C;/blockquote&#x3E;</content:encoded>
+<hatena:bookmarkcount>412</hatena:bookmarkcount>
+<hatena:bookmarkSiteEntriesListUrl>https://b.hatena.ne.jp/site/qiita.com/</hatena:bookmarkSiteEntriesListUrl>
+<hatena:bookmarkCommentListPageUrl>https://b.hatena.ne.jp/entry/s/qiita.com/example/items/aaaaaaaaaaaaaaaaaaaa</hatena:bookmarkCommentListPageUrl>
+</item>
+
+<item rdf:about="https://zenn.dev/example/articles/bbbbbbbbbbbbbb">
+<title>Flow &amp; Channel &#x5165;&#x9580; | Zenn</title>
+<link>https://zenn.dev/example/articles/bbbbbbbbbbbbbb</link>
+<description>Flow &amp; Channel &#x3092;&#x4F7F;&#x3063;&#x305F;&#x975E;&#x540C;&#x671F;&#x51E6;&#x7406;&#x306E;&#x66F8;&#x304D;&#x65B9;&#x3092;&#x307E;&#x3068;&#x3081;&#x307E;&#x3059;&#x3002;</description>
+<dc:date>2024-05-01T00:00:00Z</dc:date>
+<dc:subject>Kotlin</dc:subject>
+<dc:subject>&#x958B;&#x767A;</dc:subject>
+<hatena:bookmarkcount>131</hatena:bookmarkcount>
+<hatena:imageurl>https://res.cloudinary.com/zenn/image/upload/example.png</hatena:imageurl>
+</item>
+
+<item rdf:about="https://blog.example.co.jp/entry/2024/01/02/030405">
+<title>&#x30B3;&#x30EB;&#x30FC;&#x30C1;&#x30F3;&#x3092;&#x30D7;&#x30ED;&#x30C0;&#x30AF;&#x30C8;&#x3067;&#x4F7F;&#x3063;&#x3066;&#x307F;&#x305F;&#x7D50;&#x679C;</title>
+<link>https://blog.example.co.jp/entry/2024/01/02/030405</link>
+<description></description>
+<dc:date>2024-01-02T03:04:05Z</dc:date>
+<hatena:bookmarkcount>38</hatena:bookmarkcount>
+</item>
+
+</rdf:RDF>

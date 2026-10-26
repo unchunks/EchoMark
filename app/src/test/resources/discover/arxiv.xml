@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/EXs5q+JM8BwXhsz8jD/+sUdpj+g</id>
+  <title>arXiv Query: search_query=all:coroutine&amp;id_list=&amp;start=0&amp;max_results=2</title>
+  <updated>2026-10-26T00:41:34Z</updated>
+  <opensearch:totalResults>56</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2308.10548v1</id>
+    <title>Typing Composable
+  Coroutines</title>
+    <updated>2023-08-21T08:04:07Z</updated>
+    <link href="https://arxiv.org/abs/2308.10548v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2308.10548v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Coroutine, as a powerful programming construct, is widely used in
+asynchronous applications to replace thread-based programming or the callback hell.</summary>
+    <category term="cs.PL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2023-08-21T08:04:07Z</published>
+    <arxiv:primary_category term="cs.PL"/>
+    <author>
+      <name>Qiqi Gu</name>
+    </author>
+    <author>
+      <name>Wei Ke</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2602.19686v1</id>
+    <title>A Flow Extension to Coroutine Types for Deadlock Detection in Go</title>
+    <updated>2026-02-23T10:31:22Z</updated>
+    <summary>Coroutines are a generalization of functions that can suspend execution part-way for later resumption.</summary>
+    <category term="cs.PL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.SC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-02-23T10:31:22Z</published>
+    <author>
+      <name>Qiqi Jason Gu</name>
+    </author>
+    <author>
+      <name>Lixue Liu</name>
+    </author>
+    <author>
+      <name>Wei Ke</name>
+    </author>
+    <author>
+      <name>Fourth Author</name>
+    </author>
+  </entry>
+</feed>
