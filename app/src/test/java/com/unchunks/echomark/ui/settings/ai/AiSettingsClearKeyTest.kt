@@ -11,11 +11,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.provider.ApiProvider
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.aiTasks
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,6 +32,8 @@ class AiSettingsClearKeyTest {
     private val cleared = mutableListOf<ApiProvider>()
 
     private fun setContent() {
+        // API キーの欄はクラウドを有効にしているときだけ出す(CLOUD_AI_ENABLED)
+        Assume.assumeTrue(CLOUD_AI_ENABLED)
         composeRule.setContent {
             EchoMarkTheme {
                 AiSettingsContent(
