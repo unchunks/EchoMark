@@ -458,6 +458,9 @@ class LocalLlmProvider @Inject constructor(
         return generate(buildChatPrompt(userMessage, context, history)).trim()
     }
 
+    override suspend fun complete(prompt: String): String =
+        generateAnalysis(prompt, "complete", ANALYZE_MAX_OUTPUT_CHARS)
+
     /** generateResponseAsync の部分結果(増分)を流す。収集側のキャンセルで生成を中断する。 */
     override fun chatStream(
         userMessage: String,

@@ -43,6 +43,14 @@ interface LlmProvider {
         flow { emit(chat(userMessage, context, history)) }
 
     /**
+     * [prompt] の指示だけで JSON を1つ返させる(資料の選択など、チャットの文脈を付けない呼び出し)。
+     * 応答は JSON オブジェクトの文字列。解析は呼び出し側で行う。
+     * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
+     * @throws LlmException クラウド API の呼び出しに失敗したとき
+     */
+    suspend fun complete(prompt: String): String = throw UnsupportedOperationException("complete は未対応")
+
+    /**
      * 推論の準備(端末内モデルの読み込みなど)を先に始める。完了は待たずに戻り、失敗しても何も起きない
      * (本番の推論で改めて失敗する)。準備の要らない実装(クラウド API)は何もしない。
      */
