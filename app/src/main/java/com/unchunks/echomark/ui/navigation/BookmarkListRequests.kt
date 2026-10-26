@@ -83,6 +83,7 @@ internal fun BookmarkListDestination(
     entry: NavBackStackEntry,
     onOpenBookmark: (Long) -> Unit,
     onOpenTagManagement: () -> Unit,
+    onOpenDiscover: () -> Unit,
     selectedBookmarkId: Long? = null,
     onBookmarkRemoved: (Long) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
@@ -95,6 +96,7 @@ internal fun BookmarkListDestination(
     BookmarkListScreen(
         onOpenBookmark = onOpenBookmark,
         onOpenTagManagement = onOpenTagManagement,
+        onOpenDiscover = onOpenDiscover,
         selectedBookmarkId = selectedBookmarkId,
         onBookmarkRemoved = onBookmarkRemoved,
         viewModel = viewModel

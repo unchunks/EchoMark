@@ -108,6 +108,7 @@ internal fun BookmarkListDetailDestination(
     isCurrentEntry: () -> Boolean,
     onOpenBookmarkRoute: (Long) -> Unit,
     onOpenTagManagement: () -> Unit,
+    onOpenDiscover: () -> Unit,
     onAskAi: (Long) -> Unit,
     onOpenAiSettings: () -> Unit
 ) {
@@ -133,6 +134,7 @@ internal fun BookmarkListDetailDestination(
                 entry = entry,
                 onOpenBookmark = { id -> if (twoPane) select(id) else onOpenBookmarkRoute(id) },
                 onOpenTagManagement = onOpenTagManagement,
+                onOpenDiscover = onOpenDiscover,
                 selectedBookmarkId = if (twoPane) selectedId else null,
                 onBookmarkRemoved = { id -> if (id == selectedId) select(null) }
             )

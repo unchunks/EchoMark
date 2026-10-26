@@ -65,10 +65,12 @@ class BookmarkListNavigationTest {
                             entry = entry,
                             onOpenBookmark = { controller.navigate(Routes.bookmarkDetail(it)) },
                             onOpenTagManagement = { controller.navigate(Routes.TAGS) },
+                            onOpenDiscover = { controller.navigate(Routes.DISCOVER) },
                             viewModel = viewModel
                         )
                     }
                     composable(Routes.TAGS) { Text("タグ管理(仮)") }
+                    composable(Routes.DISCOVER) { Text("資料を探す(仮)") }
                     composable(Routes.BOOKMARK_DETAIL) { Text("詳細(仮)") }
                     composable("chat") { Text("会話一覧(仮)") }
                     composable(CHAT_NEW_ROUTE) { Text("新しいチャット(仮)") }

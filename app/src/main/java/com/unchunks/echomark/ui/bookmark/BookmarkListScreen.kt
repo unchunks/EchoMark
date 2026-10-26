@@ -127,6 +127,7 @@ import kotlinx.coroutines.launch
 fun BookmarkListScreen(
     onOpenBookmark: (Long) -> Unit = {},
     onOpenTagManagement: () -> Unit = {},
+    onOpenDiscover: () -> Unit = {},
     selectedBookmarkId: Long? = null,
     onBookmarkRemoved: (Long) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
@@ -224,6 +225,7 @@ fun BookmarkListScreen(
             onLongPress = { actionTarget = it },
             onAddClick = { showAddSheet = true },
             onOpenTagManagement = onOpenTagManagement,
+            onOpenDiscover = onOpenDiscover,
             onRetry = viewModel::retry
         ),
         selectedBookmarkId = selectedBookmarkId
@@ -265,6 +267,7 @@ class BookmarkListCallbacks(
     val onLongPress: (Bookmark) -> Unit = {},
     val onAddClick: () -> Unit = {},
     val onOpenTagManagement: () -> Unit = {},
+    val onOpenDiscover: () -> Unit = {},
     val onRetry: () -> Unit = {}
 )
 
@@ -315,7 +318,8 @@ fun BookmarkListContent(
                     scrollBehavior = scrollBehavior,
                     onSearchClick = { callbacks.onSearchActiveChange(true) },
                     onSortOrderChange = callbacks.onSortOrderChange,
-                    onOpenTagManagement = callbacks.onOpenTagManagement
+                    onOpenTagManagement = callbacks.onOpenTagManagement,
+                    onOpenDiscover = callbacks.onOpenDiscover
                 )
             }
         },
@@ -440,7 +444,8 @@ private fun ListTopBar(
     scrollBehavior: TopAppBarScrollBehavior,
     onSearchClick: () -> Unit,
     onSortOrderChange: (BookmarkSortOrder) -> Unit,
-    onOpenTagManagement: () -> Unit
+    onOpenTagManagement: () -> Unit,
+    onOpenDiscover: () -> Unit
 ) {
     var sortMenuOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
@@ -486,6 +491,14 @@ private fun ListTopBar(
                         onClick = {
                             overflowOpen = false
                             onOpenTagManagement()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("資料を探す") },
+                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                        onClick = {
+                            overflowOpen = false
+                            onOpenDiscover()
                         }
                     )
                 }
