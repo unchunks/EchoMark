@@ -643,11 +643,12 @@ class LocalLlmProvider @Inject constructor(
         private const val IDLE_RELEASE_MS = 2 * 60 * 1000L
 
         /**
-         * 解析(要約・タグ)の生成にかける時間の上限。通常は CPU でも 1 分程度で終わるが、小型モデルは同じ文の繰り返しに陥ると
-         * MAX_TOKENS まで生成を続け、数分〜十数分かかることがある。WorkManager は約 10 分でワーカーを止めるため、
-         * それより十分短くして(モデルの読み込み・ロックの待ちの分を残す)自分で打ち切り、失敗として扱う。
+         * 解析(要約・タグ)の生成にかける時間の上限。速い端末では CPU でも 1 分程度で終わるが、遅い端末(Snapdragon 665 の
+         * Xperia 10 II で Qwen3 0.6B)ではプロンプトの読み込みだけで 2,000 文字あたり約 80 秒、出力は 1 文字あたり約 0.3 秒かかる。
+         * 繰り返しに陥った生成は出力の文字数の上限([ANALYZE_MAX_OUTPUT_CHARS])で止めるため、時間の上限は遅い端末に合わせて長めにする。
+         * 端末内 AI の解析はフォアグラウンドで動かす(BookmarkAiProcessingWorker)ため、WorkManager の 10 分の上限は受けにくい。
          */
-        private const val ANALYZE_TIMEOUT_MS = 3 * 60 * 1000L
+        private const val ANALYZE_TIMEOUT_MS = 6 * 60 * 1000L
 
         /**
          * 解析の出力の文字数の上限。要約・タグ・カテゴリの JSON は数百文字で、閉じる前にこれを超えるのは繰り返しに陥ったとき。
@@ -660,9 +661,8 @@ class LocalLlmProvider @Inject constructor(
 
         /**
          * 長い本文の分割要約。入力の上限(2,000 文字)ごとに最大 3 部分(約 6,000 文字。超える分は均等に間引く)。
-         * 部分要約1回の時間の上限は [partTimeoutMillis](GPU 60 秒 / CPU 90 秒)。CPU の最悪でも
-         * 部分要約 3 回(4.5 分。時間の目安 4 分を超えると残りは飛ばす)+ まとめ([ANALYZE_TIMEOUT_MS] 3 分)で、
-         * WorkManager の実行時間の上限(約 10 分)に収まる。
+         * 部分要約1回の時間の上限は [partTimeoutMillis](GPU 3 分 / CPU 5 分)。遅い端末では時間の目安(4 分)を超えた部分は飛ばす。
+         * 速い端末(CPU で部分要約1回 1 分程度)では、部分要約 3 回 + まとめで数分に収まる。
          * (測った速度に応じて時間の目安を変えることも考えられるが、まず `AiPerf` のログで実測してから調整する)
          */
         private val LONG_TEXT = LongTextConfig(

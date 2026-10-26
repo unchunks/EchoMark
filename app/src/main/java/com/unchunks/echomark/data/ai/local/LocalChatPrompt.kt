@@ -13,8 +13,12 @@ import com.unchunks.echomark.domain.model.ChatMessage
  * Gemma にはシステムロールが無いため、指示・文脈・履歴を1つのユーザーターンにまとめる。
  */
 internal object LocalChatPrompt {
-    /** プロンプト全体の文字数の上限。残りを回答の生成に使う */
-    const val MAX_PROMPT_CHARS = 2_400
+    /**
+     * プロンプト全体の文字数の上限。残りを回答の生成に使う。
+     * 遅い端末(Snapdragon 665 で Qwen3 0.6B)では、プロンプトの読み込みに 100 文字あたり約 4 秒かかるため、
+     * 回答が始まるまでの時間を抑えるよう少なめにする
+     */
+    const val MAX_PROMPT_CHARS = 1_800
 
     /** 質問の文字数の上限(長文を貼り付けられた場合は切り詰める) */
     const val MAX_USER_MESSAGE_CHARS = 800
@@ -73,16 +77,16 @@ internal object LocalChatPrompt {
     private fun buildInstructions(context: List<String>, budget: Int): String {
         val selected = mutableListOf<String>()
         for (item in context) {
-            if (AiPrompts.chatInstructions(selected + item).length <= budget) {
+            if (AiPrompts.chatInstructions(selected + item, compact = true).length <= budget) {
                 selected += item
                 continue
             }
-            val overflow = AiPrompts.chatInstructions(selected + item).length - budget
+            val overflow = AiPrompts.chatInstructions(selected + item, compact = true).length - budget
             val keep = item.length - overflow - ELLIPSIS.length
             if (keep >= MIN_CONTEXT_CHARS) selected += item.take(keep) + ELLIPSIS
             break
         }
-        return AiPrompts.chatInstructions(selected)
+        return AiPrompts.chatInstructions(selected, compact = true)
     }
 
     private fun truncate(text: String, maxChars: Int): String =
