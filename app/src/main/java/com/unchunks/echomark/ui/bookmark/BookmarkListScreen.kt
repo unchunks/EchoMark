@@ -45,6 +45,8 @@ import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -94,11 +96,13 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.formatRelativeTime
@@ -570,7 +574,11 @@ private fun SearchTopBar(
     }
 }
 
-/** 絞り込み(すべて/お気に入り/アーカイブ)とタグのチップを横スクロールで並べる */
+/**
+ * 絞り込み(すべて/お気に入り/アーカイブ)とタグのチップを横スクロールで並べる。
+ * タグで絞り込んでいる間は、右端に「すべて解除」を固定して出す(選んだタグのチップは先頭へ移るため、
+ * 右へスクロールしてタグを選んだあとは見えなくなる。スクロールし直さずに一度で絞り込みを外せるように)
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FilterBar(
@@ -580,9 +588,47 @@ private fun FilterBar(
     onFilterChange: (BookmarkFilter) -> Unit,
     onTagSelected: (Long?) -> Unit
 ) {
+    val tagFiltered = selectedTagId != null
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        FilterChipRow(
+            filter = filter,
+            tags = tags,
+            selectedTagId = selectedTagId,
+            onFilterChange = onFilterChange,
+            onTagSelected = onTagSelected,
+            // 「すべて解除」を出す間は、右の余白を詰めてそちらに譲る
+            endPadding = if (tagFiltered) 8.dp else 16.dp,
+            modifier = Modifier.weight(1f)
+        )
+        if (tagFiltered) {
+            AssistChip(
+                onClick = { onTagSelected(null) },
+                label = { Text("すべて解除") },
+                leadingIcon = {
+                    Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize))
+                },
+                modifier = Modifier
+                    .padding(end = 16.dp)
+                    .semantics { contentDescription = "タグの絞り込みをすべて解除" }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterChipRow(
+    filter: BookmarkFilter,
+    tags: List<Tag>,
+    selectedTagId: Long?,
+    onFilterChange: (BookmarkFilter) -> Unit,
+    onTagSelected: (Long?) -> Unit,
+    endPadding: Dp,
+    modifier: Modifier = Modifier
+) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp),
+        modifier = modifier,
+        contentPadding = PaddingValues(start = 16.dp, end = endPadding),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
