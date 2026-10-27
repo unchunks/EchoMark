@@ -20,7 +20,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
         BookmarkEntity::class, TagEntity::class, BookmarkTagCrossRef::class,
         ConversationEntity::class, ChatMessageEntity::class
     ],
-    version = 11,
+    version = AppDatabase.VERSION,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -30,4 +30,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun backupDao(): BackupDao
+
+    companion object {
+        /**
+         * DB のスキーマの版。テーブル・列・インデックスを変えたら 1 つ上げ、Migrations.kt にマイグレーションを足す
+         * (手順は docs/database-migrations.md)。
+         */
+        const val VERSION = 11
+    }
 }
