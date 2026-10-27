@@ -72,12 +72,33 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
 }
 
 /**
+ * v11 → v12: 処理待ちと処理中を分け、処理の段・日時・失敗の理由(ProcessingInfo)を持てるようにする。
+ * - 処理の段(processingStage)、処理を頼んだ・始めた・今の段を始めた・終えた日時、失敗の理由(failureReason)を追加する
+ * - 処理中(PROCESSING)の行は処理待ち(PENDING)にする。アプリの更新でプロセスは止まっているため、実行中のワークは無い
+ *   (残っているワークは再実行されたときに段を書き、ワークの無いものは起動時に積み直す)
+ * - 処理待ちの行は、頼んだ日時が分からないため保存日時を入れる(順番待ちの並べ方に使う)。
+ *   それ以外の日時・失敗の理由は分からないため空のままにする
+ */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `processingStage` TEXT")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `queuedAt` INTEGER")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `processingStartedAt` INTEGER")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `stageStartedAt` INTEGER")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `processingFinishedAt` INTEGER")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `failureReason` TEXT")
+        db.execSQL("UPDATE `bookmarks` SET `aiStatus` = 'PENDING' WHERE `aiStatus` = 'PROCESSING'")
+        db.execSQL("UPDATE `bookmarks` SET `queuedAt` = `createdAt` WHERE `aiStatus` = 'PENDING'")
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
  */
 val ALL_MIGRATIONS: Array<Migration> =
-    arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+    arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */
 const val OLDEST_MIGRATABLE_VERSION = 6

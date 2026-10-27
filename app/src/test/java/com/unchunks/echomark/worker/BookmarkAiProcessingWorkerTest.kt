@@ -32,6 +32,8 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -421,10 +423,87 @@ class BookmarkAiProcessingWorkerTest {
         val work = launch { runWorker(id, runAttemptCount = 0) }
         llm.started.await()
         assertEquals(AiStatus.PROCESSING, statusOf(id))
+        assertEquals(ProcessingStage.ANALYZE, stageOf(id))
 
         // WorkManager による停止(実行時間の上限・取り消しなど)を、コルーチンのキャンセルで再現する
         work.cancelAndJoin()
         assertEquals(AiStatus.PENDING, statusOf(id))
+        assertEquals(null, stageOf(id))
+    }
+
+    private suspend fun stageOf(id: Long) = repository.getBookmarkById(id)!!.processing.stage
+
+    @Test
+    fun 要約_タグ付けの後に埋め込みの段に進み_完了すると段を消して終えた日時を残す() = runBlocking {
+        val id = insertBookmark()
+        val stagesWhileEmbedding = mutableListOf<Pair<AiStatus, ProcessingStage?>>()
+        embedding.onEmbed = { stagesWhileEmbedding += statusOf(id) to stageOf(id) }
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals(listOf(AiStatus.PROCESSING to ProcessingStage.EMBED), stagesWhileEmbedding)
+        val processing = repository.getBookmarkById(id)!!.processing
+        assertEquals(AiStatus.DONE, statusOf(id))
+        assertEquals(null, processing.stage)
+        assertTrue(processing.startedAt != null && processing.finishedAt != null)
+        assertTrue(processing.finishedAt!! >= processing.startedAt!!)
+        assertEquals(null, processing.failureReason)
+    }
+
+    @Test
+    fun 要約が済んでいれば埋め込みの段だけを通る() = runBlocking {
+        val id = insertBookmark()
+        repository.updateSummary(id, "既存の要約")
+        val stagesWhileEmbedding = mutableListOf<ProcessingStage?>()
+        embedding.onEmbed = { stagesWhileEmbedding += stageOf(id) }
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals(0, llm.calls)
+        assertEquals(listOf(ProcessingStage.EMBED), stagesWhileEmbedding)
+        assertEquals(AiStatus.DONE, statusOf(id))
+    }
+
+    @Test
+    fun 再試行を待つ間は処理待ちにして失敗の理由を残す() = runBlocking {
+        val id = insertBookmark()
+        llm.failure = LlmException.Network()
+
+        assertEquals(ListenableWorker.Result.retry(), runWorker(id, runAttemptCount = 0))
+
+        assertEquals(AiStatus.PENDING, statusOf(id))
+        assertEquals(null, stageOf(id))
+        assertEquals(ProcessingFailureReason.NETWORK, repository.getBookmarkById(id)!!.processing.failureReason)
+    }
+
+    @Test
+    fun 失敗_準備待ちには理由を残す() = runBlocking {
+        val cases = listOf(
+            LlmException.Timeout(180_000L) to (AiStatus.FAILED to ProcessingFailureReason.TIMEOUT),
+            NothingToAnalyzeException() to (AiStatus.WAITING_MODEL to ProcessingFailureReason.NOTHING_TO_ANALYZE),
+            LlmException.Refused() to (AiStatus.FAILED to ProcessingFailureReason.REFUSED)
+        )
+        for ((failure, expected) in cases) {
+            val id = insertBookmark()
+            llm.failure = failure
+
+            runWorker(id, runAttemptCount = 0)
+
+            val bookmark = repository.getBookmarkById(id)!!
+            assertEquals(failure.javaClass.simpleName, expected, bookmark.aiStatus to bookmark.processing.failureReason)
+        }
+    }
+
+    @Test
+    fun 試行の回数の上限に達したものは理由を残して失敗にする() = runBlocking {
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 1_000)
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals(AiStatus.FAILED, bookmark.aiStatus)
+        assertEquals(ProcessingFailureReason.TOO_MANY_ATTEMPTS, bookmark.processing.failureReason)
+        assertEquals(0, llm.calls)
     }
 }
 
@@ -461,7 +540,10 @@ private class RecordingEmbeddingProvider : EmbeddingProvider {
     /** embedDocument で投げるもの */
     var failure: Throwable? = null
     override val profile: EmbeddingModelProfile = delegate.profile
+    /** embedDocument の中で呼ぶ(埋め込みを作っている間の状態を調べる) */
+    var onEmbed: (suspend () -> Unit)? = null
     override suspend fun embedDocument(text: String): FloatArray {
+        onEmbed?.invoke()
         failure?.let { throw it }
         documents += text
         return delegate.embedDocument(text)

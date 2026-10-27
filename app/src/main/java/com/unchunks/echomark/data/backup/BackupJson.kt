@@ -47,6 +47,8 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
+ * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
+ * ブックマークでは空になる(処理待ち・処理中だったものは準備待ちとして読み、再処理する)。
  *
  * 版の履歴(古い版もそのまま読み込める):
  * - 1: 最初の形式

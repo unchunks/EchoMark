@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.mapper
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.model.TagSource
 
 fun BookmarkEntity.toDomain(): Bookmark = Bookmark(
@@ -11,7 +12,11 @@ fun BookmarkEntity.toDomain(): Bookmark = Bookmark(
     createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus,
     imageUrl = imageUrl, siteName = siteName, isFavorite = isFavorite, isArchived = isArchived,
     filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize,
-    contentFetchedAt = contentFetchedAt
+    contentFetchedAt = contentFetchedAt,
+    processing = ProcessingInfo(
+        stage = processingStage, queuedAt = queuedAt, startedAt = processingStartedAt,
+        stageStartedAt = stageStartedAt, finishedAt = processingFinishedAt, failureReason = failureReason
+    )
 )
 
 fun Bookmark.toEntity(): BookmarkEntity = BookmarkEntity(
@@ -20,7 +25,10 @@ fun Bookmark.toEntity(): BookmarkEntity = BookmarkEntity(
     createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus,
     imageUrl = imageUrl, siteName = siteName, isFavorite = isFavorite, isArchived = isArchived,
     filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize,
-    contentFetchedAt = contentFetchedAt
+    contentFetchedAt = contentFetchedAt,
+    processingStage = processing.stage, queuedAt = processing.queuedAt, processingStartedAt = processing.startedAt,
+    stageStartedAt = processing.stageStartedAt, processingFinishedAt = processing.finishedAt,
+    failureReason = processing.failureReason
 )
 
 fun BookmarkWithTags.toDomain(): Bookmark {

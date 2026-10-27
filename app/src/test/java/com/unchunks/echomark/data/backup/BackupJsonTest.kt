@@ -8,6 +8,8 @@ import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.model.TagSource
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -58,6 +60,23 @@ class BackupJsonTest {
         val decoded = BackupJson.decode(BackupJson.encode(sample))
         assertEquals(sample, decoded.data)
         assertEquals(0, decoded.invalidRecords)
+    }
+
+    @Test
+    fun 処理の段_日時_失敗の理由は書き出さず_読み込むと空になる() {
+        val inProgress = sample.bookmarks[1].copy(
+            aiStatus = AiStatus.FAILED, processingStage = ProcessingStage.ANALYZE, queuedAt = 1, processingStartedAt = 2,
+            stageStartedAt = 3, processingFinishedAt = 4, failureReason = ProcessingFailureReason.TIMEOUT
+        )
+
+        val text = BackupJson.encode(sample.copy(bookmarks = listOf(inProgress)))
+        val decoded = BackupJson.decode(text).data.bookmarks.single()
+
+        listOf("processingStage", "queuedAt", "stageStartedAt", "failureReason", "TIMEOUT").forEach {
+            assertFalse(it, text.contains(it))
+        }
+        // 状態そのものは書き出す
+        assertEquals(sample.bookmarks[1].copy(aiStatus = AiStatus.FAILED), decoded)
     }
 
     @Test
