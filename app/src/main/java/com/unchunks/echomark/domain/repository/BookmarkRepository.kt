@@ -135,15 +135,30 @@ interface BookmarkRepository {
 
     /**
      * ハイブリッド検索。キーワード(LIKE)とベクトル類似の結果を RRF で統合して返す。
+     * キーワードは空白(全角を含む)で区切った語をすべて含むもの(AND)。
      * tagId が非NULLならそのタグを持つものに絞る(AND)。埋め込みが使えない場合はキーワードのみ。
      */
     suspend fun search(query: String, tagId: Long?): List<Bookmark>
 
     /**
-     * キーワード(LIKE)だけの検索。タイトル・要約・本文・タグ名に [query] を含むものを新しい順に最大 [limit] 件返す。
+     * キーワード(LIKE)だけの検索。タイトル・要約・本文・URL・タグ名などに [query] の語をすべて含むものを
+     * 新しい順に最大 [limit] 件返す。
      * 意味検索(埋め込み)はしない(チャットの文脈の検索で、語ごとに何度も呼ぶため)。
      */
     suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> = search(query, null).take(limit)
+
+    /**
+     * [search] のキーワードの部分だけ。一覧の検索で、意味検索の準備(検索語の埋め込み)を待たずに先に出す結果。
+     * [tagId] が非NULLならそのタグを持つものに絞る。
+     */
+    suspend fun searchKeywordOnly(query: String, tagId: Long?): List<Bookmark> = search(query, tagId)
+
+    /**
+     * 意味検索の準備として [query] を埋め込み、結果を覚えておく(続く [searchWithDetails] では埋め込み直さない)。
+     * 埋め込みモデルが使えないときは false(検索はキーワードのみになる)。
+     * 埋め込みはモデルの読み込みや AI 処理との順番待ちで時間がかかることがあるため、一覧はこれを待つ間キーワードの結果を出す。
+     */
+    suspend fun prepareSemanticSearch(query: String): Boolean = true
 
     /** [search] と同じ検索をして、意味検索が使えたか・意味だけで見つかったものも返す。 */
     suspend fun searchWithDetails(query: String, tagId: Long?): BookmarkSearchResult

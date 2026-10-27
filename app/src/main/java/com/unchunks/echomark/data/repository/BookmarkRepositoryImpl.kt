@@ -6,6 +6,7 @@ import com.unchunks.components.search.RankFusion
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.TagDao
+import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.mapper.toEntity
@@ -21,6 +22,7 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
+import com.unchunks.echomark.domain.bookmark.model.splitSearchTerms
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
@@ -35,6 +37,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.text.Normalizer
 import javax.inject.Inject
 
 class BookmarkRepositoryImpl @Inject constructor(
@@ -440,9 +443,28 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> =
         withContext(dispatcherProvider.io) {
+            if (query.isBlank()) return@withContext emptyList()
+            searchKeywordMatches(query, tagId = null).take(limit).map { it.toDomain() }
+        }
+
+    override suspend fun searchKeywordOnly(query: String, tagId: Long?): List<Bookmark> =
+        withContext(dispatcherProvider.io) {
+            searchKeywordMatches(query, tagId).map { it.toDomain() }
+        }
+
+    override suspend fun prepareSemanticSearch(query: String): Boolean =
+        withContext(dispatcherProvider.io) {
             val q = query.trim()
-            if (q.isEmpty()) return@withContext emptyList()
-            bookmarkDao.searchByKeyword(escapeLike(q), tagId = null).take(limit).map { it.toDomain() }
+            if (q.isEmpty()) return@withContext false
+            try {
+                embedQueryCached(q)
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "検索語を埋め込めないため意味検索は使わない")
+                false
+            }
         }
 
     override fun observeBookmarkCount(): Flow<Int> =
@@ -452,13 +474,13 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             val q = query.trim()
 
-            // キーワード検索(タイトル・要約・本文・タグ名)。createdAt 降順
-            val keyword = bookmarkDao.searchByKeyword(escapeLike(q), tagId).map { it.toDomain() }
+            // キーワード検索(タイトル・要約・本文・URL・タグ名など。語ごとの AND)。createdAt 降順
+            val keyword = searchKeywordMatches(q, tagId).map { it.toDomain() }
             if (q.isEmpty()) return@withContext BookmarkSearchResult(keyword, semanticAvailable = false)
 
             // ベクトル検索。モデル未取得などで失敗したらキーワードのみにフォールバックする
             val semantic = try {
-                val vector = embeddingProvider.embedQuery(q)
+                val vector = embedQueryCached(q)
                 val profile = embeddingProvider.profile
                 val ids = vectorSearch.nearestNeighbors(vector, VECTOR_TOP_K, profile.modelVersion)
                     .filter { it.score <= profile.maxSearchDistance }
@@ -485,11 +507,65 @@ class BookmarkRepositoryImpl @Inject constructor(
             )
         }
 
+    /**
+     * キーワード検索。[query] を空白(全角の空白を含む)で区切り、すべての語を含むもの(AND)を createdAt 降順で返す。
+     * 語ごとに離れた場所にあってよい(「東京 ラーメン」で「東京の美味しいラーメン」が見つかる)。語が無ければ全件。
+     */
+    private suspend fun searchKeywordMatches(query: String, tagId: Long?): List<BookmarkWithTags> {
+        val terms = splitSearchTerms(query)
+        if (terms.isEmpty()) return bookmarkDao.searchByKeyword("", tagId)
+        // 1語目の結果(新しい順)を、残りの語の結果にも入っているものに絞る
+        var matches = searchTerm(terms.first(), tagId)
+        for (term in terms.drop(1)) {
+            if (matches.isEmpty()) break
+            val ids = searchTerm(term, tagId).mapTo(HashSet()) { it.bookmark.id }
+            matches = matches.filter { it.bookmark.id in ids }
+        }
+        return matches
+    }
+
+    /**
+     * 1語の検索。日本語入力の全角英数字(「ＲＥＡＣＴ」)でも半角で保存したものが見つかるよう、
+     * NFKC で正規化した語でも探して合わせる(新しい順)。
+     */
+    private suspend fun searchTerm(term: String, tagId: Long?): List<BookmarkWithTags> {
+        val found = bookmarkDao.searchByKeyword(escapeLike(term), tagId)
+        val normalized = Normalizer.normalize(term, Normalizer.Form.NFKC)
+        if (normalized == term) return found
+        return (found + bookmarkDao.searchByKeyword(escapeLike(normalized), tagId))
+            .distinctBy { it.bookmark.id }
+            .sortedByDescending { it.bookmark.createdAt }
+    }
+
+    /**
+     * 検索語の埋め込み。DB が変わって検索し直すたびに埋め込み直さないよう、モデルの版と検索語ごとに覚えておく
+     * (埋め込みはモデルの読み込みや AI 処理との順番待ちで時間がかかることがある)。
+     */
+    private suspend fun embedQueryCached(query: String): FloatArray {
+        val key = embeddingProvider.modelVersion + "\n" + query
+        synchronized(queryVectorCache) { queryVectorCache[key] }?.let { return it }
+        val vector = embeddingProvider.embedQuery(query)
+        // 埋め込みの間にモデルが切り替わったら、どちらの版のベクトルか分からないため覚えない
+        if (embeddingProvider.modelVersion + "\n" + query == key) {
+            synchronized(queryVectorCache) { queryVectorCache[key] = vector }
+        }
+        return vector
+    }
+
+    /** モデルの版と検索語 → 検索語のベクトル。古いものから捨てる */
+    private val queryVectorCache = object : LinkedHashMap<String, FloatArray>(QUERY_VECTOR_CACHE_SIZE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, FloatArray>?): Boolean =
+            size > QUERY_VECTOR_CACHE_SIZE
+    }
+
     /** LIKE のワイルドカード(% _)とエスケープ文字自体を無効化する(DAO側は ESCAPE バックスラッシュ)。 */
     private fun escapeLike(s: String): String =
         s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private companion object {
+        /** 覚えておく検索語のベクトルの数 */
+        const val QUERY_VECTOR_CACHE_SIZE = 16
+
         /** テキストファイルから本文に入れる最大文字数 */
         const val MAX_TEXT_FILE_CHARS = 100_000
 

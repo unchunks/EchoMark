@@ -4,24 +4,32 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.ui.components.PreviewSamples
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** 一覧をスクロールしてトップバーが隠れたあと、空状態に切り替わってもトップバーが戻ること。 */
+/** 一覧のトップバー(スクロールで隠れたあとの戻り方・検索欄の入力)のテスト。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w400dp-h800dp-xhdpi")
@@ -57,6 +65,35 @@ class BookmarkListTopBarTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("ブックマーク").assertIsDisplayed()
+    }
+
+    @Test
+    fun 検索欄の入力は一覧の状態の反映を待たずに表示する() {
+        val typed = mutableListOf<String>()
+        composeRule.setContent {
+            EchoMarkTheme {
+                // ViewModel の uiState がまだ追いついていない(検索語が空のまま)状態
+                BookmarkListContent(
+                    uiState = BookmarkListUiState(isSearchActive = true),
+                    snackbarHostState = SnackbarHostState(),
+                    callbacks = BookmarkListCallbacks(onSearchQueryChange = { typed += it }),
+                    nowMillis = PreviewSamples.NOW
+                )
+            }
+        }
+
+        composeRule.onNode(hasSetTextAction()).performTextInput("ラーメン")
+        composeRule.waitForIdle()
+
+        // 入力した文字が古い検索語(空)で上書きされない
+        composeRule.onNode(hasSetTextAction()).assertTextEquals("ラーメン", includeEditableText = true)
+        assertEquals("ラーメン", typed.last())
+
+        composeRule.onNodeWithContentDescription("検索語を消す").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNode(hasSetTextAction())
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
+        assertEquals("", typed.last())
     }
 
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertIsNotDisplayedOrMissing() {
