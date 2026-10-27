@@ -28,8 +28,8 @@
 | O2 | Kotlin・kotlinx.coroutines・kotlinx.serialization | Apache License 2.0 | 可 | O1 と同じ | 各 POM |
 | O3 | Dagger / Hilt | Apache License 2.0 | 可 | O1 と同じ | 各 POM |
 | O4 | Material Icons | Apache License 2.0 | 可 | O1 と同じ | `androidx.compose.material:material-icons-*` の POM。以前の一覧にあった Material Components(`com.google.android.material`)は依存に無いので外した(テーマは端末標準の `android:Theme.Material`) |
-| O5 | MediaPipe Tasks(テキスト埋め込み・LLM 推論) | Apache License 2.0 | 可 | O1 と同じ | `tasks-core`・`tasks-text`・`tasks-genai` の POM。AAR の `META-INF/NOTICE` に、中で使っている部品のライセンス文と、性能・利用状況の指標(metrics)を Google に送る旨の通知がある(下の「ライブラリに含まれる部品」) |
-| O5b | LiteRT-LM(端末内 AI の .litertlm モデルの実行) | Apache License 2.0 | 可 | O1 と同じ | `com.google.ai.edge.litertlm:litertlm-android:0.18.0` の POM と AAR の `LICENSE`(2026-10-27 に確認)。AAR の `THIRD_PARTY_NOTICE.txt`(約 4 万行)に、ネイティブライブラリの中で使っている部品のライセンス文(Apache 2.0・MIT・BSD・Boost Software License など)がある(下の「ライブラリに含まれる部品」) |
+| O5 | MediaPipe Tasks(テキスト埋め込み) | Apache License 2.0 | 可 | O1 と同じ | `tasks-core`・`tasks-text` の POM。AAR の `META-INF/NOTICE` に、中で使っている部品のライセンス文と、性能・利用状況の指標(metrics)を Google に送る旨の通知がある(下の「ライブラリに含まれる部品」)。端末内 AI(LLM)は LiteRT-LM に移したため、`tasks-genai`(LLM Inference)はアプリの依存から外した(部品 components の llm-ondevice からも外す) |
+| O5b | LiteRT-LM(端末内 AI のモデルの実行。.litertlm と旧形式の .task) | Apache License 2.0 | 可 | O1 と同じ | `com.google.ai.edge.litertlm:litertlm-android:0.18.1` の POM と AAR の `LICENSE`(2026-10-27 に確認)。AAR の `THIRD_PARTY_NOTICE.txt`(約 4 万行)に、ネイティブライブラリの中で使っている部品のライセンス文(Apache 2.0・MIT・BSD・Boost Software License など)がある(下の「ライブラリに含まれる部品」) |
 | O5c | Gson | Apache License 2.0 | 可 | O1 と同じ | `com.google.code.gson:gson` の POM(LiteRT-LM が使う) |
 | O6 | ObjectBox Java | Apache License 2.0 | 可 | O1 と同じ | `objectbox-java`・`objectbox-java-api`・`objectbox-android` の POM。<https://objectbox.io/faq/> の表(Java libraries: Apache 2.0) |
 | O7 | OkHttp・Okio | Apache License 2.0 | 可 | O1 と同じ | 各 POM |
@@ -74,7 +74,7 @@
 
 画面は artifact(POM)の単位でまとめている。artifact の中に入っている、別のライセンスの部品は次のとおり。
 
-- **MediaPipe Tasks**(`tasks-core`・`tasks-text` の `META-INF/NOTICE`): Abseil・TensorFlow・XNNPACK・OpenCV・ICU4C・LLVM・BoringSSL・zlib など約 180 個のライセンス文。先頭に「MediaPipe Tasks Privacy Notice」があり、入力データは端末内で処理して Google に送らないこと、API の性能・利用状況の指標は Google に送ること、その処理についてユーザーの同意を得るのはアプリの開発者の責任(法律が求める範囲で)であることが書かれている。`tasks-genai` の AAR にはライセンスのファイルが無い。
+- **MediaPipe Tasks**(`tasks-core`・`tasks-text` の `META-INF/NOTICE`): Abseil・TensorFlow・XNNPACK・OpenCV・ICU4C・LLVM・BoringSSL・zlib など約 180 個のライセンス文。先頭に「MediaPipe Tasks Privacy Notice」があり、入力データは端末内で処理して Google に送らないこと、API の性能・利用状況の指標は Google に送ること、その処理についてユーザーの同意を得るのはアプリの開発者の責任(法律が求める範囲で)であることが書かれている。
 - **LiteRT-LM**(AAR の `THIRD_PARTY_NOTICE.txt`): ネイティブライブラリ(`liblitertlm_jni.so`)の中で使っている部品のライセンス文。Apache 2.0 が大半で、ほかに MIT・BSD・Boost Software License などがある。部品ごとの一覧は**まだ確かめていない**。
 - **ML Kit・Google Play 開発者サービス・ODML Image**(各 AAR の `third_party_licenses.txt` / `.json`): 中で使っているオープンソースの一覧。文字認識の `text-recognition-bundled-common` と `text-recognition-japanese` は約 200 個(Abseil・TensorFlow・OpenCV・Leptonica・ICU4C・Protocol Buffers・zlib など)。
 - **jackson-core**(`META-INF/FastDoubleParser-NOTICE`・`thirdparty-LICENSE`): FastDoubleParser(MIT)と、それが取り込んだ fast_double_parser(Boost Software License)・fast_float(MIT)・bigint(BSD 2-Clause)。
@@ -301,7 +301,6 @@
 | O4 Material Icons | `androidx.compose.material:material-icons-extended` | 1.7.8 | The Apache Software License, Version 2.0 | Google Maven |
 | O4 Material Icons | `androidx.compose.material:material-icons-extended-android` | 1.7.8 | The Apache Software License, Version 2.0 | Google Maven |
 | O5 MediaPipe Tasks | `com.google.mediapipe:tasks-core` | 1.0.0 | The Apache Software License, Version 2.0 | Google Maven |
-| O5 MediaPipe Tasks | `com.google.mediapipe:tasks-genai` | 0.10.35 | The Apache Software License, Version 2.0 | Google Maven |
 | O5 MediaPipe Tasks | `com.google.mediapipe:tasks-text` | 1.0.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O6 ObjectBox Java | `io.objectbox:objectbox-android` | 5.4.2 | The Apache Software License, Version 2.0 | Maven Central |
 | O6 ObjectBox Java | `io.objectbox:objectbox-java` | 5.4.2 | The Apache Software License, Version 2.0 | Maven Central |

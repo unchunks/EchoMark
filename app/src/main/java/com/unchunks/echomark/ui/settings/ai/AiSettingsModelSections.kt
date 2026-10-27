@@ -34,6 +34,7 @@ import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.filestorage.formatBytes
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
+import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.provider.EmbeddingModels
@@ -52,6 +53,7 @@ import java.util.Date
 @Composable
 internal fun LocalModelSection(
     model: LocalModelInfo?,
+    loadFailure: LocalModelLoadFailure?,
     importState: ModelImportState,
     isSelected: Boolean,
     onPickModel: () -> Unit,
@@ -111,6 +113,22 @@ internal fun LocalModelSection(
                         isError = true
                     )
                 }
+                if (loadFailure != null) {
+                    StatusLine(
+                        icon = {
+                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        },
+                        text = loadFailure.userMessage,
+                        isError = true
+                    )
+                } else if (model?.isLegacyTaskFormat == true) {
+                    // 以前の版(MediaPipe の LLM Inference)で取り込んだ .task も、そのまま LiteRT-LM で動かす
+                    SettingsNotice(
+                        text = "旧形式(.task)のモデルです。そのまま使えますが、読み込めない・回答が崩れるときは、" +
+                            "同じモデルの .litertlm 版を取り込み直してください。",
+                        icon = Icons.Outlined.Info
+                    )
+                }
                 Button(onClick = onPickModel) {
                     ButtonIcon(Icons.Outlined.UploadFile)
                     Text(if (model == null) "モデルファイルを取り込む" else "別のモデルに入れ替える")
@@ -118,10 +136,10 @@ internal fun LocalModelSection(
             }
         }
         Text(
-            "入手方法: Hugging Face の litert-community で公開されている Gemma 3 1B IT" +
-                "(例: Gemma3-1B-IT の int4 版 .task)などを端末にダウンロードし、上のボタンで選んでください。" +
+            "入手方法: Hugging Face の litert-community で公開されている Gemma 3 1B IT・Qwen3 0.6B" +
+                "(例: Gemma3-1B-IT の int4 版 .litertlm)などを端末にダウンロードし、上のボタンで選んでください。" +
                 "Gemma のダウンロードには、Hugging Face へのログインと利用規約への同意が必要です。\n" +
-                "対応形式: .task / .litertlm",
+                "対応形式: .litertlm(推奨)/ .task(旧形式)",
             style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

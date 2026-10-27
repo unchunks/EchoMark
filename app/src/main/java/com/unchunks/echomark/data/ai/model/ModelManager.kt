@@ -11,9 +11,11 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import timber.log.Timber
@@ -24,7 +26,8 @@ import javax.inject.Singleton
 
 /**
  * オンデバイス LLM のモデルファイルを管理する。
- * ユーザーが端末内のファイル(SAF で選んだ .task / .litertlm)を `filesDir/models/` へコピーして取り込む。
+ * ユーザーが端末内のファイル(SAF で選んだ .litertlm / 旧形式の .task)を `filesDir/models/` へコピーして取り込む。
+ * どちらも LiteRT-LM で動かす。取り込むときに、中身が拡張子の形式か(ファイルの先頭のバイト)を確かめる。
  * モデルは1つだけ保持し、取り込み直すと置き換える。
  */
 @Singleton
@@ -55,6 +58,25 @@ class ModelManager @Inject constructor(
     val importState: StateFlow<ModelImportState> = _importState.asStateFlow()
 
     private var importJob: Job? = null
+
+    private val _loadFailure = MutableStateFlow<LocalModelLoadFailure?>(null)
+
+    /**
+     * 取り込んだモデルを読み込めなかったこと(アプリを起動し直すまで覚える)。読み込めたら・取り込み直したら・削除したら null。
+     * 取り込み直す前のモデルの失敗は出さない([LocalModelLoadFailure.model] が今のモデルと違えば null)。
+     */
+    val loadFailure: Flow<LocalModelLoadFailure?> =
+        combine(_loadFailure, _installedModel) { failure, model -> failure?.takeIf { it.model == model } }
+
+    /** [model] のエンジンを作れなかったことを記録する(端末内 AI の推論の側から呼ぶ)。 */
+    fun reportLoadFailure(model: LocalModelInfo, error: Throwable) {
+        _loadFailure.value = LocalModelLoadFailure(model, error.message)
+    }
+
+    /** [model] のエンジンを作れたことを記録する(前の失敗の表示を消す)。 */
+    fun reportLoaded(model: LocalModelInfo) {
+        if (_loadFailure.value?.model == model) _loadFailure.value = null
+    }
 
     /** 推論に使うモデルファイル。未取り込み・ファイル欠損なら null。 */
     fun modelFile(): File? {
@@ -87,6 +109,7 @@ class ModelManager @Inject constructor(
             _installedModel.value?.let { File(modelsDir, it.fileName).delete() }
             metadataFile.delete()
             _installedModel.value = null
+            _loadFailure.value = null
             Timber.d("オンデバイスモデルを削除")
         }
     }
@@ -109,6 +132,12 @@ class ModelManager @Inject constructor(
                 _importState.value = ModelImportState.Failed(ModelImportError.EmptyFile)
                 return
             }
+            // 拡張子だけ合う別のファイル(途中で切れたダウンロードの HTML など)は、今のモデルを消す前に断る
+            if (!ModelImportValidator.matchesFormat(extension, readHeader(part))) {
+                part.delete()
+                _importState.value = ModelImportState.Failed(ModelImportError.InvalidModelFile(extension))
+                return
+            }
 
             // 旧モデルを消してから置き換える(拡張子が変わる場合もあるため固定名 + 拡張子で保存)
             val fileName = MODEL_FILE_BASE_NAME + extension
@@ -125,6 +154,7 @@ class ModelManager @Inject constructor(
             )
             saveMetadata(info)
             _installedModel.value = info
+            _loadFailure.value = null
             _importState.value = ModelImportState.Succeeded(info)
             Timber.i("オンデバイスモデルを取り込み: ${info.displayName} (${info.sizeBytes} bytes)")
 
@@ -157,6 +187,17 @@ class ModelManager @Inject constructor(
             part.delete()
             _importState.value = ModelImportState.Failed(ModelImportError.ReadFailed)
         }
+    }
+
+    private fun readHeader(file: File): ByteArray = file.inputStream().use { input ->
+        val buffer = ByteArray(ModelImportValidator.HEADER_BYTES)
+        var read = 0
+        while (read < buffer.size) {
+            val n = input.read(buffer, read, buffer.size - read)
+            if (n < 0) break
+            read += n
+        }
+        buffer.copyOf(read)
     }
 
     private fun loadMetadata(): LocalModelInfo? = try {

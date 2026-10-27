@@ -1,11 +1,6 @@
-@file:Suppress("DEPRECATION")
-
 package com.unchunks.echomark.data.ai.local
 
 import android.content.Context
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
-import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
-import com.google.mediapipe.tasks.genai.llminference.PromptTemplates
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.llm.ChatOutputGuard
 import com.unchunks.components.llm.JsonObjectEndDetector
@@ -19,7 +14,6 @@ import com.unchunks.components.llm.ondevice.FileBackendStore
 import com.unchunks.components.llm.ondevice.GenerationKind
 import com.unchunks.components.llm.ondevice.LiteRtLmTextEngine
 import com.unchunks.components.llm.ondevice.LocalTextEngine
-import com.unchunks.components.llm.ondevice.MediaPipeTextEngine
 import com.unchunks.components.llm.ondevice.isInputTooLong
 import com.unchunks.components.llm.ondevice.shouldReleaseEngineOnTrim
 import com.unchunks.echomark.data.ai.AiPerfLog
@@ -68,9 +62,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * MediaPipe LLM Inference (Gemma 等) によるローカル LLM。
+ * LiteRT-LM(Gemma・Qwen 等)によるローカル LLM。.litertlm 形式のモデルと、旧形式の .task のモデルの両方を LiteRT-LM で動かす
+ * (MediaPipe の LLM Inference は非推奨になったため使わない)。
  * モデルは [ModelManager] で取り込んだファイルを使い、初回利用時(または [prewarm])に遅延初期化する。
- * 取り込み直し・削除を検知したらエンジンを作り直す。
+ * 取り込み直し・削除を検知したらエンジンを作り直す。GPU でも CPU でもエンジンを作れなければ [ModelManager.reportLoadFailure]
+ * で設定画面に知らせ、取り込み直しを促す(旧形式の .task には LiteRT-LM で読めないものがあるため)。
  *
  * 速度とメモリの方針:
  * - 演算装置: 既定は CPU。AI 設定で GPU を使う([AppSettingsRepository.localLlmUseGpu])ときだけ GPU を先に試し、
@@ -82,9 +78,6 @@ import javax.inject.Singleton
  * - 解放: エンジンはジョブの間は保持するが、最後に使ってから [IDLE_RELEASE_MS] 経つか、メモリが逼迫したとき
  *   ([trimMemory]。使用中は解放しない)に閉じる。モデルは数百MB〜数GBあり、持ち続けるとバックグラウンドの
  *   プロセスが OOM で終了されやすくなるため。次に使うときに読み込み直す
- *
- * 注意: tasks-genai 0.10.35 で LLM Inference API は非推奨(保守のみ)になった。
- * 公式の移行先は LiteRT-LM。移行するまで非推奨警告をファイル単位で抑制する。
  */
 @Singleton
 class LocalLlmProvider @Inject constructor(
@@ -167,7 +160,19 @@ class LocalLlmProvider @Inject constructor(
         releaseLocked("モデルか演算装置の設定が変わった")
         val modelKey = "${model.fileName}:${model.sizeBytes}:${model.importedAt}"
         val start = System.nanoTime()
-        val created = backendSelector.create(modelKey, allowGpu) { backend -> createEngine(file, model, backend) }
+        val created = try {
+            backendSelector.create(modelKey, allowGpu) { backend -> createEngine(file, model, backend) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LinkageError) {
+            // ライブラリの読み込みの失敗はモデルのせいではない(withEngine で端末内 AI が使えない例外にする)
+            throw e
+        } catch (e: Throwable) {
+            Timber.w(e, "端末内モデルを読み込めない: %s", model.displayName)
+            modelManager.reportLoadFailure(model, e)
+            throw e
+        }
+        modelManager.reportLoaded(model)
         val millis = (System.nanoTime() - start) / NANOS_PER_MILLI
         Timber.i("端末内モデルを読み込み: backend=%s %d ms (%s)", created.backend, millis, model.displayName)
         AiPerfLog.record(
@@ -178,34 +183,20 @@ class LocalLlmProvider @Inject constructor(
     }
 
     /**
-     * モデルの形式に合うエンジンを作る。.litertlm は LiteRT-LM、.task は MediaPipe の LLM Inference
-     * (.litertlm のうち Qwen などは MediaPipe では読み込めないため)。
+     * LiteRT-LM のエンジンを作る(.litertlm も旧形式の .task も)。
+     * 旧形式の .task の Gemma は、MediaPipe で動かしていたときと同じく会話の書式(<start_of_turn> 等)を明示する
+     * (古い .task には書式が入っておらず、LiteRT-LM が会話を作れないため)。
+     * 入力と出力の合計の上限([MAX_TOKENS])は、チャットの文脈の予算(LocalChatPrompt)にも使う。
+     * 解析で余計な出力が続くのは、JSON が閉じたら打ち切る・出力の文字数と時間の上限で防ぐ。
      */
     private fun createEngine(file: File, model: LocalModelInfo, backend: EngineBackend): LocalTextEngine =
-        if (file.name.endsWith(LITERT_LM_EXTENSION, ignoreCase = true)) {
-            LiteRtLmTextEngine.create(file.absolutePath, backend, MAX_TOKENS, context.cacheDir.path)
-        } else {
-            // Gemma 系はチャットテンプレートを明示し、ユーザーターン/モデルターンの区切りを正しく付ける
-            MediaPipeTextEngine(
-                LlmInference.createFromOptions(context, engineOptions(file, backend)),
-                templates = if (model.isGemma) GEMMA_TEMPLATES else null
-            )
-        }
-
-    private fun engineOptions(file: File, backend: EngineBackend): LlmInferenceOptions =
-        LlmInferenceOptions.builder()
-            .setModelPath(file.absolutePath)
-            // 入力と出力の合計。tasks-genai には出力だけの上限を決める設定が無く(セッションにも無い)、
-            // チャットの文脈の予算(LocalChatPrompt)にも使うため、下げずにそのままにする。
-            // 解析で余計な出力が続くのは、JSON が閉じたら打ち切る・出力の文字数と時間の上限で防ぐ
-            .setMaxTokens(MAX_TOKENS)
-            .setPreferredBackend(
-                when (backend) {
-                    EngineBackend.GPU -> LlmInference.Backend.GPU
-                    EngineBackend.CPU -> LlmInference.Backend.CPU
-                }
-            )
-            .build()
+        LiteRtLmTextEngine.create(
+            file.absolutePath,
+            backend,
+            MAX_TOKENS,
+            context.cacheDir.path,
+            chatTemplate = chatTemplateFor(model)
+        )
 
     /** エンジンを閉じて手放す。必ず [inferenceMutex] を持った状態で呼ぶ。 */
     private fun releaseLocked(reason: String) {
@@ -263,6 +254,9 @@ class LocalLlmProvider @Inject constructor(
                         Timber.w(e, "GPU での最初の推論に失敗したため、以後は CPU を使う")
                         backendSelector.demoteToCpu(current.modelKey)
                         releaseLocked("GPU での推論の失敗")
+                    } else if (!current.verified && e !is LinkageError && !isInputTooLong(e)) {
+                        // CPU で一度も推論できていない(会話の書式が無い .task など、モデルが LiteRT-LM で動かない)
+                        modelManager.reportLoadFailure(current.model, e)
                     }
                     throw e
                 }
@@ -635,8 +629,12 @@ class LocalLlmProvider @Inject constructor(
 
         private const val NANOS_PER_MILLI = 1_000_000L
 
-        /** LiteRT-LM で動かすモデルの拡張子 */
-        private const val LITERT_LM_EXTENSION = ".litertlm"
+        /**
+         * モデルの書式の代わりに使う会話の書式。旧形式の .task の Gemma だけ Gemma の書式を明示し、
+         * ほかはモデルのファイルに入っている書式を使う(null)。
+         */
+        internal fun chatTemplateFor(model: LocalModelInfo): String? =
+            if (model.isLegacyTaskFormat && model.isGemma) LiteRtLmTextEngine.GEMMA_CHAT_TEMPLATE else null
 
         /** 生成の中断を頼んでから、終わりの知らせを待つ時間の上限(プロンプトの読み込みが終わるまでは止まらないため長め) */
         private const val CANCEL_WAIT_MS = 10 * 60 * 1000L
@@ -691,15 +689,5 @@ class LocalLlmProvider @Inject constructor(
         fun trimMemory(level: Int) {
             latest?.get()?.releaseOnTrim(level)
         }
-
-        /** Gemma の対話形式(https://ai.google.dev/gemma/docs/core/prompt-structure)。 */
-        private val GEMMA_TEMPLATES: PromptTemplates = PromptTemplates.builder()
-            .setUserPrefix("<start_of_turn>user\n")
-            .setUserSuffix("<end_of_turn>\n")
-            .setModelPrefix("<start_of_turn>model\n")
-            .setModelSuffix("<end_of_turn>\n")
-            .setSystemPrefix("")
-            .setSystemSuffix("")
-            .build()
     }
 }

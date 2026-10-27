@@ -100,8 +100,8 @@ class LargeScreenScreenshotTest {
         uiState = AiSettingsUiState(
             tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE),
             localModel = LocalModelInfo(
-                fileName = "local_llm.task",
-                displayName = "gemma3-1b-it-int4.task",
+                fileName = "local_llm.litertlm",
+                displayName = "Gemma3-1B-IT_q4_ekv4096.litertlm",
                 sizeBytes = 555_000_000,
                 importedAt = 1_790_000_000_000L
             ),

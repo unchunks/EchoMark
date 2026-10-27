@@ -137,10 +137,11 @@
         </provider>
 
         <!--
-            端末内 AI(MediaPipe LLM Inference)を GPU で動かすときに使う、端末のベンダーの OpenCL ライブラリ。
+            端末内 AI(LiteRT-LM)を GPU で動かすときに使う、端末のベンダーのライブラリ(OpenCL と、その読み込みに使う vndksupport)。
             Android 12 以降は宣言しないとアプリから読み込めない。無い端末でも動くよう required="false"
-            (https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference/android)
+            (https://github.com/google-ai-edge/LiteRT-LM/blob/main/docs/api/kotlin/getting_started.md)
         -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-car.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />

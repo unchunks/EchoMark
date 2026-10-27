@@ -127,10 +127,9 @@ dependencies {
     ksp(libs.androidx.hilt.compiler)
 
     // AI
+    // 埋め込み(TextEmbedder)
     implementation(libs.mediapipe.tasks.text)
-    implementation(libs.mediapipe.tasks.genai)
-    // 端末内 AI の .litertlm 形式のモデル(Qwen など、SentencePiece 以外のトークナイザーのモデル)。
-    // MediaPipe の LLM Inference は .litertlm のうち SentencePiece のモデルしか読めないため、こちらで動かす
+    // 端末内 AI(LLM)。.litertlm 形式と旧形式の .task のモデルの両方を動かす(MediaPipe の LLM Inference は使わない)
     implementation(libs.litertlm.android)
     // Claude API 公式 SDK
     implementation(libs.anthropic.java)

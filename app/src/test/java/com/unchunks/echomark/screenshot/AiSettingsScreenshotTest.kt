@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
+import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
 import com.unchunks.echomark.data.ai.model.ModelImportError
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.repository.AiTask
@@ -38,6 +39,13 @@ class AiSettingsScreenshotTest {
     val screenshot = ScreenshotRule()
 
     private val model = LocalModelInfo(
+        fileName = "local_llm.litertlm",
+        displayName = "Gemma3-1B-IT_q4_ekv4096.litertlm",
+        sizeBytes = 555_000_000,
+        importedAt = 1_790_000_000_000L
+    )
+
+    private val legacyModel = LocalModelInfo(
         fileName = "local_llm.task",
         displayName = "gemma3-1b-it-int4.task",
         sizeBytes = 555_000_000,
@@ -77,6 +85,29 @@ class AiSettingsScreenshotTest {
                 tasks = aiTasks(LlmBackend.LOCAL),
                 localModel = model,
                 importState = ModelImportState.Copying(copiedBytes = 230_000_000, totalBytes = 555_000_000)
+            )
+        )
+    }
+
+    /** 以前の版で取り込んだ旧形式(.task)のモデル。LiteRT-LM で動かし、.litertlm 版の取り込み直しを案内する */
+    @Test
+    fun localLegacyTaskModel() = screenshot.captureLightDark("ai_settings_local_legacy_task") {
+        Screen(
+            AiSettingsUiState(
+                tasks = aiTasks(LlmBackend.LOCAL),
+                localModel = legacyModel
+            )
+        )
+    }
+
+    /** 取り込んだモデルを LiteRT-LM で読み込めなかった */
+    @Test
+    fun localModelLoadFailed() = screenshot.captureLightDark("ai_settings_local_load_failed") {
+        Screen(
+            AiSettingsUiState(
+                tasks = aiTasks(LlmBackend.LOCAL),
+                localModel = legacyModel,
+                localModelLoadFailure = LocalModelLoadFailure(legacyModel, "Failed to select jinja prompt template")
             )
         )
     }

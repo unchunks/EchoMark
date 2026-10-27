@@ -10,10 +10,7 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ThinkingConfig
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
-import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
-import com.google.mediapipe.tasks.genai.llminference.ProgressListener
-import com.google.mediapipe.tasks.genai.llminference.PromptTemplates
+import com.unchunks.components.llm.ondevice.LiteRtLmTextEngine
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.local.AnalysisParser
 import com.unchunks.echomark.data.ai.local.LocalChatPrompt
@@ -28,33 +25,12 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.runBlocking
 
 /**
- * 実機で、端末内 AI のチャットの回答を、書式(プロンプトテンプレート)とサンプリングの組み合わせごとに比べる(手動で動かす評価)。
- * モデルは `/data/local/tmp/llm/` に置く(`adb push <model> /data/local/tmp/llm/`)。ファイル名は引数 modelFile で変えられる。
- * 回答は Logcat(タグ ChatEval)に出す。モデルが無ければ skip する。
+ * 実機で、端末内 AI(LiteRT-LM)のチャットの回答を、書式(プロンプトテンプレート)とサンプリングの組み合わせごとに比べる(手動で動かす評価)。
+ * モデルは `/data/local/tmp/llm/` に置く(`adb push <model> /data/local/tmp/llm/`)。ファイル名は引数 modelFile で変えられる
+ * (.litertlm も旧形式の .task も)。回答は Logcat(タグ ChatEval)に出す。モデルが無ければ skip する。
  */
 @RunWith(AndroidJUnit4::class)
 class LocalChatEvalInstrumentedTest {
-
-    private class Variant(val name: String, val templates: PromptTemplates?, val temperature: Float, val topK: Int, val topP: Float)
-
-    private val chatMl = PromptTemplates.builder()
-        .setUserPrefix("<|im_start|>user\n")
-        .setUserSuffix("<|im_end|>\n")
-        .setModelPrefix("<|im_start|>assistant\n")
-        .setModelSuffix("<|im_end|>\n")
-        .setSystemPrefix("<|im_start|>system\n")
-        .setSystemSuffix("<|im_end|>\n")
-        .build()
-
-    /** Qwen3 の「考える」を出さない(チャットの書式の enable_thinking=False と同じく、空の考えを先に置く) */
-    private val chatMlNoThink = PromptTemplates.builder()
-        .setUserPrefix("<|im_start|>user\n")
-        .setUserSuffix("<|im_end|>\n")
-        .setModelPrefix("<|im_start|>assistant\n<think>\n\n</think>\n\n")
-        .setModelSuffix("<|im_end|>\n")
-        .setSystemPrefix("<|im_start|>system\n")
-        .setSystemSuffix("<|im_end|>\n")
-        .build()
 
     /**
      * LiteRT-LM で答えさせる(モデルに入っている会話の書式を LiteRT-LM が付ける)。Qwen3 の「考える」は止める。
@@ -318,67 +294,57 @@ class LocalChatEvalInstrumentedTest {
         )
     ).filter { args.getString("prompts")?.split(",")?.contains(it.first) ?: true }
 
+    /**
+     * 旧形式(.task)のモデルを LiteRT-LM で動かし、会話の書式を「モデルのファイルに入っているもの」と
+     * 「Gemma の書式を明示したもの」(アプリが .task の Gemma で使うもの)で比べる。
+     * 会話を作れない(書式がファイルに入っていない)ときは、その失敗を出す。
+     * 例: `-e modelFile gemma3-1b-it-int4.task`。引数 chatTemplates(「model,gemma」の「,」区切り)で絞り込める。
+     */
     @Test
-    fun 書式とサンプリングごとにチャットの回答を比べる() {
+    fun LiteRtLmで旧形式のtaskの書式を比べる() {
         val args = InstrumentationRegistry.getArguments()
-        val file = File(MODEL_DIR, args.getString("modelFile") ?: DEFAULT_MODEL_FILE)
+        val file = File(MODEL_DIR, args.getString("modelFile") ?: DEFAULT_TASK_MODEL_FILE)
         assumeTrue("モデルが無い: $file", file.isFile)
-        val only = args.getString("variants")?.split(",")?.toSet()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-
-        val variants = listOf(
-            Variant("app-now", null, 0.8f, 40, 1.0f),
-            Variant("chatml", chatMl, 0.8f, 40, 1.0f),
-            Variant("chatml-nothink", chatMlNoThink, 0.8f, 40, 1.0f),
-            Variant("chatml-nothink-t03", chatMlNoThink, 0.3f, 20, 0.8f),
-            Variant("chatml-nothink-t07", chatMlNoThink, 0.7f, 20, 0.8f)
-        ).filter { only == null || it.name in only }
-
-        val prompts = prompts(args)
-
-        val engine = LlmInference.createFromOptions(
-            context,
-            LlmInference.LlmInferenceOptions.builder()
-                .setModelPath(file.absolutePath)
-                .setMaxTokens(MAX_TOKENS)
-                .setPreferredBackend(LlmInference.Backend.CPU)
-                .build()
-        )
-        try {
-            for (variant in variants) {
-                for ((name, prompt) in prompts) {
-                    val (text, millis) = generate(engine, variant, prompt)
-                    val report = "=== ${variant.name} / $name (${millis} ms, ${text.length} 文字)\n$text"
+        val templates = listOf("model" to null, "gemma" to LiteRtLmTextEngine.GEMMA_CHAT_TEMPLATE)
+            .filter { args.getString("chatTemplates")?.split(",")?.contains(it.first) ?: true }
+        val loadStart = SystemClock.elapsedRealtime()
+        Engine(
+            EngineConfig(
+                modelPath = file.absolutePath,
+                backend = if (args.getString("backend") == "gpu") Backend.GPU() else Backend.CPU(),
+                maxNumTokens = MAX_TOKENS,
+                cacheDir = context.cacheDir.path
+            )
+        ).use { engine ->
+            engine.initialize()
+            Log.i(TAG, "LiteRT-LM で .task を読み込み: ${SystemClock.elapsedRealtime() - loadStart} ms")
+            for ((templateName, template) in templates) {
+                for ((name, prompt) in prompts(args)) {
+                    val start = SystemClock.elapsedRealtime()
+                    val output = StringBuilder()
+                    val result = runCatching {
+                        engine.createConversation(
+                            ConversationConfig(
+                                samplerConfig = SamplerConfig(topK = 20, topP = 0.8, temperature = 0.5),
+                                thinkingConfig = ThinkingConfig(enableThinking = false),
+                                chatTemplate = template
+                            )
+                        ).use { conversation ->
+                            runBlocking {
+                                conversation.sendMessageAsync(prompt)
+                                    .takeWhile { output.length <= MAX_OUTPUT_CHARS }
+                                    .collect { output.append(it.toString()) }
+                            }
+                        }
+                    }
+                    val report = "=== task template=$templateName / $name " +
+                        "(total=${SystemClock.elapsedRealtime() - start} ms, ${output.length} 文字" +
+                        (result.exceptionOrNull()?.let { ", 失敗: ${it.javaClass.simpleName}: ${it.message?.take(200)}" } ?: "") +
+                        ")\n$output"
                     report.chunked(LOG_CHUNK).forEach { Log.i(TAG, it) }
                 }
             }
-        } finally {
-            engine.close()
-        }
-    }
-
-    private fun generate(engine: LlmInference, variant: Variant, prompt: String): Pair<String, Long> {
-        val options = LlmInferenceSession.LlmInferenceSessionOptions.builder()
-            .setTemperature(variant.temperature)
-            .setTopK(variant.topK)
-            .setTopP(variant.topP)
-            .apply { variant.templates?.let { setPromptTemplates(it) } }
-            .build()
-        return LlmInferenceSession.createFromOptions(engine, options).use { session ->
-            session.addQueryChunk(prompt)
-            val output = StringBuilder()
-            val done = CountDownLatch(1)
-            val start = SystemClock.elapsedRealtime()
-            val future = session.generateResponseAsync(ProgressListener<String> { partial, finished ->
-                synchronized(output) { output.append(partial) }
-                if (finished || synchronized(output) { output.length } > MAX_OUTPUT_CHARS) done.countDown()
-            })
-            done.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            if (!future.isDone) {
-                runCatching { session.cancelGenerateResponseAsync() }
-                runCatching { future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS) }
-            }
-            synchronized(output) { output.toString() } to (SystemClock.elapsedRealtime() - start)
         }
     }
 
@@ -386,6 +352,7 @@ class LocalChatEvalInstrumentedTest {
         const val TAG = "ChatEval"
         const val MODEL_DIR = "/data/local/tmp/llm"
         const val DEFAULT_MODEL_FILE = "model.litertlm"
+        const val DEFAULT_TASK_MODEL_FILE = "model.task"
         const val MAX_TOKENS = 4096
         const val MAX_OUTPUT_CHARS = 800
         const val TIMEOUT_SECONDS = 180L
