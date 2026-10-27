@@ -71,9 +71,23 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
-/** アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。 */
+/**
+ * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
+ * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
+ * (MigrationPathTest で確認している)。
+ */
 val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
 
-/** 正式なマイグレーションを用意していない古いバージョン(開発初期)。ここからの更新だけはデータを作り直す。 */
-val DESTRUCTIVE_MIGRATION_FROM_VERSIONS: IntArray = intArrayOf(1, 2, 3, 4, 5)
+/** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */
+const val OLDEST_MIGRATABLE_VERSION = 6
+
+/** 公開したアプリ(v1.0 プレリリース、2026-10-11)の DB の版。利用者の端末にはこの版以降の DB しか無い。 */
+const val FIRST_RELEASED_VERSION = 11
+
+/**
+ * 正式なマイグレーションを用意していない古いバージョン(開発初期)。ここからの更新だけはデータを作り直す。
+ * どれも公開前([FIRST_RELEASED_VERSION] より前)の開発用ビルドにしか無く、v5 はスキーマも残っていない
+ * (同じ日に v6 へ上げたため書き出していない)。新しい版をここに足してはいけない。
+ */
+val DESTRUCTIVE_MIGRATION_FROM_VERSIONS: IntArray = (1 until OLDEST_MIGRATABLE_VERSION).toList().toIntArray()

@@ -5,6 +5,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.crash.CrashEnvironment
+import com.unchunks.echomark.crash.CrashLogKind
+import com.unchunks.echomark.crash.CrashLogStore
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.DataOperationException
@@ -24,6 +27,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import java.time.DayOfWeek
 
@@ -49,8 +53,35 @@ class SettingsViewModelTest {
             TestDispatcherProvider(mainRule.dispatcher)
         ),
         dataRepository = data,
-        scheduleController = scheduler
+        scheduleController = scheduler,
+        crashLogs = crashLogs,
+        dispatchers = TestDispatcherProvider(mainRule.dispatcher)
     )
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private val crashLogs by lazy {
+        CrashLogStore(tmp.newFolder("crash-logs"), { CrashEnvironment("1.0 (1)", "Test Device", "Android 16 (API 36)") })
+    }
+
+    @Test
+    fun クラッシュログの件数が反映され_削除できる() = runTest {
+        crashLogs.record(CrashLogKind.CRASH, IllegalStateException("boom"), "main")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.value.crashLog.count)
+        assertTrue(viewModel.uiState.value.crashLog.latestText!!.contains("boom"))
+
+        viewModel.clearCrashLog()
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.crashLog.count)
+        assertEquals(null, viewModel.uiState.value.crashLog.latestText)
+        assertEquals("クラッシュログを削除しました", viewModel.message.value)
+    }
 
     @Test
     fun 読み込み後にAIの状態_表示設定_ストレージが反映される() = runTest {

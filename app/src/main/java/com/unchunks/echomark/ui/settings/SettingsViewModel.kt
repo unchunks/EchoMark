@@ -2,8 +2,10 @@ package com.unchunks.echomark.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.BuildConfig
+import com.unchunks.echomark.crash.CrashLogStore
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.time.DayOfWeek
 import javax.inject.Inject
@@ -92,6 +95,12 @@ sealed interface DataOperationState {
     data class Failed(val title: String, val message: String) : DataOperationState
 }
 
+/** 端末内に残したクラッシュログの要約。[latestText] は一番新しい1件の全文。 */
+data class CrashLogSummary(
+    val count: Int = 0,
+    val latestText: String? = null
+)
+
 data class SettingsUiState(
     val isLoaded: Boolean = false,
     val ai: AiSummary = AiSummary(),
@@ -101,6 +110,7 @@ data class SettingsUiState(
     /** 計算中は null */
     val storage: StorageUsage? = null,
     val dataOperation: DataOperationState = DataOperationState.Idle,
+    val crashLog: CrashLogSummary = CrashLogSummary(),
     val versionLabel: String = ""
 )
 
@@ -110,11 +120,15 @@ class SettingsViewModel @Inject constructor(
     apiKeyRepository: ApiKeyRepository,
     modelManager: ModelManager,
     private val dataRepository: DataManagementRepository,
-    private val scheduleController: RediscoverScheduleController
+    private val scheduleController: RediscoverScheduleController,
+    private val crashLogs: CrashLogStore,
+    private val dispatchers: DispatcherProvider
 ) : ViewModel() {
 
     private val storage = MutableStateFlow<StorageUsage?>(null)
     private val dataOperation = MutableStateFlow<DataOperationState>(DataOperationState.Idle)
+    private val crashLog = MutableStateFlow(CrashLogSummary())
+    private val transient = combine(storage, dataOperation, crashLog, ::Triple)
 
     private val aiSummary = combine(
         appSettings.aiTaskSettings,
@@ -134,9 +148,8 @@ class SettingsViewModel @Inject constructor(
         aiSummary,
         display,
         appSettings.rediscoverSettings,
-        storage,
-        dataOperation
-    ) { ai, (themeMode, dynamicColor), rediscover, storage, operation ->
+        transient
+    ) { ai, (themeMode, dynamicColor), rediscover, (storage, operation, crashLog) ->
         SettingsUiState(
             isLoaded = true,
             ai = ai,
@@ -145,6 +158,7 @@ class SettingsViewModel @Inject constructor(
             rediscover = rediscover,
             storage = storage,
             dataOperation = operation,
+            crashLog = crashLog,
             versionLabel = VERSION_LABEL
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
@@ -155,6 +169,27 @@ class SettingsViewModel @Inject constructor(
 
     init {
         refreshStorage()
+        refreshCrashLog()
+    }
+
+    /** 端末内のクラッシュログを読み直す(画面を開いたとき・削除したとき)。 */
+    fun refreshCrashLog() {
+        viewModelScope.launch {
+            crashLog.value = withContext(dispatchers.io) {
+                CrashLogSummary(count = crashLogs.count(), latestText = crashLogs.entries().firstOrNull()?.text)
+            }
+        }
+    }
+
+    /** 共有・書き出し用に、すべてのクラッシュログを1つの文章にまとめる。なければ null。 */
+    suspend fun crashLogText(): String? = withContext(dispatchers.io) { crashLogs.combinedText() }
+
+    fun clearCrashLog() {
+        viewModelScope.launch {
+            withContext(dispatchers.io) { crashLogs.clear() }
+            _message.value = "クラッシュログを削除しました"
+            refreshCrashLog()
+        }
     }
 
     fun setThemeMode(mode: ThemeMode) {
