@@ -6,6 +6,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 
 // ここを変更するときは、ccom.unchunks.echomark.domain.bookmark.model.Bookmark.kt の変更が不要か確認すること
 // contentUri に unique index を張り、同一URLの重複保存を防ぐ(NULLは複数可)
@@ -39,5 +41,12 @@ data class BookmarkEntity (
     val fileName: String? = null,
     val fileSize: Long? = null,
     // v11 で追加。URL の本文(リンク先)を取得できた日時。未取得・取得に失敗したままなら null
-    val contentFetchedAt: Long? = null
+    val contentFetchedAt: Long? = null,
+    // v12 で追加。処理の段・日時・失敗の理由(ProcessingInfo)。端末の中の一時的な状態のため、バックアップには含めない
+    val processingStage: ProcessingStage? = null,
+    val queuedAt: Long? = null,
+    val processingStartedAt: Long? = null,
+    val stageStartedAt: Long? = null,
+    val processingFinishedAt: Long? = null,
+    val failureReason: ProcessingFailureReason? = null
 )

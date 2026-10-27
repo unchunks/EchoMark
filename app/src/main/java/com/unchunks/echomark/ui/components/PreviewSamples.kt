@@ -1,6 +1,8 @@
 package com.unchunks.echomark.ui.components
 
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 
@@ -38,7 +40,8 @@ internal object PreviewSamples {
         title = "https://developer.android.com/topic/architecture",
         createdAt = NOW - 5 * 60 * 1000L,
         lastAccessedAt = NOW - 5 * 60 * 1000L,
-        aiStatus = AiStatus.PROCESSING
+        aiStatus = AiStatus.PROCESSING,
+        processing = ProcessingInfo(stage = ProcessingStage.FETCH_CONTENT)
     )
 
     val textBookmark = Bookmark(
