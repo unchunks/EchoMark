@@ -11,10 +11,12 @@ import com.unchunks.components.web.isPublicAddress
 import com.unchunks.echomark.data.attachment.extensionOf
 import com.unchunks.echomark.data.attachment.fallbackMimeTypeOf
 import com.unchunks.echomark.domain.bookmark.model.MAX_DOWNLOAD_BYTES
+import com.unchunks.echomark.domain.bookmark.model.StageProgressReporter
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.bookmark.model.isDownloadableMimeType
 import com.unchunks.echomark.domain.bookmark.model.normalizeMimeType
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -23,6 +25,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import java.io.ByteArrayOutputStream
+import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.InetAddress
@@ -106,10 +109,13 @@ class UrlContentFetcher internal constructor(
      * [downloadSink] を渡すと、リンク先が PDF・画像・音声・動画のとき本体を保存して [FetchedContent.file] に入れる
      * (渡さなければ HTML 以外は失敗)。
      */
-    suspend fun fetch(url: String, downloadSink: DownloadSink? = null): Result<FetchedContent> =
-        withContext(dispatcherProvider.io) {
-            runCatching { withTranscript(fetchBlocking(url, downloadSink)) }
+    suspend fun fetch(url: String, downloadSink: DownloadSink? = null): Result<FetchedContent> {
+        // ダウンロードの進み具合の報告先(ワーカーが文脈に入れていれば)。取得はブロッキングで行うため先に取り出す
+        val progress = currentCoroutineContext()[StageProgressReporter]
+        return withContext(dispatcherProvider.io) {
+            runCatching { withTranscript(fetchBlocking(url, downloadSink, progress)) }
         }
+    }
 
     /** YouTube なら字幕を取得し、チャンネル名・説明文・字幕をまとめた本文に差し替える */
     private fun withTranscript(content: FetchedContent): FetchedContent {
@@ -121,7 +127,7 @@ class UrlContentFetcher internal constructor(
         return content.copy(text = text, description = null)
     }
 
-    private fun fetchBlocking(url: String, downloadSink: DownloadSink?): FetchedContent {
+    private fun fetchBlocking(url: String, downloadSink: DownloadSink?, progress: StageProgressReporter?): FetchedContent {
         require(url.startsWith("http://") || url.startsWith("https://")) { "unsupported scheme: $url" }
 
         var current = url.toHttpUrl()
@@ -129,7 +135,7 @@ class UrlContentFetcher internal constructor(
             when (val step = fetchOnce(current, allowFile = downloadSink != null)) {
                 is FetchStep.Done -> return step.content
                 is FetchStep.Redirect -> current = step.next
-                is FetchStep.File -> return download(step.url, downloadSink!!)
+                is FetchStep.File -> return download(step.url, downloadSink!!, progress)
             }
         }
         throw IOException("too many redirects")
@@ -146,7 +152,7 @@ class UrlContentFetcher internal constructor(
      * リンク先のファイルをダウンロードして保存する。最初の取得とは別の(時間制限の長い)接続で取り直す。
      * 途中でリダイレクトされる・種類が変わる・大きすぎるときは失敗。
      */
-    private fun download(url: HttpUrl, sink: DownloadSink): FetchedContent {
+    private fun download(url: HttpUrl, sink: DownloadSink, progress: StageProgressReporter?): FetchedContent {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
@@ -159,7 +165,13 @@ class UrlContentFetcher internal constructor(
             val length = body.contentLength()
             if (length > MAX_DOWNLOAD_BYTES) throw IOException("file too large: $length bytes")
             val fileName = fileNameOf(response.header("Content-Disposition"), url)
-            val stored = sink.save(body.byteStream(), mimeType!!, fileName, MAX_DOWNLOAD_BYTES)
+            // 大きさが分かれば、読んだ量を進み具合として報告する
+            val stream = if (progress != null && length > 0) {
+                ProgressInputStream(body.byteStream(), length) { progress.report(it) }
+            } else {
+                body.byteStream()
+            }
+            val stored = sink.save(stream, mimeType!!, fileName, MAX_DOWNLOAD_BYTES)
             return FetchedContent(
                 title = fileName?.let { titleFromFileName(it) },
                 description = null,
@@ -255,5 +267,23 @@ class UrlContentFetcher internal constructor(
         }
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) EchoMark/1.0"
+    }
+}
+
+/** 読んだ量を [total] に対する割合で [onProgress] に知らせる。 */
+internal class ProgressInputStream(
+    input: InputStream,
+    private val total: Long,
+    private val onProgress: (Float) -> Unit
+) : FilterInputStream(input) {
+    private var read = 0L
+
+    override fun read(): Int = super.read().also { if (it >= 0) advance(1) }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) advance(it.toLong()) }
+
+    private fun advance(bytes: Long) {
+        read += bytes
+        onProgress((read.toDouble() / total).toFloat().coerceAtMost(1f))
     }
 }

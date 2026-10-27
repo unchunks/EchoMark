@@ -209,6 +209,8 @@ class BookmarkRepositoryImpl @Inject constructor(
             bookmarkDao.updateCategory(id, category)
         }
 
+    override fun observeStageProgress(id: Long): Flow<Float?> = workScheduler.observeStageProgress(id)
+
     override suspend fun startProcessingStage(id: Long, stage: ProcessingStage): Long =
         withContext(dispatcherProvider.io) {
             val now = System.currentTimeMillis()

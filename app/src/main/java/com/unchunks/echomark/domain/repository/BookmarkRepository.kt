@@ -78,6 +78,8 @@ interface BookmarkRepository {
     suspend fun enqueueFailedAndWaitingProcessing(): Int
 
     // 処理の状態の移り変わり(ワーカーから呼ぶ。ProcessingInfo の説明を参照)
+    /** 実行中の段の進み具合(0〜1)。段が報告していない(ダウンロード・文字起こし以外)・実行中でなければ null。 */
+    fun observeStageProgress(id: Long): Flow<Float?>
     /** 処理の段を始める(処理中にする)。始めた日時を返す。段を終えるとき・中断されたときに [endProcessingStage] へ渡す。 */
     suspend fun startProcessingStage(id: Long, stage: ProcessingStage): Long
     /**

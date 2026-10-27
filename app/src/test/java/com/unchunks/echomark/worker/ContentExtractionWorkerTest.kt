@@ -14,12 +14,14 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.extract.ContentExtractor
 import com.unchunks.echomark.domain.extract.ExtractedContent
 import com.unchunks.echomark.domain.extract.ExtractionSource
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeLlmProvider
+import com.unchunks.echomark.testing.FakeProcessingStatsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -40,6 +42,7 @@ class ContentExtractionWorkerTest {
     private val extractor = FakeContentExtractor()
     private val localLlm = FakeLlmProvider()
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
+    private val stats = FakeProcessingStatsRepository()
 
     @Before
     fun setUp() {
@@ -97,7 +100,7 @@ class ContentExtractionWorkerTest {
                     workerClassName: String,
                     workerParameters: WorkerParameters
                 ) = ContentExtractionWorker(
-                    appContext, workerParameters, repository, extractor, AiPrewarmer(localLlm, settings)
+                    appContext, workerParameters, repository, extractor, AiPrewarmer(localLlm, settings), stats
                 )
             })
             .build()
@@ -118,10 +121,15 @@ class ContentExtractionWorkerTest {
         assertEquals(AiStatus.PROCESSING to ProcessingStage.EXTRACT_CONTENT, whileExtracting)
         assertEquals(AiStatus.PENDING, saved().aiStatus)
         assertNull(saved().processing.stage)
+        // やり遂げた段の所要時間を、中身の種類ごとに記録する
+        assertEquals(
+            listOf(StageDurationKey(ProcessingStage.EXTRACT_CONTENT, ContentKind.DOCUMENT)),
+            stats.recorded.map { it.first }
+        )
     }
 
     @Test
-    fun 取り出しに失敗しても処理中のまま残さない() {
+    fun 取り出しに失敗しても処理中のまま残さず_所要時間は記録しない() {
         repository.bookmarks.value = listOf(pdfBookmark())
         extractor.failure = IllegalStateException("壊れたファイル")
 
@@ -129,6 +137,7 @@ class ContentExtractionWorkerTest {
 
         assertEquals(AiStatus.PENDING, saved().aiStatus)
         assertNull(saved().processing.stage)
+        assertTrue(stats.recorded.isEmpty())
     }
 
     @Test

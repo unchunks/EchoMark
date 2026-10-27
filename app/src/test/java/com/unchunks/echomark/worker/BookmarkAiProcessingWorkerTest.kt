@@ -47,6 +47,7 @@ import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.FakeLlmProvider
+import com.unchunks.echomark.testing.FakeProcessingStatsRepository
 import com.unchunks.echomark.testing.embeddingBox
 import com.unchunks.echomark.testing.inMemoryBoxStore
 import com.unchunks.echomark.testing.initTestWorkManager
@@ -81,6 +82,7 @@ class BookmarkAiProcessingWorkerTest {
     /** 端末内モデルの先読みの呼び出しを数える(AiPrewarmer の先)。 */
     private val localLlmForPrewarm = FakeLlmProvider()
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
+    private val stats = FakeProcessingStatsRepository()
 
     @Before
     fun setUp() {
@@ -127,7 +129,7 @@ class BookmarkAiProcessingWorkerTest {
                     workerParameters: WorkerParameters
                 ) = BookmarkAiProcessingWorker(
                     appContext, workerParameters, repository, analyzer, embedding,
-                    AiPrewarmer(localLlmForPrewarm, settings)
+                    AiPrewarmer(localLlmForPrewarm, settings), stats
                 )
             })
             .build()
@@ -442,6 +444,12 @@ class BookmarkAiProcessingWorkerTest {
         runWorker(id, runAttemptCount = 0)
 
         assertEquals(listOf(AiStatus.PROCESSING to ProcessingStage.EMBED), stagesWhileEmbedding)
+        // やり遂げた段の所要時間を記録する(残り時間の目安に使う)
+        assertEquals(
+            listOf(ProcessingStage.ANALYZE, ProcessingStage.EMBED),
+            stats.recorded.map { it.first.stage }
+        )
+        assertTrue(stats.recorded.all { it.first.kind == ContentKind.MEMO && it.second >= 0 })
         val processing = repository.getBookmarkById(id)!!.processing
         assertEquals(AiStatus.DONE, statusOf(id))
         assertEquals(null, processing.stage)
@@ -474,6 +482,8 @@ class BookmarkAiProcessingWorkerTest {
         assertEquals(AiStatus.PENDING, statusOf(id))
         assertEquals(null, stageOf(id))
         assertEquals(ProcessingFailureReason.NETWORK, repository.getBookmarkById(id)!!.processing.failureReason)
+        // やり遂げていない段の所要時間は記録しない
+        assertTrue(stats.recorded.isEmpty())
     }
 
     @Test

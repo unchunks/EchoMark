@@ -21,6 +21,7 @@ import com.unchunks.echomark.domain.extract.ContentExtractor
 import com.unchunks.echomark.domain.extract.ExtractedBody
 import com.unchunks.echomark.domain.extract.ExtractedContent
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -44,7 +45,8 @@ class ContentExtractionWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val repository: BookmarkRepository,
     private val extractor: ContentExtractor,
-    private val aiPrewarmer: AiPrewarmer
+    private val aiPrewarmer: AiPrewarmer,
+    private val stats: ProcessingStatsRepository
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -61,12 +63,14 @@ class ContentExtractionWorker @AssistedInject constructor(
             return Result.success()
         }
         // 処理中(中身の取り出し)にし、終えたら(中断されても)次の段を待つ処理待ちに戻す
-        return withProcessingStage(repository, bookmarkId, ProcessingStage.EXTRACT_CONTENT) {
+        withProcessingStage(repository, stats, bookmark, ProcessingStage.EXTRACT_CONTENT) {
             extract(bookmarkId, bookmark, file)
         }
+        return Result.success()
     }
 
-    private suspend fun extract(bookmarkId: Long, bookmark: Bookmark, file: File): Result {
+    /** 中身を取り出して本文に保存する。取り出せたら true(失敗しても後続の AI 処理は続けるため、例外にはしない) */
+    private suspend fun extract(bookmarkId: Long, bookmark: Bookmark, file: File): Boolean {
         val kind = bookmark.contentKind()
 
         // 後続の AI 処理で端末内モデルを使うなら、取り出しと重ねて読み込んでおく
@@ -83,16 +87,16 @@ class ContentExtractionWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Timber.w(e, "ContentExtractionWorker: 取り出しに失敗 id=%d", bookmarkId)
             null
-        } ?: return Result.success()
+        } ?: return false
 
         // 取り出しの間にメモやタイトルが編集された・削除されたかもしれないため、読み直してから書く
-        val latest = repository.getBookmarkById(bookmarkId) ?: return Result.success()
+        val latest = repository.getBookmarkById(bookmarkId) ?: return false
         repository.updateTitleAndContent(
             bookmarkId,
             title = titleAfterExtraction(latest, extracted),
             content = ExtractedBody.merge(latest.content, extracted)
         )
-        return Result.success()
+        return true
     }
 
     /** 長い処理の間、通知を出してフォアグラウンドで実行する。始められなくても(バックグラウンドからの開始の制限など)処理は続ける。 */

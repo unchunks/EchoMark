@@ -1,9 +1,11 @@
 package com.unchunks.echomark.data.remote
 
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.domain.bookmark.model.StageProgressReporter
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -50,6 +52,22 @@ class UrlContentFetcherDownloadTest {
             .apply { if (disposition != null) addHeader("Content-Disposition", disposition) }
             .body(okio.Buffer().write(body))
             .build()
+
+    @Test
+    fun ダウンロードの進み具合を報告する() = runBlocking {
+        val pdf = ByteArray(64 * 1024) { 1 }
+        server.enqueue(binaryResponse("application/pdf", pdf))
+        server.enqueue(binaryResponse("application/pdf", pdf))
+        val reported = mutableListOf<Float>()
+
+        withContext(StageProgressReporter { reported += it }) {
+            fetcher.fetch(server.url("/doc.pdf").toString(), sink).getOrThrow()
+        }
+
+        assertTrue(reported.isNotEmpty())
+        assertEquals(1f, reported.last())
+        assertEquals(reported.sorted(), reported)
+    }
 
     @Test
     fun PDFならダウンロードして保存しファイル名をタイトルにする() = runBlocking {

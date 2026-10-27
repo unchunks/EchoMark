@@ -3,6 +3,8 @@ package com.unchunks.echomark.testing
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
+import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
@@ -243,6 +245,10 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String) = TODO("not used")
     override suspend fun updateSummary(id: Long, summary: String) = TODO("not used")
     override suspend fun updateCategory(id: Long, category: String) = TODO("not used")
+    /** observeStageProgress が返す、実行中の段の進み具合 */
+    val stageProgress = MutableStateFlow<Float?>(null)
+    override fun observeStageProgress(id: Long): Flow<Float?> = stageProgress
+
     /** 始めた段(ブックマークの ID と段)を順に記録する。 */
     val startedStages = mutableListOf<Pair<Long, ProcessingStage>>()
     private var stageClock = 0L
@@ -448,5 +454,17 @@ class FakeAttachmentRepository : AttachmentRepository {
             fileName = uri.substringAfterLast('/'),
             fileSize = 1024L
         )
+    }
+}
+
+/** 段ごとの所要時間の記録の Fake。記録した値をそのまま平均として返す(重み付けはしない)。 */
+class FakeProcessingStatsRepository : ProcessingStatsRepository {
+    val averages = MutableStateFlow<Map<StageDurationKey, Long>>(emptyMap())
+    val recorded = mutableListOf<Pair<StageDurationKey, Long>>()
+    override val averageStageDurations: Flow<Map<StageDurationKey, Long>> = averages
+
+    override suspend fun recordStageDuration(key: StageDurationKey, millis: Long) {
+        recorded += key to millis
+        averages.value = averages.value + (key to millis)
     }
 }

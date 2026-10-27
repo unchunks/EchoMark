@@ -8,8 +8,11 @@ import com.unchunks.components.documenttext.TextRecognizerEngine
 import com.unchunks.components.speech.AudioDecoder
 import com.unchunks.components.speech.PcmChunker
 import com.unchunks.components.speech.PcmFormat
+import com.unchunks.components.speech.PcmChunk
 import com.unchunks.components.speech.Transcriber
+import com.unchunks.components.speech.TranscriptionProvider
 import com.unchunks.echomark.data.extract.transcribe.TranscriptionProviderSelector
+import com.unchunks.echomark.domain.bookmark.model.reportStageProgress
 import com.unchunks.echomark.domain.extract.ExtractedContent
 import com.unchunks.echomark.domain.extract.ExtractionSource
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -46,7 +49,15 @@ class MediaContentExtractor @Inject constructor(
             val decoded = decoder.decode(file, pcm, MAX_DURATION_MS) ?: return null
             if (decoded.pcmBytes <= 0) return null
             val chunks = withContext(dispatcherProvider.io) { PcmChunker.split(pcm, decoded.pcmBytes, CHUNK_MILLIS) }
-            val transcript = Transcriber.transcribe(chunks, providerSelector.providers()) ?: return null
+            // 文字起こしできた区間の数を、段の進み具合として報告する(画面の進み具合と残り時間に使う)
+            var done = 0
+            val providers = providerSelector.providers().map { provider ->
+                ProgressCountingProvider(provider) {
+                    done++
+                    reportStageProgress(done.toFloat() / chunks.size)
+                }
+            }
+            val transcript = Transcriber.transcribe(chunks, providers) ?: return null
             return ExtractedContent.of(
                 text = transcript.text,
                 source = ExtractionSource.TRANSCRIPT,
@@ -104,4 +115,15 @@ class MediaContentExtractor @Inject constructor(
          */
         const val CHUNK_MILLIS = 5L * 60 * 1000
     }
+}
+
+/** 1区間を文字起こしできるたびに [onChunkDone] を呼ぶ(使えずに次の仕組みへ回した区間は数えない)。 */
+internal class ProgressCountingProvider(
+    private val delegate: TranscriptionProvider,
+    private val onChunkDone: suspend () -> Unit
+) : TranscriptionProvider {
+    override val name: String get() = delegate.name
+
+    override suspend fun transcribe(chunk: PcmChunk): String? =
+        delegate.transcribe(chunk)?.also { onChunkDone() }
 }

@@ -51,6 +51,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -104,6 +105,9 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
+import com.unchunks.echomark.domain.bookmark.model.processingDurationMillis
+import com.unchunks.echomark.domain.bookmark.model.processingProgress
 import com.unchunks.echomark.domain.extract.ExtractedBody
 import com.unchunks.echomark.ui.attachment.rememberAttachmentFile
 import com.unchunks.echomark.ui.common.displayName
@@ -117,7 +121,10 @@ import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.description
+import com.unchunks.echomark.ui.components.formatElapsed
 import com.unchunks.echomark.ui.components.processingBadge
+import com.unchunks.echomark.ui.components.rememberTickingNow
+import com.unchunks.echomark.ui.components.summaryText
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -452,7 +459,7 @@ private fun DetailBody(
             Spacer(Modifier.height(16.dp))
             PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
             Spacer(Modifier.height(20.dp))
-            AiSection(bookmark, callbacks)
+            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, callbacks)
             Spacer(Modifier.height(24.dp))
             TagSection(
                 tags = bookmark.tags,
@@ -605,10 +612,42 @@ private fun AdaptiveButtonRow(
     }
 }
 
+/**
+ * 処理待ち・処理中の進み具合。段が進み具合を報告していれば(ダウンロード・文字起こし)その割合のバーを、
+ * していなければ動き続けるバーを出し、何段目か・経過時間・残り時間の目安を添える。
+ */
+@Composable
+private fun ProcessingProgressSection(
+    bookmark: Bookmark,
+    stageProgress: Float?,
+    stageAverages: Map<StageDurationKey, Long>
+) {
+    // 経過時間を出すときだけ、1 秒ごとに更新する
+    val now by rememberTickingNow(enabled = bookmark.processing.startedAt != null)
+    val progress = bookmark.processingProgress(now, stageProgress, stageAverages) ?: return
+    val fraction = progress.stageFraction
+    if (fraction != null) {
+        LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+    } else {
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+    }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        progress.summaryText(),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
 /** AI 要約(完了時)か、AI の状態と次の行動(処理中・失敗・準備待ち) */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
+private fun AiSection(
+    bookmark: Bookmark,
+    stageProgress: Float?,
+    stageAverages: Map<StageDurationKey, Long>,
+    callbacks: BookmarkDetailCallbacks
+) {
     val summary = bookmark.summary
     if (bookmark.aiStatus == AiStatus.DONE && !summary.isNullOrBlank()) {
         Card(
@@ -647,6 +686,14 @@ private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(summary, style = MaterialTheme.typography.bodyLarge)
+                bookmark.processingDurationMillis()?.let { duration ->
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "処理時間 ${formatElapsed(duration)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LocalContentColor.current.copy(alpha = 0.7f)
+                    )
+                }
             }
         }
         return
@@ -674,7 +721,7 @@ private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
             when (bookmark.aiStatus) {
                 AiStatus.PENDING, AiStatus.PROCESSING -> {
                     Spacer(Modifier.height(12.dp))
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    ProcessingProgressSection(bookmark, stageProgress, stageAverages)
                 }
                 AiStatus.FAILED -> {
                     Spacer(Modifier.height(12.dp))

@@ -10,3 +10,8 @@ annotation class LocalAi
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class ApiKeyStore
+
+/** 処理の段ごとの所要時間の記録(ProcessingStatsRepository)の DataStore。設定とはファイルを分ける。 */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class ProcessingStatsStore

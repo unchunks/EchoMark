@@ -16,12 +16,14 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -49,7 +51,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
     private val repository: BookmarkRepository,
     private val bookmarkAnalyzer: BookmarkAnalyzer,
     private val embeddingProvider: EmbeddingProvider,
-    private val aiPrewarmer: AiPrewarmer
+    private val aiPrewarmer: AiPrewarmer,
+    private val stats: ProcessingStatsRepository
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -79,7 +82,15 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
 
         // 今の段を始めた日時。中断されたときに、この段のままなら処理待ちに戻す
         var stageStartedAt: Long? = null
+        var currentStage: ProcessingStage? = null
+        // 今の段をやり遂げたら、所要時間を記録する(残り時間の目安に使う)
+        suspend fun recordStageDuration() {
+            val stage = currentStage ?: return
+            val startedAt = stageStartedAt ?: return
+            stats.recordStageDuration(StageDurationKey(stage, bookmark.contentKind()), System.currentTimeMillis() - startedAt)
+        }
         suspend fun startStage(stage: ProcessingStage) {
+            currentStage = stage
             stageStartedAt = repository.startProcessingStage(bookmarkId, stage)
         }
 
@@ -117,6 +128,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     }
                     repository.updateSummary(bookmarkId, analysis.summary)
                     newSummary = analysis.summary
+                    recordStageDuration()
                     // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
                     repository.saveAiTags(bookmarkId, analysis.tags)
                     repository.updateCategory(bookmarkId, analysis.category)
@@ -152,6 +164,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                         embeddingProvider.embedDocument(text)
                     }
                     repository.saveEmbedding(bookmarkId, vector, embeddingProvider.modelVersion)
+                    recordStageDuration()
                 }
             } catch (e: EmbeddingUnavailableException) {
                 Timber.i("埋め込みモデルが無いため埋め込みをスキップ: id=$bookmarkId")
