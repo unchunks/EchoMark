@@ -68,6 +68,20 @@ class BookmarkListScreenshotTest {
         )
     )
 
+    /** タグで絞り込んでいる間は、右端に「すべて解除」を出す */
+    @Test
+    fun tagFiltered() = screenshot.captureScreenLightDark(
+        "library_list_tag_filtered",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = PreviewSamples.all.take(2),
+                allTags = listOf(tags[1]) + tags.filterNot { it.id == 2L },
+                selectedTagId = 2,
+                totalCount = PreviewSamples.all.size
+            )
+        )
+    )
+
     @Test
     fun firstRunEmpty() = screenshot.captureScreenLightDark(
         "library_list_empty",
