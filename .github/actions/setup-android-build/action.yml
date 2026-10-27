@@ -8,6 +8,7 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: unchunks/components
+        # components は main の先頭を使う(EchoMark の develop は components の main に合わせて進める)
         ref: main
         token: ${{ env.COMPONENTS_REPO_TOKEN }}
         path: components

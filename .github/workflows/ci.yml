@@ -30,6 +30,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-android-build
       - run: ./gradlew :app:assembleDebug --stacktrace
+      # ビルドが生成する Room のスキーマ JSON と ObjectBox のモデルがコミット済みと同じか(コミット漏れの検出)
+      - name: スキーマのコミット漏れを確認
+        run: git diff --exit-code -- app/schemas app/objectbox-models
 
   test:
     name: 単体テスト (testDebugUnitTest)
