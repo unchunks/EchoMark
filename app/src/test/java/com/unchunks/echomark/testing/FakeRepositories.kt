@@ -27,6 +27,7 @@ import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.repository.BookmarkSearchResult
 import com.unchunks.echomark.domain.repository.TagRenameResult
 import com.unchunks.echomark.domain.repository.TagRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -186,6 +187,27 @@ class FakeBookmarkRepository : BookmarkRepository {
             it.title.contains(query) || it.id in semanticOnlyIds
         }.filter { tagId == null || tagId.toString() in it.tags }
         return BookmarkSearchResult(hits, semanticAvailable, semanticOnlyIds.intersect(hits.map { it.id }.toSet()))
+    }
+
+    /** searchKeywordOnly の呼び出し(検索語とタグ) */
+    val keywordSearchCalls = mutableListOf<Pair<String, Long?>>()
+
+    override suspend fun searchKeywordOnly(query: String, tagId: Long?): List<Bookmark> {
+        keywordSearchCalls += query to tagId
+        return bookmarks.value.filter { it.title.contains(query) }
+            .filter { tagId == null || tagId.toString() in it.tags }
+    }
+
+    /** prepareSemanticSearch の呼び出し(検索語) */
+    val prepareCalls = mutableListOf<String>()
+
+    /** 非NULLなら、prepareSemanticSearch はこれが完了するまで戻らない(埋め込みが遅いときを再現する) */
+    var prepareGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun prepareSemanticSearch(query: String): Boolean {
+        prepareCalls += query
+        prepareGate?.await()
+        return semanticAvailable
     }
 
     override fun observeBookmarkCount(): Flow<Int> = bookmarks.map { it.size }

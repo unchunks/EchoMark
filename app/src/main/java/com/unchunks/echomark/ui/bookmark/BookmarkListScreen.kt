@@ -519,6 +519,14 @@ private fun SearchTopBar(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    // 入力中の文字はここで持ち、その場で書き換える。ViewModel の uiState(複数の Flow を合わせたもの)を通して
+    // 表示し直すと反映が1テンポ遅れ、その間に古い文字列で上書きされて、日本語入力の変換中の文字が消える・確定されるなど
+    // 入力できなくなるため。[query] は検索欄を開いたときの初期値にだけ使う
+    var text by rememberSaveable { mutableStateOf(query) }
+    val onTextChange = { value: String ->
+        text = value
+        onQueryChange(value)
+    }
 
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
@@ -533,16 +541,16 @@ private fun SearchTopBar(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "検索を閉じる")
             }
             TextField(
-                value = query,
-                onValueChange = onQueryChange,
+                value = text,
+                onValueChange = onTextChange,
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focusRequester),
                 placeholder = { Text("キーワードや内容で検索", maxLines = 1) },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { onQueryChange("") }) {
+                    if (text.isNotEmpty()) {
+                        IconButton(onClick = { onTextChange("") }) {
                             Icon(Icons.Outlined.Close, contentDescription = "検索語を消す")
                         }
                     }

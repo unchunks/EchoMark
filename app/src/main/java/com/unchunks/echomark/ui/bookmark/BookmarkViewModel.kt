@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -64,6 +65,8 @@ class BookmarkViewModel @Inject constructor(
         val query: String = "",
         val semanticAvailable: Boolean = true,
         val semanticMatchIds: Set<Long> = emptySet(),
+        /** キーワードの結果だけを出していて、意味検索の準備(検索語の埋め込み)を待っている */
+        val semanticPending: Boolean = false,
         val error: String? = null
     )
 
@@ -94,15 +97,31 @@ class BookmarkViewModel @Inject constructor(
                 // 絞り込み・並べ替え済みの一覧。検索時は「表示してよいもの」の判定と、DB 変更時の再検索のきっかけに使う
                 val visible = repository.observeBookmarks(controls.filter, controls.sortOrder, controls.tagId)
                 val result = if (controls.searchActive && query.isNotBlank()) {
-                    visible.mapLatest { list ->
+                    // 検索語の埋め込み(意味検索の準備)は、モデルの読み込みや AI 処理との順番待ちで時間がかかることがある。
+                    // 待つ間はキーワードの結果を先に出す。準備は検索語ごとに1回だけで、DB の変更で検索し直しても待ち直さない
+                    // (null: 準備中、true: 意味検索も使える、false: 埋め込みが使えずキーワードのみ)
+                    val semanticReady = flow {
+                        emit(null)
+                        emit(repository.prepareSemanticSearch(query))
+                    }
+                    combine(visible, semanticReady, ::Pair).mapLatest { (list, ready) ->
                         val allowed = list.map { it.id }.toSet()
-                        val found = repository.searchWithDetails(query, controls.tagId)
-                        ListResult(
-                            bookmarks = found.bookmarks.filter { it.id in allowed },
-                            query = query,
-                            semanticAvailable = found.semanticAvailable,
-                            semanticMatchIds = found.semanticOnlyIds
-                        )
+                        if (ready == true) {
+                            val found = repository.searchWithDetails(query, controls.tagId)
+                            ListResult(
+                                bookmarks = found.bookmarks.filter { it.id in allowed },
+                                query = query,
+                                semanticAvailable = found.semanticAvailable,
+                                semanticMatchIds = found.semanticOnlyIds
+                            )
+                        } else {
+                            ListResult(
+                                bookmarks = repository.searchKeywordOnly(query, controls.tagId).filter { it.id in allowed },
+                                query = query,
+                                semanticAvailable = ready == null,
+                                semanticPending = ready == null
+                            )
+                        }
                     }
                 } else {
                     visible.map { ListResult(bookmarks = it) }
@@ -129,7 +148,8 @@ class BookmarkViewModel @Inject constructor(
         repository.observeBookmarkCount()
     ) { (list, rawQuery, controls), tags, rediscover, total ->
         val trimmed = rawQuery.trim()
-        val searching = controls.searchActive && trimmed.isNotEmpty() && list.query != trimmed
+        // 入力中(結果がまだ今の検索語のものではない)か、キーワードの結果を出して意味検索を待っている
+        val searching = controls.searchActive && trimmed.isNotEmpty() && (list.query != trimmed || list.semanticPending)
         BookmarkListUiState(
             bookmarks = list.bookmarks,
             errorMessage = list.error,

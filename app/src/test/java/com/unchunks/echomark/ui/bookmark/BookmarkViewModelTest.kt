@@ -12,6 +12,7 @@ import com.unchunks.echomark.testing.FakeTagRepository
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import com.unchunks.echomark.ui.common.SelectedFile
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -220,6 +221,74 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
         assertFalse(viewModel.uiState.value.semanticSearchAvailable)
         assertEquals(ListEmptyKind.NO_SEARCH_RESULT, viewModel.uiState.value.emptyKind)
+    }
+
+    @Test
+    fun 検索語の埋め込みを待つ間もキーワードの結果を先に出す() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"), testBookmark(2, "fruit"))
+        repository.semanticOnlyIds = setOf(2L)
+        val gate = CompletableDeferred<Unit>()
+        repository.prepareGate = gate
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+
+        // 埋め込み(モデルの読み込み・AI 処理との順番待ち)が終わらなくても、キーワードで見つかったものは出す
+        var state = viewModel.uiState.value
+        assertEquals(listOf(1L), state.bookmarks.map { it.id })
+        assertTrue("意味検索の結果を待っている間は検索中の表示", state.isSearching)
+        assertTrue("準備中はキーワードのみとは言わない", state.semanticSearchAvailable)
+        assertEquals(ListEmptyKind.NONE, state.emptyKind)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        state = viewModel.uiState.value
+        assertEquals(setOf(1L, 2L), state.bookmarks.map { it.id }.toSet())
+        assertEquals(setOf(2L), state.semanticMatchIds)
+        assertFalse(state.isSearching)
+    }
+
+    @Test
+    fun 検索中にDBが変わっても検索語を埋め込み直さない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"))
+        val gate = CompletableDeferred<Unit>()
+        repository.prepareGate = gate
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+
+        // AI 処理などで DB が変わり続けても、埋め込みの待ちはやり直さず、キーワードの結果は新しくする
+        repository.bookmarks.value = repository.bookmarks.value + testBookmark(2, "apple pie")
+        advanceUntilIdle()
+        assertEquals(setOf(1L, 2L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
+
+        gate.complete(Unit)
+        repository.bookmarks.value = repository.bookmarks.value + testBookmark(3, "apple tart")
+        advanceUntilIdle()
+
+        assertEquals(listOf("apple"), repository.prepareCalls)
+        assertEquals(setOf(1L, 2L, 3L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
+        assertFalse(viewModel.uiState.value.isSearching)
+    }
+
+    @Test
+    fun 埋め込みが使えなければキーワードだけで検索する() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"), testBookmark(2, "banana"))
+        repository.semanticAvailable = false
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(1L), state.bookmarks.map { it.id })
+        assertFalse(state.semanticSearchAvailable)
+        assertFalse(state.isSearching)
+        // 使えないと分かったら、意味検索込みの検索(埋め込みをもう一度試す)はしない
+        assertTrue(repository.searchCalls.isEmpty())
     }
 
     @Test
