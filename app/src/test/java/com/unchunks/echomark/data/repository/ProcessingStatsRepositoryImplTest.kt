@@ -1,39 +1,34 @@
 package com.unchunks.echomark.data.repository
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import org.junit.After
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
-import java.io.File
 
 /** 段ごとの所要時間の平均の記録(DataStore)。 */
 class ProcessingStatsRepositoryImplTest {
 
-    @get:Rule
-    val folder = TemporaryFolder()
+    // 実ファイルの DataStore は Windows 上の JVM で上書き rename に失敗することがあるため、メモリ上の実装を使う
+    private val repository = ProcessingStatsRepositoryImpl(InMemoryStatsDataStore())
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val repository by lazy {
-        ProcessingStatsRepositoryImpl(
-            PreferenceDataStoreFactory.create(scope = scope) { File(folder.root, "stats.preferences_pb") }
-        )
-    }
+    private class InMemoryStatsDataStore : DataStore<Preferences> {
+        private val state = MutableStateFlow(emptyPreferences())
+        private val mutex = Mutex()
+        override val data: Flow<Preferences> = state
 
-    @After
-    fun tearDown() {
-        scope.cancel()
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences =
+            mutex.withLock { transform(state.value).also { state.value = it } }
     }
 
     private val analyzeWeb = StageDurationKey(ProcessingStage.ANALYZE, ContentKind.WEB_PAGE)
