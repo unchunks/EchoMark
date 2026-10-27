@@ -9,9 +9,11 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.unchunks.echomark.data.ai.AiPrewarmer
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.extract.ContentExtractor
 import com.unchunks.echomark.domain.extract.ExtractedContent
 import com.unchunks.echomark.domain.extract.ExtractionSource
@@ -57,8 +59,12 @@ class ContentExtractionWorkerTest {
         var longRunning = false
         val calls = mutableListOf<Triple<String, String?, ContentKind>>()
 
+        /** extract の中で呼ぶ(取り出している間の状態を調べる) */
+        var onExtract: (() -> Unit)? = null
+
         override suspend fun extract(file: File, mimeType: String?, kind: ContentKind): ExtractedContent? {
             calls += Triple(file.name, mimeType, kind)
+            onExtract?.invoke()
             failure?.let { throw it }
             return result
         }
@@ -99,6 +105,41 @@ class ContentExtractionWorkerTest {
     }
 
     private fun saved(): Bookmark = repository.bookmarks.value.single()
+
+    @Test
+    fun 取り出している間は処理中_取り出しの段にし_終えたら次の段を待つ処理待ちに戻す() {
+        repository.bookmarks.value = listOf(pdfBookmark())
+        extractor.result = ExtractedContent.of("本文です", ExtractionSource.PDF_TEXT)
+        var whileExtracting: Pair<AiStatus, ProcessingStage?>? = null
+        extractor.onExtract = { whileExtracting = saved().aiStatus to saved().processing.stage }
+
+        runWorker()
+
+        assertEquals(AiStatus.PROCESSING to ProcessingStage.EXTRACT_CONTENT, whileExtracting)
+        assertEquals(AiStatus.PENDING, saved().aiStatus)
+        assertNull(saved().processing.stage)
+    }
+
+    @Test
+    fun 取り出しに失敗しても処理中のまま残さない() {
+        repository.bookmarks.value = listOf(pdfBookmark())
+        extractor.failure = IllegalStateException("壊れたファイル")
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        assertEquals(AiStatus.PENDING, saved().aiStatus)
+        assertNull(saved().processing.stage)
+    }
+
+    @Test
+    fun ファイルが無ければ取り出しの段を始めない() {
+        repository.bookmarks.value = listOf(pdfBookmark(filePath = null))
+
+        runWorker()
+
+        assertTrue(repository.startedStages.isEmpty())
+        assertEquals(AiStatus.PENDING, saved().aiStatus)
+    }
 
     @Test
     fun 取り出したテキストをメモの後ろに保存し_ファイル名のままのタイトルを置き換える() {

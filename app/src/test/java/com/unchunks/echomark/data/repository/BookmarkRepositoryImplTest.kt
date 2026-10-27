@@ -16,6 +16,8 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
@@ -464,22 +466,145 @@ class BookmarkRepositoryImplTest {
     }
 
     @Test
-    fun 中断された処理中の状態は処理待ちに戻す() = runBlocking {
-        val id = db.bookmarkDao().insert(textBookmark().copy(aiStatus = AiStatus.PROCESSING).toEntity())
+    fun 保存すると処理待ちにした日時が入る() = runBlocking {
+        val before = System.currentTimeMillis()
+        val bookmark = repository.getBookmarkById(repository.saveBookmark(textBookmark()).id)!!
 
-        repository.markProcessingInterrupted(id)
-
-        assertEquals(AiStatus.PENDING, repository.getBookmarkById(id)!!.aiStatus)
+        assertEquals(AiStatus.PENDING, bookmark.aiStatus)
+        assertTrue(bookmark.processing.queuedAt!! >= before)
+        assertNull(bookmark.processing.stage)
+        assertNull(bookmark.processing.startedAt)
     }
 
     @Test
-    fun 中断を記録しても後から書かれた状態は上書きしない() = runBlocking {
-        // 置き換えた新しい処理が、古い処理の中断の記録より先に完了した場合
-        val id = db.bookmarkDao().insert(textBookmark().copy(aiStatus = AiStatus.DONE).toEntity())
+    fun 段を始めると処理中になり_終えると次の段を待つ処理待ちに戻る() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
 
-        repository.markProcessingInterrupted(id)
+        val startedAt = repository.startProcessingStage(id, ProcessingStage.FETCH_CONTENT)
+        repository.getBookmarkById(id)!!.let {
+            assertEquals(AiStatus.PROCESSING, it.aiStatus)
+            assertEquals(ProcessingStage.FETCH_CONTENT, it.processing.stage)
+            assertEquals(startedAt, it.processing.stageStartedAt)
+            assertEquals(startedAt, it.processing.startedAt)
+        }
+
+        repository.endProcessingStage(id, startedAt)
+        repository.getBookmarkById(id)!!.let {
+            assertEquals(AiStatus.PENDING, it.aiStatus)
+            assertNull(it.processing.stage)
+            assertNull(it.processing.stageStartedAt)
+            // 処理を始めた日時は、次の段・完了まで残す
+            assertEquals(startedAt, it.processing.startedAt)
+        }
+    }
+
+    @Test
+    fun 次の段を始めても処理を始めた日時は最初の段のまま() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        db.bookmarkDao().startStage(id, ProcessingStage.FETCH_CONTENT, now = 100L)
+        db.bookmarkDao().endStage(id, stageStartedAt = 100L)
+
+        db.bookmarkDao().startStage(id, ProcessingStage.ANALYZE, now = 200L)
+
+        val processing = repository.getBookmarkById(id)!!.processing
+        assertEquals(ProcessingStage.ANALYZE, processing.stage)
+        assertEquals(100L, processing.startedAt)
+        assertEquals(200L, processing.stageStartedAt)
+    }
+
+    @Test
+    fun 中断を記録しても後から始まった段は処理待ちに戻さない() = runBlocking {
+        // 置き換えた新しい処理が、古い処理の中断の記録より先に段を始めた場合
+        val id = repository.saveBookmark(textBookmark()).id
+        db.bookmarkDao().startStage(id, ProcessingStage.FETCH_CONTENT, now = 100L)
+        db.bookmarkDao().startStage(id, ProcessingStage.ANALYZE, now = 200L)
+
+        repository.endProcessingStage(id, stageStartedAt = 100L)
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals(AiStatus.PROCESSING, bookmark.aiStatus)
+        assertEquals(ProcessingStage.ANALYZE, bookmark.processing.stage)
+    }
+
+    @Test
+    fun 中断を記録しても後から書かれた結果は上書きしない() = runBlocking {
+        // 置き換えた新しい処理が、古い処理の中断の記録より先に完了した場合
+        val id = repository.saveBookmark(textBookmark()).id
+        db.bookmarkDao().startStage(id, ProcessingStage.ANALYZE, now = 100L)
+        repository.finishProcessing(id, AiStatus.DONE)
+
+        repository.endProcessingStage(id, stageStartedAt = 100L)
 
         assertEquals(AiStatus.DONE, repository.getBookmarkById(id)!!.aiStatus)
+    }
+
+    @Test
+    fun 処理を終えると段を消し_終えた日時と失敗の理由を残す() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.startProcessingStage(id, ProcessingStage.ANALYZE)
+
+        repository.finishProcessing(id, AiStatus.FAILED, ProcessingFailureReason.REFUSED)
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals(AiStatus.FAILED, bookmark.aiStatus)
+        assertNull(bookmark.processing.stage)
+        assertTrue(bookmark.processing.finishedAt != null)
+        assertEquals(ProcessingFailureReason.REFUSED, bookmark.processing.failureReason)
+    }
+
+    @Test
+    fun 再試行を待つ間は処理待ちにし_直前の失敗の理由を残す() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.startProcessingStage(id, ProcessingStage.ANALYZE)
+
+        repository.markProcessingRetrying(id, ProcessingFailureReason.NETWORK)
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals(AiStatus.PENDING, bookmark.aiStatus)
+        assertNull(bookmark.processing.stage)
+        assertEquals(ProcessingFailureReason.NETWORK, bookmark.processing.failureReason)
+        assertTrue(bookmark.processing.startedAt != null)
+    }
+
+    @Test
+    fun 再処理すると前の処理の段_日時_失敗の理由を消して処理待ちにする() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.startProcessingStage(id, ProcessingStage.ANALYZE)
+        repository.finishProcessing(id, AiStatus.FAILED, ProcessingFailureReason.TIMEOUT)
+
+        repository.reprocess(id)
+
+        val processing = repository.getBookmarkById(id)!!.let {
+            assertEquals(AiStatus.PENDING, it.aiStatus)
+            it.processing
+        }
+        assertTrue(processing.queuedAt != null)
+        assertNull(processing.startedAt)
+        assertNull(processing.finishedAt)
+        assertNull(processing.failureReason)
+    }
+
+    @Test
+    fun 前のプロセスで始まった段は処理待ちに戻して積み直し_今のプロセスで始まった段は触らない() = runBlocking {
+        val processStartedAt = 1_000L
+        // 前のプロセスで本文の取得中に止められたもの(ワークも失われた)
+        val stopped = db.bookmarkDao().insert(textBookmark().toEntity())
+        db.bookmarkDao().startStage(stopped, ProcessingStage.FETCH_CONTENT, now = processStartedAt - 1)
+        // このプロセスで要約を作っているもの
+        val running = db.bookmarkDao().insert(textBookmark().toEntity())
+        db.bookmarkDao().startStage(running, ProcessingStage.ANALYZE, now = processStartedAt + 1)
+
+        assertEquals(1, repository.enqueueStalledProcessing(processStartedAt))
+
+        repository.getBookmarkById(stopped)!!.let {
+            assertEquals(AiStatus.PENDING, it.aiStatus)
+            assertNull(it.processing.stage)
+        }
+        repository.getBookmarkById(running)!!.let {
+            assertEquals(AiStatus.PROCESSING, it.aiStatus)
+            assertEquals(ProcessingStage.ANALYZE, it.processing.stage)
+        }
+        assertSequential(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME), expectedSize = 1)
     }
 
     @Test
@@ -492,7 +617,7 @@ class BookmarkRepositoryImplTest {
                 db.bookmarkDao().insert(textBookmark().copy(aiStatus = status).toEntity())
             }
 
-        assertEquals(2, repository.enqueueStalledProcessing())
+        assertEquals(2, repository.enqueueStalledProcessing(System.currentTimeMillis()))
 
         // 失われた2件は一括の列に積み、処理が残っているものは二重に積まない
         assertSequential(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME), expectedSize = 2)
@@ -503,7 +628,7 @@ class BookmarkRepositoryImplTest {
         )
 
         // 積み直した後は処理が残っているため、もう一度呼んでも積まない
-        assertEquals(0, repository.enqueueStalledProcessing())
+        assertEquals(0, repository.enqueueStalledProcessing(System.currentTimeMillis()))
     }
 
     @Test
@@ -514,7 +639,7 @@ class BookmarkRepositoryImplTest {
         ).result.get()
         db.bookmarkDao().insert(textBookmark().copy(aiStatus = AiStatus.PROCESSING).toEntity())
 
-        assertEquals(0, repository.enqueueStalledProcessing())
+        assertEquals(0, repository.enqueueStalledProcessing(System.currentTimeMillis()))
         assertTrue(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME).isEmpty())
     }
 }

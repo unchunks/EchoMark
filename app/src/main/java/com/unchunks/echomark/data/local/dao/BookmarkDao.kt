@@ -10,6 +10,8 @@ import androidx.room.Update
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -47,9 +49,58 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET aiStatus = :status WHERE id = :id")
     suspend fun updateAiStatus(id: Long, status: AiStatus)
 
-    /** 状態が [expected] のときだけ [status] に変える(後から始まった処理が書いた状態を上書きしない)。 */
-    @Query("UPDATE bookmarks SET aiStatus = :status WHERE id = :id AND aiStatus = :expected")
-    suspend fun updateAiStatusIf(id: Long, expected: AiStatus, status: AiStatus)
+    // ---- 処理の状態の移り変わり(ProcessingInfo の説明を参照) ----
+
+    /** 処理待ちにする(保存・再処理・積み直し)。前の処理の段・日時・失敗の理由は消す。 */
+    @Query(
+        "UPDATE bookmarks SET aiStatus = 'PENDING', processingStage = NULL, queuedAt = :now, " +
+            "processingStartedAt = NULL, stageStartedAt = NULL, processingFinishedAt = NULL, failureReason = NULL " +
+            "WHERE id = :id"
+    )
+    suspend fun markQueued(id: Long, now: Long)
+
+    /** 段を始める(処理中にする)。最初の段なら処理を始めた日時も入れる。 */
+    @Query(
+        "UPDATE bookmarks SET aiStatus = 'PROCESSING', processingStage = :stage, stageStartedAt = :now, " +
+            "processingStartedAt = COALESCE(processingStartedAt, :now), processingFinishedAt = NULL " +
+            "WHERE id = :id"
+    )
+    suspend fun startStage(id: Long, stage: ProcessingStage, now: Long)
+
+    /**
+     * 段を終え、次の段を待つ(処理待ちに戻す)。中断されたときも使う。
+     * [stageStartedAt] に始めた段のままのときだけ変える(その後に別の処理が始めた段・書いた結果を上書きしない)。
+     */
+    @Query(
+        "UPDATE bookmarks SET aiStatus = 'PENDING', processingStage = NULL, stageStartedAt = NULL " +
+            "WHERE id = :id AND aiStatus = 'PROCESSING' AND stageStartedAt = :stageStartedAt"
+    )
+    suspend fun endStage(id: Long, stageStartedAt: Long)
+
+    /** 再試行を待つ(処理待ちに戻し、直前の失敗の理由を残す)。 */
+    @Query(
+        "UPDATE bookmarks SET aiStatus = 'PENDING', processingStage = NULL, stageStartedAt = NULL, " +
+            "failureReason = :reason WHERE id = :id"
+    )
+    suspend fun markRetrying(id: Long, reason: ProcessingFailureReason)
+
+    /** 処理を終える(完了・失敗・準備待ち)。 */
+    @Query(
+        "UPDATE bookmarks SET aiStatus = :status, processingStage = NULL, stageStartedAt = NULL, " +
+            "processingFinishedAt = :now, failureReason = :reason WHERE id = :id"
+    )
+    suspend fun finishProcessing(id: Long, status: AiStatus, reason: ProcessingFailureReason?, now: Long)
+
+    /**
+     * [before] より前に始まった段のまま処理中になっているものを、処理待ちに戻す。
+     * アプリのプロセスの開始日時を渡すと、前のプロセスで実行していて止まった段だけが対象になる
+     * (ワークは同じプロセスで動くため、今のプロセスで始まった段は消さない)。
+     */
+    @Query(
+        "UPDATE bookmarks SET aiStatus = 'PENDING', processingStage = NULL, stageStartedAt = NULL " +
+            "WHERE aiStatus = 'PROCESSING' AND (stageStartedAt IS NULL OR stageStartedAt < :before)"
+    )
+    suspend fun resetProcessingStartedBefore(before: Long): Int
 
     @Query("UPDATE bookmarks SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFavorite: Boolean)
@@ -75,9 +126,13 @@ interface BookmarkDao {
     @Query("SELECT filePath FROM bookmarks WHERE filePath IS NOT NULL")
     suspend fun getAllFilePaths(): List<String>
 
-    /** AI再処理用: 要約を消して指定ステータスに戻す */
-    @Query("UPDATE bookmarks SET summary = NULL, aiStatus = :status WHERE id = :id")
-    suspend fun resetAiResult(id: Long, status: AiStatus)
+    /** AI再処理用: 要約を消して処理待ちにする([markQueued] と同じく、前の処理の段・日時・失敗の理由も消す) */
+    @Query(
+        "UPDATE bookmarks SET summary = NULL, aiStatus = 'PENDING', processingStage = NULL, queuedAt = :now, " +
+            "processingStartedAt = NULL, stageStartedAt = NULL, processingFinishedAt = NULL, failureReason = NULL " +
+            "WHERE id = :id"
+    )
+    suspend fun resetAiResult(id: Long, now: Long)
 
 
     // 削除

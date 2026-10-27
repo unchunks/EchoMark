@@ -183,7 +183,7 @@ private fun BookmarkCardBody(
         if (bookmark.tags.isNotEmpty() || showStatus) {
             Spacer(Modifier.height(10.dp))
             TagLine(
-                status = bookmark.aiStatus.takeIf { showStatus },
+                status = bookmark.processingBadge().takeIf { showStatus },
                 tags = bookmark.tags,
                 aiTags = bookmark.aiTags,
                 modifier = Modifier.padding(end = 8.dp)
@@ -199,7 +199,7 @@ private fun BookmarkCardBody(
  */
 @Composable
 private fun TagLine(
-    status: AiStatus?,
+    status: ProcessingBadge?,
     tags: List<String>,
     aiTags: Set<String>,
     modifier: Modifier = Modifier

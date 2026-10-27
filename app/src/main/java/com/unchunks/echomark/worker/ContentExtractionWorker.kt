@@ -15,6 +15,7 @@ import com.unchunks.echomark.R
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.extract.ContentExtractor
 import com.unchunks.echomark.domain.extract.ExtractedBody
@@ -25,6 +26,7 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.File
 
 /**
  * 保存したファイル(画像・PDF・音声・動画・テキスト)から、要約に使うテキストを取り出して本文に保存する。
@@ -58,6 +60,13 @@ class ContentExtractionWorker @AssistedInject constructor(
             Timber.w("ContentExtractionWorker: ファイルがありません id=%d", bookmarkId)
             return Result.success()
         }
+        // 処理中(中身の取り出し)にし、終えたら(中断されても)次の段を待つ処理待ちに戻す
+        return withProcessingStage(repository, bookmarkId, ProcessingStage.EXTRACT_CONTENT) {
+            extract(bookmarkId, bookmark, file)
+        }
+    }
+
+    private suspend fun extract(bookmarkId: Long, bookmark: Bookmark, file: File): Result {
         val kind = bookmark.contentKind()
 
         // 後続の AI 処理で端末内モデルを使うなら、取り出しと重ねて読み込んでおく

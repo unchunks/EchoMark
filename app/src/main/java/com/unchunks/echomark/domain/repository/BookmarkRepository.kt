@@ -4,6 +4,8 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
@@ -46,7 +48,6 @@ interface BookmarkRepository {
     suspend fun updateSummary(id: Long, summary: String)
     suspend fun updateCategory(id: Long, category: String)
     suspend fun updateTitleAndContent(id: Long, title: String, content: String?)
-    suspend fun updateAiStatus(id: Long, status: AiStatus)
 
     /** 削除の取り消し用。同じ ID・タグで復元し、埋め込みを再生成する。 */
     suspend fun restoreBookmark(bookmark: Bookmark)
@@ -75,16 +76,26 @@ interface BookmarkRepository {
      * API キーの設定後などに使う。キューに積んだ件数を返す。
      */
     suspend fun enqueueFailedAndWaitingProcessing(): Int
+
+    // 処理の状態の移り変わり(ワーカーから呼ぶ。ProcessingInfo の説明を参照)
+    /** 処理の段を始める(処理中にする)。始めた日時を返す。段を終えるとき・中断されたときに [endProcessingStage] へ渡す。 */
+    suspend fun startProcessingStage(id: Long, stage: ProcessingStage): Long
     /**
-     * 中断された AI 処理の状態を、処理中(PROCESSING)から処理待ち(PENDING)に戻す。
-     * 既に別の処理が状態を書き換えていれば(完了・失敗など)上書きしない。
+     * 段を終え、次の段を待つ(処理待ちに戻す)。中断されたときも呼ぶ。
+     * その後に別の処理が段を始めた・結果を書いたなら([stageStartedAt] が違えば)何もしない。
      */
-    suspend fun markProcessingInterrupted(id: Long)
+    suspend fun endProcessingStage(id: Long, stageStartedAt: Long)
+    /** 再試行を待つ(処理待ちに戻し、直前の失敗の理由を残す)。 */
+    suspend fun markProcessingRetrying(id: Long, reason: ProcessingFailureReason)
+    /** 処理を終える。[status] は完了・失敗・準備待ちのどれか。失敗・準備待ちなら [reason] に理由を渡す。 */
+    suspend fun finishProcessing(id: Long, status: AiStatus, reason: ProcessingFailureReason? = null)
     /**
-     * 処理待ち・処理中のまま、対応するワークが残っていない(取り消された・失われた)ブックマークの AI 処理を積み直す。
-     * 状態が「AI処理中…」のまま終わらなくなるのを防ぐため、アプリの起動時に呼ぶ。積み直した件数を返す。
+     * 処理待ち・処理中のまま止まっているブックマークの処理を積み直す。アプリの起動時に呼ぶ。積み直した件数を返す。
+     * - [processStartedAt](このプロセスの開始日時)より前に始まった段のまま処理中のものは、実行しているワークが無いので処理待ちに戻す
+     *   (プロセスが止められた・強制終了された)。ワークが残っていれば WorkManager が再実行し、段を書き直す
+     * - 処理待ちのまま、対応するワークが残っていない(取り消された・失われた)ものは積み直す
      */
-    suspend fun enqueueStalledProcessing(): Int
+    suspend fun enqueueStalledProcessing(processStartedAt: Long): Int
 
     // Delete
     suspend fun deleteBookmark(bookmark: Bookmark)

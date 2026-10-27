@@ -116,7 +116,8 @@ import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState
-import com.unchunks.echomark.ui.components.statusDescription
+import com.unchunks.echomark.ui.components.description
+import com.unchunks.echomark.ui.components.processingBadge
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -664,8 +665,9 @@ private fun AiSection(bookmark: Bookmark, callbacks: BookmarkDetailCallbacks) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(16.dp)) {
-            AiStatusBadge(bookmark.aiStatus)
-            bookmark.aiStatus.statusDescription()?.let { description ->
+            val badge = bookmark.processingBadge()
+            AiStatusBadge(badge)
+            badge.description()?.let { description ->
                 Spacer(Modifier.height(10.dp))
                 Text(description, style = MaterialTheme.typography.bodyMedium)
             }

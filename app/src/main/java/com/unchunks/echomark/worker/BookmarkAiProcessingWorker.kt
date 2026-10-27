@@ -14,6 +14,8 @@ import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
@@ -71,19 +73,32 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
 
         // システムによる中断が続くなど、どの失敗でも上限を超えたものは打ち切る
         if (runAttemptCount >= MAX_NETWORK_ATTEMPTS) {
-            repository.updateAiStatus(bookmarkId, AiStatus.FAILED)
+            repository.finishProcessing(bookmarkId, AiStatus.FAILED, ProcessingFailureReason.TOO_MANY_ATTEMPTS)
             return Result.success()
         }
 
+        // 今の段を始めた日時。中断されたときに、この段のままなら処理待ちに戻す
+        var stageStartedAt: Long? = null
+        suspend fun startStage(stage: ProcessingStage) {
+            stageStartedAt = repository.startProcessingStage(bookmarkId, stage)
+        }
+
         return try {
-            repository.updateAiStatus(bookmarkId, AiStatus.PROCESSING)
+            val needsSummary = bookmark.summary.isNullOrBlank()
+            // 要約が済んでいて埋め込みも最新なら、段を始めずに完了にする
+            if (needsSummary) {
+                startStage(ProcessingStage.ANALYZE)
+            } else if (repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion) {
+                startStage(ProcessingStage.EMBED)
+            }
             prewarm(bookmarkId, bookmark)
             var analysisOutcome = AnalysisOutcome.DONE
+            var failureReason: ProcessingFailureReason? = null
             // この実行で作った要約。埋め込みに含めるため、作ったら埋め込みも作り直す
             var newSummary: String? = null
 
             // 工程1: 要約・タグ・カテゴリ(要約が既にあればスキップ)
-            if (bookmark.summary.isNullOrBlank()) {
+            if (needsSummary) {
                 try {
                     // 既存のタグを伝え、似たタグを増やさず使い回させる
                     // 種類に合った要約にし、ファイルがあればクラウド API にそのまま渡せるようにする
@@ -111,6 +126,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     analysisOutcome = classifyAnalysisError(e)
                     // 再試行で回復しうる失敗は外側の catch でリトライさせる
                     if (analysisOutcome == AnalysisOutcome.RETRY) throw e
+                    failureReason = failureReasonOf(e)
                     // モデル未取得・キー未設定などでも埋め込みは実行する。設定後に再実行される
                     Timber.i("解析を保留/中止: id=$bookmarkId outcome=$analysisOutcome (${e.javaClass.simpleName})")
                 } catch (e: LinkageError) {
@@ -118,6 +134,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     // 例外に変えているが、変えていない経路の備え)。再試行しても同じ結果になるため諦め、埋め込みは続ける
                     Timber.e(e, "解析のライブラリを初期化できない: id=$bookmarkId")
                     analysisOutcome = AnalysisOutcome.GIVE_UP
+                    failureReason = failureReasonOf(e)
                 }
             }
 
@@ -127,6 +144,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                 if (newSummary != null ||
                     repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion
                 ) {
+                    if (needsSummary) startStage(ProcessingStage.EMBED)
                     val text = EmbeddingInputBuilder.build(
                         bookmark.title, newSummary ?: bookmark.summary, bookmark.content, embeddingProvider.profile
                     )
@@ -139,35 +157,37 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                 Timber.i("埋め込みモデルが無いため埋め込みをスキップ: id=$bookmarkId")
             }
 
-            repository.updateAiStatus(
+            repository.finishProcessing(
                 bookmarkId,
                 when (analysisOutcome) {
                     AnalysisOutcome.DONE -> AiStatus.DONE
                     AnalysisOutcome.WAITING_SETUP -> AiStatus.WAITING_MODEL
                     // 拒否など再試行しても結果が変わらないもの。設定画面から手動で再処理できる
                     AnalysisOutcome.GIVE_UP, AnalysisOutcome.RETRY -> AiStatus.FAILED
-                }
+                },
+                failureReason
             )
             Result.success()
         } catch (e: CancellationException) {
             // 中断(実行時間の上限・制約の不成立・取り消しなど)で「処理中」のまま残さない。
             // 再実行されればそこで処理中に戻り、取り消されたまま再実行されなければ起動時に積み直す
-            withContext(NonCancellable) { repository.markProcessingInterrupted(bookmarkId) }
+            withContext(NonCancellable) { stageStartedAt?.let { repository.endProcessingStage(bookmarkId, it) } }
             throw e
         } catch (e: LinkageError) {
             // ライブラリの初期化の失敗(埋め込みなど)。Error のまま投げるとワークは失敗し、表示が「処理中」のまま残る。
             // 同じプロセスでは再試行しても同じ結果になるため、失敗として終える(設定画面から再処理できる)
             Timber.e(e, "AI 処理のライブラリを初期化できない: id=$bookmarkId")
-            repository.updateAiStatus(bookmarkId, AiStatus.FAILED)
+            repository.finishProcessing(bookmarkId, AiStatus.FAILED, failureReasonOf(e))
             Result.success()
         } catch (e: Exception) {
             Timber.e(e, "AI 処理に失敗: id=$bookmarkId attempt=$runAttemptCount")
             // 再試行の間隔は WorkManager の指数バックオフ(30 秒から倍々、最大 5 時間)に任せる
             if (runAttemptCount + 1 >= maxAttemptsFor(e)) {
-                repository.updateAiStatus(bookmarkId, AiStatus.FAILED)
+                repository.finishProcessing(bookmarkId, AiStatus.FAILED, failureReasonOf(e))
                 Result.success()
             } else {
-                repository.updateAiStatus(bookmarkId, AiStatus.PENDING)
+                // 再試行を待つ間は処理待ちにする(実行しているワークは無い)
+                repository.markProcessingRetrying(bookmarkId, failureReasonOf(e))
                 Result.retry()
             }
         }

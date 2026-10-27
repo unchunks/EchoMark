@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,43 +28,96 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
 /**
- * AI 状態の短い文言。バッジ・一覧・詳細など画面をまたいで必ずこれを使い、同じ言い方にする。
+ * バッジ・説明に出す処理の状態。[stage] は処理中の段([AiStatus.PROCESSING] のときだけ使う)、
+ * [kind] は段の言い方を決める中身の種類(音声・動画の取り出しは「文字起こし」など)。
+ */
+@Immutable
+data class ProcessingBadge(
+    val status: AiStatus,
+    val stage: ProcessingStage? = null,
+    val kind: ContentKind? = null
+)
+
+/** このブックマークのバッジに出す処理の状態。 */
+fun Bookmark.processingBadge(): ProcessingBadge = ProcessingBadge(
+    status = aiStatus,
+    stage = processing.stage.takeIf { aiStatus == AiStatus.PROCESSING },
+    kind = contentKind()
+)
+
+/** 段の短い名前(「〜中」を付けて処理中の表示にする)。 */
+fun ProcessingStage.label(kind: ContentKind?): String = when (this) {
+    ProcessingStage.FETCH_CONTENT -> "本文の取得"
+    ProcessingStage.EXTRACT_CONTENT -> when (kind) {
+        ContentKind.AUDIO, ContentKind.VIDEO -> "文字起こし"
+        ContentKind.IMAGE -> "画像の読み取り"
+        ContentKind.DOCUMENT -> "PDFの読み取り"
+        else -> "内容の読み取り"
+    }
+    ProcessingStage.ANALYZE -> "要約・タグ付け"
+    ProcessingStage.EMBED -> "検索の準備"
+}
+
+/**
+ * 処理の状態の短い文言。バッジ・一覧・詳細など画面をまたいで必ずこれを使い、同じ言い方にする。
+ * 処理待ち(順番・次の段・再試行を待っている)と処理中(段の名前付き)を分けて出す。
  * WAITING_MODEL はローカルモデル未取り込み・API キー未設定のどちらでもなるため、原因を限定しない言い方にする。
  */
-fun AiStatus.badgeLabel(): String = when (this) {
-    AiStatus.PENDING -> "AI処理待ち"
-    AiStatus.PROCESSING -> "AI処理中…"
+fun ProcessingBadge.label(): String = when (status) {
+    AiStatus.PENDING -> "処理待ち"
+    AiStatus.PROCESSING -> stage?.let { "${it.label(kind)}中…" } ?: "処理中…"
     AiStatus.DONE -> "AI要約済み"
     AiStatus.FAILED -> "AI処理に失敗"
     AiStatus.WAITING_MODEL -> "AIの準備待ち"
 }
 
 /** 詳細画面などで状態の理由・次の行動を伝える説明文。完了(DONE)は説明不要なので null。 */
-fun AiStatus.statusDescription(): String? = when (this) {
-    AiStatus.PENDING -> "まもなく AI が要約とタグ付けを始めます。"
-    AiStatus.PROCESSING -> "AI が内容を読んで、要約とタグを作っています。"
+fun ProcessingBadge.description(): String? = when (status) {
+    AiStatus.PENDING -> "処理の順番を待っています。順番が来ると、自動で要約とタグ付けをします。"
+    AiStatus.PROCESSING -> when (stage) {
+        ProcessingStage.FETCH_CONTENT -> "リンク先から本文を取得しています。このあと要約とタグを作ります。"
+        ProcessingStage.EXTRACT_CONTENT -> when (kind) {
+            ContentKind.AUDIO, ContentKind.VIDEO ->
+                "音声を文字に起こしています。長い録音は数分以上かかります。このあと要約とタグを作ります。"
+            else -> "ファイルから文字を読み取っています。このあと要約とタグを作ります。"
+        }
+        ProcessingStage.EMBED -> "意味で探せるように、検索の準備をしています。"
+        ProcessingStage.ANALYZE, null -> "AI が内容を読んで、要約とタグを作っています。"
+    }
     AiStatus.DONE -> null
     AiStatus.FAILED -> "AI の処理に失敗しました。通信状況や AI の設定を確認して、もう一度お試しください。"
     AiStatus.WAITING_MODEL ->
         "AI を使う準備ができていません。AI 設定で端末内モデルを取り込むか、API キーを設定すると自動で処理します。"
 }
 
-/**
- * ブックマークの AI 処理状態を、色・アイコン・短い文言で示すバッジ。
- * 処理中は小さなプログレスをアイコンの代わりに回す。
- */
+/** 段のない、状態だけのバッジ(プレビューなど)。 */
 @Composable
 fun AiStatusBadge(
     status: AiStatus,
     modifier: Modifier = Modifier
+) = AiStatusBadge(ProcessingBadge(status), modifier)
+
+/**
+ * ブックマークの処理の状態を、色・アイコン・短い文言で示すバッジ。
+ * 処理中は小さなプログレスをアイコンの代わりに回し、段の名前を出す。
+ */
+@Composable
+fun AiStatusBadge(
+    badge: ProcessingBadge,
+    modifier: Modifier = Modifier
 ) {
+    val status = badge.status
     val colors = status.badgeColors()
-    val label = status.badgeLabel()
+    val label = badge.label()
     Surface(
-        modifier = modifier.clearAndSetSemantics { contentDescription = "AIの状態: $label" },
+        modifier = modifier.clearAndSetSemantics { contentDescription = "処理の状態: $label" },
         shape = CircleShape,
         color = colors.container,
         contentColor = colors.content
@@ -120,6 +174,9 @@ private fun AiStatusBadgePreview() {
         Surface {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AiStatus.entries.forEach { AiStatusBadge(it) }
+                ProcessingStage.entries.forEach { stage ->
+                    AiStatusBadge(ProcessingBadge(AiStatus.PROCESSING, stage, ContentKind.AUDIO))
+                }
             }
         }
     }
