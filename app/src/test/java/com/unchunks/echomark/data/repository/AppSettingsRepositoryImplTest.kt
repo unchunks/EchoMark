@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -50,6 +51,22 @@ class AppSettingsRepositoryImplTest {
         assertEquals(ThemeMode.DARK, repository.themeMode.first())
         assertTrue(repository.dynamicColor.first())
         assertTrue(repository.onboardingCompleted.first())
+    }
+
+    @Test
+    fun 一覧の並び順は既定が新しい順で保存した順を読み出せる() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertEquals(BookmarkSortOrder.NEWEST, repository.bookmarkSortOrder.first())
+
+        repository.setBookmarkSortOrder(BookmarkSortOrder.RECENTLY_OPENED)
+        assertEquals(BookmarkSortOrder.RECENTLY_OPENED, repository.bookmarkSortOrder.first())
+        // 同じ保存先を読む別のインスタンス(アプリを開き直したとき)でも同じ
+        assertEquals(BookmarkSortOrder.RECENTLY_OPENED, createRepository(dataStore).bookmarkSortOrder.first())
+
+        // 知らない並び順(古い版・新しい版で名前が変わったもの)は新しい順として扱う
+        dataStore.edit { it[stringPreferencesKey("bookmark_sort_order")] = "UNKNOWN" }
+        assertEquals(BookmarkSortOrder.NEWEST, repository.bookmarkSortOrder.first())
     }
 
     @Test

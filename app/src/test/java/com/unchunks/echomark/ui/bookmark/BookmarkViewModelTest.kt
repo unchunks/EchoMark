@@ -6,6 +6,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.TagWithCount
+import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeTagRepository
@@ -38,7 +39,8 @@ class BookmarkViewModelTest {
     private val tagRepository = FakeTagRepository()
     private val recentlyDeleted = RecentlyDeletedBookmarks()
     private val attachments = FakeAttachmentRepository()
-    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, recentlyDeleted, attachments)
+    private val settings = FakeAppSettingsRepository()
+    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, recentlyDeleted, attachments, settings)
 
     /**
      * uiState を購読し、届いたメッセージを集める。
@@ -110,6 +112,48 @@ class BookmarkViewModelTest {
         viewModel.onSortOrderChange(BookmarkSortOrder.TITLE)
         advanceUntilIdle()
         assertEquals(listOf(2L, 1L, 3L), viewModel.uiState.value.bookmarks.map { it.id })
+    }
+
+    @Test
+    fun 選んだ並び順は保存されアプリを開き直しても保つ() = runTest {
+        repository.bookmarks.value = listOf(
+            testBookmark(1, title = "banana").copy(createdAt = 100),
+            testBookmark(2, title = "Apple").copy(createdAt = 300)
+        )
+        val first = createViewModel()
+        start(first)
+        advanceUntilIdle()
+        first.onSortOrderChange(BookmarkSortOrder.TITLE)
+        advanceUntilIdle()
+        assertEquals(BookmarkSortOrder.TITLE, settings.bookmarkSortOrderFlow.value)
+
+        // プロセスが破棄された・アプリを開き直したあと(ViewModel を作り直す)も、選んだ順で出す
+        val reopened = createViewModel()
+        start(reopened)
+        advanceUntilIdle()
+
+        val state = reopened.uiState.value
+        assertEquals(BookmarkSortOrder.TITLE, state.sortOrder)
+        assertEquals(listOf(2L, 1L), state.bookmarks.map { it.id })
+    }
+
+    @Test
+    fun 絞り込みやタグや検索を変えても並び順は変わらない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, title = "b"), testBookmark(2, title = "a"))
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSortOrderChange(BookmarkSortOrder.OLDEST)
+        advanceUntilIdle()
+
+        viewModel.onFilterChange(BookmarkFilter.FAVORITES)
+        viewModel.onTagSelected(10L)
+        viewModel.onSearchActiveChange(true)
+        viewModel.onSearchActiveChange(false)
+        viewModel.showTag(11L)
+        viewModel.retry()
+        advanceUntilIdle()
+
+        assertEquals(BookmarkSortOrder.OLDEST, viewModel.uiState.value.sortOrder)
     }
 
     @Test
