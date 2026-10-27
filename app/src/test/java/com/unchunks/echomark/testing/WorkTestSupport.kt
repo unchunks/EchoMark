@@ -3,7 +3,8 @@ package com.unchunks.echomark.testing
 import android.content.Context
 import android.util.Log
 import androidx.work.Configuration
-import androidx.work.CoroutineWorker
+import androidx.work.impl.utils.futures.SettableFuture
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.work.ListenableWorker
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
@@ -20,7 +21,6 @@ import com.unchunks.echomark.data.local.objectbox.EmbeddingEntity
 import com.unchunks.echomark.data.local.objectbox.MyObjectBox
 import io.objectbox.Box
 import io.objectbox.BoxStore
-import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertEquals
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -55,9 +55,14 @@ fun tearDownTestWorkManager(workManager: WorkManager) {
     WorkManagerTestInitHelper.closeWorkDatabase()
 }
 
-/** 取り消されるまで終わらないワーカー。 */
-private class PendingWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result = awaitCancellation()
+/**
+ * 取り消されるまで終わらないワーカー。
+ * CoroutineWorker + awaitCancellation にすると、ワーカーが別スレッド(Dispatchers.Default)で開始と取り消しを同時に迎え、
+ * 負荷が高いと取り消したワークが FAILED になって後続の「APPEND_OR_REPLACE」で列ごと置き換わることがあり不安定だった。
+ * コルーチンを使わず、完了しない Future を返すだけにして競合の余地をなくす。
+ */
+private class PendingWorker(context: Context, params: WorkerParameters) : ListenableWorker(context, params) {
+    override fun startWork(): ListenableFuture<Result> = SettableFuture.create()
 }
 
 /** 一意名 [name] で登録されたワークの状態。 */
