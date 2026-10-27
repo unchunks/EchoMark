@@ -19,8 +19,7 @@ workManager = "2.11.2"
 timber = "5.0.1"
 datastore = "1.2.1"
 mediapipeTasksText = "1.0.0"
-mediapipeTasksGenai = "0.10.35"
-litertlm = "0.18.0"
+litertlm = "0.18.1"
 okhttp = "5.5.0"
 jsoup = "1.23.2"
 coroutines = "1.11.0"
@@ -75,7 +74,6 @@ okhttp-mockwebserver3 = { group = "com.squareup.okhttp3", name = "mockwebserver3
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 mediapipe-tasks-text = { group = "com.google.mediapipe", name = "tasks-text", version.ref = "mediapipeTasksText" }
-mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeTasksGenai" }
 litertlm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litertlm" }
 anthropic-java = { group = "com.anthropic", name = "anthropic-java", version.ref = "anthropicJava" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }

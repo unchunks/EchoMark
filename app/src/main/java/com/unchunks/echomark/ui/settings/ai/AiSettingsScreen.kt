@@ -120,7 +120,7 @@ fun AiSettingsScreen(
         pendingEmbeddingProfileId = null
         if (uri != null && profile != null) viewModel.importEmbeddingModel(uri, profile)
     }
-    // .task / .litertlm には標準の MIME タイプが無いため、全ファイルから選ばせて取り込み時に拡張子を検証する
+    // .litertlm / .task には標準の MIME タイプが無いため、全ファイルから選ばせて取り込み時に拡張子と中身を検証する
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) viewModel.importModel(uri)
     }
@@ -224,6 +224,7 @@ fun AiSettingsContent(
             SectionHeader("端末内モデル")
             LocalModelSection(
                 model = uiState.localModel,
+                loadFailure = uiState.localModelLoadFailure,
                 importState = uiState.importState,
                 isSelected = uiState.usesLocal,
                 onPickModel = actions.onPickModel,

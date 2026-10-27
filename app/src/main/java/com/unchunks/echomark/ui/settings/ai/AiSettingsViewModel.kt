@@ -9,6 +9,7 @@ import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
+import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.model.EmbeddingProgress
@@ -48,6 +49,8 @@ data class AiSettingsUiState(
     /** 用途ごとの設定(実行場所・提供元・モデル) */
     val tasks: Map<AiTask, AiTaskSetting> = AiTask.entries.associateWith { AiTaskSetting() },
     val localModel: LocalModelInfo? = null,
+    /** 取り込んだ端末内モデルを読み込めなかったこと。null なら失敗していない(まだ読み込んでいない場合も) */
+    val localModelLoadFailure: LocalModelLoadFailure? = null,
     val importState: ModelImportState = ModelImportState.Idle,
     /** 取り込んだ埋め込みモデル。null なら同梱のモデルを使っている */
     val embeddingModel: EmbeddingModelInfo? = null,
@@ -100,7 +103,7 @@ data class AiSettingsUiState(
 
 /** uiState にまとめる前の、モデル(端末内 LLM・埋め込み)に関する状態。 */
 private data class ModelsSnapshot(
-    val llm: LocalModelInfo?,
+    val llm: Pair<LocalModelInfo?, LocalModelLoadFailure?>,
     val llmImport: ModelImportState,
     val embedding: EmbeddingModelInfo?,
     val embeddingImport: ModelImportState,
@@ -123,7 +126,7 @@ class AiSettingsViewModel @Inject constructor(
     val uiState: StateFlow<AiSettingsUiState> = combine(
         appSettings.aiTaskSettings,
         combine(
-            modelManager.installedModel,
+            combine(modelManager.installedModel, modelManager.loadFailure, ::Pair),
             modelManager.importState,
             embeddingModelManager.installedModel,
             embeddingModelManager.importState,
@@ -136,7 +139,8 @@ class AiSettingsViewModel @Inject constructor(
     ) { tasks, models, keyProvider, (sendFiles, useGpu), configured ->
         AiSettingsUiState(
             tasks = tasks,
-            localModel = models.llm,
+            localModel = models.llm.first,
+            localModelLoadFailure = models.llm.second,
             importState = models.llmImport,
             embeddingProgress = models.embeddingProgress,
             embeddingModel = models.embedding,
