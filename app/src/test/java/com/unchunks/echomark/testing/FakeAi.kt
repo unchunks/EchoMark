@@ -3,6 +3,7 @@ package com.unchunks.echomark.testing
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.securestorage.SecretCipher
 import com.unchunks.components.securestorage.UnrecoverableSecretException
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
@@ -50,6 +51,7 @@ class FakeAppSettingsRepository(
     val onboardingCompletedFlow = MutableStateFlow(false)
     val sendFilesToCloudFlow = MutableStateFlow(true)
     val localLlmUseGpuFlow = MutableStateFlow(false)
+    val bookmarkSortOrderFlow = MutableStateFlow(BookmarkSortOrder.NEWEST)
     var resetCalls = 0
 
     override val rediscoverSettings: Flow<RediscoverSettings> = rediscoverFlow
@@ -58,6 +60,7 @@ class FakeAppSettingsRepository(
     override val onboardingCompleted: Flow<Boolean> = onboardingCompletedFlow
     override val sendFilesToCloud: Flow<Boolean> = sendFilesToCloudFlow
     override val localLlmUseGpu: Flow<Boolean> = localLlmUseGpuFlow
+    override val bookmarkSortOrder: Flow<BookmarkSortOrder> = bookmarkSortOrderFlow
 
     override suspend fun setLlmBackend(task: AiTask, backend: LlmBackend) = updateTask(task) { copy(backend = backend) }
     override suspend fun setApiProvider(task: AiTask, provider: ApiProvider) = updateTask(task) { copy(apiProvider = provider) }
@@ -70,6 +73,7 @@ class FakeAppSettingsRepository(
     override suspend fun setOnboardingCompleted(completed: Boolean) { onboardingCompletedFlow.value = completed }
     override suspend fun setSendFilesToCloud(enabled: Boolean) { sendFilesToCloudFlow.value = enabled }
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) { localLlmUseGpuFlow.value = enabled }
+    override suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder) { bookmarkSortOrderFlow.value = sortOrder }
     override suspend fun setRediscoverEnabled(enabled: Boolean) {
         rediscoverFlow.value = rediscoverFlow.value.copy(enabled = enabled)
     }
@@ -84,6 +88,7 @@ class FakeAppSettingsRepository(
         dynamicColorFlow.value = false
         sendFilesToCloudFlow.value = true
         localLlmUseGpuFlow.value = false
+        bookmarkSortOrderFlow.value = BookmarkSortOrder.NEWEST
     }
     override suspend fun getRediscoverNotified(): Map<Long, Long> = TODO("not used")
     override suspend fun recordRediscoverNotified(ids: List<Long>, notifiedAt: Long) = TODO("not used")

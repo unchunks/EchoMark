@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
@@ -20,6 +21,7 @@ import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.domain.repository.defaultApiModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
@@ -89,6 +91,16 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) {
         dataStore.edit { it[KEY_LOCAL_LLM_USE_GPU] = enabled }
+    }
+
+    // 名前の変わった・無くなった並び順が保存されていたら既定に戻す
+    override val bookmarkSortOrder: Flow<BookmarkSortOrder> = data.map { prefs ->
+        prefs[KEY_BOOKMARK_SORT_ORDER]?.let { name -> BookmarkSortOrder.entries.firstOrNull { it.name == name } }
+            ?: BookmarkSortOrder.NEWEST
+    }.distinctUntilChanged()
+
+    override suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder) {
+        dataStore.edit { it[KEY_BOOKMARK_SORT_ORDER] = sortOrder.name }
     }
 
     override suspend fun setThemeMode(mode: ThemeMode) {
@@ -169,6 +181,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_SEND_FILES_TO_CLOUD = booleanPreferencesKey("send_files_to_cloud")
         val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
+        val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
     }
 }

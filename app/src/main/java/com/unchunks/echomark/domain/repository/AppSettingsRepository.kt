@@ -1,6 +1,7 @@
 package com.unchunks.echomark.domain.repository
 
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.DayOfWeek
@@ -87,6 +88,9 @@ interface AppSettingsRepository {
      */
     val localLlmUseGpu: Flow<Boolean>
 
+    /** 一覧の並び順。アプリを開き直しても前回選んだ順で出す。既定は新しい順。 */
+    val bookmarkSortOrder: Flow<BookmarkSortOrder>
+
     suspend fun setLlmBackend(task: AiTask, backend: LlmBackend)
     suspend fun setApiProvider(task: AiTask, provider: ApiProvider)
 
@@ -97,6 +101,7 @@ interface AppSettingsRepository {
     suspend fun setOnboardingCompleted(completed: Boolean)
     suspend fun setSendFilesToCloud(enabled: Boolean)
     suspend fun setLocalLlmUseGpu(enabled: Boolean)
+    suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder)
     suspend fun setRediscoverEnabled(enabled: Boolean)
     suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int)
 

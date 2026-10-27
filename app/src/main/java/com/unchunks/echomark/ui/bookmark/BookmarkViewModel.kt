@@ -9,6 +9,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
+import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.AttachmentRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.SaveResult
@@ -47,7 +48,8 @@ class BookmarkViewModel @Inject constructor(
     private val repository: BookmarkRepository,
     private val tagRepository: TagRepository,
     private val recentlyDeleted: RecentlyDeletedBookmarks,
-    private val attachmentRepository: AttachmentRepository
+    private val attachmentRepository: AttachmentRepository,
+    private val appSettings: AppSettingsRepository
 ) : ViewModel() {
 
     /** 検索語以外の表示条件 */
@@ -69,6 +71,15 @@ class BookmarkViewModel @Inject constructor(
 
     private val searchQueryFlow = MutableStateFlow("")
     private val controlsFlow = MutableStateFlow(ListControls())
+
+    /**
+     * 表示に使う条件。並び順は設定(DataStore)に保存したものを使い、アプリを開き直しても選んだ順を保つ
+     * (ViewModel だけで持つと、アプリを終了したりプロセスが破棄されたりすると新しい順に戻ってしまう)。
+     * 保存した並び順を読むまでは一覧を出さない(既定の順で一瞬出してから並べ替わらないように)
+     */
+    private val shownControlsFlow: Flow<ListControls> =
+        combine(controlsFlow, appSettings.bookmarkSortOrder) { controls, sortOrder -> controls.copy(sortOrder = sortOrder) }
+
     private val retryTrigger = MutableStateFlow(0)
     private val rediscoverFlow = MutableStateFlow<List<Bookmark>>(emptyList())
 
@@ -89,7 +100,7 @@ class BookmarkViewModel @Inject constructor(
         .distinctUntilChanged()
 
     private val listFlow: Flow<ListResult> =
-        combine(debouncedQueryFlow, controlsFlow, retryTrigger) { query, controls, _ -> query to controls }
+        combine(debouncedQueryFlow, shownControlsFlow, retryTrigger) { query, controls, _ -> query to controls }
             .flatMapLatest { (query, controls) ->
                 // 絞り込み・並べ替え済みの一覧。検索時は「表示してよいもの」の判定と、DB 変更時の再検索のきっかけに使う
                 val visible = repository.observeBookmarks(controls.filter, controls.sortOrder, controls.tagId)
@@ -123,7 +134,7 @@ class BookmarkViewModel @Inject constructor(
         }
 
     val uiState: StateFlow<BookmarkListUiState> = combine(
-        combine(listFlow, searchQueryFlow, controlsFlow, ::Triple),
+        combine(listFlow, searchQueryFlow, shownControlsFlow, ::Triple),
         tagsFlow,
         rediscoverFlow,
         repository.observeBookmarkCount()
@@ -222,8 +233,17 @@ class BookmarkViewModel @Inject constructor(
         controlsFlow.update { it.copy(filter = filter) }
     }
 
+    /** 並び順を変えて保存する(一覧は保存した値から読み直す) */
     fun onSortOrderChange(sortOrder: BookmarkSortOrder) {
-        controlsFlow.update { it.copy(sortOrder = sortOrder) }
+        viewModelScope.launch {
+            try {
+                appSettings.setBookmarkSortOrder(sortOrder)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "並び順を保存できませんでした")
+            }
+        }
     }
 
     fun retry() {
