@@ -17,6 +17,8 @@ import coil3.request.crossfade
 import com.unchunks.components.core.ComponentLog
 import com.unchunks.components.core.LogSink
 import com.unchunks.echomark.data.ai.local.LocalLlmProvider
+import com.unchunks.echomark.crash.CrashReporter
+import com.unchunks.echomark.crash.CrashReporter.recordWorkerFailures
 import com.unchunks.echomark.data.attachment.UnusedAttachmentCleaner
 import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
 import com.unchunks.echomark.worker.ReembedAllWorker
@@ -41,11 +43,16 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
+            // ワーカーが例外で失敗したら端末内のクラッシュログに残す
+            .recordWorkerFailures(this)
             .build()
 
     override fun onCreate() {
         super.onCreate()
 
+        // 捕まえられない例外などを端末内のファイルに残す(外部サービスには送らない)。設定画面から見る・共有する・消す
+        CrashReporter.install(this)
+        Timber.plant(CrashReporter.errorTree(this))
         // ログは debug ビルドだけ Logcat に出す(release では本文や URL を残さない)
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
         // 部品(components)のうち Android に依存しないもののログも Timber に流す

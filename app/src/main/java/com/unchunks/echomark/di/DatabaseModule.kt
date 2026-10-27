@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.SQLiteConnection
+import com.unchunks.echomark.BuildConfig
 import com.unchunks.echomark.data.local.ALL_MIGRATIONS
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.DESTRUCTIVE_MIGRATION_FROM_VERSIONS
@@ -39,7 +40,7 @@ object DatabaseModule {
             DATABASE_NAME
         )
             // 作り直したブックマークの ID は 1 から振り直されるため、古い埋め込みが新しいブックマークに紐付かないよう消す
-            .applyMigrationPolicy { boxStore.get().removeAllObjects() }
+            .applyMigrationPolicy(allowDestructiveDowngrade = BuildConfig.DEBUG) { boxStore.get().removeAllObjects() }
             .build()
     }
 
@@ -70,11 +71,17 @@ object DatabaseModule {
 }
 
 /**
- * DB のマイグレーションの方針。DatabaseModule とテストで共有する。
- * - v6 以降は正式なマイグレーションでデータを保持する
- * - 開発初期(v1〜5)からの更新とダウングレードだけは、データを作り直す。そのときは [onDestructiveMigration] を呼ぶ
+ * DB のマイグレーションの方針。DatabaseModule とテストで共有する。手順は docs/database-migrations.md。
+ * - v6 以降は正式なマイグレーションでデータを保持する。マイグレーションが足りないときは作り直さず、開けずに失敗させる
+ * - 開発初期(v1〜5、公開前の開発用ビルドだけ)からの更新は、データを作り直す
+ * - ダウングレード(新しい版の DB を古いアプリで開く)は、[allowDestructiveDowngrade] のとき(debug ビルド)だけ作り直す。
+ *   開発中はブランチを切り替えると版が下がるため作り直して開けるようにし、release では開けずに失敗させる
+ *   (データは残るので、新しいアプリを入れ直せば元に戻る。versionCode を上げていない間は古い APK を上書きで入れられるため)
+ *
+ * データを作り直したときは [onDestructiveMigration] を呼ぶ。
  */
 internal fun RoomDatabase.Builder<AppDatabase>.applyMigrationPolicy(
+    allowDestructiveDowngrade: Boolean,
     onDestructiveMigration: () -> Unit
 ): RoomDatabase.Builder<AppDatabase> = this
     .addMigrations(*ALL_MIGRATIONS)
@@ -82,7 +89,7 @@ internal fun RoomDatabase.Builder<AppDatabase>.applyMigrationPolicy(
         dropAllTables = true,
         *DESTRUCTIVE_MIGRATION_FROM_VERSIONS
     )
-    .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+    .apply { if (allowDestructiveDowngrade) fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true) }
     .addCallback(object : RoomDatabase.Callback() {
         override fun onDestructiveMigration(connection: SQLiteConnection) {
             onDestructiveMigration()
