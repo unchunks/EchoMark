@@ -198,7 +198,7 @@ class BookmarkWorkSchedulerTest {
         val target = BookmarkWorkScheduler.Target(1L, fetchContent = true, extractContent = true)
         val requests = scheduler.requestsFor(
             target,
-            Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
+            BookmarkWorkScheduler.RequestPolicy(aiUsesApi = true, unmeteredOnly = true),
             expedited = true
         )
 
@@ -210,5 +210,72 @@ class BookmarkWorkSchedulerTest {
             assertEquals(0L, request.workSpec.initialDelay)
             assertTrue(request.workSpec.expedited)
         }
+    }
+
+    private fun constraintsOf(uniqueName: String, worker: Class<*>): Constraints =
+        workManager.getWorkInfosForUniqueWork(uniqueName).get()
+            .single { it.tags.contains(worker.name) }
+            .constraints
+
+    @Test
+    fun 充電中だけ処理する設定では重い段に充電中を求め_エクスペディットにしない() = runBlocking {
+        settings.updateProcessingSettings { it.copy(chargingOnly = true) }
+
+        scheduler.enqueue(1L, fetchContent = true, extractContent = true)
+
+        val name = BookmarkWorkScheduler.uniqueWorkName(1L)
+        // 本文の取得は軽いので充電を待たない
+        assertEquals(false, constraintsOf(name, UrlFetchWorker::class.java).requiresCharging())
+        assertTrue(constraintsOf(name, ContentExtractionWorker::class.java).requiresCharging())
+        assertTrue(constraintsOf(name, BookmarkAiProcessingWorker::class.java).requiresCharging())
+        // 充電中を待つワークはエクスペディットにできない(build が失敗する)ので通常のワークにする
+        val expedited = workManager.getWorkInfosForUniqueWork(name).get()
+            .associate { info -> info.tags.first { it.startsWith("com.unchunks") } to expeditedSettingOf(context, info).first }
+        assertEquals(true, expedited[UrlFetchWorker::class.java.name])
+        assertEquals(false, expedited[ContentExtractionWorker::class.java.name])
+        assertEquals(false, expedited[BookmarkAiProcessingWorker::class.java.name])
+    }
+
+    @Test
+    fun 従量課金でない接続だけの設定では通信する段がWiFiなどを待つ() = runBlocking {
+        settings.setBackendForAll(LlmBackend.API)
+        settings.updateProcessingSettings { it.copy(unmeteredOnly = true) }
+
+        scheduler.enqueue(1L, fetchContent = true)
+
+        val name = BookmarkWorkScheduler.uniqueWorkName(1L)
+        assertEquals(NetworkType.UNMETERED, constraintsOf(name, UrlFetchWorker::class.java).requiredNetworkType)
+        assertEquals(NetworkType.UNMETERED, aiWorkNetworkType(1L))
+    }
+
+    @Test
+    fun 夜間にまとめて処理する設定では保存したもの_一括の再処理を積まない() = runBlocking {
+        settings.updateProcessingSettings { it.copy(nightlyBatch = true) }
+
+        assertEquals(false, scheduler.enqueue(1L, fetchContent = false, deferrable = true))
+        assertEquals(false, scheduler.enqueueSequential(listOf(BookmarkWorkScheduler.Target(2L, fetchContent = false))))
+
+        assertTrue(unfinished(1L).isEmpty())
+        assertTrue(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME).isEmpty())
+    }
+
+    @Test
+    fun 夜間にまとめて処理する設定でもユーザーが頼んだ1件はすぐ積む() = runBlocking {
+        settings.updateProcessingSettings { it.copy(nightlyBatch = true) }
+
+        assertTrue(scheduler.enqueue(1L, fetchContent = false))
+
+        assertEquals(1, unfinished(1L).size)
+    }
+
+    @Test
+    fun 夜間の列は充電中を待つ() = runBlocking {
+        settings.updateProcessingSettings { it.copy(nightlyBatch = true) }
+
+        assertTrue(
+            scheduler.enqueueSequential(listOf(BookmarkWorkScheduler.Target(1L, fetchContent = false)), nightly = true)
+        )
+
+        assertTrue(constraintsOf(BookmarkWorkScheduler.BULK_WORK_NAME, BookmarkAiProcessingWorker::class.java).requiresCharging())
     }
 }

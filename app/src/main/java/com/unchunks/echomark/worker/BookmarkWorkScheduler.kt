@@ -13,6 +13,7 @@ import androidx.work.workDataOf
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -31,6 +32,8 @@ import javax.inject.Inject
  * - ユーザーが保存・再処理を頼んだ1件の処理は、エクスペディット(優先実行)で登録し、Doze・バッテリーセーバーや
  *   ジョブの遅延で待たされにくくする。クォータを使い切っていれば通常のワークとして実行する
  *   ([OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST])。一括の再処理は急がないため通常のワークのまま
+ * - 処理の設定([ProcessingSettings])に従い、充電中・従量課金でない接続を条件に付け、夜間にまとめて処理する設定なら
+ *   保存したもの・一括の再処理を積まずに夜を待つ(ユーザーが 1 件を再処理したときはすぐ積む)
  * - すべてのワークに [TAG] を付け、全データ削除でまとめて取り消せるようにする
  * - ワークにはブックマークごとのタグ([bookmarkTag])も付け、未完了の処理がどのブックマークのものか調べられるようにする
  */
@@ -51,32 +54,47 @@ class BookmarkWorkScheduler @Inject constructor(
      * ユーザーの操作で始まる処理のため、チェーンのすべてのワークをエクスペディットにする(各ワークの制約は
      * エクスペディットで使えるネットワーク条件だけ。再試行([androidx.work.ListenableWorker.Result.retry])は
      * WorkManager が通常のジョブとして遅らせて実行する)。
+     * [deferrable](保存したときの処理)で、夜間にまとめて処理する設定なら積まない。積んだら true。
      */
-    suspend fun enqueue(bookmarkId: Long, fetchContent: Boolean, extractContent: Boolean = false) {
+    suspend fun enqueue(
+        bookmarkId: Long,
+        fetchContent: Boolean,
+        extractContent: Boolean = false,
+        deferrable: Boolean = false
+    ): Boolean {
+        val settings = appSettings.processingSettings.first()
+        // 夜間にまとめて処理する設定なら、保存したものは積まずに処理待ちのまま夜を待つ(NightlyProcessingTask が積む)
+        if (deferrable && settings.nightlyBatch) return false
         enqueueChain(
             uniqueWorkName(bookmarkId),
             ExistingWorkPolicy.REPLACE,
-            requestsFor(Target(bookmarkId, fetchContent, extractContent), aiConstraints(), expedited = true)
+            requestsFor(Target(bookmarkId, fetchContent, extractContent), policy(settings), expedited = true)
         )
+        return true
     }
 
     /**
      * 複数件を1件ずつ順番に処理する(一括の再処理用)。実行中・待機中の一括処理があれば、その後ろに続ける。
      * 列の途中の1件を取り消すと後続もすべて取り消されるため、1件の削除では取り消さない
      * (ワーカーが削除済みを確かめて何もせずに終える)。
+     * 夜間にまとめて処理する設定のときは、[nightly] でなければ積まない(処理待ちのまま夜を待つ)。
+     * [nightly] の列は充電中を条件にする。積んだら true。
      */
-    suspend fun enqueueSequential(targets: List<Target>) {
-        if (targets.isEmpty()) return
-        val constraints = aiConstraints()
+    suspend fun enqueueSequential(targets: List<Target>, nightly: Boolean = false): Boolean {
+        if (targets.isEmpty()) return false
+        val settings = appSettings.processingSettings.first()
+        if (settings.nightlyBatch && !nightly) return false
+        val policy = policy(settings).let { if (nightly) it.copy(requiresCharging = true) else it }
         // 1回の登録で長い列を作りすぎないよう、区切って後ろに続けていく
         targets.chunked(SEQUENTIAL_CHUNK_SIZE).forEach { chunk ->
             enqueueChain(
                 BULK_WORK_NAME,
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
                 // 一括は急がない。エクスペディットのクォータを使い切って、ユーザーの操作の処理に回らなくなるのを避ける
-                chunk.flatMap { requestsFor(it, constraints, expedited = false) }
+                chunk.flatMap { requestsFor(it, policy, expedited = false) }
             )
         }
+        return true
     }
 
     /** 1件の処理(登録済み・実行中)を取り消す。ブックマークの削除時に呼ぶ。 */
@@ -124,23 +142,47 @@ class BookmarkWorkScheduler @Inject constructor(
         continuation.enqueue()
     }
 
-    internal fun requestsFor(target: Target, aiConstraints: Constraints, expedited: Boolean): List<OneTimeWorkRequest> =
-        listOfNotNull(
-            fetchRequest(target.bookmarkId, expedited).takeIf { target.fetchContent },
-            extractionRequest(target.bookmarkId, expedited).takeIf { target.extractContent },
-            aiRequest(target.bookmarkId, aiConstraints, expedited)
-        )
+    /**
+     * ワークに付ける条件。
+     * @property aiUsesApi タグ付け・要約のどちらかにクラウド API を使う(AI 処理にネットワーク接続を求める)
+     * @property unmeteredOnly ネットワークを使う段(本文の取得・クラウド API の AI 処理)は従量課金でない接続を待つ
+     * @property requiresCharging 重い段(中身の取り出し・AI 処理)は充電中を待つ
+     */
+    internal data class RequestPolicy(
+        val aiUsesApi: Boolean = false,
+        val unmeteredOnly: Boolean = false,
+        val requiresCharging: Boolean = false
+    ) {
+        private val networkType get() = if (unmeteredOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
 
-    /** タグ付け・要約のどちらかにクラウド API を使う設定ならネットワーク接続を待つ。端末内 AI だけならオフラインでも動かす。 */
-    private suspend fun aiConstraints(): Constraints {
-        val settings = appSettings.aiTaskSettings.first()
-        val usesApi = listOf(AiTask.TAGGING, AiTask.SUMMARY).any { settings[it]?.backend == LlmBackend.API }
-        return if (usesApi) {
-            Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        } else {
-            Constraints.NONE
-        }
+        val fetchConstraints: Constraints get() = Constraints.Builder().setRequiredNetworkType(networkType).build()
+
+        val extractionConstraints: Constraints
+            get() = Constraints.Builder().setRequiresCharging(requiresCharging).build()
+
+        val aiConstraints: Constraints
+            get() = Constraints.Builder()
+                .setRequiredNetworkType(if (aiUsesApi) networkType else NetworkType.NOT_REQUIRED)
+                .setRequiresCharging(requiresCharging)
+                .build()
     }
+
+    /** 設定から、ワークに付ける条件を決める。端末内 AI だけならオフラインでも AI 処理を動かす。 */
+    private suspend fun policy(settings: ProcessingSettings): RequestPolicy {
+        val tasks = appSettings.aiTaskSettings.first()
+        return RequestPolicy(
+            aiUsesApi = listOf(AiTask.TAGGING, AiTask.SUMMARY).any { tasks[it]?.backend == LlmBackend.API },
+            unmeteredOnly = settings.unmeteredOnly,
+            requiresCharging = settings.chargingOnly
+        )
+    }
+
+    internal fun requestsFor(target: Target, policy: RequestPolicy, expedited: Boolean): List<OneTimeWorkRequest> =
+        listOfNotNull(
+            fetchRequest(target.bookmarkId, policy.fetchConstraints, expedited).takeIf { target.fetchContent },
+            extractionRequest(target.bookmarkId, policy.extractionConstraints, expedited).takeIf { target.extractContent },
+            aiRequest(target.bookmarkId, policy.aiConstraints, expedited)
+        )
 
     private fun aiRequest(bookmarkId: Long, constraints: Constraints, expedited: Boolean): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<BookmarkAiProcessingWorker>()
@@ -149,35 +191,40 @@ class BookmarkWorkScheduler @Inject constructor(
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .addTag(TAG)
             .addTag(bookmarkTag(bookmarkId))
-            .expeditedIf(expedited)
+            .expeditedIf(expedited, constraints)
             .build()
 
-    private fun fetchRequest(bookmarkId: Long, expedited: Boolean): OneTimeWorkRequest =
+    private fun fetchRequest(bookmarkId: Long, constraints: Constraints, expedited: Boolean): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<UrlFetchWorker>()
             .setInputData(workDataOf(UrlFetchWorker.KEY_BOOKMARK_ID to bookmarkId))
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setConstraints(constraints)
             .addTag(TAG)
             .addTag(bookmarkTag(bookmarkId))
-            .expeditedIf(expedited)
+            .expeditedIf(expedited, constraints)
             .build()
 
-    /** 保存したファイルから要約用のテキストを取り出す(OCR・文字起こしなど。端末内で行うため制約なし) */
-    private fun extractionRequest(bookmarkId: Long, expedited: Boolean): OneTimeWorkRequest =
+    /** 保存したファイルから要約用のテキストを取り出す(OCR・文字起こしなど。端末内で行うため、条件は充電中だけ) */
+    private fun extractionRequest(bookmarkId: Long, constraints: Constraints, expedited: Boolean): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<ContentExtractionWorker>()
             .setInputData(workDataOf(ContentExtractionWorker.KEY_BOOKMARK_ID to bookmarkId))
+            .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .addTag(TAG)
             .addTag(bookmarkTag(bookmarkId))
-            .expeditedIf(expedited)
+            .expeditedIf(expedited, constraints)
             .build()
 
     /**
      * [expedited] ならエクスペディットにする。クォータを使い切っていても失敗にせず、通常のワークとして実行する。
      * エクスペディットで使える制約はネットワークと空き容量だけ(充電中・バッテリー残量・アイドル・コンテンツ URI を付けると
-     * build() が IllegalArgumentException)で、初回の遅延も付けられない。このクラスの制約はネットワーク接続だけなので満たしている。
+     * build() が IllegalArgumentException)で、初回の遅延も付けられない。充電中を待つワークは通常のワークにする
+     * (急ぐよりも、充電中だけ動かす設定を守る)。
      */
-    private fun OneTimeWorkRequest.Builder.expeditedIf(expedited: Boolean): OneTimeWorkRequest.Builder =
-        if (expedited) setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST) else this
+    private fun OneTimeWorkRequest.Builder.expeditedIf(
+        expedited: Boolean,
+        constraints: Constraints
+    ): OneTimeWorkRequest.Builder =
+        if (expedited && !constraints.requiresCharging()) setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST) else this
 
     companion object {
         /** ブックマークの処理に付けるタグ(全データ削除でまとめて取り消す)。 */

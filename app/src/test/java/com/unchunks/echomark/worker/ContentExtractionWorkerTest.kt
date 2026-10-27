@@ -100,7 +100,8 @@ class ContentExtractionWorkerTest {
                     workerClassName: String,
                     workerParameters: WorkerParameters
                 ) = ContentExtractionWorker(
-                    appContext, workerParameters, repository, extractor, AiPrewarmer(localLlm, settings), stats
+                    appContext, workerParameters, repository, extractor, AiPrewarmer(localLlm, settings), stats,
+                    ProcessingConcurrencyLimiter(settings)
                 )
             })
             .build()

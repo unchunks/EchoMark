@@ -46,7 +46,8 @@ class ContentExtractionWorker @AssistedInject constructor(
     private val repository: BookmarkRepository,
     private val extractor: ContentExtractor,
     private val aiPrewarmer: AiPrewarmer,
-    private val stats: ProcessingStatsRepository
+    private val stats: ProcessingStatsRepository,
+    private val concurrencyLimiter: ProcessingConcurrencyLimiter
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -62,9 +63,12 @@ class ContentExtractionWorker @AssistedInject constructor(
             Timber.w("ContentExtractionWorker: ファイルがありません id=%d", bookmarkId)
             return Result.success()
         }
+        // 同時に動かす数の上限に達していれば、空くまで処理待ちのまま待つ。
         // 処理中(中身の取り出し)にし、終えたら(中断されても)次の段を待つ処理待ちに戻す
-        withProcessingStage(repository, stats, bookmark, ProcessingStage.EXTRACT_CONTENT) {
-            extract(bookmarkId, bookmark, file)
+        concurrencyLimiter.withPermit {
+            withProcessingStage(repository, stats, bookmark, ProcessingStage.EXTRACT_CONTENT) {
+                extract(bookmarkId, bookmark, file)
+            }
         }
         return Result.success()
     }

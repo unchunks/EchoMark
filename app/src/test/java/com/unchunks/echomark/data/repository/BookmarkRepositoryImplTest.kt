@@ -55,6 +55,7 @@ class BookmarkRepositoryImplTest {
 
     private val vector = FloatArray(768) { if (it == 0) 1f else 0f }
     private val embedding = FakeEmbeddingProvider()
+    private val settings = FakeAppSettingsRepository()
     private val currentVersion get() = embedding.modelVersion
 
     @Before
@@ -70,7 +71,7 @@ class BookmarkRepositoryImplTest {
             tagDao = db.tagDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
-            workScheduler = BookmarkWorkScheduler(workManager, FakeAppSettingsRepository()),
+            workScheduler = BookmarkWorkScheduler(workManager, settings),
             embeddingProvider = embedding,
             attachmentStore = attachmentStore
         )
@@ -629,6 +630,25 @@ class BookmarkRepositoryImplTest {
 
         // 積み直した後は処理が残っているため、もう一度呼んでも積まない
         assertEquals(0, repository.enqueueStalledProcessing(System.currentTimeMillis()))
+    }
+
+    @Test
+    fun 夜間にまとめて処理する設定では保存しても積まず_夜間の仕事が充電中を条件に積む() = runBlocking {
+        settings.updateProcessingSettings { it.copy(nightlyBatch = true) }
+        val id = repository.saveBookmark(textBookmark()).id
+
+        // 処理待ちのまま夜を待つ(昼の積み直しでも積まない)
+        assertEquals(AiStatus.PENDING, repository.getBookmarkById(id)!!.aiStatus)
+        assertTrue(unfinished("process_bookmark_$id").isEmpty())
+        assertEquals(0, repository.enqueueStalledProcessing(System.currentTimeMillis()))
+        assertEquals(0, repository.enqueueWaitingProcessing(nightly = false))
+
+        assertEquals(1, repository.enqueueWaitingProcessing(nightly = true))
+        val bulk = workManager.getWorkInfosForUniqueWork(BookmarkWorkScheduler.BULK_WORK_NAME).get()
+        assertEquals(1, bulk.size)
+        assertTrue(bulk.single().constraints.requiresCharging())
+        // 積んだ後はワークがあるので二重に積まない
+        assertEquals(0, repository.enqueueWaitingProcessing(nightly = true))
     }
 
     @Test

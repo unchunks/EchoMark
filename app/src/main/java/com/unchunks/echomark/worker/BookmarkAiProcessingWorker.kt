@@ -52,7 +52,9 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
     private val bookmarkAnalyzer: BookmarkAnalyzer,
     private val embeddingProvider: EmbeddingProvider,
     private val aiPrewarmer: AiPrewarmer,
-    private val stats: ProcessingStatsRepository
+    private val stats: ProcessingStatsRepository,
+    private val concurrencyLimiter: ProcessingConcurrencyLimiter,
+    private val apiRateLimiter: ApiRateLimiter
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -63,7 +65,10 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
         // 段ごとの所要時間を、このブックマークの計測として `AiPerf` のログに出す(調べ方は AiPerfLog)
         return withContext(AiPerfLog.trace(bookmarkId)) {
             try {
-                AiPerfLog.measure("total", "attempt=$runAttemptCount") { process(bookmarkId) }
+                // 同時に動かす数の上限に達していれば、空くまで処理待ちのまま待つ
+                AiPerfLog.measure("total", "attempt=$runAttemptCount") {
+                    concurrencyLimiter.withPermit { process(bookmarkId) }
+                }
             } finally {
                 AiPerfLog.logSummary(bookmarkId)
             }
@@ -98,6 +103,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             val needsSummary = bookmark.summary.isNullOrBlank()
             // 要約が済んでいて埋め込みも最新なら、段を始めずに完了にする
             if (needsSummary) {
+                // クラウド API の呼び出しの上限(1 分あたり)に達していれば、枠が空くまで処理待ちのまま待つ
+                apiRateLimiter.acquireIfApi()
                 startStage(ProcessingStage.ANALYZE)
             } else if (repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion) {
                 startStage(ProcessingStage.EMBED)

@@ -129,24 +129,32 @@ class BookmarkRepositoryImpl @Inject constructor(
      */
     private suspend fun enqueueProcessing(bookmarkId: Long, bookmark: Bookmark) {
         val fetch = bookmark.type == BookmarkType.URL
+        // 夜間にまとめて処理する設定なら、積まずに処理待ちのまま夜を待つ
         workScheduler.enqueue(
             bookmarkId,
             fetchContent = fetch,
-            extractContent = fetch || hasExtractableFile(bookmark.type, bookmark.filePath)
+            extractContent = fetch || hasExtractableFile(bookmark.type, bookmark.filePath),
+            deferrable = true
         )
     }
 
-    /** 状態を「処理待ち」に戻し、1件ずつ順番に処理する列に積む(一括の再処理。同時に API を呼びすぎない) */
-    private suspend fun enqueueSequentialProcessing(ids: List<Long>) {
-        val targets = ids.chunked(ID_QUERY_CHUNK_SIZE).flatMap { chunk ->
+    /**
+     * 状態を「処理待ち」に戻し、1件ずつ順番に処理する列に積む(一括の再処理。同時に API を呼びすぎない)。
+     * 夜間にまとめて処理する設定なら、処理待ちにするだけで積まない(夜に積む)。積んだら true。
+     */
+    private suspend fun enqueueSequentialProcessing(ids: List<Long>): Boolean {
+        val targets = targetsOf(ids)
+        val now = System.currentTimeMillis()
+        targets.forEach { bookmarkDao.markQueued(it.bookmarkId, now) }
+        return workScheduler.enqueueSequential(targets)
+    }
+
+    private suspend fun targetsOf(ids: List<Long>): List<BookmarkWorkScheduler.Target> =
+        ids.chunked(ID_QUERY_CHUNK_SIZE).flatMap { chunk ->
             bookmarkDao.getByIds(chunk).map {
                 reprocessTarget(it.id, it.type, it.content, it.filePath, it.contentFetchedAt)
             }
         }
-        val now = System.currentTimeMillis()
-        targets.forEach { bookmarkDao.markQueued(it.bookmarkId, now) }
-        workScheduler.enqueueSequential(targets)
-    }
 
     /** やり直すときの処理の段。本文を取得し直すときは、リンク先がファイルかもしれないので取り出しの段も付ける */
     private fun reprocessTarget(
@@ -236,7 +244,7 @@ class BookmarkRepositoryImpl @Inject constructor(
             bookmarkDao.finishProcessing(id, status, reason, System.currentTimeMillis())
         }
 
-    override suspend fun enqueueWaitingModelProcessing() =
+    override suspend fun enqueueWaitingModelProcessing(): Unit =
         withContext(dispatcherProvider.io) {
             enqueueSequentialProcessing(bookmarkDao.getIdsByAiStatus(AiStatus.WAITING_MODEL))
         }
@@ -261,8 +269,17 @@ class BookmarkRepositoryImpl @Inject constructor(
             // どのブックマークの処理か分からないワークが残っている間は、二重に積まないよう何もしない
             val withWork = workScheduler.bookmarkIdsWithUnfinishedWork() ?: return@withContext 0
             val stalled = ids.filterNot { it in withWork }
-            enqueueSequentialProcessing(stalled)
-            stalled.size
+            if (enqueueSequentialProcessing(stalled)) stalled.size else 0
+        }
+
+    override suspend fun enqueueWaitingProcessing(nightly: Boolean): Int =
+        withContext(dispatcherProvider.io) {
+            val ids = bookmarkDao.getIdsByAiStatus(AiStatus.PENDING)
+            if (ids.isEmpty()) return@withContext 0
+            val withWork = workScheduler.bookmarkIdsWithUnfinishedWork() ?: return@withContext 0
+            // 頼んだ日時(順番待ちの並び)はそのまま残す
+            val waiting = ids.filterNot { it in withWork }
+            if (workScheduler.enqueueSequential(targetsOf(waiting), nightly = nightly)) waiting.size else 0
         }
 
     override suspend fun reprocess(id: Long) =

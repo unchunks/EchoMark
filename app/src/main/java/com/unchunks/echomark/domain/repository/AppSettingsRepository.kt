@@ -61,8 +61,41 @@ data class RediscoverSettings(
     val minute: Int = 0
 )
 
+/**
+ * ブックマークの処理(本文の取得・中身の取り出し・AI 処理)をいつ・どれだけ動かすか。
+ * 端末への負担(電池・通信量・発熱)と、クラウド API の使いすぎを抑えるための設定。
+ */
+data class ProcessingSettings(
+    /** 充電中だけ、中身の取り出し(文字起こしなど)と AI 処理を動かす(#8) */
+    val chargingOnly: Boolean = false,
+    /** Wi-Fi など従量課金でない接続のときだけ、本文の取得とクラウド API の処理を動かす */
+    val unmeteredOnly: Boolean = false,
+    /** 保存したもの・まとめての再処理を、すぐに処理せず夜間にまとめて処理する(#9) */
+    val nightlyBatch: Boolean = false,
+    /** 夜間の処理を始める時刻(時) */
+    val nightlyHour: Int = DEFAULT_NIGHTLY_HOUR,
+    /** 同時に動かす、中身の取り出し・AI 処理の数(#70) */
+    val maxConcurrent: Int = DEFAULT_MAX_CONCURRENT,
+    /** 処理でクラウド API を呼ぶ回数の上限(1 分あたり)。0 なら制限しない(#70) */
+    val apiRequestsPerMinute: Int = 0
+) {
+    companion object {
+        const val DEFAULT_NIGHTLY_HOUR = 2
+        const val DEFAULT_MAX_CONCURRENT = 2
+        const val MAX_CONCURRENT_LIMIT = 4
+        /** 設定画面で選べる、クラウド API の呼び出しの上限(1 分あたり、0 は制限なし) */
+        val API_RATE_CHOICES = listOf(0, 5, 10, 20, 60)
+    }
+}
+
 /** アプリ設定(DataStore)。 */
 interface AppSettingsRepository {
+    /** 処理をいつ・どれだけ動かすか */
+    val processingSettings: Flow<ProcessingSettings>
+
+    /** 処理の設定を書き換える(値は範囲に収めて保存する) */
+    suspend fun updateProcessingSettings(transform: (ProcessingSettings) -> ProcessingSettings)
+
     /** 用途ごとの AI の設定(全用途がそろったマップ)。API キーは [ApiKeyRepository] 側で管理する。 */
     val aiTaskSettings: Flow<Map<AiTask, AiTaskSetting>>
     val rediscoverSettings: Flow<RediscoverSettings>
