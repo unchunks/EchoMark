@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -378,4 +379,56 @@ private fun SummaryRow(label: String, value: String) {
         Text(label, style = MaterialTheme.typography.bodyMedium.japaneseParagraph(), modifier = Modifier.weight(1f))
         Text(value, style = MaterialTheme.typography.bodyMedium.japaneseParagraph())
     }
+}
+
+/**
+ * 端末内に残したクラッシュログの表示。外部には送らず、「共有」を押したときだけ、選んだ共有先に渡す。
+ * 長いので、一番新しい1件を表示し、共有ではすべてをまとめて渡す。
+ */
+@Composable
+internal fun CrashLogDialog(
+    crashLog: CrashLogSummary,
+    onShare: () -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("クラッシュログ") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    "アプリが異常終了したときなどの記録です。端末の中にだけ保存され、自動では送信されません(最大 20 件まで、古いものから消えます)。不具合を報告するときに「共有」で渡せます。",
+                    style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
+                )
+                val latest = crashLog.latestText
+                if (latest == null) {
+                    Text("記録はありません。", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    HorizontalDivider()
+                    Text("${crashLog.count} 件(一番新しいものを表示)", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        latest,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row {
+                if (crashLog.count > 0) {
+                    TextButton(
+                        onClick = onClear,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text("削除") }
+                    TextButton(onClick = onShare) { Text("共有") }
+                }
+                TextButton(onClick = onDismiss) { Text("閉じる") }
+            }
+        }
+    )
 }
