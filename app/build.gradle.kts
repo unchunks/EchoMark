@@ -67,6 +67,12 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
+// スキーマ JSON は KSP が書き出し、copyRoomSchemas が schemas/ へ写す。debug の assets(マイグレーションテストが読む)を
+// その後にまとめるようにする(先にまとめると、版を上げた直後のテストが 1 つ前のビルドの JSON を読んでしまう)
+tasks.matching { it.name == "mergeDebugAssets" }.configureEach {
+    mustRunAfter("copyRoomSchemas")
+}
+
 dependencies {
     // 再利用する部品(components)
     implementation(libs.unchunks.core)
