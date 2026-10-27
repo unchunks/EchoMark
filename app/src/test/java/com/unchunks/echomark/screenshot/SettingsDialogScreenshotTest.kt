@@ -4,6 +4,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.ui.settings.CrashLogDialog
+import com.unchunks.echomark.ui.settings.CrashLogSummary
 import com.unchunks.echomark.ui.settings.DataOperationDialog
 import com.unchunks.echomark.ui.settings.DataOperationState
 import com.unchunks.echomark.ui.settings.DeleteConfirmDialog
@@ -52,7 +54,24 @@ class SettingsDialogScreenshotTest {
     }
 
     @Test
-    fun importResultDialog() = screenshot.captureDialogLightDark("settings_dialog_import_result") {
+    fun crashLogDialog() = screenshot.captureDialogLightDark("settings_dialog_crash_log") {
+        CrashLogDialog(
+            crashLog = CrashLogSummary(
+                count = 3,
+                latestText = "EchoMark クラッシュ\n日時: 2026-10-27T12:00:00+09:00\nバージョン: 1.0 (1)\n端末: Google Pixel 7\n" +
+                    "OS: Android 16 (API 36)\nスレッド: main\n----\njava.lang.IllegalStateException: boom\n\tat com.unchunks.echomark.Foo.bar(Foo.kt:12)"
+            ),
+            onShare = {}, onClear = {}, onDismiss = {}
+        )
+    }
+
+    @Test
+    fun crashLogDialogEmpty() = screenshot.captureDialogLightDark("settings_dialog_crash_log_empty") {
+        CrashLogDialog(crashLog = CrashLogSummary(), onShare = {}, onClear = {}, onDismiss = {})
+    }
+
+    @Test
+    fun importResultDialog()= screenshot.captureDialogLightDark("settings_dialog_import_result") {
         DataOperationDialog(
             state = DataOperationState.Imported(
                 BackupImportSummary(

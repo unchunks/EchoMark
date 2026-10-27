@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.settings
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BrightnessMedium
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DeleteForever
@@ -47,6 +49,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -56,6 +59,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.unchunks.components.composeui.MessageSnackbarEffect
@@ -65,6 +69,11 @@ import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.SectionHeader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import timber.log.Timber
+import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -72,7 +81,7 @@ import java.util.Locale
 
 
 /** 設定画面で開くダイアログ。スクリーンショットテストでは最初から開いた状態を渡せる。 */
-enum class SettingsDialog { THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES }
+enum class SettingsDialog { THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG }
 
 /** 設定画面の操作。既定は何もしない(プレビュー・スクリーンショット用)。 */
 class SettingsActions(
@@ -87,6 +96,8 @@ class SettingsActions(
     val onImportBackup: () -> Unit = {},
     val onDeleteAllData: (resetSettings: Boolean) -> Unit = {},
     val onDataResultDismissed: () -> Unit = {},
+    val onShareCrashLog: () -> Unit = {},
+    val onClearCrashLog: () -> Unit = {},
     /** null なら「はじめにの案内」の行を出さない */
     val onOpenOnboarding: (() -> Unit)? = null
 )
@@ -101,6 +112,7 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     MessageSnackbarEffect(viewModel.message, snackbarHostState, onShown = viewModel::onMessageShown)
 
@@ -112,6 +124,7 @@ fun SettingsScreen(
         if (notificationsAllowed) permissionDenied = false
         // 端末内モデルの取り込み・削除でサイズが変わるため
         viewModel.refreshStorage()
+        viewModel.refreshCrashLog()
         onPauseOrDispose {}
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -169,6 +182,13 @@ fun SettingsScreen(
             onImportBackup = { importLauncher.launch(arrayOf(BACKUP_MIME_TYPE, "text/plain", "application/octet-stream")) },
             onDeleteAllData = viewModel::deleteAllData,
             onDataResultDismissed = viewModel::onDataResultDismissed,
+            onShareCrashLog = {
+                scope.launch {
+                    val text = viewModel.crashLogText() ?: return@launch
+                    shareCrashLog(context, text)
+                }
+            },
+            onClearCrashLog = viewModel::clearCrashLog,
             onOpenOnboarding = onOpenOnboarding
         )
     )
@@ -371,6 +391,14 @@ fun SettingsContent(
                 )
             }
             item {
+                SettingsItem(
+                    title = "クラッシュログ",
+                    icon = Icons.Outlined.BugReport,
+                    summary = if (uiState.crashLog.count == 0) "記録はありません" else "${uiState.crashLog.count} 件を端末内に保存しています",
+                    onClick = { dialog = SettingsDialog.CRASH_LOG }
+                )
+            }
+            item {
                 SettingsItem(title = "バージョン", icon = Icons.Outlined.Info, summary = uiState.versionLabel)
             }
         }
@@ -418,6 +446,12 @@ fun SettingsContent(
         )
         SettingsDialog.PRIVACY -> PrivacyDialog(backends = uiState.ai.backends, onDismiss = { dialog = null })
         SettingsDialog.LICENSES -> LicensesDialog(onDismiss = { dialog = null })
+        SettingsDialog.CRASH_LOG -> CrashLogDialog(
+            crashLog = uiState.crashLog,
+            onShare = actions.onShareCrashLog,
+            onClear = actions.onClearCrashLog,
+            onDismiss = { dialog = null }
+        )
         null -> Unit
     }
 
@@ -444,3 +478,22 @@ private val StorageUsage.label: String
     }.joinToString("・")
 
 private const val BACKUP_MIME_TYPE = "application/json"
+
+/** クラッシュログを1つのテキストファイルにして、共有先を選ばせる(FileProvider で一時的な読み取り権限つきで渡す)。 */
+private suspend fun shareCrashLog(context: Context, text: String) {
+    val uri = withContext(Dispatchers.IO) {
+        val file = File(File(context.cacheDir, "shared-logs").apply { mkdirs() }, "echomark-crash-log-${LocalDate.now()}.txt")
+        file.writeText(text, Charsets.UTF_8)
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
+    val send = Intent(Intent.ACTION_SEND)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_STREAM, uri)
+        .putExtra(Intent.EXTRA_SUBJECT, "EchoMark クラッシュログ")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    try {
+        context.startActivity(Intent.createChooser(send, "クラッシュログを共有").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: ActivityNotFoundException) {
+        Timber.w(e, "クラッシュログの共有先がない")
+    }
+}
