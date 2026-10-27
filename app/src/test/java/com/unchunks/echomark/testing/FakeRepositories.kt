@@ -1,6 +1,8 @@
 package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
@@ -241,11 +243,54 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String) = TODO("not used")
     override suspend fun updateSummary(id: Long, summary: String) = TODO("not used")
     override suspend fun updateCategory(id: Long, category: String) = TODO("not used")
-    override suspend fun updateAiStatus(id: Long, status: AiStatus) = TODO("not used")
+    /** 始めた段(ブックマークの ID と段)を順に記録する。 */
+    val startedStages = mutableListOf<Pair<Long, ProcessingStage>>()
+    private var stageClock = 0L
+
+    // 処理の状態の移り変わりは、DAO の更新と同じ規則にする
+    override suspend fun startProcessingStage(id: Long, stage: ProcessingStage): Long {
+        val now = ++stageClock
+        startedStages += id to stage
+        updateBookmark(id) {
+            it.copy(
+                aiStatus = AiStatus.PROCESSING,
+                processing = it.processing.copy(
+                    stage = stage, stageStartedAt = now, startedAt = it.processing.startedAt ?: now, finishedAt = null
+                )
+            )
+        }
+        return now
+    }
+
+    override suspend fun endProcessingStage(id: Long, stageStartedAt: Long) =
+        updateBookmark(id) {
+            if (it.aiStatus != AiStatus.PROCESSING || it.processing.stageStartedAt != stageStartedAt) {
+                it
+            } else {
+                it.copy(aiStatus = AiStatus.PENDING, processing = it.processing.copy(stage = null, stageStartedAt = null))
+            }
+        }
+
+    override suspend fun markProcessingRetrying(id: Long, reason: ProcessingFailureReason) =
+        updateBookmark(id) {
+            it.copy(
+                aiStatus = AiStatus.PENDING,
+                processing = it.processing.copy(stage = null, stageStartedAt = null, failureReason = reason)
+            )
+        }
+
+    override suspend fun finishProcessing(id: Long, status: AiStatus, reason: ProcessingFailureReason?) =
+        updateBookmark(id) {
+            it.copy(
+                aiStatus = status,
+                processing = it.processing.copy(
+                    stage = null, stageStartedAt = null, finishedAt = ++stageClock, failureReason = reason
+                )
+            )
+        }
     override suspend fun enqueueWaitingModelProcessing() = TODO("not used")
     override suspend fun enqueueFailedAndWaitingProcessing(): Int = TODO("not used")
-    override suspend fun markProcessingInterrupted(id: Long) = TODO("not used")
-    override suspend fun enqueueStalledProcessing(): Int = TODO("not used")
+    override suspend fun enqueueStalledProcessing(processStartedAt: Long): Int = TODO("not used")
     override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> = TODO("not used")
     override suspend fun getAllBookmarkIds(): List<Long> = TODO("not used")
     override suspend fun getEmbeddingModelVersion(bookmarkId: Long): String? = TODO("not used")

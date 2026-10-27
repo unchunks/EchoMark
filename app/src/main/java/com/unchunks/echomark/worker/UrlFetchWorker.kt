@@ -11,6 +11,7 @@ import com.unchunks.echomark.data.remote.DownloadSink
 import com.unchunks.echomark.data.remote.FetchedContent
 import com.unchunks.echomark.data.remote.UrlContentFetcher
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -44,6 +45,11 @@ class UrlFetchWorker @AssistedInject constructor(
             return Result.success()
         }
 
+        // 処理中(本文の取得)にし、終えたら(中断されても)次の段を待つ処理待ちに戻す
+        return withProcessingStage(repository, bookmarkId, ProcessingStage.FETCH_CONTENT) { fetch(bookmarkId, bookmark, url) }
+    }
+
+    private suspend fun fetch(bookmarkId: Long, bookmark: Bookmark, url: String): Result {
         // 後続の AI 処理で端末内モデルを使うなら、通信している間に読み込んでおく
         if (bookmark.summary.isNullOrBlank()) aiPrewarmer.prewarmLocalLlmIfUsed()
 

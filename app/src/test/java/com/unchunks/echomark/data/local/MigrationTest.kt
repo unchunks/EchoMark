@@ -244,6 +244,51 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate11To12_processingBecomesPendingAndPendingGetsQueuedAt() {
+        helper.createDatabase(11).apply {
+            execSQL(
+                """
+                INSERT INTO bookmarks (id, type, content, contentUri, title, createdAt, lastAccessedAt, aiStatus)
+                VALUES (1, 'TEXT', 'a', NULL, 'a', 100, 100, 'PROCESSING'),
+                       (2, 'TEXT', 'b', NULL, 'b', 200, 200, 'PENDING'),
+                       (3, 'TEXT', 'c', NULL, 'c', 300, 300, 'DONE'),
+                       (4, 'TEXT', 'd', NULL, 'd', 400, 400, 'FAILED'),
+                       (5, 'TEXT', 'e', NULL, 'e', 500, 500, 'WAITING_MODEL')
+                """.trimIndent()
+            )
+            close()
+        }
+
+        // スキーマ v12 と一致するか(列・既定値・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(12, listOf(MIGRATION_11_12))
+
+        val rows = connection.prepare(
+            "SELECT aiStatus, queuedAt, processingStage, processingStartedAt, stageStartedAt, processingFinishedAt, " +
+                "failureReason FROM bookmarks ORDER BY id"
+        ).use { stmt ->
+            buildList {
+                while (stmt.step()) {
+                    add(stmt.getText(0) to (1..6).map { if (stmt.isNull(it)) null else stmt.getText(it) })
+                }
+            }
+        }
+        val empty = List(5) { null }
+        assertEquals(
+            listOf(
+                // 処理中だったものは、実行しているワークが無いので処理待ちにする。頼んだ日時は保存日時で埋める
+                "PENDING" to listOf("100") + empty,
+                "PENDING" to listOf("200") + empty,
+                // 終えたものの日時・理由は分からないので空のまま
+                "DONE" to listOf(null) + empty,
+                "FAILED" to listOf(null) + empty,
+                "WAITING_MODEL" to listOf(null) + empty
+            ),
+            rows
+        )
+        connection.close()
+    }
+
+    @Test
     fun migrate6To10_roomOpensWithAppMigrations() = runTest {
         helper.createDatabase(6).apply {
             insertV6Bookmark()

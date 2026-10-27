@@ -31,5 +31,7 @@ data class Bookmark(
     /** ファイルのサイズ(バイト)。表示用 */
     val fileSize: Long? = null,
     /** URL の本文(リンク先)を取得できた日時。未取得・取得に失敗したままなら null(再処理で取得し直す) */
-    val contentFetchedAt: Long? = null
+    val contentFetchedAt: Long? = null,
+    /** 処理の段・日時・失敗の理由([aiStatus] の詳細) */
+    val processing: ProcessingInfo = ProcessingInfo()
 )

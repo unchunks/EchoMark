@@ -17,6 +17,9 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.splitSearchTerms
@@ -50,14 +53,18 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun saveBookmark(bookmark: Bookmark): SaveResult =
         withContext(dispatcherProvider.io) {
             val contentUri = bookmark.contentUri
+            // 保存すると同時に処理を積むため、処理待ちにした日時を入れる
+            val entity = bookmark.toEntity().let {
+                if (it.aiStatus == AiStatus.PENDING) it.copy(queuedAt = System.currentTimeMillis()) else it
+            }
             if (contentUri == null) {
-                val id = bookmarkDao.insert(bookmark.toEntity())
+                val id = bookmarkDao.insert(entity)
                 enqueueProcessing(id, bookmark)
                 return@withContext SaveResult(id, isDuplicate = false)
             }
 
             // contentUri を持つもの(URLなど)は重複チェック。REPLACEするとタグ参照が消えるためIGNOREで挿入する
-            val insertedId = bookmarkDao.insertIgnore(bookmark.toEntity())
+            val insertedId = bookmarkDao.insertIgnore(entity)
             if (insertedId != -1L) {
                 enqueueProcessing(insertedId, bookmark)
                 SaveResult(insertedId, isDuplicate = false)
@@ -136,7 +143,8 @@ class BookmarkRepositoryImpl @Inject constructor(
                 reprocessTarget(it.id, it.type, it.content, it.filePath, it.contentFetchedAt)
             }
         }
-        targets.forEach { bookmarkDao.updateAiStatus(it.bookmarkId, AiStatus.PENDING) }
+        val now = System.currentTimeMillis()
+        targets.forEach { bookmarkDao.markQueued(it.bookmarkId, now) }
         workScheduler.enqueueSequential(targets)
     }
 
@@ -201,9 +209,29 @@ class BookmarkRepositoryImpl @Inject constructor(
             bookmarkDao.updateCategory(id, category)
         }
 
-    override suspend fun updateAiStatus(id: Long, status: AiStatus) =
+    override suspend fun startProcessingStage(id: Long, stage: ProcessingStage): Long =
         withContext(dispatcherProvider.io) {
-            bookmarkDao.updateAiStatus(id, status)
+            val now = System.currentTimeMillis()
+            bookmarkDao.startStage(id, stage, now)
+            now
+        }
+
+    override suspend fun endProcessingStage(id: Long, stageStartedAt: Long) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.endStage(id, stageStartedAt)
+        }
+
+    override suspend fun markProcessingRetrying(id: Long, reason: ProcessingFailureReason) =
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.markRetrying(id, reason)
+        }
+
+    override suspend fun finishProcessing(id: Long, status: AiStatus, reason: ProcessingFailureReason?) =
+        withContext(dispatcherProvider.io) {
+            require(status == AiStatus.DONE || status == AiStatus.FAILED || status == AiStatus.WAITING_MODEL) {
+                "処理を終えた状態ではない: $status"
+            }
+            bookmarkDao.finishProcessing(id, status, reason, System.currentTimeMillis())
         }
 
     override suspend fun enqueueWaitingModelProcessing() =
@@ -219,17 +247,14 @@ class BookmarkRepositoryImpl @Inject constructor(
             ids.size
         }
 
-    override suspend fun markProcessingInterrupted(id: Long) =
+    override suspend fun enqueueStalledProcessing(processStartedAt: Long): Int =
         withContext(dispatcherProvider.io) {
-            bookmarkDao.updateAiStatusIf(id, expected = AiStatus.PROCESSING, status = AiStatus.PENDING)
-        }
-
-    override suspend fun enqueueStalledProcessing(): Int =
-        withContext(dispatcherProvider.io) {
+            // 前のプロセスで始まって止まった段は、実行しているワークが無いので処理待ちに戻す
+            bookmarkDao.resetProcessingStartedBefore(processStartedAt)
             // ブックマークを先に読む。後から読むと、その間に保存されて処理の登録がまだのものを取り残しと見誤る
-            // (それでも重なった場合は同じブックマークを2回処理するだけで、各工程は冪等なので結果は変わらない)
-            val ids = (bookmarkDao.getIdsByAiStatus(AiStatus.PENDING) +
-                bookmarkDao.getIdsByAiStatus(AiStatus.PROCESSING)).distinct()
+            // (それでも重なった場合は同じブックマークを2回処理するだけで、各工程は冪等なので結果は変わらない)。
+            // このプロセスで始まった段(処理中)はワークが残っているので対象にしない
+            val ids = bookmarkDao.getIdsByAiStatus(AiStatus.PENDING)
             if (ids.isEmpty()) return@withContext 0
             // どのブックマークの処理か分からないワークが残っている間は、二重に積まないよう何もしない
             val withWork = workScheduler.bookmarkIdsWithUnfinishedWork() ?: return@withContext 0
@@ -241,14 +266,19 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun reprocess(id: Long) =
         withContext(dispatcherProvider.io) {
             val bookmark = bookmarkDao.getById(id) ?: return@withContext
-            bookmarkDao.resetAiResult(id, AiStatus.PENDING)
+            bookmarkDao.resetAiResult(id, System.currentTimeMillis())
             enqueueReprocessing(bookmark.toDomain())
         }
 
     override suspend fun restoreBookmark(bookmark: Bookmark) {
         withContext(dispatcherProvider.io) {
             // 同じ ID で挿入し直す(削除済みなので競合しない)。ベクトルは削除時に消えているため再生成する
-            bookmarkDao.insert(bookmark.copy(aiStatus = AiStatus.PENDING).toEntity())
+            bookmarkDao.insert(
+                bookmark.copy(
+                    aiStatus = AiStatus.PENDING,
+                    processing = ProcessingInfo(queuedAt = System.currentTimeMillis())
+                ).toEntity()
+            )
             // 付けた人も元どおりにする(AI のタグをユーザーのタグに変えてしまわない)
             val (aiTags, userTags) = bookmark.tags.partition { it in bookmark.aiTags }
             tagDao.addTagsToBookmark(bookmark.id, userTags, TagSource.USER)
