@@ -11,25 +11,23 @@
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# ---- MediaPipe(tasks-core / tasks-text / tasks-genai) ----
+# ---- MediaPipe(tasks-core / tasks-text。埋め込み) ----
 # MediaPipe の AAR には consumer rules(proguard.txt)が入っていないため、ここで補う。
 # ネイティブ(.so)側が FindClass / GetMethodID / GetFieldID で Java のクラス・メンバーを名前で参照する。
 # .so の文字列から確認した参照先:
 #   libmediapipe_tasks_jni.so: framework.{MediaPipeException, Packet, PacketCreator, PacketListCallback, ProtoUtil$SerializedMessage}
-#   libllm_inference_engine_jni.so: framework.{MediaPipeException, ProtoUtil$SerializedMessage}, genai.llminference.LlmTaskRunner
-#     さらに nativeRegisterCallback(Object) で渡した LlmTaskRunnerDelegate の onAsyncResponse(byte[]) を名前で呼ぶ
 # 名前の変更・削除で実行時に NoSuchMethodError / NoClassDefFoundError(端末でしか分からない)になるため、
 # JNI に関わるパッケージは丸ごと残す(未使用の vision 系などは縮小に任せる)
+# (端末内 AI の LLM は LiteRT-LM に移したため、MediaPipe の LLM Inference(tasks-genai)のルールは外した)
 -keep class com.google.mediapipe.framework.** { *; }
 -keep class com.google.mediapipe.tasks.core.** { *; }
--keep class com.google.mediapipe.tasks.genai.llminference.** { *; }
 -keep class com.google.mediapipe.tasks.text.textembedder.** { *; }
 
 # 上の keep で残した framework のクラスが参照しているが、MediaPipe の公開 AAR(tasks-core 1.0.0)に
 # 最初から入っていないクラス。R8 の有無に関係なく実行時にも存在しない(debug ビルドでも同じ)。
 # - Memoized: AutoValue のコンパイル時専用アノテーション(RuntimeInvisibleAnnotations。実行時は不要)
 # - CalculatorProfile / CalculatorGraphTemplate: Graph / GraphProfiler のプロファイル・テンプレート API 用で、
-#   Tasks API(TextEmbedder / LlmInference)からは呼ばれない
+#   Tasks API(TextEmbedder)からは呼ばれない
 -dontwarn com.google.auto.value.extension.memoized.Memoized
 -dontwarn com.google.mediapipe.proto.CalculatorProfileProto$CalculatorProfile
 -dontwarn com.google.mediapipe.proto.GraphTemplateProto$CalculatorGraphTemplate
@@ -41,7 +39,7 @@
     <fields>;
 }
 
-# ---- LiteRT-LM(.litertlm 形式の端末内モデル) ----
+# ---- LiteRT-LM(端末内 AI の .litertlm と .task 形式のモデル) ----
 # litertlm-android の AAR にも consumer rules(proguard.txt)が入っていないため、ここで補う。
 # liblitertlm_jni.so は LiteRtLmJni の native メソッドを名前(Java_com_google_ai_edge_litertlm_LiteRtLmJni_*)で結び、
 # InputData$Text / BenchmarkInfo / LiteRtLmJniException などを FindClass で、生成の途中経過のコールバックを名前で呼ぶ。
