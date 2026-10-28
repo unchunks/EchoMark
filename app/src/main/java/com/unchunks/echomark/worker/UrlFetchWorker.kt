@@ -13,6 +13,7 @@ import com.unchunks.echomark.data.remote.UrlContentFetcher
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.withContext
@@ -31,7 +32,8 @@ class UrlFetchWorker @AssistedInject constructor(
     private val repository: BookmarkRepository,
     private val fetcher: UrlContentFetcher,
     private val attachmentStore: AttachmentStore,
-    private val aiPrewarmer: AiPrewarmer
+    private val aiPrewarmer: AiPrewarmer,
+    private val stats: ProcessingStatsRepository
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -46,10 +48,12 @@ class UrlFetchWorker @AssistedInject constructor(
         }
 
         // 処理中(本文の取得)にし、終えたら(中断されても)次の段を待つ処理待ちに戻す
-        return withProcessingStage(repository, bookmarkId, ProcessingStage.FETCH_CONTENT) { fetch(bookmarkId, bookmark, url) }
+        withProcessingStage(repository, stats, bookmark, ProcessingStage.FETCH_CONTENT) { fetch(bookmarkId, bookmark, url) }
+        return Result.success()
     }
 
-    private suspend fun fetch(bookmarkId: Long, bookmark: Bookmark, url: String): Result {
+    /** 本文を取得して保存する。取得できたら true(失敗・削除済みでも後続の AI 処理は続けるため、例外にはしない) */
+    private suspend fun fetch(bookmarkId: Long, bookmark: Bookmark, url: String): Boolean {
         // 後続の AI 処理で端末内モデルを使うなら、通信している間に読み込んでおく
         if (bookmark.summary.isNullOrBlank()) aiPrewarmer.prewarmLocalLlmIfUsed()
 
@@ -62,12 +66,12 @@ class UrlFetchWorker @AssistedInject constructor(
         }
         val fetched = fetchResult.getOrElse { e ->
             Timber.w(e, "UrlFetchWorker: 取得に失敗 url=%s", url)
-            return Result.success()
+            return false
         }
 
         // 取得の間にタイトルやメモが編集された・削除されたかもしれないため、読み直してから書く
         // (削除されていれば、保存したファイルはどこからも参照されず、しばらくして掃除される)
-        val latest = repository.getBookmarkById(bookmarkId) ?: return Result.success()
+        val latest = repository.getBookmarkById(bookmarkId) ?: return false
 
         // 前に保存したファイルは参照されなくなり、しばらくして掃除される
         fetched.file?.let { repository.updateAttachment(bookmarkId, it) }
@@ -80,7 +84,7 @@ class UrlFetchWorker @AssistedInject constructor(
         )
         // 取得できたことを記録する(メモ付きの URL でも、取得できていなければ再処理で取得し直せるように)
         repository.markContentFetched(bookmarkId, System.currentTimeMillis())
-        return Result.success()
+        return true
     }
 
     companion object {

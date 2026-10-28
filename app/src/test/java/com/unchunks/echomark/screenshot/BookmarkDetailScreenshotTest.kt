@@ -7,6 +7,11 @@ import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.ui.components.PreviewSamples
 import com.unchunks.echomark.ui.detail.BookmarkDetailCallbacks
 import com.unchunks.echomark.ui.detail.BookmarkDetailContent
@@ -25,9 +30,17 @@ class BookmarkDetailScreenshotTest {
     @get:Rule
     val screenshot = ScreenshotRule()
 
-    private fun content(bookmark: Bookmark?, related: List<Bookmark> = emptyList()): @Composable () -> Unit = {
+    private fun content(
+        bookmark: Bookmark?,
+        related: List<Bookmark> = emptyList(),
+        stageProgress: Float? = null,
+        stageAverages: Map<StageDurationKey, Long> = emptyMap()
+    ): @Composable () -> Unit = {
         BookmarkDetailContent(
-            uiState = BookmarkDetailUiState(isLoading = false, bookmark = bookmark, related = related),
+            uiState = BookmarkDetailUiState(
+                isLoading = false, bookmark = bookmark, related = related,
+                stageProgress = stageProgress, stageAverages = stageAverages
+            ),
             snackbarHostState = SnackbarHostState(),
             callbacks = BookmarkDetailCallbacks(),
             nowMillis = PreviewSamples.NOW
@@ -65,6 +78,37 @@ class BookmarkDetailScreenshotTest {
     fun processing() = screenshot.captureScreenLightDark(
         "library_detail_processing",
         content = content(PreviewSamples.processingBookmark)
+    )
+
+    @Test
+    fun processingWithProgress() = screenshot.captureScreenLightDark(
+        "library_detail_processing_progress",
+        content = content(
+            PreviewSamples.processingBookmark.copy(
+                type = BookmarkType.AUDIO,
+                contentUri = null,
+                title = "会議の録音 2026-10-20",
+                filePath = "attachments/meeting.m4a",
+                mimeType = "audio/mp4",
+                processing = ProcessingInfo(stage = ProcessingStage.EXTRACT_CONTENT)
+            ),
+            stageProgress = 0.4f,
+            stageAverages = mapOf(
+                StageDurationKey(ProcessingStage.ANALYZE, ContentKind.AUDIO) to 90_000L,
+                StageDurationKey(ProcessingStage.EMBED, ContentKind.AUDIO) to 5_000L
+            )
+        )
+    )
+
+    @Test
+    fun done() = screenshot.captureScreenLightDark(
+        "library_detail_done_duration",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                aiStatus = AiStatus.DONE,
+                processing = ProcessingInfo(startedAt = 0L, finishedAt = 192_000L)
+            )
+        )
     )
 
     @Test

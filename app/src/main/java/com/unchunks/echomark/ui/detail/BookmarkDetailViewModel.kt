@@ -4,7 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -31,7 +33,11 @@ data class BookmarkDetailUiState(
     val bookmark: Bookmark? = null,
     val related: List<Bookmark> = emptyList(),
     /** タグ入力の候補にする既存のタグ名 */
-    val allTagNames: List<String> = emptyList()
+    val allTagNames: List<String> = emptyList(),
+    /** 実行中の段の進み具合(0〜1)。段が報告していなければ null */
+    val stageProgress: Float? = null,
+    /** 段・中身の種類ごとの平均の所要時間(残り時間の目安に使う) */
+    val stageAverages: Map<StageDurationKey, Long> = emptyMap()
 )
 
 /** 詳細画面で一度だけ伝える出来事(Snackbar で知らせる)。 */
@@ -57,7 +63,8 @@ sealed interface BookmarkDetailMessage {
 class BookmarkDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: BookmarkRepository,
-    private val recentlyDeleted: RecentlyDeletedBookmarks
+    private val recentlyDeleted: RecentlyDeletedBookmarks,
+    processingStats: ProcessingStatsRepository
 ) : ViewModel() {
 
     // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
@@ -93,9 +100,22 @@ class BookmarkDetailViewModel @Inject constructor(
         }
         .onStart { emit(emptyList()) }
 
+    /** 処理の進み具合と残り時間の目安。補助的な表示なので、取れなくても詳細は出す */
+    private val stageProgressFlow = repository.observeStageProgress(bookmarkId)
+        .catch { emit(null) }
+        .onStart { emit(null) }
+    private val stageAveragesFlow = processingStats.averageStageDurations
+        .catch { emit(emptyMap()) }
+        .onStart { emit(emptyMap()) }
+
     val uiState: StateFlow<BookmarkDetailUiState> =
-        combine(bookmarkFlow, relatedFlow, tagNamesFlow) { bookmark, related, tagNames ->
-            BookmarkDetailUiState(isLoading = false, bookmark = bookmark, related = related, allTagNames = tagNames)
+        combine(
+            bookmarkFlow, relatedFlow, tagNamesFlow, stageProgressFlow, stageAveragesFlow
+        ) { bookmark, related, tagNames, stageProgress, stageAverages ->
+            BookmarkDetailUiState(
+                isLoading = false, bookmark = bookmark, related = related, allTagNames = tagNames,
+                stageProgress = stageProgress, stageAverages = stageAverages
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
     init {

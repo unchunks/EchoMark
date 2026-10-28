@@ -7,12 +7,16 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runInterruptible
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -98,6 +102,19 @@ class BookmarkWorkScheduler @Inject constructor(
         return if (ids.any { it == null }) null else ids.filterNotNull().toSet()
     }
 
+    /**
+     * [bookmarkId] の実行中の段の進み具合(0〜1)。段が報告していない・実行中のワークが無ければ null。
+     * 段のワーカーが [KEY_STAGE_PROGRESS] に書いた値(ダウンロード・文字起こしなど)を読む。
+     */
+    fun observeStageProgress(bookmarkId: Long): Flow<Float?> =
+        workManager.getWorkInfosByTagFlow(bookmarkTag(bookmarkId))
+            .map { infos ->
+                infos.firstOrNull { it.state == WorkInfo.State.RUNNING }
+                    ?.progress?.getFloat(KEY_STAGE_PROGRESS, -1f)
+                    ?.takeIf { it >= 0f }
+            }
+            .distinctUntilChanged()
+
     /** [requests] を順番に(前の処理が終わってから次を)実行する列として、一意名 [name] で登録する。 */
     private fun enqueueChain(name: String, policy: ExistingWorkPolicy, requests: List<OneTimeWorkRequest>) {
         var continuation = workManager.beginUniqueWork(name, policy, requests.first())
@@ -168,6 +185,9 @@ class BookmarkWorkScheduler @Inject constructor(
 
         /** 一括の再処理の列の一意名。 */
         const val BULK_WORK_NAME = "bookmark_processing_sequential"
+
+        /** ワークの進み具合(WorkInfo.progress)に書く、実行中の段の進み具合(0〜1 の Float)のキー。 */
+        const val KEY_STAGE_PROGRESS = "stage_progress"
 
         private const val BACKOFF_SECONDS = 30L
         private const val SEQUENTIAL_CHUNK_SIZE = 50

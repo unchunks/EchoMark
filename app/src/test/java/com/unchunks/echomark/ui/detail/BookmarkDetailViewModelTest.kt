@@ -3,8 +3,12 @@ package com.unchunks.echomark.ui.detail
 import androidx.lifecycle.SavedStateHandle
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.testing.FakeProcessingStatsRepository
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,9 +33,24 @@ class BookmarkDetailViewModelTest {
 
     private val repository = FakeBookmarkRepository()
     private val recentlyDeleted = RecentlyDeletedBookmarks()
+    private val stats = FakeProcessingStatsRepository()
 
     private fun createViewModel(id: Long = 1L) =
-        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted)
+        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats)
+
+    @Test
+    fun 処理の進み具合と段ごとの平均の所要時間を出す() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val key = StageDurationKey(ProcessingStage.ANALYZE, ContentKind.MEMO)
+        stats.averages.value = mapOf(key to 30_000L)
+        repository.stageProgress.value = 0.25f
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(0.25f, viewModel.uiState.value.stageProgress)
+        assertEquals(mapOf(key to 30_000L), viewModel.uiState.value.stageAverages)
+    }
 
     private fun TestScope.start(viewModel: BookmarkDetailViewModel): MutableList<BookmarkDetailMessage> {
         val messages = mutableListOf<BookmarkDetailMessage>()
