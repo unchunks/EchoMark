@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
@@ -36,6 +37,8 @@ import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkResult
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkState
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.provider.EmbeddingModels
@@ -46,6 +49,7 @@ import com.unchunks.echomark.ui.settings.SettingsSwitchItem
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 
 /*
  * AI 設定画面の「端末内モデル」と「検索用の埋め込みモデル」。モデルファイルの取り込み・入れ替え・削除。
@@ -64,7 +68,10 @@ internal fun LocalModelSection(
     onPickModel: () -> Unit,
     onCancelImport: () -> Unit,
     onDelete: (LocalModelInfo) -> Unit,
-    onSetDefault: (LocalModelInfo) -> Unit
+    onSetDefault: (LocalModelInfo) -> Unit,
+    benchmarks: List<ModelBenchmarkResult> = emptyList(),
+    benchmarkState: ModelBenchmarkState = ModelBenchmarkState.Idle,
+    onBenchmark: (LocalModelInfo) -> Unit = {}
 ) {
     val context = LocalContext.current
     var deleting by remember { mutableStateOf<LocalModelInfo?>(null) }
@@ -116,6 +123,7 @@ internal fun LocalModelSection(
                     icon = Icons.Outlined.Info
                 )
             }
+            ModelBenchmarkLines(model, benchmarks.filter { it.modelId == model.id }, benchmarkState, onBenchmark)
             if (!isDefault) {
                 OutlinedButton(onClick = { onSetDefault(model) }) { Text("既定のモデルにする") }
             }
@@ -188,6 +196,56 @@ internal fun LocalModelSection(
         )
     }
 }
+
+/** [model] をこの端末で測った結果([results]。演算装置ごと)と、測るボタン。ほかのモデルを測っている間は押せない。 */
+@Composable
+private fun ModelBenchmarkLines(
+    model: LocalModelInfo,
+    results: List<ModelBenchmarkResult>,
+    state: ModelBenchmarkState,
+    onBenchmark: (LocalModelInfo) -> Unit
+) {
+    results.sortedBy { it.backend }.forEach { result ->
+        Text(
+            benchmarkSummary(result),
+            style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    if (state is ModelBenchmarkState.Running && state.model == model) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Text(
+            "測定中…(1 分前後かかります。終わるまで端末内 AI の処理は待たされます)",
+            style = MaterialTheme.typography.bodySmall.japaneseParagraph()
+        )
+        return
+    }
+    if (state is ModelBenchmarkState.Failed && state.model == model) {
+        StatusLine(
+            icon = { Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            text = state.message,
+            isError = true
+        )
+    }
+    OutlinedButton(onClick = { onBenchmark(model) }, enabled = state !is ModelBenchmarkState.Running) {
+        ButtonIcon(Icons.Outlined.Speed)
+        Text(if (results.isEmpty()) "この端末での速さを測る" else "もう一度測る")
+    }
+}
+
+/** 測定の結果の1行。 */
+internal fun benchmarkSummary(result: ModelBenchmarkResult): String = buildString {
+    append(result.backend.name)
+    append(": 読み込み ${oneDecimal(result.loadSeconds)} 秒")
+    append("・入力 ${oneDecimal(result.prefillTokensPerSecond)} トークン/秒")
+    append("・出力 ${oneDecimal(result.decodeTokensPerSecond)} トークン/秒")
+    result.peakMemoryBytes?.let { append("・メモリ +${formatBytes(it)}") }
+    append("(")
+    append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(result.measuredAt)))
+    append(" 測定)")
+}
+
+private fun oneDecimal(value: Double): String = String.format(Locale.ROOT, "%.1f", value)
 
 /**
  * 端末内 AI を GPU で動かすかのスイッチ(実験的)。速くなるが、端末・モデルによってはアプリが終了することがあるため既定はオフ。

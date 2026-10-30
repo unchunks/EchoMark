@@ -3,6 +3,8 @@ package com.unchunks.echomark.data.ai.local
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.ai.edge.litertlm.BenchmarkInfo
+import com.unchunks.components.llm.ondevice.EngineBackend
 import com.unchunks.components.llm.ondevice.GenerationKind
 import com.unchunks.components.llm.ondevice.LocalGeneration
 import com.unchunks.components.llm.ondevice.LocalTextEngine
@@ -22,6 +24,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -104,8 +107,10 @@ class LocalLlmProviderModelSwitchTest {
     private val dispatchers = TestDispatcherProvider(Dispatchers.Unconfined)
     private val modelManager by lazy { ModelManager(context, FakeBookmarkRepository(), dispatchers) }
 
+    private val settings = FakeAppSettingsRepository()
+
     private val provider by lazy {
-        LocalLlmProvider(context, modelManager, FakeAppSettingsRepository(), dispatchers).apply {
+        LocalLlmProvider(context, modelManager, settings, dispatchers).apply {
             engineFactory = { file, _, _ ->
                 check(file.name !in brokenFiles) { "読み込めないモデル" }
                 val name = file.nameWithoutExtension
@@ -210,6 +215,82 @@ class LocalLlmProviderModelSwitchTest {
             listOf("open:a", "generate:a", "close:a", "open:b", "generate:b", "close:b", "open:a", "generate:a"),
             events
         )
+    }
+
+    /** 測定の処理を、呼ばれた順に events へ記録する偽物に差し替える。 */
+    private fun recordBenchmarks() {
+        provider.benchmarkRunner = { file, backend ->
+            events += "benchmark:${file.nameWithoutExtension}:$backend"
+            BenchmarkInfo(1.5, 2.5, 256, 64, 80.0, 12.0)
+        }
+    }
+
+    @Test
+    fun 測るときは読み込んでいるモデルを解放してから測り_結果を返す() = runBlocking {
+        recordBenchmarks()
+        provider.forModel("a").complete("質問")
+
+        val result = provider.benchmark("b")
+
+        assertEquals(listOf("open:a", "generate:a", "close:a", "benchmark:b:CPU"), events)
+        assertEquals("b", result.modelId)
+        assertEquals(EngineBackend.CPU, result.backend)
+        assertEquals(1.5, result.loadSeconds, 0.0)
+        assertEquals(2.5, result.timeToFirstTokenSeconds, 0.0)
+        assertEquals(80.0, result.prefillTokensPerSecond, 0.0)
+        assertEquals(12.0, result.decodeTokensPerSecond, 0.0)
+        assertEquals(256, result.prefillTokens)
+        assertEquals(64, result.decodeTokens)
+    }
+
+    @Test
+    fun 測った後の推論はモデルを読み込み直す() = runBlocking {
+        recordBenchmarks()
+
+        provider.benchmark("a")
+        provider.forModel("a").complete("質問")
+
+        assertEquals(listOf("benchmark:a:CPU", "open:a", "generate:a"), events)
+    }
+
+    @Test
+    fun GPUを使う設定ならGPUで測り_測れなければCPUで測る() = runBlocking {
+        val backends = mutableListOf<EngineBackend>()
+        settings.setLocalLlmUseGpu(true)
+        provider.benchmarkRunner = { _, backend ->
+            backends += backend
+            if (backend == EngineBackend.GPU) error("GPU では動かない")
+            BenchmarkInfo(1.0, 1.0, 256, 64, 1.0, 1.0)
+        }
+
+        val result = provider.benchmark("a")
+
+        assertEquals(listOf(EngineBackend.GPU, EngineBackend.CPU), backends)
+        assertEquals(EngineBackend.CPU, result.backend)
+    }
+
+    @Test
+    fun 一覧に無いモデルは既定に逃げずに測れないとする() = runBlocking {
+        recordBenchmarks()
+
+        try {
+            provider.benchmark("deleted")
+            fail("測れないはず")
+        } catch (e: ModelNotAvailableException) {
+            assertTrue(events.isEmpty())
+        }
+    }
+
+    @Test
+    fun 測れなくても読み込めない表示にはしない() = runBlocking {
+        provider.benchmarkRunner = { _, _ -> error("書式が無い") }
+
+        try {
+            provider.benchmark("a")
+            fail("測れないはず")
+        } catch (e: IllegalStateException) {
+            assertEquals(emptyMap<String, Any>(), modelManager.loadFailures.first())
+        }
     }
 
     private companion object {
