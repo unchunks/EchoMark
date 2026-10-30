@@ -10,6 +10,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -44,9 +45,15 @@ class BookmarkWorkScheduler @Inject constructor(
 
     /**
      * 処理の対象。[fetchContent] なら AI 処理の前に本文を取得し、[extractContent] なら保存したファイルから
-     * 要約に使うテキストを取り出す(両方なら取得 → 取り出しの順)。
+     * 要約に使うテキストを取り出す(両方なら取得 → 取り出しの順)。[scope] は AI 処理で作り直すもの
+     * (要約だけ・タグだけの再処理。既定は全部)。
      */
-    data class Target(val bookmarkId: Long, val fetchContent: Boolean, val extractContent: Boolean = false)
+    data class Target(
+        val bookmarkId: Long,
+        val fetchContent: Boolean,
+        val extractContent: Boolean = false,
+        val scope: AnalysisScope = AnalysisScope.ALL
+    )
 
     /**
      * 1件の処理を登録する。「本文取得 → 中身の取り出し → AI 処理」のうち、[fetchContent]・[extractContent] で
@@ -60,7 +67,8 @@ class BookmarkWorkScheduler @Inject constructor(
         bookmarkId: Long,
         fetchContent: Boolean,
         extractContent: Boolean = false,
-        deferrable: Boolean = false
+        deferrable: Boolean = false,
+        scope: AnalysisScope = AnalysisScope.ALL
     ): Boolean {
         val settings = appSettings.processingSettings.first()
         // 夜間にまとめて処理する設定なら、保存したものは積まずに処理待ちのまま夜を待つ(NightlyProcessingTask が積む)
@@ -68,7 +76,7 @@ class BookmarkWorkScheduler @Inject constructor(
         enqueueChain(
             uniqueWorkName(bookmarkId),
             ExistingWorkPolicy.REPLACE,
-            requestsFor(Target(bookmarkId, fetchContent, extractContent), policy(settings), expedited = true)
+            requestsFor(Target(bookmarkId, fetchContent, extractContent, scope), policy(settings), expedited = true)
         )
         return true
     }
@@ -181,12 +189,22 @@ class BookmarkWorkScheduler @Inject constructor(
         listOfNotNull(
             fetchRequest(target.bookmarkId, policy.fetchConstraints, expedited).takeIf { target.fetchContent },
             extractionRequest(target.bookmarkId, policy.extractionConstraints, expedited).takeIf { target.extractContent },
-            aiRequest(target.bookmarkId, policy.aiConstraints, expedited)
+            aiRequest(target.bookmarkId, target.scope, policy.aiConstraints, expedited)
         )
 
-    private fun aiRequest(bookmarkId: Long, constraints: Constraints, expedited: Boolean): OneTimeWorkRequest =
+    private fun aiRequest(
+        bookmarkId: Long,
+        scope: AnalysisScope,
+        constraints: Constraints,
+        expedited: Boolean
+    ): OneTimeWorkRequest =
         OneTimeWorkRequestBuilder<BookmarkAiProcessingWorker>()
-            .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
+            .setInputData(
+                workDataOf(
+                    BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId,
+                    BookmarkAiProcessingWorker.KEY_SCOPE to scope.name
+                )
+            )
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .addTag(TAG)

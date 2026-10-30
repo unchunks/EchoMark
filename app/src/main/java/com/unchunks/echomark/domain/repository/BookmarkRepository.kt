@@ -7,6 +7,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
@@ -68,7 +69,13 @@ interface BookmarkRepository {
 
     // AI 処理
     /** 要約をクリアして AI 処理(要約・タグ・埋め込み)をやり直す。 */
-    suspend fun reprocess(id: Long)
+    suspend fun reprocess(id: Long) = reprocess(id, AnalysisScope.ALL)
+    /**
+     * AI 処理をやり直す。[scope] が [AnalysisScope.ALL] なら要約をクリアして全部(本文の取得から)、
+     * [AnalysisScope.SUMMARY] なら要約だけ、[AnalysisScope.TAGS] ならタグとカテゴリだけを作り直す
+     * (部分の再処理は、今の本文のまま AI 処理だけを行い、ほかの結果には触れない)。
+     */
+    suspend fun reprocess(id: Long, scope: AnalysisScope)
     /** モデル未取得で待機中(WAITING_MODEL)のブックマークの AI 処理を再度キューに積む。 */
     suspend fun enqueueWaitingModelProcessing()
     /**

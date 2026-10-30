@@ -20,6 +20,7 @@ import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -100,23 +101,26 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
         }
 
         return try {
-            val needsSummary = bookmark.summary.isNullOrBlank()
+            val scope = inputData.getString(KEY_SCOPE)?.let { name -> AnalysisScope.entries.firstOrNull { it.name == name } }
+                ?: AnalysisScope.ALL
+            // 全部の処理は要約がまだ無いときだけ解析する。要約だけ・タグだけの再処理は必ず解析する
+            val needsAnalysis = scope != AnalysisScope.ALL || bookmark.summary.isNullOrBlank()
             // 要約が済んでいて埋め込みも最新なら、段を始めずに完了にする
-            if (needsSummary) {
+            if (needsAnalysis) {
                 // クラウド API の呼び出しの上限(1 分あたり)に達していれば、枠が空くまで処理待ちのまま待つ
                 apiRateLimiter.acquireIfApi()
                 startStage(ProcessingStage.ANALYZE)
             } else if (repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion) {
                 startStage(ProcessingStage.EMBED)
             }
-            prewarm(bookmarkId, bookmark)
+            prewarm(bookmarkId, needsAnalysis)
             var analysisOutcome = AnalysisOutcome.DONE
             var failureReason: ProcessingFailureReason? = null
             // この実行で作った要約。埋め込みに含めるため、作ったら埋め込みも作り直す
             var newSummary: String? = null
 
             // 工程1: 要約・タグ・カテゴリ(要約が既にあればスキップ)
-            if (needsSummary) {
+            if (needsAnalysis) {
                 try {
                     // 既存のタグを伝え、似たタグを増やさず使い回させる
                     // 種類に合った要約にし、ファイルがあればクラウド API にそのまま渡せるようにする
@@ -131,14 +135,21 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     )
                     promoteToForegroundIfLong(bookmark, input)
                     val analysis = AiPerfLog.measure("analysis", "textChars=${input.text.length}") {
-                        bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi())
+                        bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi(), scope)
                     }
-                    repository.updateSummary(bookmarkId, analysis.summary)
-                    newSummary = analysis.summary
-                    recordStageDuration()
+                    // タグだけの再処理では要約に触れない
+                    if (scope != AnalysisScope.TAGS) {
+                        repository.updateSummary(bookmarkId, analysis.summary)
+                        newSummary = analysis.summary
+                    }
+                    // 所要時間の目安は全部を作ったときだけ記録する(部分の再処理は短く、目安を下げてしまう)
+                    if (scope == AnalysisScope.ALL) recordStageDuration()
+                    // 要約だけの再処理ではタグ・カテゴリに触れない。
                     // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
-                    repository.saveAiTags(bookmarkId, analysis.tags)
-                    repository.updateCategory(bookmarkId, analysis.category)
+                    if (scope != AnalysisScope.SUMMARY) {
+                        repository.saveAiTags(bookmarkId, analysis.tags)
+                        repository.updateCategory(bookmarkId, analysis.category)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -163,7 +174,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                 if (newSummary != null ||
                     repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion
                 ) {
-                    if (needsSummary) startStage(ProcessingStage.EMBED)
+                    if (needsAnalysis) startStage(ProcessingStage.EMBED)
                     val text = EmbeddingInputBuilder.build(
                         bookmark.title, newSummary ?: bookmark.summary, bookmark.content, embeddingProvider.profile
                     )
@@ -246,8 +257,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
      * 端末内 LLM(数百MB〜数GB)と同時に読み込むとメモリの使用量が一気に増え、端末によってはアプリが強制終了されるため、
      * そのときは要約の後に埋め込みの中で読み込む。
      */
-    private suspend fun prewarm(bookmarkId: Long, bookmark: Bookmark) {
-        val needsSummary = bookmark.summary.isNullOrBlank()
+    private suspend fun prewarm(bookmarkId: Long, needsSummary: Boolean) {
         val localLlmRuns = needsSummary && aiPrewarmer.prewarmLocalLlmIfUsed()
         if (!localLlmRuns &&
             (needsSummary || repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion)
@@ -258,6 +268,9 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
 
     companion object {
         const val KEY_BOOKMARK_ID = "bookmark_id"
+
+        /** 作り直すもの(AnalysisScope の名前)。無ければ全部 */
+        const val KEY_SCOPE = "analysis_scope"
     }
 }
 
