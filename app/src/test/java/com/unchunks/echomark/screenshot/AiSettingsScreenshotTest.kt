@@ -7,10 +7,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.llm.ondevice.EngineBackend
 import com.unchunks.echomark.data.ai.model.CatalogDownloadState
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkResult
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkState
 import com.unchunks.echomark.data.ai.model.ModelCatalog
 import com.unchunks.echomark.data.ai.model.ModelImportError
 import com.unchunks.echomark.data.ai.model.ModelImportState
@@ -128,6 +131,32 @@ class AiSettingsScreenshotTest {
                     listOf(LocalModelInfo("local_llm.litertlm", installed.fileName, installed.sizeBytes, 1_790_000_000_000L))
                 ),
                 catalogDownload = CatalogDownloadState.Downloading(downloading, 900_000_000, waitingForNetwork = false)
+            )
+        )
+    }
+
+    /** 端末内モデルを測った結果(GPU と CPU)と、別のモデルを測っているところ */
+    @Test
+    fun localModelBenchmark() = screenshot.captureLightDark("ai_settings_local_benchmark") {
+        val qwen = LocalModelInfo("local_llm_2.litertlm", "Qwen3-0.6B.litertlm", 600_000_000, 1_790_100_000_000L)
+        fun result(backend: EngineBackend, prefill: Double, decode: Double) = ModelBenchmarkResult(
+            modelId = model.id,
+            backend = backend,
+            measuredAt = 1_790_200_000_000L,
+            loadSeconds = 4.2,
+            timeToFirstTokenSeconds = 5.1,
+            prefillTokensPerSecond = prefill,
+            decodeTokensPerSecond = decode,
+            prefillTokens = 256,
+            decodeTokens = 64,
+            peakMemoryBytes = 1_200_000_000
+        )
+        Screen(
+            AiSettingsUiState(
+                tasks = aiTasks(LlmBackend.LOCAL),
+                localModels = InstalledModels(listOf(model, qwen), defaultId = model.id),
+                benchmarks = listOf(result(EngineBackend.CPU, 62.4, 11.8), result(EngineBackend.GPU, 410.0, 28.6)),
+                benchmarkState = ModelBenchmarkState.Running(qwen)
             )
         )
     }

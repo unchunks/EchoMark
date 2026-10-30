@@ -12,6 +12,9 @@ import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkManager
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkResult
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkState
 import com.unchunks.echomark.data.ai.model.ModelCatalog
 import com.unchunks.echomark.data.ai.model.ModelCatalogDownloader
 import com.unchunks.echomark.data.ai.model.ModelCatalogEntry
@@ -59,6 +62,9 @@ data class AiSettingsUiState(
     val localModels: InstalledModels = InstalledModels(),
     /** モデルの id ごとの、読み込めなかったこと(無ければ失敗していない。まだ読み込んでいない場合も) */
     val localModelLoadFailures: Map<String, LocalModelLoadFailure> = emptyMap(),
+    /** 端末内モデルを測った結果(モデルと演算装置の組ごとに最後の1件) */
+    val benchmarks: List<ModelBenchmarkResult> = emptyList(),
+    val benchmarkState: ModelBenchmarkState = ModelBenchmarkState.Idle,
     val importState: ModelImportState = ModelImportState.Idle,
     /** 取り込んだ埋め込みモデル。null なら同梱のモデルを使っている */
     val embeddingModel: EmbeddingModelInfo? = null,
@@ -127,9 +133,17 @@ internal suspend fun AppSettingsRepository.resetTasksUsingLocalModel(modelId: St
     aiTaskSettings.first().filterValues { it.localModelId == modelId }.keys.forEach { setLocalModel(it, null) }
 }
 
+/** uiState にまとめる前の、端末内モデルの一覧と測定に関する状態。 */
+private data class LocalLlmSnapshot(
+    val installed: InstalledModels,
+    val loadFailures: Map<String, LocalModelLoadFailure>,
+    val benchmarks: List<ModelBenchmarkResult>,
+    val benchmarkState: ModelBenchmarkState
+)
+
 /** uiState にまとめる前の、モデル(端末内 LLM・埋め込み)に関する状態。 */
 private data class ModelsSnapshot(
-    val llm: Pair<InstalledModels, Map<String, LocalModelLoadFailure>>,
+    val llm: LocalLlmSnapshot,
     val llmImport: ModelImportState,
     val embedding: EmbeddingModelInfo?,
     val embeddingImport: ModelImportState,
@@ -142,6 +156,7 @@ class AiSettingsViewModel @Inject constructor(
     private val apiKeyRepository: ApiKeyRepository,
     private val modelManager: ModelManager,
     private val catalogDownloader: ModelCatalogDownloader,
+    private val benchmarkManager: ModelBenchmarkManager,
     private val embeddingModelManager: EmbeddingModelManager,
     private val apiLlmProvider: ApiLlmProvider,
     private val bookmarkRepository: BookmarkRepository
@@ -153,7 +168,9 @@ class AiSettingsViewModel @Inject constructor(
     val uiState: StateFlow<AiSettingsUiState> = combine(
         appSettings.aiTaskSettings,
         combine(
-            combine(modelManager.installed, modelManager.loadFailures, ::Pair),
+            combine(
+                modelManager.installed, modelManager.loadFailures, benchmarkManager.results, benchmarkManager.state, ::LocalLlmSnapshot
+            ),
             modelManager.importState,
             embeddingModelManager.installedModel,
             embeddingModelManager.importState,
@@ -166,8 +183,10 @@ class AiSettingsViewModel @Inject constructor(
     ) { tasks, models, keyProvider, (sendFiles, useGpu, catalogDownload), configured ->
         AiSettingsUiState(
             tasks = tasks,
-            localModels = models.llm.first,
-            localModelLoadFailures = models.llm.second,
+            localModels = models.llm.installed,
+            localModelLoadFailures = models.llm.loadFailures,
+            benchmarks = models.llm.benchmarks,
+            benchmarkState = models.llm.benchmarkState,
             importState = models.llmImport,
             embeddingProgress = models.embeddingProgress,
             embeddingModel = models.embedding,
@@ -311,9 +330,13 @@ class AiSettingsViewModel @Inject constructor(
     /** [model] を削除する。このモデルを選んでいた用途は既定のモデルに戻す。 */
     fun deleteModel(model: LocalModelInfo) {
         modelManager.deleteModel(model.id)
+        benchmarkManager.forget(model.id)
         viewModelScope.launch { appSettings.resetTasksUsingLocalModel(model.id) }
         _message.value = "「${model.displayName}」を削除しました"
     }
+
+    /** [model] をこの端末で測る。 */
+    fun benchmarkModel(model: LocalModelInfo) = benchmarkManager.start(model)
 
     /** 用途ごとにモデルを選んでいないときに使うモデルを [model] にする。 */
     fun setDefaultModel(model: LocalModelInfo) {

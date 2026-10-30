@@ -74,6 +74,8 @@ class AiSettingsActions(
     /** おすすめのモデルをダウンロードする */
     val onDownloadCatalogModel: (ModelCatalogEntry) -> Unit = {},
     val onCancelCatalogDownload: () -> Unit = {},
+    /** 端末内モデルをこの端末で測る */
+    val onBenchmarkModel: (LocalModelInfo) -> Unit = {},
     /** 用途で使う端末内モデルを選ぶ(null は既定のモデル) */
     val onSelectLocalModel: (AiTask, String?) -> Unit = { _, _ -> },
     /** 埋め込みモデルのファイルを選ぶ(取り込むモデルの種類を渡す。ファイル選択画面は呼び出し側で開く) */
@@ -147,6 +149,7 @@ fun AiSettingsScreen(
             onSetDefaultModel = viewModel::setDefaultModel,
             onDownloadCatalogModel = viewModel::downloadCatalogModel,
             onCancelCatalogDownload = viewModel::cancelCatalogDownload,
+            onBenchmarkModel = viewModel::benchmarkModel,
             onSelectLocalModel = viewModel::setLocalModel,
             onPickEmbeddingModel = { profile ->
                 pendingEmbeddingProfileId = profile.id
@@ -251,7 +254,10 @@ fun AiSettingsContent(
                 onPickModel = actions.onPickModel,
                 onCancelImport = actions.onCancelImport,
                 onDelete = actions.onDeleteModel,
-                onSetDefault = actions.onSetDefaultModel
+                onSetDefault = actions.onSetDefaultModel,
+                benchmarks = uiState.benchmarks,
+                benchmarkState = uiState.benchmarkState,
+                onBenchmark = actions.onBenchmarkModel
             )
             if (uiState.localModel != null) {
                 LocalLlmGpuSetting(checked = uiState.localLlmUseGpu, onCheckedChange = actions.onSetLocalLlmUseGpu)

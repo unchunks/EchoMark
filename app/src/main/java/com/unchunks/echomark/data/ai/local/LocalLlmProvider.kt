@@ -1,6 +1,10 @@
 package com.unchunks.echomark.data.ai.local
 
 import android.content.Context
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.BenchmarkInfo
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.benchmark
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.llm.ChatOutputGuard
 import com.unchunks.components.llm.JsonObjectEndDetector
@@ -22,8 +26,10 @@ import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.AnalysisSchema
 import com.unchunks.echomark.data.ai.LocalLlmProviders
+import com.unchunks.echomark.data.ai.LocalModelBenchmarker
 import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkResult
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -94,7 +100,7 @@ class LocalLlmProvider @Inject constructor(
     private val modelManager: ModelManager,
     private val appSettings: AppSettingsRepository,
     private val dispatcherProvider: DispatcherProvider
-) : LlmProvider, LocalLlmProviders {
+) : LlmProvider, LocalLlmProviders, LocalModelBenchmarker {
 
     /** [modelId] のモデル(null・見つからなければ既定のモデル)で動く端末内 AI。 */
     override fun forModel(modelId: String?): LlmProvider = object : LlmProvider {
@@ -161,6 +167,9 @@ class LocalLlmProvider @Inject constructor(
     /** エンジンを作る処理(テストで差し替える) */
     internal var engineFactory: (File, LocalModelInfo, EngineBackend) -> LocalTextEngine = ::createEngine
 
+    /** モデルを測る処理(テストで差し替える) */
+    internal var benchmarkRunner: (File, EngineBackend) -> BenchmarkInfo = ::runBenchmark
+
     private val digester = LongTextDigester(LONG_TEXT)
 
     private val lifecycleLock = Any()
@@ -201,7 +210,7 @@ class LocalLlmProvider @Inject constructor(
         // GPU の設定をオフにしたら、GPU で読み込んだエンジンは CPU で作り直す
         loaded?.let { if (it.model == model && (allowGpu || it.backend == EngineBackend.CPU)) return it }
         releaseLocked("使うモデルか演算装置の設定が変わった")
-        val modelKey = "${model.fileName}:${model.sizeBytes}:${model.importedAt}"
+        val modelKey = modelKeyOf(model)
         val start = System.nanoTime()
         val created = try {
             backendSelector.create(modelKey, allowGpu) { backend -> engineFactory(file, model, backend) }
@@ -240,6 +249,70 @@ class LocalLlmProvider @Inject constructor(
             context.cacheDir.path,
             chatTemplate = chatTemplateFor(model)
         )
+
+    /**
+     * [modelId] のモデルをこの端末で測る。LiteRT-LM の benchmark は自分でエンジンを作るため、読み込んでいるモデルを解放してから、
+     * 推論と同じロックの中で動かす(2つのモデルを同時にメモリに持たない)。ブロッキングで止められないため、終わるまで推論は待たされる。
+     * 演算装置は推論と同じ選び方にする([BackendSelector])。GPU の初期化や生成でアプリごと落ちても、次からそのモデルは CPU を使う。
+     * 旧形式の .task の Gemma は会話の書式を明示して動かしているが、benchmark には渡せないため、測れないことがある。
+     * 測れなくても推論で使えないとは限らないため、読み込めない表示にはしない。
+     */
+    override suspend fun benchmark(modelId: String): ModelBenchmarkResult = withContext(dispatcherProvider.default) {
+        inferenceMutex.withLock {
+            val model = modelManager.installed.value.models.firstOrNull { it.id == modelId }
+            val file = model?.let(modelManager::modelFile)
+            if (model == null || file == null) throw ModelNotAvailableException()
+            releaseLocked("モデルを測るため")
+            val allowGpu = appSettings.localLlmUseGpu.first()
+            try {
+                val (created, memory) = ProcessMemory.measurePeakIncrease(backgroundScope) {
+                    backendSelector.create(modelKeyOf(model), allowGpu) { backend -> benchmarkRunner(file, backend) }
+                }
+                if (created.backend == EngineBackend.GPU) backendSelector.confirmGpu()
+                val info = created.engine
+                AiPerfLog.record(
+                    "llm.benchmark",
+                    (info.initTimeInSecond * MILLIS_PER_SECOND).toLong(),
+                    "backend=${created.backend} model=${model.displayName} " +
+                        "prefill=${info.lastPrefillTokensPerSecond}tk/s decode=${info.lastDecodeTokensPerSecond}tk/s"
+                )
+                ModelBenchmarkResult(
+                    modelId = model.id,
+                    backend = created.backend,
+                    measuredAt = System.currentTimeMillis(),
+                    loadSeconds = info.initTimeInSecond,
+                    timeToFirstTokenSeconds = info.timeToFirstTokenInSecond,
+                    prefillTokensPerSecond = info.lastPrefillTokensPerSecond,
+                    decodeTokensPerSecond = info.lastDecodeTokensPerSecond,
+                    prefillTokens = info.lastPrefillTokenCount,
+                    decodeTokens = info.lastDecodeTokenCount,
+                    peakMemoryBytes = memory
+                )
+            } catch (e: LinkageError) {
+                Timber.e(e, "端末内 AI のライブラリを初期化できない")
+                throw LlmException.EngineUnavailable(e)
+            } finally {
+                markUsedLocked()
+            }
+        }
+    }
+
+    /** LiteRT-LM の benchmark。入力と出力に決まった数のトークンを使って、モデルの読み込みから1回の生成までを測る。 */
+    @OptIn(ExperimentalApi::class)
+    private fun runBenchmark(file: File, backend: EngineBackend): BenchmarkInfo = benchmark(
+        file.absolutePath,
+        when (backend) {
+            EngineBackend.GPU -> Backend.GPU()
+            EngineBackend.CPU -> Backend.CPU()
+        },
+        BENCHMARK_PREFILL_TOKENS,
+        BENCHMARK_DECODE_TOKENS,
+        context.cacheDir.path,
+        BENCHMARK_PROMPT
+    )
+
+    /** モデルの種類ごとの記録([BackendSelector] など)に使うキー。取り込み直すと変わる。 */
+    private fun modelKeyOf(model: LocalModelInfo): String = "${model.fileName}:${model.sizeBytes}:${model.importedAt}"
 
     /** エンジンを閉じて手放す。必ず [inferenceMutex] を持った状態で呼ぶ。 */
     private fun releaseLocked(reason: String) {
@@ -584,7 +657,7 @@ class LocalLlmProvider @Inject constructor(
         // 上限を超える本文は、部分ごとに要約してからまとめる
         val body = digester.prepare(input.text) { part ->
             val prompt = listOf(
-                AiPrompts.partInstructions(input.kind, LONG_TEXT.noteMaxChars),
+                AiPrompts.partInstructions(input.kind, LONG_TEXT.noteMaxChars, input.profile),
                 "",
                 AiPrompts.partInput(input.title, part)
             ).joinToString("\n")
@@ -822,7 +895,8 @@ class LocalLlmProvider @Inject constructor(
             AiPrompts.existingTagsMentionedIn(existingTags, input.combinedText()),
             summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
             scope = scope,
-            digest = digest
+            digest = digest,
+            profile = input.profile
         ),
         "",
         AiPrompts.analyzeInput(input.title, body, MAX_INPUT_CHARS)
@@ -841,6 +915,16 @@ class LocalLlmProvider @Inject constructor(
         private const val MAX_INPUT_CHARS = 2000
 
         private const val NANOS_PER_MILLI = 1_000_000L
+
+        private const val MILLIS_PER_SECOND = 1000
+
+        /** モデルを測るときの入力のトークン数(チャットのプロンプトと同じくらいの大きさの一部) */
+        private const val BENCHMARK_PREFILL_TOKENS = 256
+
+        /** モデルを測るときの出力のトークン数。遅い端末でも 1 分前後で終わる数にする */
+        private const val BENCHMARK_DECODE_TOKENS = 64
+
+        private const val BENCHMARK_PROMPT = "こんにちは"
 
         /** 解析の出力の形が正しくなかったときに作り直させる回数の上限(端末内は1回の生成に数分かかるため1回) */
         private const val MAX_REPAIRS = 1

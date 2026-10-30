@@ -11,6 +11,7 @@ import com.unchunks.echomark.data.remote.DownloadSink
 import com.unchunks.echomark.data.remote.FetchedContent
 import com.unchunks.echomark.data.remote.UrlContentFetcher
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.isProcessingCancelled
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -99,8 +100,11 @@ class UrlFetchWorker @AssistedInject constructor(
 
         /** 取得した後の本文。ページの本文はメモの後ろに追記する(再実行時に同じ本文を二重に追記しない) */
         internal fun contentAfterFetch(bookmark: Bookmark, fetched: FetchedContent): String? {
-            val fetchedText = listOfNotNull(fetched.description, fetched.text.takeIf { it.isNotBlank() })
-                .joinToString("\n\n")
+            // 有料・会員限定で冒頭しか取得できなかったページは、そのことが分かる印を先頭に入れる(AI は取得できた範囲だけを要約する)
+            // (冒頭の本文も説明文も取れなかったときは、印だけの本文にしない)
+            val pageText = listOfNotNull(fetched.description, fetched.text.takeIf { it.isNotBlank() })
+            val limitNote = fetched.accessLimit?.let { LimitedAccess.note(it) }?.takeIf { it.isNotBlank() && pageText.isNotEmpty() }
+            val fetchedText = listOfNotNull(limitNote).plus(pageText).joinToString("\n\n")
             val existing = bookmark.content
             return when {
                 fetchedText.isBlank() -> existing

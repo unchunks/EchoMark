@@ -1,6 +1,8 @@
 package com.unchunks.echomark.data.ai
 
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
+import com.unchunks.echomark.domain.bookmark.model.SummaryProfile
 import com.unchunks.echomark.domain.model.AnalysisScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -229,5 +231,76 @@ class AiPromptsTest {
             "添付: 保存した画像のファイルそのもの。本文と合わせて内容を判断してください。\n保存内容:\n(本文なし)",
             input
         )
+    }
+    // ---- 要約の型(#17) ----
+
+    @Test
+    fun 型ごとの方針を種類の方針に足す() {
+        fun prompt(profile: SummaryProfile) = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), profile = profile)
+
+        assertFalse(prompt(SummaryProfile.GENERAL).contains("これは論文"))
+        assertTrue(prompt(SummaryProfile.PAPER).contains("これは論文。研究の目的、手法、主な結果、結論"))
+        assertTrue(prompt(SummaryProfile.REFERENCE).contains("これは技術資料・リファレンス"))
+        assertTrue(prompt(SummaryProfile.QA).contains("これは質問と回答のページ"))
+        assertTrue(prompt(SummaryProfile.SOCIAL_POST).contains("いいね/リポストの数"))
+        assertTrue(prompt(SummaryProfile.PRODUCT).contains("これは商品ページ"))
+        assertTrue(prompt(SummaryProfile.RECIPE).contains("主な材料と、作り方の流れ"))
+        // 種類の方針は残す(型は足すだけ)
+        assertTrue(prompt(SummaryProfile.PAPER).contains("記事の主張・結論と、それを支える要点をまとめる。"))
+        assertTrue(AiPrompts.analyzeInstructions(ContentKind.MEMO, emptyList(), profile = SummaryProfile.LIST).contains("これは項目を並べたメモ"))
+    }
+
+    @Test
+    fun 型を渡さなければ今までと同じ指示() {
+        ContentKind.entries.forEach { kind ->
+            assertEquals(
+                AiPrompts.analyzeInstructions(kind, listOf("Android")),
+                AiPrompts.analyzeInstructions(kind, listOf("Android"), profile = SummaryProfile.GENERAL)
+            )
+        }
+    }
+
+    @Test
+    fun 型に合うカテゴリの候補を先に出す() {
+        assertEquals("レシピ", AiPrompts.categoryExamples(ContentKind.WEB_PAGE, SummaryProfile.RECIPE).first())
+        assertEquals("論文", AiPrompts.categoryExamples(ContentKind.DOCUMENT, SummaryProfile.PAPER).first())
+        // 重ならない
+        val examples = AiPrompts.categoryExamples(ContentKind.WEB_PAGE, SummaryProfile.REFERENCE)
+        assertEquals(examples.distinct(), examples)
+        assertEquals(AiPrompts.categoryExamples(ContentKind.WEB_PAGE), AiPrompts.categoryExamples(ContentKind.WEB_PAGE, SummaryProfile.GENERAL))
+        assertTrue(AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), profile = SummaryProfile.RECIPE).contains("category は「レシピ」"))
+    }
+
+    @Test
+    fun 端末内向けの短い指示にも型の主役を入れる() {
+        val general = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, emptyList())
+        val paper = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, emptyList(), profile = SummaryProfile.PAPER)
+
+        assertTrue(general, general.contains("記事の主張と要点をまとめる"))
+        assertTrue(paper, paper.contains("論文の目的・手法・主な結果・結論をまとめる"))
+        assertFalse(paper, paper.contains("記事の主張と要点をまとめる"))
+        // 短さを保つ(型で大きく伸ばさない)
+        assertTrue(paper.length < general.length + 100)
+    }
+
+    @Test
+    fun 分割要約のメモの指示にも型の方針を入れる() {
+        val part = AiPrompts.partInstructions(ContentKind.DOCUMENT, 400, SummaryProfile.PAPER)
+
+        assertTrue(part, part.contains("これは論文"))
+        assertFalse(AiPrompts.partInstructions(ContentKind.DOCUMENT, 400).contains("これは論文"))
+    }
+
+    // ---- 一部のみ取得したページ(#23) ----
+
+    @Test
+    fun 一部のみ取得の印があるときの扱いを指示に入れる() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList())
+        val compact = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, emptyList())
+
+        assertTrue(prompt, prompt.contains("「${LimitedAccess.MARKER}」の行があるときは"))
+        assertTrue(compact, compact.contains(LimitedAccess.MARKER))
+        // タグだけを作るときは要約の方針を入れない
+        assertFalse(AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), scope = AnalysisScope.TAGS).contains(LimitedAccess.MARKER))
     }
 }

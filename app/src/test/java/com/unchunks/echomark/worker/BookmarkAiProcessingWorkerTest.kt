@@ -33,6 +33,8 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
+import com.unchunks.echomark.domain.bookmark.model.PageAccessLimit
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.model.AnalysisAttachment
@@ -419,6 +421,28 @@ class BookmarkAiProcessingWorkerTest {
 
         assertEquals(AiStatus.FAILED, statusOf(cancelled))
         assertEquals(AiStatus.DONE, statusOf(next))
+    }
+
+    @Test
+    fun 一部のみ取得した有料ページの要約には注記を付ける() = runBlocking {
+        val id = db.bookmarkDao().insert(
+            Bookmark(
+                type = BookmarkType.URL,
+                contentUri = "https://example.com/premium",
+                content = LimitedAccess.note(PageAccessLimit.PAYWALL) + "\n\n冒頭の本文",
+                title = "有料記事",
+                createdAt = 1L,
+                lastAccessedAt = 1L
+            ).toEntity()
+        )
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals("要約${LimitedAccess.SUMMARY_SUFFIX}", repository.getBookmarkById(id)!!.summary)
+        // 全文のページには付けない
+        val full = insertBookmark()
+        runWorker(full, runAttemptCount = 0)
+        assertEquals("要約", repository.getBookmarkById(full)!!.summary)
     }
 
     @Test

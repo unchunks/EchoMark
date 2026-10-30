@@ -14,11 +14,13 @@ import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.isProcessingCancelled
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.bookmark.model.contentKind
+import com.unchunks.echomark.domain.bookmark.model.summaryProfile
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -134,7 +136,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                         title = bookmark.title,
                         text = bookmark.content.orEmpty(),
                         kind = bookmark.contentKind(),
-                        attachment = attachment
+                        attachment = attachment,
+                        profile = bookmark.summaryProfile()
                     )
                     promoteToForegroundIfLong(bookmark, input, scope)
                     val analysis = AiPerfLog.measure("analysis", "textChars=${input.text.length}") {
@@ -142,8 +145,10 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     }
                     // タグだけの再処理では要約に触れない
                     if (scope != AnalysisScope.TAGS) {
-                        repository.updateSummary(bookmarkId, analysis.summary)
-                        newSummary = analysis.summary
+                        // 有料・会員限定で一部しか取得できていないページは、全文の要約ではないと分かるようにする
+                        val summary = LimitedAccess.annotateSummary(analysis.summary, input.text)
+                        repository.updateSummary(bookmarkId, summary)
+                        newSummary = summary
                     }
                     // 所要時間の目安は全部を作ったときだけ記録する(部分の再処理は短く、目安を下げてしまう)
                     if (scope == AnalysisScope.ALL) recordStageDuration()

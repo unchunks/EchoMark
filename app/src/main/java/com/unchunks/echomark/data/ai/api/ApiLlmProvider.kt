@@ -155,7 +155,7 @@ class ApiLlmProvider @Inject constructor(
             LongTextDigester(config).prepare(input.text) { part ->
                 val request = ApiRequest(
                     purpose = ApiPurpose.ANALYZE,
-                    system = AiPrompts.partInstructions(input.kind, config.noteMaxChars),
+                    system = AiPrompts.partInstructions(input.kind, config.noteMaxChars, input.profile),
                     messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.partInput(input.title, part))),
                     jsonSchema = ApiJsonSchema(AnalysisSchema.NOTES_NAME, AnalysisSchema.notes())
                 )
@@ -170,7 +170,8 @@ class ApiLlmProvider @Inject constructor(
                 input.kind,
                 existingTags,
                 summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
-                scope = scope
+                scope = scope,
+                profile = input.profile
             ),
             messages = listOf(
                 ApiMessage(
