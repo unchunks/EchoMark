@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.ai
 
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -73,5 +74,19 @@ class AiPrewarmerTest {
         assertEquals("a", analysisLocalModelToPrewarm(mapOf(AiTask.TAGGING to local, AiTask.SUMMARY to summary)))
         assertEquals("b", analysisLocalModelToPrewarm(mapOf(AiTask.TAGGING to api, AiTask.SUMMARY to summary)))
         assertEquals(null, analysisLocalModelToPrewarm(emptyMap()))
+    }
+
+    @Test
+    fun 要約だけ_タグだけの再処理ではその用途のモデルだけを見る() {
+        val tagging = AiTaskSetting(backend = LlmBackend.LOCAL, localModelId = "a")
+        val summary = AiTaskSetting(backend = LlmBackend.LOCAL, localModelId = "b")
+        val settings = mapOf(AiTask.TAGGING to tagging, AiTask.SUMMARY to summary)
+        assertEquals("b", analysisLocalModelToPrewarm(settings, AnalysisScope.SUMMARY))
+        assertEquals("a", analysisLocalModelToPrewarm(settings, AnalysisScope.TAGS))
+
+        // 片方だけ端末内なら、クラウド API の用途の再処理では端末内 AI を使わない
+        val mixed = settings(tagging = LlmBackend.LOCAL, summary = LlmBackend.API)
+        assertTrue(usesLocalLlmForAnalysis(mixed, AnalysisScope.TAGS))
+        assertFalse(usesLocalLlmForAnalysis(mixed, AnalysisScope.SUMMARY))
     }
 }

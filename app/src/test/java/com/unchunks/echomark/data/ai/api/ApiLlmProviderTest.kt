@@ -561,6 +561,22 @@ class ApiLlmProviderTest {
     }
 
     @Test
+    fun Resolverは端末内なら用途に選んだモデルで動かす() = runBlocking {
+        val byModel = mutableMapOf<String?, FakeLlmProvider>()
+        val resolver = LlmProviderResolver(
+            LocalLlmProviders { id -> byModel.getOrPut(id) { FakeLlmProvider() } },
+            { FakeLlmProvider() },
+            settings,
+            FakeApiKeyRepository()
+        )
+        AiTask.entries.forEach { settings.setLlmBackend(it, LlmBackend.LOCAL) }
+        settings.setLocalModel(AiTask.CHAT, "qwen")
+
+        assertSame(resolver.resolve(AiTask.CHAT), byModel.getValue("qwen"))
+        assertSame(resolver.resolve(AiTask.SUMMARY), byModel.getValue(null))
+    }
+
+    @Test
     fun Resolverは用途ごとの実行場所と提供元で選ぶ() = runBlocking {
         val local = FakeLlmProvider()
         val apiByTask = AiTask.entries.associateWith { FakeLlmProvider() }

@@ -144,6 +144,9 @@ class LocalLlmProvider @Inject constructor(
         BackendSelector(FileBackendStore(File(File(context.filesDir, "models"), BACKEND_FILE_NAME)))
     }
 
+    /** エンジンを作る処理(テストで差し替える) */
+    internal var engineFactory: (File, LocalModelInfo, EngineBackend) -> LocalTextEngine = ::createEngine
+
     private val digester = LongTextDigester(LONG_TEXT)
 
     private val lifecycleLock = Any()
@@ -187,7 +190,7 @@ class LocalLlmProvider @Inject constructor(
         val modelKey = "${model.fileName}:${model.sizeBytes}:${model.importedAt}"
         val start = System.nanoTime()
         val created = try {
-            backendSelector.create(modelKey, allowGpu) { backend -> createEngine(file, model, backend) }
+            backendSelector.create(modelKey, allowGpu) { backend -> engineFactory(file, model, backend) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LinkageError) {

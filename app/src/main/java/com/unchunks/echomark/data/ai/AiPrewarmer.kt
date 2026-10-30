@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.ai
 
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
@@ -21,14 +22,15 @@ class AiPrewarmer @Inject constructor(
     private val appSettings: AppSettingsRepository
 ) {
 
-    /** ブックマークの AI 処理(要約・タグ付け)に端末内 AI を使う設定か。読めなければ false。 */
-    suspend fun usesLocalLlm(): Boolean = readSettings()?.let(::usesLocalLlmForAnalysis) ?: false
+    /** ブックマークの AI 処理の [scope] の範囲(要約・タグ付け)に端末内 AI を使う設定か。読めなければ false。 */
+    suspend fun usesLocalLlm(scope: AnalysisScope = AnalysisScope.ALL): Boolean =
+        readSettings()?.let { usesLocalLlmForAnalysis(it, scope) } ?: false
 
-    /** 端末内 AI を使う設定なら読み込みを始める(完了は待たない)。始めたら true。 */
-    suspend fun prewarmLocalLlmIfUsed(): Boolean {
+    /** [scope] の範囲に端末内 AI を使う設定なら読み込みを始める(完了は待たない)。始めたら true。 */
+    suspend fun prewarmLocalLlmIfUsed(scope: AnalysisScope = AnalysisScope.ALL): Boolean {
         val settings = readSettings() ?: return false
-        if (!usesLocalLlmForAnalysis(settings)) return false
-        localProviders.forModel(analysisLocalModelToPrewarm(settings)).prewarm()
+        if (!usesLocalLlmForAnalysis(settings, scope)) return false
+        localProviders.forModel(analysisLocalModelToPrewarm(settings, scope)).prewarm()
         return true
     }
 
@@ -43,18 +45,24 @@ class AiPrewarmer @Inject constructor(
 }
 
 /**
- * ブックマークの AI 処理で端末内 AI を使うか。タグ付け・要約のどちらかが端末内なら使う
- * (別々の AI を選んでいても、端末内の側の推論は走る)。設定が無い用途は既定(端末内)として扱う。
+ * [scope] の範囲で動く用途の、端末内で動かすものの設定を、動く順に返す。BookmarkAnalyzer は端末内の推論を先にし、
+ * タグ付けと要約が別々の端末内モデルならタグ付けから動かす。要約だけ・タグだけの再処理ではその用途だけが動く。
+ * 設定が無い用途は既定(端末内)として扱う。
  */
-internal fun usesLocalLlmForAnalysis(settings: Map<AiTask, AiTaskSetting>): Boolean =
-    listOf(AiTask.TAGGING, AiTask.SUMMARY).any { (settings[it] ?: AiTaskSetting()).backend == LlmBackend.LOCAL }
+private fun localAnalysisSettings(settings: Map<AiTask, AiTaskSetting>, scope: AnalysisScope): List<AiTaskSetting> =
+    when (scope) {
+        AnalysisScope.ALL -> listOf(AiTask.TAGGING, AiTask.SUMMARY)
+        AnalysisScope.SUMMARY -> listOf(AiTask.SUMMARY)
+        AnalysisScope.TAGS -> listOf(AiTask.TAGGING)
+    }.map { settings[it] ?: AiTaskSetting() }.filter { it.backend == LlmBackend.LOCAL }
 
 /**
- * ブックマークの AI 処理で最初に動く端末内モデルの id(null は既定のモデル)。BookmarkAnalyzer は端末内の推論を先にし、
- * タグ付けと要約が別々の端末内モデルならタグ付けから動かすため、タグ付けが端末内ならそのモデル、そうでなければ要約のモデル。
+ * ブックマークの AI 処理の [scope] の範囲で端末内 AI を使うか。タグ付け・要約のどちらかが端末内なら使う
+ * (別々の AI を選んでいても、端末内の側の推論は走る)。
  */
-internal fun analysisLocalModelToPrewarm(settings: Map<AiTask, AiTaskSetting>): String? {
-    val tagging = settings[AiTask.TAGGING] ?: AiTaskSetting()
-    val summary = settings[AiTask.SUMMARY] ?: AiTaskSetting()
-    return if (tagging.backend == LlmBackend.LOCAL) tagging.localModelId else summary.localModelId
-}
+internal fun usesLocalLlmForAnalysis(settings: Map<AiTask, AiTaskSetting>, scope: AnalysisScope = AnalysisScope.ALL): Boolean =
+    localAnalysisSettings(settings, scope).isNotEmpty()
+
+/** ブックマークの AI 処理の [scope] の範囲で最初に動く端末内モデルの id(null は既定のモデル)。 */
+internal fun analysisLocalModelToPrewarm(settings: Map<AiTask, AiTaskSetting>, scope: AnalysisScope = AnalysisScope.ALL): String? =
+    localAnalysisSettings(settings, scope).firstOrNull()?.localModelId

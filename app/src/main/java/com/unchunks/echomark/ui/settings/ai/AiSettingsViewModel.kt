@@ -114,6 +114,11 @@ data class AiSettingsUiState(
             ?: keyProvider.defaultModel
 }
 
+/** 端末内モデル [modelId] を選んでいた用途を、既定のモデルに戻す。 */
+internal suspend fun AppSettingsRepository.resetTasksUsingLocalModel(modelId: String) {
+    aiTaskSettings.first().filterValues { it.localModelId == modelId }.keys.forEach { setLocalModel(it, null) }
+}
+
 /** uiState にまとめる前の、モデル(端末内 LLM・埋め込み)に関する状態。 */
 private data class ModelsSnapshot(
     val llm: Pair<InstalledModels, Map<String, LocalModelLoadFailure>>,
@@ -270,10 +275,7 @@ class AiSettingsViewModel @Inject constructor(
     /** [model] を削除する。このモデルを選んでいた用途は既定のモデルに戻す。 */
     fun deleteModel(model: LocalModelInfo) {
         modelManager.deleteModel(model.id)
-        viewModelScope.launch {
-            appSettings.aiTaskSettings.first().filterValues { it.localModelId == model.id }.keys
-                .forEach { appSettings.setLocalModel(it, null) }
-        }
+        viewModelScope.launch { appSettings.resetTasksUsingLocalModel(model.id) }
         _message.value = "「${model.displayName}」を削除しました"
     }
 
