@@ -16,6 +16,7 @@ import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.isProcessingCancelled
 import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.extract.ContentExtractor
 import com.unchunks.echomark.domain.extract.ExtractedBody
@@ -54,6 +55,8 @@ class ContentExtractionWorker @AssistedInject constructor(
         val bookmarkId = inputData.getLong(KEY_BOOKMARK_ID, -1L)
         if (bookmarkId == -1L) return Result.success()
         val bookmark = repository.getBookmarkById(bookmarkId)
+        // ユーザーが処理をやめたもの(一括の列に残っているワーク)は何もしない
+        if (bookmark?.isProcessingCancelled == true) return Result.success()
         val filePath = bookmark?.filePath
         // URL のチェーンでは毎回この段を通る。リンク先が HTML(ファイルなし)なら何もしない
         if (filePath == null) return Result.success()

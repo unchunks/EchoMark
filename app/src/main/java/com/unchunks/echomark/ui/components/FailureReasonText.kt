@@ -25,6 +25,7 @@ fun ProcessingFailureReason.message(): String = when (this) {
     ProcessingFailureReason.RATE_LIMITED -> "AI の利用回数の上限に達しました。しばらく待ってから、もう一度試してください。"
     ProcessingFailureReason.SERVER_ERROR -> "AI のサーバーで障害が起きています。しばらく待ってから、もう一度試してください。"
     ProcessingFailureReason.TOO_MANY_ATTEMPTS -> "何度も中断されたため、処理を止めました。もう一度試してください。"
+    ProcessingFailureReason.CANCELLED -> "処理をやめました。「再試行」で、もう一度処理できます。"
     ProcessingFailureReason.UNKNOWN -> "予期しないエラーが起きました。もう一度試してください。"
 }
 
@@ -55,5 +56,6 @@ val ProcessingFailureReason.needsSetup: Boolean
         ProcessingFailureReason.RATE_LIMITED,
         ProcessingFailureReason.SERVER_ERROR,
         ProcessingFailureReason.TOO_MANY_ATTEMPTS,
+        ProcessingFailureReason.CANCELLED,
         ProcessingFailureReason.UNKNOWN -> false
     }

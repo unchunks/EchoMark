@@ -22,6 +22,7 @@ import com.unchunks.echomark.crash.CrashReporter.recordWorkerFailures
 import com.unchunks.echomark.data.attachment.UnusedAttachmentCleaner
 import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
 import com.unchunks.echomark.worker.ReembedAllWorker
+import com.unchunks.echomark.worker.BulkProcessingNotifier
 import com.unchunks.echomark.worker.StalledAiProcessingRecovery
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
@@ -38,6 +39,7 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
     @Inject lateinit var okHttpClient: Lazy<OkHttpClient>
     @Inject lateinit var rediscoverWidgetUpdater: RediscoverWidgetUpdater
     @Inject lateinit var stalledAiProcessingRecovery: StalledAiProcessingRecovery
+    @Inject lateinit var bulkProcessingNotifier: BulkProcessingNotifier
     @Inject lateinit var unusedAttachmentCleaner: UnusedAttachmentCleaner
 
     override val workManagerConfiguration: Configuration
@@ -63,6 +65,8 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
         rediscoverWidgetUpdater.start()
         // 処理待ち・処理中のままワークが失われたブックマークの AI 処理を積み直す
         stalledAiProcessingRecovery.start()
+        // まとめての処理が動いている間、進み具合の通知を出す
+        bulkProcessingNotifier.start()
         // 削除したブックマークの添付ファイルなど、使われなくなってしばらく経ったファイルを消す
         unusedAttachmentCleaner.start()
 

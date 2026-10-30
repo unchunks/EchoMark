@@ -17,9 +17,11 @@ import com.unchunks.echomark.testing.initTestWorkManager
 import com.unchunks.echomark.testing.tearDownTestWorkManager
 import com.unchunks.echomark.testing.statesByTag
 import com.unchunks.echomark.testing.statesOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -95,6 +97,38 @@ class BookmarkWorkSchedulerTest {
 
         // 1件ごとの処理・一括の列のどちらも含み、取り消したものは含まない
         assertEquals(setOf(1L, 3L), scheduler.bookmarkIdsWithUnfinishedWork())
+    }
+
+    @Test
+    fun 一括の列の進み具合は列が動いている間だけ返す() = runBlocking {
+        assertNull(scheduler.observeBulkProgress().first())
+
+        scheduler.enqueueSequential(
+            listOf(1L, 2L, 3L).map { BookmarkWorkScheduler.Target(it, fetchContent = false) }
+        )
+
+        // 1件ごとに AI 処理のワークが 1 つ。まだ終えたものは無い
+        assertEquals(BookmarkWorkScheduler.BulkProgress(done = 0, total = 3), scheduler.observeBulkProgress().first())
+
+        scheduler.cancelBulk()
+
+        assertNull(scheduler.observeBulkProgress().first())
+    }
+
+    @Test
+    fun 一括の列を取り消すと列にあったブックマークのIDを返す() = runBlocking {
+        scheduler.enqueue(9L, fetchContent = false)
+        scheduler.enqueueSequential(
+            listOf(1L, 2L).map { BookmarkWorkScheduler.Target(it, fetchContent = false) }
+        )
+
+        assertEquals(setOf(1L, 2L), scheduler.cancelBulk())
+
+        assertTrue(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME).all { it.isFinished })
+        // 1件ごとの処理には触れない
+        assertEquals(1, unfinished(9L).size)
+        // 取り消した後はもう取り消すものが無い
+        assertTrue(scheduler.cancelBulk().isEmpty())
     }
 
     @Test
