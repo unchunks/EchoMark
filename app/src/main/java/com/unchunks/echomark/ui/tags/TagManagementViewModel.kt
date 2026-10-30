@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.model.TagVariants
 import com.unchunks.echomark.domain.model.TagWithCount
+import com.unchunks.echomark.domain.repository.TagParentResult
 import com.unchunks.echomark.domain.repository.TagRenameResult
 import com.unchunks.echomark.domain.repository.TagRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,6 +35,8 @@ sealed interface TagManagementMessage {
     data class Merged(val fromName: String, val intoName: String) : TagManagementMessage
     /** 表記ゆれの候補を [intoName] の1つにまとめた。[count] は無くなったタグの数 */
     data class Unified(val count: Int, val intoName: String) : TagManagementMessage
+    /** 親のタグを設定した。[parentName] が null なら最上位に戻した */
+    data class ParentChanged(val name: String, val parentName: String?) : TagManagementMessage
     data class Deleted(val name: String) : TagManagementMessage
     data class Failed(val message: String) : TagManagementMessage
 }
@@ -72,6 +75,25 @@ class TagManagementViewModel @Inject constructor(
                 TagManagementMessage.Failed("タグ名を変更できませんでした")
             }
             message?.let { messageChannel.send(it) }
+        }
+    }
+
+    /** [tag] の親を [parent] にする(null なら最上位に戻す) */
+    fun setParent(tag: TagWithCount, parent: TagWithCount?) {
+        viewModelScope.launch {
+            val message = try {
+                when (tagRepository.setParent(tag.id, parent?.id)) {
+                    TagParentResult.Updated -> TagManagementMessage.ParentChanged(tag.name, parent?.name)
+                    TagParentResult.Cycle -> TagManagementMessage.Failed("自分の子のタグは親にできません")
+                    TagParentResult.Invalid -> TagManagementMessage.Failed("タグが見つかりませんでした")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "タグの親の設定に失敗")
+                TagManagementMessage.Failed("親のタグを設定できませんでした")
+            }
+            messageChannel.send(message)
         }
     }
 

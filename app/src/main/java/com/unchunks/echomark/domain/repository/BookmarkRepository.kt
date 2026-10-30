@@ -165,7 +165,7 @@ interface BookmarkRepository {
 
     /**
      * 一覧用の観測。[filter] で通常/アーカイブ/お気に入りを切り替え、[sortOrder] で並べ替える。
-     * [tagId] が非NULLならそのタグを持つものに絞る。
+     * [tagId] が非NULLならそのタグ(と、階層でその下にあるタグ)を持つものに絞る。
      * (既存の [observeBookmarks] はアーカイブも含めた全件を新しい順で返す)
      */
     fun observeBookmarks(

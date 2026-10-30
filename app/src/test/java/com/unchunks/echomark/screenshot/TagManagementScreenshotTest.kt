@@ -21,7 +21,7 @@ class TagManagementScreenshotTest {
 
     private val tags = listOf(
         TagWithCount(1, "Android", 12),
-        TagWithCount(2, "Compose", 8),
+        TagWithCount(2, "Compose", 8, parentId = 1),
         TagWithCount(3, "パフォーマンス", 3, isUserTag = false),
         TagWithCount(4, "読書", 5),
         TagWithCount(5, "とても長いタグ名の例: 機械学習とデータ分析の基礎から応用まで", 1),

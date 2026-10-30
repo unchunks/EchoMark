@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.local.dao
 
+import org.junit.Assert.assertNull
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -263,5 +264,153 @@ class TagDaoTest {
 
         assertEquals(0, dao.mergeTags(999, listOf(dao.getTagByName("kotlin")!!.id)))
         assertEquals(setOf("kotlin"), tagNames())
+    }
+
+
+    private suspend fun idOf(name: String) = dao.getTagByName(name)!!.id
+
+    private suspend fun parentOf(name: String): String? =
+        dao.getTagByName(name)!!.parentId?.let { dao.getTagById(it)!!.name }
+
+    private suspend fun tags(vararg names: String) = names.forEach { dao.getOrCreateTagId(it) }
+
+    @Test
+    fun 親のタグを設定し_外して最上位に戻せる() = runTest {
+        tags("プログラミング", "Android")
+
+        assertTrue(dao.setParent(idOf("Android"), idOf("プログラミング")))
+        assertEquals("プログラミング", parentOf("Android"))
+
+        assertTrue(dao.setParent(idOf("Android"), null))
+        assertEquals(null, parentOf("Android"))
+    }
+
+    @Test
+    fun 自分や子孫を親にして輪になる設定はできない() = runTest {
+        tags("A", "B", "C")
+        dao.setParent(idOf("B"), idOf("A"))
+        dao.setParent(idOf("C"), idOf("B"))
+
+        assertFalse(dao.setParent(idOf("A"), idOf("A")))
+        assertFalse(dao.setParent(idOf("A"), idOf("C")))
+        assertEquals(null, parentOf("A"))
+        assertEquals(setOf(idOf("A"), idOf("B"), idOf("C")), dao.getSubtreeIds(idOf("A")).toSet())
+        assertEquals(setOf(idOf("C"), idOf("B"), idOf("A")), dao.getAncestorIds(idOf("C")).toSet())
+    }
+
+    @Test
+    fun 存在しないタグや親は設定できない() = runTest {
+        tags("A")
+
+        assertFalse(dao.setParent(999, idOf("A")))
+        assertFalse(dao.setParent(idOf("A"), 999))
+        assertEquals(null, parentOf("A"))
+    }
+
+    @Test
+    fun 階層に組み込んだAIのタグはユーザーのタグになり件数0でも残る() = runTest {
+        insertBookmark(1)
+        dao.replaceAiTags(1, listOf("Android", "Compose"))
+        assertFalse(isUserCreated("Android"))
+
+        dao.setParent(idOf("Compose"), idOf("Android"))
+        dao.replaceAiTags(1, emptyList())
+
+        assertTrue(isUserCreated("Android"))
+        assertTrue(isUserCreated("Compose"))
+        assertEquals(setOf("Android", "Compose"), tagNames())
+        assertEquals("Android", parentOf("Compose"))
+    }
+
+    @Test
+    fun 親を削除すると子は削除した親の親につく() = runTest {
+        tags("A", "B", "C", "D")
+        dao.setParent(idOf("B"), idOf("A"))
+        dao.setParent(idOf("C"), idOf("B"))
+        dao.setParent(idOf("D"), idOf("B"))
+
+        dao.deleteTagWithRefs(idOf("B"))
+        assertEquals("A", parentOf("C"))
+        assertEquals("A", parentOf("D"))
+
+        dao.deleteTagWithRefs(idOf("A"))
+        assertEquals(null, parentOf("C"))
+    }
+
+    @Test
+    fun 統合すると子は統合先へ移り_統合先に親が無ければ親を引き継ぐ() = runTest {
+        tags("親", "android", "Android", "Compose")
+        dao.setParent(idOf("android"), idOf("親"))
+        dao.setParent(idOf("Compose"), idOf("android"))
+
+        dao.mergeTags(idOf("Android"), listOf(idOf("android")))
+
+        assertEquals("Android", parentOf("Compose"))
+        assertEquals("親", parentOf("Android"))
+        assertNull(dao.getTagByName("android"))
+    }
+
+    @Test
+    fun 統合先に親があればその親のまま() = runTest {
+        tags("親1", "親2", "x", "X")
+        dao.setParent(idOf("x"), idOf("親1"))
+        dao.setParent(idOf("X"), idOf("親2"))
+
+        dao.mergeTags(idOf("X"), listOf(idOf("x")))
+
+        assertEquals("親2", parentOf("X"))
+    }
+
+    @Test
+    fun 統合先が元のタグの子孫でも輪にならない() = runTest {
+        tags("上", "動物", "哺乳類", "猫")
+        dao.setParent(idOf("動物"), idOf("上"))
+        dao.setParent(idOf("哺乳類"), idOf("動物"))
+        dao.setParent(idOf("猫"), idOf("哺乳類"))
+
+        // 動物(猫の祖先)を猫へ統合する: 猫は動物の位置(上の下)へ上がり、動物の子(哺乳類)が猫の下になる
+        dao.mergeTags(idOf("猫"), listOf(idOf("動物")))
+
+        assertEquals("上", parentOf("猫"))
+        assertEquals("猫", parentOf("哺乳類"))
+        assertNull(dao.getTagByName("動物"))
+        // 輪になっていない: 上から全部たどれる
+        assertEquals(setOf("上", "猫", "哺乳類"), dao.getSubtreeIds(idOf("上")).map { dao.getTagById(it)!!.name }.toSet())
+    }
+
+    @Test
+    fun 引き継ぐ親が統合先の子孫なら引き継がない() = runTest {
+        tags("into", "mid", "from")
+        dao.setParent(idOf("mid"), idOf("into"))
+        dao.setParent(idOf("from"), idOf("mid"))
+
+        // from の親(mid)は into の子孫。into の親にすると輪になる
+        dao.mergeTags(idOf("into"), listOf(idOf("from")))
+
+        assertEquals(null, parentOf("into"))
+        assertEquals("into", parentOf("mid"))
+    }
+
+    @Test
+    fun 名前の変更による統合でも階層を引き継ぐ() = runTest {
+        tags("親", "andoroid", "Android", "Compose")
+        dao.setParent(idOf("andoroid"), idOf("親"))
+        dao.setParent(idOf("Compose"), idOf("andoroid"))
+
+        dao.renameOrMerge(idOf("andoroid"), "android")
+
+        assertEquals("親", parentOf("Android"))
+        assertEquals("Android", parentOf("Compose"))
+    }
+
+    @Test
+    fun 件数つき一覧は親のタグを返す() = runTest {
+        tags("親", "子")
+        dao.setParent(idOf("子"), idOf("親"))
+
+        val rows = dao.observeTagsWithCount().first().associateBy { it.name }
+
+        assertEquals(idOf("親"), rows.getValue("子").parentId)
+        assertEquals(null, rows.getValue("親").parentId)
     }
 }

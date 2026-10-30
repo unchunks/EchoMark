@@ -16,6 +16,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Label
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.automirrored.outlined.MergeType
@@ -59,6 +60,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.ReadableLazyColumn
 import com.unchunks.echomark.domain.model.TagNames
+import com.unchunks.echomark.domain.model.TagNode
+import com.unchunks.echomark.domain.model.TagTree
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.EmptyState
@@ -89,6 +92,12 @@ fun TagManagementScreen(
                         is TagManagementMessage.Renamed -> "「${message.newName}」に変更しました"
                         is TagManagementMessage.Merged -> "「${message.fromName}」を「${message.intoName}」に統合しました"
                         is TagManagementMessage.Unified -> "${message.count + 1}個のタグを「${message.intoName}」にまとめました"
+                        is TagManagementMessage.ParentChanged ->
+                            if (message.parentName != null) {
+                                "「${message.name}」を「${message.parentName}」の下に入れました"
+                            } else {
+                                "「${message.name}」を最上位に戻しました"
+                            }
                         is TagManagementMessage.Deleted -> "タグ「${message.name}」を削除しました"
                         is TagManagementMessage.Failed -> message.message
                     }
@@ -105,7 +114,8 @@ fun TagManagementScreen(
         onRename = viewModel::rename,
         onDelete = viewModel::delete,
         onMerge = viewModel::merge,
-        onUnify = viewModel::unify
+        onUnify = viewModel::unify,
+        onSetParent = viewModel::setParent
     )
 }
 
@@ -121,17 +131,19 @@ fun TagManagementContent(
     onDelete: (TagWithCount) -> Unit,
     modifier: Modifier = Modifier,
     onMerge: (from: TagWithCount, into: TagWithCount) -> Unit = { _, _ -> },
-    onUnify: (group: List<TagWithCount>, into: TagWithCount) -> Unit = { _, _ -> }
+    onUnify: (group: List<TagWithCount>, into: TagWithCount) -> Unit = { _, _ -> },
+    onSetParent: (tag: TagWithCount, parent: TagWithCount?) -> Unit = { _, _ -> }
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var renameTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var deleteTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var mergeTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var parentTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     // 表記ゆれの候補は、先頭のタグの ID で見分ける(まとめたあとは先頭が変わるのでダイアログは閉じる)
     var unifyGroupId by rememberSaveable { mutableStateOf<Long?>(null) }
     var originFilter by rememberSaveable { mutableStateOf(TagOriginFilter.ALL) }
     var sort by rememberSaveable { mutableStateOf(TagSort.NAME) }
-    val visibleTags = sort.apply(uiState.tags.filter { originFilter.matches(it) })
+    val visibleNodes = sort.arrange(uiState.tags, originFilter)
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -187,17 +199,20 @@ fun TagManagementContent(
                     }
                     item(key = "hint") {
                         Text(
-                            text = "${visibleTags.size}個のタグ · タップで一覧を絞り込み",
+                            text = "${visibleNodes.size}個のタグ · タップで絞り込み(下の階層も含む)",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
-                    items(visibleTags, key = { it.id }) { tag ->
+                    items(visibleNodes, key = { it.tag.id }) { (tag, depth) ->
                         TagRow(
                             tag = tag,
+                            depth = depth,
+                            parentName = if (sort == TagSort.TREE) null else uiState.tags.firstOrNull { it.id == tag.parentId }?.name,
                             onClick = { onOpenTag(tag.id) },
                             onRename = { renameTargetId = tag.id },
+                            onParent = { parentTargetId = tag.id },
                             onMerge = { mergeTargetId = tag.id },
                             onDelete = { deleteTargetId = tag.id },
                             modifier = Modifier.animateItem()
@@ -216,6 +231,19 @@ fun TagManagementContent(
             onConfirm = { newName ->
                 renameTargetId = null
                 onRename(target, newName)
+            }
+        )
+    }
+
+    uiState.tags.firstOrNull { it.id == parentTargetId }?.let { target ->
+        val blocked = TagTree.descendantIds(uiState.tags, target.id) + target.id
+        ParentPickerDialog(
+            tag = target,
+            candidates = uiState.tags.filter { it.id !in blocked },
+            onDismiss = { parentTargetId = null },
+            onConfirm = { parent ->
+                parentTargetId = null
+                onSetParent(target, parent)
             }
         )
     }
@@ -271,6 +299,9 @@ fun TagManagementContent(
     }
 }
 
+/** 階層順で字下げする深さの上限(これより深いタグも同じ字下げにする) */
+private const val MAX_INDENT_DEPTH = 4
+
 /** タグ一覧の絞り込み(誰のタグか)。 */
 internal enum class TagOriginFilter(val label: String) {
     ALL("すべて"),
@@ -287,13 +318,16 @@ internal enum class TagOriginFilter(val label: String) {
 /** タグ一覧の並び順。 */
 internal enum class TagSort(val label: String) {
     NAME("名前順"),
-    COUNT("件数順");
+    COUNT("件数順"),
+    TREE("階層順");
 
-    fun apply(tags: List<TagWithCount>): List<TagWithCount> = when (this) {
-        NAME -> tags
-        COUNT -> tags.sortedWith(
-            compareByDescending<TagWithCount> { it.bookmarkCount }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
-        )
+    /** [origin] で絞った一覧をこの順に並べる(階層順は親の直後にその子を深さつきで並べる。絞り込みで親が外れても深さは保つ) */
+    fun arrange(tags: List<TagWithCount>, origin: TagOriginFilter): List<TagNode> = when (this) {
+        NAME -> tags.filter { origin.matches(it) }.map { TagNode(it, 0) }
+        COUNT -> tags.filter { origin.matches(it) }
+            .sortedWith(compareByDescending<TagWithCount> { it.bookmarkCount }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            .map { TagNode(it, 0) }
+        TREE -> TagTree.order(tags).filter { origin.matches(it.tag) }
     }
 }
 
@@ -357,8 +391,11 @@ private fun VariantGroupCard(group: List<TagWithCount>, onUnify: () -> Unit, mod
 @Composable
 private fun TagRow(
     tag: TagWithCount,
+    depth: Int,
+    parentName: String?,
     onClick: () -> Unit,
     onRename: () -> Unit,
+    onParent: () -> Unit,
     onMerge: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
@@ -369,7 +406,8 @@ private fun TagRow(
         supportingContent = {
             val count = if (tag.bookmarkCount > 0) "${tag.bookmarkCount}件" else "ブックマークなし"
             // AI のタグは、どのブックマークにも付かなくなると自動で消える(名前を変更すると自分のタグになる)
-            Text(if (tag.isUserTag) count else "$count · AIが作成")
+            val origin = if (tag.isUserTag) count else "${count} · AIが作成"
+            Text(if (parentName != null) "${origin} · 親: ${parentName}" else origin)
         },
         leadingContent = {
             if (tag.isUserTag) {
@@ -390,6 +428,14 @@ private fun TagRow(
                         onClick = {
                             menuOpen = false
                             onRename()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("親のタグを設定") },
+                        leadingIcon = { Icon(Icons.Outlined.AccountTree, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onParent()
                         }
                     )
                     DropdownMenuItem(
@@ -416,6 +462,7 @@ private fun TagRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClickLabel = "このタグで絞り込む", onClick = onClick)
+            .padding(start = (depth.coerceAtMost(MAX_INDENT_DEPTH) * 24).dp)
     )
 }
 
@@ -518,6 +565,62 @@ private fun MergeIntoDialog(
         },
         confirmButton = {
             TextButton(onClick = { selected?.let(onConfirm) }, enabled = selected != null) { Text("統合") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
+}
+
+/** 親のタグを選ぶダイアログ(「なし」で最上位に戻す)。自分と自分の子孫は [candidates] に含めない */
+@Composable
+private fun ParentPickerDialog(
+    tag: TagWithCount,
+    candidates: List<TagWithCount>,
+    onDismiss: () -> Unit,
+    onConfirm: (TagWithCount?) -> Unit
+) {
+    var query by rememberSaveable(tag.id) { mutableStateOf("") }
+    // 選び直すまでは今の親(最上位なら「なし」)
+    var selectedId by rememberSaveable(tag.id) { mutableStateOf(tag.parentId) }
+    val queryKey = TagNames.key(query)
+    val shown = candidates.filter { queryKey.isEmpty() || TagNames.key(it.name).contains(queryKey) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("「${tag.name}」の親のタグ") },
+        text = {
+            Column {
+                Text(
+                    "親のタグで絞り込むと、このタグのブックマークも含まれます。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    label = { Text("タグを絞り込み") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                )
+                LazyColumn(Modifier.selectableGroup()) {
+                    item(key = "none") {
+                        TagChoiceRow(label = "なし(最上位)", selected = selectedId == null, onSelect = { selectedId = null })
+                    }
+                    items(shown, key = { it.id }) { candidate ->
+                        TagChoiceRow(
+                            label = candidate.name,
+                            selected = candidate.id == selectedId,
+                            onSelect = { selectedId = candidate.id }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(candidates.firstOrNull { it.id == selectedId }) },
+                enabled = selectedId != tag.parentId
+            ) { Text("設定") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
     )

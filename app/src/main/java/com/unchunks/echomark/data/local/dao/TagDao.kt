@@ -16,7 +16,8 @@ data class TagWithCountRow(
     val id: Long,
     val name: String,
     val bookmarkCount: Int,
-    val isUserCreated: Boolean
+    val isUserCreated: Boolean,
+    val parentId: Long?
 )
 
 @Dao
@@ -125,7 +126,8 @@ interface TagDao {
 
     /** タグごとの件数つき一覧。件数 0 のタグも含める(名前の昇順、大文字小文字は区別しない)。 */
     @Query("""
-        SELECT t.id AS id, t.name AS name, COUNT(r.bookmarkId) AS bookmarkCount, t.isUserCreated AS isUserCreated
+        SELECT t.id AS id, t.name AS name, COUNT(r.bookmarkId) AS bookmarkCount, t.isUserCreated AS isUserCreated,
+            t.parentId AS parentId
         FROM tags AS t
         LEFT JOIN bookmark_tag_cross_ref AS r ON r.tagId = t.id
         GROUP BY t.id
@@ -161,11 +163,81 @@ interface TagDao {
     @Query("DELETE FROM tags WHERE id = :id")
     suspend fun deleteTagById(id: Long)
 
-    /** タグとその紐付けを削除する(ブックマーク自体は残す)。 */
+    @Query("UPDATE tags SET parentId = :parentId WHERE parentId = :fromParentId")
+    suspend fun moveChildren(fromParentId: Long, parentId: Long?)
+
+    /** タグとその紐付けを削除する(ブックマーク自体は残す)。子のタグは、削除するタグの親(無ければ最上位)につく。 */
     @Transaction
     suspend fun deleteTagWithRefs(tagId: Long) {
+        moveChildren(fromParentId = tagId, parentId = getTagById(tagId)?.parentId)
         deleteCrossRefsByTag(tagId)
         deleteTagById(tagId)
+    }
+
+    /**
+     * [fromTagId] を [intoTagId] に統合して削除する。付いていたブックマークと子のタグは [intoTagId] へ移り、
+     * 統合先に親が無ければ、元のタグの親を引き継ぐ(輪になるときは引き継がない)。
+     * 統合先が元のタグの子孫のときは、先に統合先を元のタグの親の下へ上げてから子を移す(統合先と子が輪にならないように)。
+     */
+    @Transaction
+    suspend fun absorbTag(fromTagId: Long, intoTagId: Long) {
+        copyCrossRefs(fromTagId = fromTagId, toTagId = intoTagId)
+        promoteMergedCrossRefs(fromTagId = fromTagId, toTagId = intoTagId)
+        val from = getTagById(fromTagId)
+        val into = getTagById(intoTagId)
+        if (from != null && into != null) {
+            val intoIsDescendant = intoTagId in getSubtreeIds(fromTagId)
+            val inherited = from.parentId?.takeIf { it != intoTagId && intoTagId !in getAncestorIds(it) }
+            if (intoIsDescendant) {
+                updateParent(intoTagId, from.parentId)
+            } else if (into.parentId == null && inherited != null) {
+                updateParent(intoTagId, inherited)
+            }
+            moveChildren(fromParentId = fromTagId, parentId = intoTagId)
+        }
+        deleteTagWithRefs(fromTagId)
+    }
+
+    @Query("UPDATE tags SET parentId = :parentId WHERE id = :id")
+    suspend fun updateParent(id: Long, parentId: Long?)
+
+    /** [tagId] とその子孫のタグの ID(輪になっていても止まる)。 */
+    @Query("""
+        WITH RECURSIVE subtree(id) AS (
+            SELECT :tagId
+            UNION
+            SELECT t.id FROM tags AS t INNER JOIN subtree AS s ON t.parentId = s.id
+        )
+        SELECT id FROM subtree
+    """)
+    suspend fun getSubtreeIds(tagId: Long): List<Long>
+
+    /** [tagId] とその祖先のタグの ID(輪になっていても止まる)。 */
+    @Query("""
+        WITH RECURSIVE ancestors(id) AS (
+            SELECT :tagId
+            UNION
+            SELECT t.parentId FROM tags AS t INNER JOIN ancestors AS a ON t.id = a.id WHERE t.parentId IS NOT NULL
+        )
+        SELECT id FROM ancestors
+    """)
+    suspend fun getAncestorIds(tagId: Long): List<Long>
+
+    /**
+     * [tagId] の親を [parentId] にする(null なら最上位)。自分や自分の子孫を親にすると輪になるので何もせず false を返す。
+     * タグが無い・親のタグが無いときも false。ユーザーが整理したタグなので、子も親もユーザーのタグにする
+     * (AI のタグのままだと、付いているブックマークが無くなったときに消えて階層が崩れる)。
+     */
+    @Transaction
+    suspend fun setParent(tagId: Long, parentId: Long?): Boolean {
+        if (getTagById(tagId) == null) return false
+        if (parentId != null) {
+            if (getTagById(parentId) == null || parentId in getSubtreeIds(tagId)) return false
+            markUserCreated(parentId)
+        }
+        updateParent(tagId, parentId)
+        markUserCreated(tagId)
+        return true
     }
 
     @Query("SELECT * FROM tags")
@@ -187,9 +259,7 @@ interface TagDao {
             markUserCreated(tagId)
             return tagId
         }
-        copyCrossRefs(fromTagId = tagId, toTagId = existing.id)
-        promoteMergedCrossRefs(fromTagId = tagId, toTagId = existing.id)
-        deleteTagWithRefs(tagId)
+        absorbTag(fromTagId = tagId, intoTagId = existing.id)
         markUserCreated(existing.id)
         return existing.id
     }
@@ -206,9 +276,7 @@ interface TagDao {
         var anyUser = into.isUserCreated
         fromTagIds.distinct().filter { it != intoTagId }.forEach { fromId ->
             val from = getTagById(fromId) ?: return@forEach
-            copyCrossRefs(fromTagId = fromId, toTagId = intoTagId)
-            promoteMergedCrossRefs(fromTagId = fromId, toTagId = intoTagId)
-            deleteTagWithRefs(fromId)
+            absorbTag(fromTagId = fromId, intoTagId = intoTagId)
             anyUser = anyUser || from.isUserCreated
             merged++
         }

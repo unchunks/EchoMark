@@ -106,4 +106,33 @@ class BookmarkDaoTest {
         assertEquals("https://example.com/og.png", entity.imageUrl)
         assertEquals("Example", entity.siteName)
     }
+
+
+    @Test
+    fun 親のタグで絞ると階層でその下にあるタグのブックマークも含む() = runTest {
+        insert(1, title = "親に直接", createdAt = 100)
+        insert(2, title = "子", createdAt = 200)
+        insert(3, title = "孫", createdAt = 300)
+        insert(4, title = "別のタグ", createdAt = 400)
+        val tagDao = db.tagDao()
+        val parent = tagDao.insertTag(TagEntity(name = "プログラミング"))
+        val child = tagDao.insertTag(TagEntity(name = "Android"))
+        val grandchild = tagDao.insertTag(TagEntity(name = "Compose"))
+        val other = tagDao.insertTag(TagEntity(name = "読書"))
+        tagDao.setParent(child, parent)
+        tagDao.setParent(grandchild, child)
+        listOf(1L to parent, 2L to child, 3L to grandchild, 4L to other).forEach { (bookmarkId, tagId) ->
+            tagDao.insertCrossRef(BookmarkTagCrossRef(bookmarkId, tagId))
+        }
+
+        assertEquals(listOf(3L, 2L, 1L), ids(tagId = parent))
+        assertEquals(listOf(3L, 2L), ids(tagId = child))
+        assertEquals(listOf(3L), ids(tagId = grandchild))
+        assertEquals(listOf(4L), ids(tagId = other))
+        // 検索の絞り込みも同じ
+        assertEquals(listOf(3L, 2L), dao.searchByKeyword("", child).map { it.bookmark.id })
+        // 階層を変えると、絞り込みの結果も変わる(観測しているクエリが更新される)
+        tagDao.setParent(child, null)
+        assertEquals(listOf(1L), ids(tagId = parent))
+    }
 }

@@ -7,6 +7,7 @@ data class Tag(
 
 /**
  * タグと、そのタグが付いたブックマークの件数。
+ * @param parentId 親のタグ(階層。null なら最上位)
  * @param isUserTag ユーザーが付けた・名前を付け直したタグか。false なら AI だけが付けたタグ
  *   (どのブックマークにも付かなくなると自動で消える)
  */
@@ -14,7 +15,8 @@ data class TagWithCount(
     val id: Long,
     val name: String,
     val bookmarkCount: Int,
-    val isUserTag: Boolean = true
+    val isUserTag: Boolean = true,
+    val parentId: Long? = null
 )
 
 /** ブックマークにタグを付けたのは誰か(紐付けごとに記録する)。 */

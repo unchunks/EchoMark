@@ -18,7 +18,19 @@ sealed interface TagRenameResult {
     data object Invalid : TagRenameResult
 }
 
-/** タグ管理(一覧・名前変更・統合・表記ゆれの整理・削除)。ブックマークへのタグの付け外しは [BookmarkRepository] で行う。 */
+/** 親タグの設定結果。 */
+sealed interface TagParentResult {
+    /** 親を設定した(親を外して最上位にしたときも) */
+    data object Updated : TagParentResult
+
+    /** 自分や自分の子孫を親にしようとした(階層が輪になる) */
+    data object Cycle : TagParentResult
+
+    /** タグや親のタグが無い */
+    data object Invalid : TagParentResult
+}
+
+/** タグ管理(一覧・名前変更・統合・表記ゆれの整理・階層・削除)。ブックマークへのタグの付け外しは [BookmarkRepository] で行う。 */
 interface TagRepository {
     /** 件数つきのタグ一覧(件数 0 のタグも含む。名前順)。ユーザーのタグか AI のタグかも返す。 */
     fun observeTagsWithCount(): Flow<List<TagWithCount>>
@@ -29,6 +41,12 @@ interface TagRepository {
      * 変更後のタグはユーザーのタグになる(AI のタグでも、件数 0 になったときに自動で消さない)。
      */
     suspend fun renameTag(tagId: Long, newName: String): TagRenameResult
+
+    /**
+     * [tagId] の親を [parentId] にする(null なら最上位に戻す)。階層が輪になるときは何もしない。
+     * 階層に組み込んだタグは、AI のタグでもユーザーのタグになる(件数 0 になっても自動では消さない)。
+     */
+    suspend fun setParent(tagId: Long, parentId: Long?): TagParentResult
 
     /**
      * [fromTagIds] のタグを [intoTagId] に統合する(付いていたブックマークは統合先に付け替え、元のタグは削除する)。

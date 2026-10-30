@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.repository
 
+import com.unchunks.echomark.domain.repository.TagParentResult
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -152,5 +153,42 @@ class TagRepositoryImplTest {
 
         assertEquals(listOf("Android" to 3), repository.observeTagsWithCount().first().map { it.name to it.bookmarkCount })
         assertEquals(listOf("Android"), tagsOf(3))
+    }
+
+
+    @Test
+    fun 親のタグを設定して外せ_輪になる設定と存在しないタグは受け付けない() = runTest {
+        bookmark(1)
+        val parent = tag("プログラミング")
+        val child = tag("Android", 1)
+        val grandchild = tag("Compose", 1)
+
+        assertEquals(TagParentResult.Updated, repository.setParent(child, parent))
+        assertEquals(TagParentResult.Updated, repository.setParent(grandchild, child))
+        assertEquals(
+            listOf("Android" to parent, "Compose" to child, "プログラミング" to null),
+            repository.observeTagsWithCount().first().map { it.name to it.parentId }
+        )
+
+        assertEquals(TagParentResult.Cycle, repository.setParent(parent, grandchild))
+        assertEquals(TagParentResult.Cycle, repository.setParent(parent, parent))
+        assertEquals(TagParentResult.Invalid, repository.setParent(999, parent))
+        assertEquals(TagParentResult.Invalid, repository.setParent(child, 999))
+
+        assertEquals(TagParentResult.Updated, repository.setParent(child, null))
+        assertEquals(null, db.tagDao().getTagById(child)!!.parentId)
+    }
+
+    @Test
+    fun 親のタグを削除しても子は残り_上の階層につく() = runTest {
+        val top = tag("top")
+        val middle = tag("middle")
+        val leaf = tag("leaf")
+        repository.setParent(middle, top)
+        repository.setParent(leaf, middle)
+
+        repository.deleteTag(middle)
+
+        assertEquals(top, db.tagDao().getTagById(leaf)!!.parentId)
     }
 }

@@ -86,6 +86,16 @@ abstract class BackupDao {
     @Query("UPDATE tags SET isUserCreated = 1 WHERE id = :id")
     abstract suspend fun markTagUserCreated(id: Long)
 
+    @Query("UPDATE tags SET parentId = :parentId WHERE id = :id")
+    abstract suspend fun updateTagParent(id: Long, parentId: Long?)
+
+    /** [tagId] とその子孫のタグの ID(階層が輪にならないかの確認用)。 */
+    @Query(
+        "WITH RECURSIVE subtree(id) AS (SELECT :tagId UNION " +
+            "SELECT t.id FROM tags AS t INNER JOIN subtree AS s ON t.parentId = s.id) SELECT id FROM subtree"
+    )
+    abstract suspend fun getTagSubtreeIds(tagId: Long): List<Long>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertCrossRef(crossRef: BookmarkTagCrossRef)
 
@@ -104,6 +114,8 @@ abstract class BackupDao {
      *   (書き出し元の処理キューは引き継がれないため。読み込み後に再処理する)
      * - タグ・紐付け: 追加したブックマークの分だけ、同名のタグに付け替える(無ければ作る)。誰が付けたかも引き継ぐ。
      *   バックアップでユーザーのタグだったもの(ユーザーが付けた紐付けがあるものも)は、この DB でもユーザーのタグにする
+     * - タグの階層: この読み込みで新しく作ったタグだけ、バックアップの親を引き継ぐ(親が無ければ作る。階層が輪になるものは引き継がない)。
+     *   既にあるタグの階層は変えない
      * - 会話・メッセージ: 同じ会話があればスキップ。メッセージの引用と会話の質問の対象(aboutBookmarkId)は
      *   新しいブックマーク ID に付け替える(対象がバックアップに無ければ通常の会話にする)
      */
@@ -144,18 +156,43 @@ abstract class BackupDao {
             data.bookmarkTags.filter { it.source == TagSource.USER }.forEach { ref -> tagNames[ref.tagId]?.let { add(it) } }
         }
         val tagIds = mutableMapOf<String, Long>()
+        val createdTagNames = mutableSetOf<String>()
         var tagsAdded = 0
+        suspend fun tagIdFor(name: String, isUserTag: Boolean): Long = tagIds.getOrPut(name) {
+            val id = findTagIdByName(name)
+                ?: insertTag(TagEntity(name = name, isUserCreated = isUserTag)).also {
+                    tagsAdded++
+                    createdTagNames += name
+                }
+            if (isUserTag) markTagUserCreated(id)
+            id
+        }
         for (crossRef in data.bookmarkTags) {
             val bookmarkId = bookmarkIds[crossRef.bookmarkId]?.takeIf { it in addedBookmarkIds } ?: continue
             val name = tagNames[crossRef.tagId]?.takeIf { it.isNotEmpty() } ?: continue
-            val tagId = tagIds.getOrPut(name) {
-                val isUserTag = name in userTagNames
-                val id = findTagIdByName(name)
-                    ?: insertTag(TagEntity(name = name, isUserCreated = isUserTag)).also { tagsAdded++ }
-                if (isUserTag) markTagUserCreated(id)
-                id
-            }
+            val tagId = tagIdFor(name, isUserTag = name in userTagNames)
             insertCrossRef(BookmarkTagCrossRef(bookmarkId = bookmarkId, tagId = tagId, source = crossRef.source))
+        }
+
+        // 階層: 新しく作ったタグを子にして、親をたどって引き継ぐ(親を作ったら、その親も同じように)。
+        // 階層に組み込んだタグはユーザーのタグにする(TagDao.setParent と同じ)
+        val backupParentNames = data.tags.mapNotNull { tag ->
+            val parentName = tag.parentId?.let { tagNames[it] }?.takeIf { it.isNotEmpty() }
+            tagNames[tag.id]?.takeIf { it.isNotEmpty() && parentName != null }?.let { it to parentName!! }
+        }.toMap()
+        val pending = ArrayDeque(createdTagNames.toList())
+        val handled = mutableSetOf<String>()
+        while (pending.isNotEmpty()) {
+            val name = pending.removeFirst()
+            if (!handled.add(name)) continue
+            val parentName = backupParentNames[name]?.takeIf { it != name } ?: continue
+            val childId = tagIds[name] ?: continue
+            val parentId = tagIdFor(parentName, isUserTag = false)
+            if (parentName in createdTagNames) pending += parentName
+            if (parentId in getTagSubtreeIds(childId)) continue
+            updateTagParent(childId, parentId)
+            markTagUserCreated(childId)
+            markTagUserCreated(parentId)
         }
 
         val conversationIds = mutableMapOf<Long, Long>()
