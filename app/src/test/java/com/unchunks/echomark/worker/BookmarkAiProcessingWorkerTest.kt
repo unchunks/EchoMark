@@ -41,6 +41,7 @@ import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummarySource
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.TagSource
@@ -90,6 +91,11 @@ class BookmarkAiProcessingWorkerTest {
     /** 先読みするモデルの id(null は既定のモデル)。 */
     private val prewarmedModels = mutableListOf<String?>()
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
+
+    init {
+        // 要約の出来の確認(#25)は、ここでは無効にする(AI の Fake は短い要約を返すため。確認と作り直しは BookmarkAnalyzerTest)
+        settings.summaryStyleFlow.value = SummaryStyle(qualityCheck = false)
+    }
     private val stats = FakeProcessingStatsRepository()
 
     @Before

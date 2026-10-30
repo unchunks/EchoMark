@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryVersion
+import com.unchunks.echomark.domain.provider.SummaryTranslator
+import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
@@ -14,6 +17,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -41,8 +46,21 @@ data class BookmarkDetailUiState(
     /** 段・中身の種類ごとの平均の所要時間(残り時間の目安に使う) */
     val stageAverages: Map<StageDurationKey, Long> = emptyMap(),
     /** 要約の履歴(新しい版から先に。#21) */
-    val summaryHistory: List<SummaryVersion> = emptyList()
+    val summaryHistory: List<SummaryVersion> = emptyList(),
+    /** 要約の翻訳(#24) */
+    val translation: TranslationState = TranslationState.Idle
 )
+
+/** 要約の翻訳の状態(#24)。翻訳は保存せず、画面を閉じたら消える。 */
+sealed interface TranslationState {
+    data object Idle : TranslationState
+
+    data class Loading(val target: SummaryLanguage) : TranslationState
+
+    data class Done(val target: SummaryLanguage, val text: String) : TranslationState
+
+    data class Failed(val target: SummaryLanguage, val message: String) : TranslationState
+}
 
 /** 詳細画面で一度だけ伝える出来事(Snackbar で知らせる)。 */
 sealed interface BookmarkDetailMessage {
@@ -74,7 +92,8 @@ class BookmarkDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: BookmarkRepository,
     private val recentlyDeleted: RecentlyDeletedBookmarks,
-    processingStats: ProcessingStatsRepository
+    processingStats: ProcessingStatsRepository,
+    private val translator: SummaryTranslator
 ) : ViewModel() {
 
     // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
@@ -126,6 +145,9 @@ class BookmarkDetailViewModel @Inject constructor(
         }
         .onStart { emit(emptyList()) }
 
+    private val translation = MutableStateFlow<TranslationState>(TranslationState.Idle)
+    private var translationJob: Job? = null
+
     private val baseState =
         combine(
             bookmarkFlow, relatedFlow, tagNamesFlow, stageProgressFlow, stageAveragesFlow
@@ -137,7 +159,9 @@ class BookmarkDetailViewModel @Inject constructor(
         }
 
     val uiState: StateFlow<BookmarkDetailUiState> =
-        combine(baseState, summaryHistoryFlow) { state, history -> state.copy(summaryHistory = history) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
+        combine(baseState, summaryHistoryFlow, translation) { state, history, translation ->
+            state.copy(summaryHistory = history, translation = translation)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
     init {
         // 開いたことを記録する(再発見の判定などに使う)
@@ -205,6 +229,29 @@ class BookmarkDetailViewModel @Inject constructor(
             repository.restoreSummary(bookmarkId, versionId)
             messageChannel.send(BookmarkDetailMessage.SummaryRestored)
         }
+    }
+
+    /** 今の要約を [target] の言語に翻訳する(#24)。前の翻訳が終わっていなければやめる。 */
+    fun translateSummary(target: SummaryLanguage) {
+        val summary = uiState.value.bookmark?.summary?.takeIf { it.isNotBlank() } ?: return
+        translationJob?.cancel()
+        translation.value = TranslationState.Loading(target)
+        translationJob = viewModelScope.launch {
+            translation.value = try {
+                TranslationState.Done(target, translator.translate(summary, target))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "要約を翻訳できませんでした")
+                TranslationState.Failed(target, e.toLlmUserMessage("翻訳できませんでした"))
+            }
+        }
+    }
+
+    /** 翻訳を閉じる */
+    fun clearTranslation() {
+        translationJob?.cancel()
+        translation.value = TranslationState.Idle
     }
 
     /**

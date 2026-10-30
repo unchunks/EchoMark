@@ -278,7 +278,11 @@ fun SettingsContent(
             // クラウドの AI を無効にしている間は、使用量の欄も出さない(CLOUD_AI_ENABLED。記録も無い)
             if (CLOUD_AI_ENABLED) apiUsageItems(uiState.apiUsage)
 
-            summarySettingsItems(uiState.summaryStyle, onOpenDialog = { dialog = it })
+            summarySettingsItems(
+                uiState.summaryStyle,
+                onOpenDialog = { dialog = it },
+                onChange = actions.onSummaryStyleChange
+            )
 
             item { SectionHeader("表示") }
             item {

@@ -5,6 +5,7 @@ import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.SummaryOrigin
+import com.unchunks.echomark.domain.model.SummaryQuality
 import com.unchunks.echomark.domain.model.generatorLabel
 import com.unchunks.echomark.domain.model.label
 import com.unchunks.echomark.domain.provider.LlmProvider
@@ -12,9 +13,11 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -50,8 +53,41 @@ class BookmarkAnalyzer @Inject constructor(
             AnalysisScope.SUMMARY -> resolver.resolve(AiTask.SUMMARY).analyze(prepared, existingTags, AnalysisScope.SUMMARY)
             AnalysisScope.TAGS -> resolver.resolve(AiTask.TAGGING).analyze(prepared, existingTags, AnalysisScope.TAGS)
         }
-        val summary = SummaryCleaner.clean(analysis.summary, input.title, SummaryCleaner.channelOf(input.text))
-        return analysis.copy(summary = summary)
+        val cleaned = analysis.copy(summary = cleanSummary(analysis.summary, input))
+        if (scope == AnalysisScope.TAGS || !prepared.style.qualityCheck) return cleaned
+        return regenerateIfPoor(cleaned, prepared, existingTags)
+    }
+
+    private fun cleanSummary(summary: String, input: AnalysisInput): String =
+        SummaryCleaner.clean(summary, input.title, SummaryCleaner.channelOf(input.text))
+
+    /**
+     * 要約の出来を確かめ(#25)、問題があれば、問題の直し方を添えて要約だけを1回作り直す。
+     * 作り直した要約の問題が、元より多くなければ置き換える(同じ問題が残っても、直し方を聞いたぶん良くなっていることが多い)。
+     * タグ・カテゴリは元のものを使う。作り直しの失敗(通信・拒否など)では、元の要約をそのまま使う。
+     */
+    private suspend fun regenerateIfPoor(
+        analysis: BookmarkAnalysis,
+        input: AnalysisInput,
+        existingTags: List<String>
+    ): BookmarkAnalysis {
+        val maxChars = AiPrompts.summaryMaxChars(input.kind, input.text.length > AiPrompts.LONG_TEXT_CHARS, input.style)
+        val source = input.combinedText()
+        val problems = SummaryQuality.check(analysis.summary, source, input.style, maxChars)
+        if (problems.isEmpty()) return analysis
+        Timber.i("要約の出来に問題があるため作り直す: %s", problems)
+        val retried = try {
+            val again = input.copy(feedback = SummaryQuality.feedback(problems))
+            resolver.resolve(AiTask.SUMMARY).analyze(again, existingTags, AnalysisScope.SUMMARY)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "要約の作り直しに失敗したため、最初の要約を使う")
+            return analysis
+        }
+        val summary = cleanSummary(retried.summary, input)
+        val remaining = SummaryQuality.check(summary, source, input.style, maxChars)
+        return if (remaining.size <= problems.size) analysis.copy(summary = summary) else analysis
     }
 
     /**

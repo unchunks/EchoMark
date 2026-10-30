@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.settings
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.MaterialTheme
@@ -16,13 +17,14 @@ import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.ui.components.SectionHeader
 
 /*
- * 設定画面の「要約」の欄(#12 要約の言語を固定する、#16 要約の書き方を選ぶ)。
+ * 設定画面の「要約」の欄(#12 要約の言語を固定する、#16 要約の書き方を選ぶ、#25 要約の出来を確かめる)。
  */
 
 /** 「要約」の欄の行。値を選ぶ行は [onOpenDialog] でダイアログを開く。 */
 internal fun LazyListScope.summarySettingsItems(
     style: SummaryStyle,
-    onOpenDialog: (SettingsDialog) -> Unit
+    onOpenDialog: (SettingsDialog) -> Unit,
+    onChange: ((SummaryStyle) -> SummaryStyle) -> Unit = {}
 ) {
     item { SectionHeader("要約") }
     item {
@@ -39,6 +41,15 @@ internal fun LazyListScope.summarySettingsItems(
             icon = Icons.Outlined.FormatListBulleted,
             summary = "${style.format.label}(${style.format.description})",
             onClick = { onOpenDialog(SettingsDialog.SUMMARY_FORMAT) }
+        )
+    }
+    item {
+        SettingsSwitchItem(
+            title = "要約の出来を確かめる",
+            icon = Icons.Outlined.FactCheck,
+            summary = "写しただけ・繰り返し・指定と違う言語などの要約は、1 回だけ作り直します。作り直しの分だけ時間(クラウド AI なら料金)がかかります",
+            checked = style.qualityCheck,
+            onCheckedChange = { checked -> onChange { it.copy(qualityCheck = checked) } }
         )
     }
     item {

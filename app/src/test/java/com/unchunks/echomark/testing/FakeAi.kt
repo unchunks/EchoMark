@@ -175,3 +175,16 @@ class FakeSecretCipher : SecretCipher {
         val MAGIC = byteArrayOf(0x7F, 0x01)
     }
 }
+
+/** 要約の翻訳の Fake。呼ばれた内容を覚え、[result] を返す(失敗させたいときは [failure])。 */
+class FakeSummaryTranslator : com.unchunks.echomark.domain.provider.SummaryTranslator {
+    val calls = mutableListOf<Pair<String, com.unchunks.echomark.domain.model.SummaryLanguage>>()
+    var result = "translated"
+    var failure: Throwable? = null
+
+    override suspend fun translate(text: String, target: com.unchunks.echomark.domain.model.SummaryLanguage): String {
+        calls += text to target
+        failure?.let { throw it }
+        return result
+    }
+}

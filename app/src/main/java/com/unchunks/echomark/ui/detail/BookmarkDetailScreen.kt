@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.QuestionAnswer
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.outlined.Sell
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.AlertDialog
@@ -107,9 +109,11 @@ import coil3.compose.AsyncImage
 import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.EvidenceFinder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.bookmark.model.processingDurationMillis
 import com.unchunks.echomark.domain.bookmark.model.processingProgress
@@ -219,6 +223,8 @@ fun BookmarkDetailScreen(
             onSaveEdit = viewModel::saveEdit,
             onEditSummary = viewModel::editSummary,
             onRestoreSummary = viewModel::restoreSummary,
+            onTranslateSummary = viewModel::translateSummary,
+            onClearTranslation = viewModel::clearTranslation,
             onAddTag = viewModel::addTag,
             onRemoveTag = viewModel::removeTag
         ),
@@ -247,6 +253,10 @@ class BookmarkDetailCallbacks(
     val onEditSummary: (String) -> Unit = {},
     /** 履歴の版(ID)に要約を戻す(#20) */
     val onRestoreSummary: (Long) -> Unit = {},
+    /** 要約を [SummaryLanguage] に翻訳する(#24) */
+    val onTranslateSummary: (SummaryLanguage) -> Unit = {},
+    /** 翻訳を閉じる */
+    val onClearTranslation: () -> Unit = {},
     val onAddTag: (String) -> Unit = {},
     val onRemoveTag: (String) -> Unit = {}
 )
@@ -497,7 +507,7 @@ private fun DetailBody(
             Spacer(Modifier.height(16.dp))
             PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
             Spacer(Modifier.height(20.dp))
-            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, callbacks)
+            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, uiState.translation, callbacks)
             Spacer(Modifier.height(24.dp))
             TagSection(
                 tags = bookmark.tags,
@@ -732,12 +742,15 @@ private fun AiSection(
     stageProgress: Float?,
     stageAverages: Map<StageDurationKey, Long>,
     summaryHistory: List<SummaryVersion>,
+    translation: TranslationState,
     callbacks: BookmarkDetailCallbacks
 ) {
     val summary = bookmark.summary
     if (bookmark.aiStatus == AiStatus.DONE && !summary.isNullOrBlank()) {
         var showSummaryEdit by rememberSaveable { mutableStateOf(false) }
         var showSummaryHistory by rememberSaveable { mutableStateOf(false) }
+        var showEvidence by rememberSaveable { mutableStateOf(false) }
+        var showTranslate by rememberSaveable { mutableStateOf(false) }
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -797,6 +810,28 @@ private fun AiSection(
                         }
                     }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // 本文のあるものは、要約の各文の根拠になる一節を見られる
+                    if (!bookmark.content.isNullOrBlank()) {
+                        TextButton(onClick = { showEvidence = !showEvidence }) {
+                            Icon(Icons.Outlined.FactCheck, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                            Text(if (showEvidence) "根拠を閉じる" else "根拠を見る")
+                        }
+                    }
+                    TextButton(onClick = { showTranslate = true }) {
+                        Icon(Icons.Outlined.Translate, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                        Text("翻訳")
+                    }
+                }
+                if (showEvidence) {
+                    val body = listOfNotNull(bookmark.title, bookmark.content).joinToString("\n")
+                    // 本文は最大 5 万文字。開いたときと要約・本文が変わったときだけ突き合わせる
+                    val report = remember(summary, body) { EvidenceFinder.find(summary, body) }
+                    Spacer(Modifier.height(8.dp))
+                    EvidenceBlock(report)
+                }
                 bookmark.processingDurationMillis()?.let { duration ->
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -814,6 +849,16 @@ private fun AiSection(
                 onSave = {
                     showSummaryEdit = false
                     callbacks.onEditSummary(it)
+                }
+            )
+        }
+        if (showTranslate) {
+            SummaryTranslateSheet(
+                state = translation,
+                onTranslate = callbacks.onTranslateSummary,
+                onDismiss = {
+                    showTranslate = false
+                    callbacks.onClearTranslation()
                 }
             )
         }

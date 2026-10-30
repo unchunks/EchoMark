@@ -195,13 +195,15 @@ class AppSettingsRepositoryImpl @Inject constructor(
             val next = transform(prefs.toSummaryStyle())
             prefs[KEY_SUMMARY_LANGUAGE] = next.language.name
             prefs[KEY_SUMMARY_FORMAT] = next.format.name
+            prefs[KEY_SUMMARY_QUALITY_CHECK] = next.qualityCheck
         }
     }
 
     // 読めない値(新しい版で増えたもの)は既定に戻す
     private fun Preferences.toSummaryStyle() = SummaryStyle(
         language = SummaryLanguage.entries.firstOrNull { it.name == this[KEY_SUMMARY_LANGUAGE] } ?: SummaryLanguage.DEFAULT,
-        format = SummaryFormat.entries.firstOrNull { it.name == this[KEY_SUMMARY_FORMAT] } ?: SummaryFormat.DEFAULT
+        format = SummaryFormat.entries.firstOrNull { it.name == this[KEY_SUMMARY_FORMAT] } ?: SummaryFormat.DEFAULT,
+        qualityCheck = this[KEY_SUMMARY_QUALITY_CHECK] ?: true
     )
 
     override suspend fun resetToDefaults() {
@@ -242,6 +244,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_PROCESSING_API_RATE = intPreferencesKey("processing_api_requests_per_minute")
         val KEY_SUMMARY_LANGUAGE = stringPreferencesKey("summary_language")
         val KEY_SUMMARY_FORMAT = stringPreferencesKey("summary_format")
+        val KEY_SUMMARY_QUALITY_CHECK = booleanPreferencesKey("summary_quality_check")
     }
 }
 

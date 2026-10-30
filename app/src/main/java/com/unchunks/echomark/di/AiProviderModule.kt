@@ -1,5 +1,6 @@
 package com.unchunks.echomark.di
 
+import com.unchunks.echomark.data.ai.LlmSummaryTranslator
 import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.LocalModelBenchmarker
 import com.unchunks.echomark.data.ai.api.AndroidAttachmentLoader
@@ -13,6 +14,7 @@ import com.unchunks.echomark.data.ai.model.DeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.DownloadedModelInstaller
 import com.unchunks.echomark.data.ai.model.ModelDownloadClient
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.domain.provider.SummaryTranslator
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -47,4 +49,8 @@ abstract class AiProviderModule {
 
     @Binds
     abstract fun bindAttachmentLoader(impl: AndroidAttachmentLoader): AttachmentLoader
+
+    /** 要約の翻訳(#24) */
+    @Binds
+    abstract fun bindSummaryTranslator(impl: LlmSummaryTranslator): SummaryTranslator
 }

@@ -172,7 +172,8 @@ class ApiLlmProvider @Inject constructor(
                 summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong, input.style),
                 scope = scope,
                 profile = input.profile,
-                style = input.style
+                style = input.style,
+                feedback = input.feedback
             ),
             messages = listOf(
                 ApiMessage(

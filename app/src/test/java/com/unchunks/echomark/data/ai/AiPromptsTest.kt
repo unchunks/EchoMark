@@ -440,4 +440,31 @@ class AiPromptsTest {
         assertTrue(code, code.contains("何をするコードかと、言語・主な関数・使っているライブラリをまとめる"))
         assertFalse(repo, repo.contains("記事の主張と要点をまとめる"))
     }
+    // ---- 作り直しの直し方(#25)・翻訳(#24) ----
+
+    @Test
+    fun 作り直しのときだけ前回の悪かった点を指示に入れる() {
+        val without = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList())
+        val with = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), feedback = "要約が長すぎました。")
+        val compact = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, emptyList(), feedback = "要約が長すぎました。")
+
+        assertFalse(without, without.contains("前回の要約"))
+        assertTrue(with, with.contains("- 前回の要約は次の点がよくありませんでした。直して書き直してください: 要約が長すぎました。"))
+        assertTrue(compact, compact.contains("- 前回の要約の悪かった点: 要約が長すぎました。 直して書き直す。"))
+        // タグだけを作るときは要約の直し方を入れない
+        assertFalse(
+            AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), scope = AnalysisScope.TAGS, feedback = "長すぎ").contains("前回")
+        )
+        // 空白だけなら入れない
+        assertFalse(AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), feedback = "  ").contains("前回の要約"))
+    }
+
+    @Test
+    fun 翻訳の指示は言語とJSONの形と元の文章() {
+        val prompt = AiPrompts.translateInstructions("・要点 A\n・要点 B", SummaryLanguage.CHINESE)
+
+        assertTrue(prompt, prompt.startsWith("次の文章を中国語(簡体字)に翻訳し、JSONのみを出力してください。"))
+        assertTrue(prompt, prompt.contains("""{"translation": "翻訳した文章"}"""))
+        assertTrue(prompt, prompt.endsWith("翻訳する文章:\n・要点 A\n・要点 B"))
+    }
 }

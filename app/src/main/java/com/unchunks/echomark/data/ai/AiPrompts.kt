@@ -33,7 +33,8 @@ object AiPrompts {
         maxExistingTagChars: Int = API_MAX_EXISTING_TAG_CHARS,
         scope: AnalysisScope = AnalysisScope.ALL,
         profile: SummaryProfile = SummaryProfile.GENERAL,
-        style: SummaryStyle = SummaryStyle()
+        style: SummaryStyle = SummaryStyle(),
+        feedback: String? = null
     ): String {
         val withSummary = scope != AnalysisScope.TAGS
         val withTags = scope != AnalysisScope.SUMMARY
@@ -53,6 +54,7 @@ object AiPrompts {
             if (withSummary) {
                 add("- 本文に書かれていないことを推測で補わない。本文が無いときは、タイトルや添付から分かる範囲で書く。")
                 add(LIMITED_ACCESS_RULE)
+                feedback?.takeIf { it.isNotBlank() }?.let { add("- 前回の要約は次の点がよくありませんでした。直して書き直してください: $it") }
             }
             add("- 本文が「部分ごとの要約メモ」のときは、全体を通した主題と要点${if (withSummary) "をまとめる" else "から判断する"}。")
             add("")
@@ -98,7 +100,8 @@ object AiPrompts {
         scope: AnalysisScope = AnalysisScope.ALL,
         digest: Boolean = false,
         profile: SummaryProfile = SummaryProfile.GENERAL,
-        style: SummaryStyle = SummaryStyle()
+        style: SummaryStyle = SummaryStyle(),
+        feedback: String? = null
     ): String {
         val withSummary = scope != AnalysisScope.TAGS
         val withTags = scope != AnalysisScope.SUMMARY
@@ -119,6 +122,7 @@ object AiPrompts {
                     "タイトル・サイト名・チャンネル名・前置きは書かない。")
                 if (digest) add("- 本文が「[部分 1/3]」のように分かれたメモなら、全体を通してまとめる。")
                 add(COMPACT_LIMITED_ACCESS_RULE)
+                feedback?.takeIf { it.isNotBlank() }?.let { add("- 前回の要約の悪かった点: $it 直して書き直す。") }
             }
             if (withTags) {
                 add("- tags: 本文に出てくる、この内容に固有の語(料理名・製品名・技術名・人名・地名など)を1〜${MAX_TAGS}個。")
@@ -461,6 +465,23 @@ object AiPrompts {
         add("- 固有名詞・数値・結論は残す。本文に書かれていないことは書かない。")
         add("- この部分に要点が無ければ notes は空文字にする。")
     }.joinToString("\n")
+
+    /** 要約([text])を [target] の言語に翻訳させる指示(JSON で返させる。#24)。 */
+    fun translateInstructions(text: String, target: SummaryLanguage): String = listOf(
+        "次の文章を${target.promptName}に翻訳し、JSONのみを出力してください。",
+        "説明文やコードブロックは出力しないでください。",
+        "",
+        "出力形式:",
+        """{"translation": "翻訳した文章"}""",
+        "",
+        "ルール:",
+        "- 意味を変えず、足したり省いたりしない。",
+        "- 固有名詞・製品名・技術用語は、訳さずに原文のままでもよい。",
+        "- 箇条書きの行頭の「・」と、行の区切りの改行(\\n)は保つ。",
+        "",
+        "翻訳する文章:",
+        text
+    ).joinToString("\n")
 
     /** 会話の古い発言を、続きの会話で思い出すためのメモに要約させる指示(端末内 AI 向けの短いもの)。 */
     fun conversationMemoryInstructions(maxChars: Int): String = buildList {
