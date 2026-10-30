@@ -1,6 +1,7 @@
 package com.unchunks.echomark.di
 
 import com.unchunks.echomark.data.ai.LocalLlmProviders
+import com.unchunks.echomark.data.ai.LocalModelBenchmarker
 import com.unchunks.echomark.data.ai.api.AndroidAttachmentLoader
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProviderFactory
@@ -18,6 +19,10 @@ abstract class AiProviderModule {
     /** 端末内 AI。用途ごとに選んだ端末内モデルで動く LlmProvider を返す */
     @Binds
     abstract fun bindLocalLlmProviders(impl: LocalLlmProvider): LocalLlmProviders
+
+    /** 取り込んだ端末内モデルをこの端末で測る */
+    @Binds
+    abstract fun bindLocalModelBenchmarker(impl: LocalLlmProvider): LocalModelBenchmarker
 
     @Binds
     abstract fun bindApiLlmProviderFactory(impl: ApiLlmProvider): ApiLlmProviderFactory
