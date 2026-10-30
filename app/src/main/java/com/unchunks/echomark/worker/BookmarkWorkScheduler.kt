@@ -116,6 +116,42 @@ class BookmarkWorkScheduler @Inject constructor(
     }
 
     /**
+     * 一括の列(待機中・実行中)を取り消し、取り消した列にあったブックマークの ID を返す
+     * (処理待ちのまま残らないよう、呼び出し側でやめたことにする)。
+     */
+    suspend fun cancelBulk(): Set<Long> {
+        val ids = runInterruptible { workManager.getWorkInfosForUniqueWork(BULK_WORK_NAME).get() }
+            .filterNot { it.state.isFinished }
+            .mapNotNullTo(mutableSetOf()) { info -> info.tags.firstNotNullOfOrNull { bookmarkIdOfTag(it) } }
+        runInterruptible { workManager.cancelUniqueWork(BULK_WORK_NAME).result.get() }
+        return ids
+    }
+
+    /**
+     * 一括の列の進み具合。AI 処理のワーク(1 件ごとに 1 つ)を数える。列が動いていなければ null。
+     * 前に終えた列のワークが残っていても数えないよう、列が動き始めたときに終えていた数を差し引く。
+     */
+    fun observeBulkProgress(): Flow<BulkProgress?> {
+        var baseline: Int? = null
+        return workManager.getWorkInfosForUniqueWorkFlow(BULK_WORK_NAME)
+            .map { infos ->
+                val ai = infos.filter { info -> info.tags.contains(BookmarkAiProcessingWorker::class.java.name) }
+                val finished = ai.count { it.state.isFinished }
+                if (ai.all { it.state.isFinished }) {
+                    baseline = null
+                    null
+                } else {
+                    val start = baseline ?: finished.also { baseline = it }
+                    BulkProgress(done = finished - start, total = ai.size - start)
+                }
+            }
+            .distinctUntilChanged()
+    }
+
+    /** 一括の列の進み具合([done] 件を終え、全体は [total] 件) */
+    data class BulkProgress(val done: Int, val total: Int)
+
+    /**
      * 未完了(待機中・前段待ち・実行中)の処理があるブックマークの ID。
      * どのブックマークの処理か分からないワーク(ブックマークごとのタグを付ける前のバージョンで登録したもの)が
      * 残っている間は判断できないため null を返す。

@@ -4,6 +4,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.Pending
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
@@ -21,9 +22,18 @@ import com.unchunks.echomark.ui.components.SectionHeader
 internal fun LazyListScope.processingSettingsItems(
     settings: ProcessingSettings,
     onChange: ((ProcessingSettings) -> ProcessingSettings) -> Unit,
-    onOpenDialog: (SettingsDialog) -> Unit
+    onOpenDialog: (SettingsDialog) -> Unit,
+    onOpenQueue: () -> Unit = {}
 ) {
     item { SectionHeader("処理") }
+    item {
+        SettingsItem(
+            title = "処理の状況",
+            icon = Icons.Outlined.Pending,
+            summary = "処理中・処理待ちのもの、最近失敗したものを見ます",
+            onClick = onOpenQueue
+        )
+    }
     item {
         SettingsSwitchItem(
             title = "充電中だけ処理する",

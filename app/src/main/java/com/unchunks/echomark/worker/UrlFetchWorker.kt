@@ -12,6 +12,7 @@ import com.unchunks.echomark.data.remote.FetchedContent
 import com.unchunks.echomark.data.remote.UrlContentFetcher
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.isProcessingCancelled
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import dagger.assisted.Assisted
@@ -42,6 +43,8 @@ class UrlFetchWorker @AssistedInject constructor(
 
         val bookmark = repository.getBookmarkById(bookmarkId)
         val url = bookmark?.contentUri
+        // ユーザーが処理をやめたもの(一括の列に残っているワーク)は何もしない
+        if (bookmark?.isProcessingCancelled == true) return Result.success()
         if (bookmark == null || url == null) {
             Timber.w("UrlFetchWorker: 対象が見つかりません id=%d", bookmarkId)
             return Result.success()

@@ -94,6 +94,8 @@ class SettingsActions(
     val onDynamicColorChange: (Boolean) -> Unit = {},
     /** 処理の設定(充電中だけ・夜間にまとめて・同時に処理する数など)を書き換える */
     val onProcessingSettingsChange: ((ProcessingSettings) -> ProcessingSettings) -> Unit = {},
+    /** 処理の状況の画面を開く */
+    val onOpenProcessingQueue: () -> Unit = {},
     /** 再発見通知のスイッチ。オンにするときの権限要求は呼び出し側で行う */
     val onRediscoverToggle: (Boolean) -> Unit = {},
     val onRediscoverScheduleChange: (DayOfWeek, Int, Int) -> Unit = { _, _, _ -> },
@@ -113,6 +115,7 @@ class SettingsActions(
 fun SettingsScreen(
     onOpenAiSettings: () -> Unit,
     onOpenOnboarding: (() -> Unit)? = null,
+    onOpenProcessingQueue: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -160,6 +163,7 @@ fun SettingsScreen(
             onThemeModeChange = viewModel::setThemeMode,
             onDynamicColorChange = viewModel::setDynamicColor,
             onProcessingSettingsChange = viewModel::updateProcessingSettings,
+            onOpenProcessingQueue = onOpenProcessingQueue,
             onRediscoverToggle = { enabled ->
                 when {
                     !enabled -> {
@@ -262,7 +266,8 @@ fun SettingsContent(
             processingSettingsItems(
                 settings = uiState.processing,
                 onChange = actions.onProcessingSettingsChange,
-                onOpenDialog = { dialog = it }
+                onOpenDialog = { dialog = it },
+                onOpenQueue = actions.onOpenProcessingQueue
             )
 
             item { SectionHeader("表示") }

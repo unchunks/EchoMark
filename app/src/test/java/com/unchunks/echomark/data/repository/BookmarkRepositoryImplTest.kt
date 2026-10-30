@@ -17,6 +17,7 @@ import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -166,6 +167,75 @@ class BookmarkRepositoryImplTest {
         val infos = workManager.getWorkInfosForUniqueWork("process_bookmark_$id").get()
         assertEquals(mapOf("BookmarkAiProcessingWorker" to 1), workerKinds("process_bookmark_$id"))
         assertTrue(infos.single().tags.contains(BookmarkWorkScheduler.bookmarkTag(id)))
+    }
+
+    @Test
+    fun 処理の状況は処理中を先に_処理待ちを頼んだ順に_失敗を新しい順に出す() = runBlocking {
+        fun insert(status: AiStatus, queuedAt: Long?, finishedAt: Long? = null) = runBlocking {
+            db.bookmarkDao().insert(
+                textBookmark().copy(
+                    aiStatus = status,
+                    processing = ProcessingInfo(queuedAt = queuedAt, finishedAt = finishedAt)
+                ).toEntity()
+            )
+        }
+        val laterWaiting = insert(AiStatus.PENDING, queuedAt = 200)
+        val running = insert(AiStatus.PROCESSING, queuedAt = 300)
+        val earlierWaiting = insert(AiStatus.PENDING, queuedAt = 100)
+        val oldFailure = insert(AiStatus.FAILED, queuedAt = null, finishedAt = 10)
+        val newFailure = insert(AiStatus.FAILED, queuedAt = null, finishedAt = 20)
+        insert(AiStatus.DONE, queuedAt = null)
+
+        val queue = repository.observeProcessingQueue().first()
+
+        assertEquals(listOf(running), queue.running.map { it.id })
+        assertEquals(listOf(earlierWaiting, laterWaiting), queue.waiting.map { it.id })
+        assertEquals(listOf(newFailure, oldFailure), queue.recentFailures.map { it.id })
+    }
+
+    @Test
+    fun 処理をやめると失敗_やめた理由になり_ワーカーが状態を書き換えない() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+
+        repository.cancelProcessing(listOf(id))
+
+        assertTrue(unfinished("process_bookmark_$id").isEmpty())
+        val cancelled = repository.getBookmarkById(id)!!
+        assertEquals(AiStatus.FAILED, cancelled.aiStatus)
+        assertEquals(ProcessingFailureReason.CANCELLED, cancelled.processing.failureReason)
+        // 一括の列に残っていたワークが動いても、段を始めず結果も書かない
+        repository.startProcessingStage(id, ProcessingStage.ANALYZE)
+        repository.finishProcessing(id, AiStatus.DONE)
+        assertEquals(cancelled.aiStatus, repository.getBookmarkById(id)!!.aiStatus)
+        assertEquals(ProcessingFailureReason.CANCELLED, repository.getBookmarkById(id)!!.processing.failureReason)
+
+        // 再処理すれば処理待ちに戻る
+        repository.reprocess(id)
+        assertEquals(AiStatus.PENDING, repository.getBookmarkById(id)!!.aiStatus)
+    }
+
+    @Test
+    fun まとめての処理をやめると列を取り消し_列にあったものの処理をやめる() = runBlocking {
+        val ids = listOf(AiStatus.FAILED, AiStatus.FAILED).map { status ->
+            db.bookmarkDao().insert(textBookmark().copy(aiStatus = status).toEntity())
+        }
+        repository.enqueueFailedAndWaitingProcessing()
+
+        assertEquals(2, repository.cancelBulkProcessing())
+
+        assertTrue(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME).all { it.isFinished })
+        ids.forEach {
+            assertEquals(ProcessingFailureReason.CANCELLED, repository.getBookmarkById(it)!!.processing.failureReason)
+        }
+    }
+
+    @Test
+    fun 今すぐ処理すると順番を飛ばして1件の処理を積む() = runBlocking {
+        val id = db.bookmarkDao().insert(textBookmark().toEntity())
+
+        repository.processNow(id)
+
+        assertEquals(1, unfinished("process_bookmark_$id").size)
     }
 
     @Test

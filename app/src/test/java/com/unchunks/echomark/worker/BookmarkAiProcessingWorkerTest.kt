@@ -396,6 +396,32 @@ class BookmarkAiProcessingWorkerTest {
     }
 
     @Test
+    fun やめたブックマークはAIを呼ばず_状態も書き換えずに終える() = runBlocking {
+        val id = insertBookmark()
+        repository.cancelProcessing(listOf(id))
+
+        assertEquals(ListenableWorker.Result.success(), runWorker(id, runAttemptCount = 0))
+
+        assertEquals(0, llm.calls)
+        val cancelled = repository.getBookmarkById(id)!!
+        assertEquals(AiStatus.FAILED, cancelled.aiStatus)
+        assertEquals(ProcessingFailureReason.CANCELLED, cancelled.processing.failureReason)
+    }
+
+    @Test
+    fun 一括の列の途中でやめても_残りのブックマークは処理される() = runBlocking {
+        val cancelled = insertBookmark()
+        val next = insertBookmark()
+        repository.cancelProcessing(listOf(cancelled))
+
+        runWorker(cancelled, runAttemptCount = 0)
+        assertEquals(ListenableWorker.Result.success(), runWorker(next, runAttemptCount = 0))
+
+        assertEquals(AiStatus.FAILED, statusOf(cancelled))
+        assertEquals(AiStatus.DONE, statusOf(next))
+    }
+
+    @Test
     fun 通信エラーは試行回数が増えても再試行する() = runBlocking {
         val id = insertBookmark()
         llm.failure = LlmException.Network()

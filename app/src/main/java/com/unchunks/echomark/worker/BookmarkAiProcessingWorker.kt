@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.isProcessingCancelled
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
@@ -79,6 +80,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
     private suspend fun process(bookmarkId: Long): Result {
         // 削除済みなら何もしない(処理すべきものが無いだけなので成功で終える)
         val bookmark = repository.getBookmarkById(bookmarkId) ?: return Result.success()
+        // ユーザーが処理をやめたもの(一括の列に残っているワーク)は何もしない
+        if (bookmark.isProcessingCancelled) return Result.success()
 
         // システムによる中断が続くなど、どの失敗でも上限を超えたものは打ち切る
         if (runAttemptCount >= MAX_NETWORK_ATTEMPTS) {

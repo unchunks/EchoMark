@@ -6,4 +6,8 @@
     <string name="ai_processing_notification_title">AI処理中</string>
     <string name="ai_processing_notification_summarizing">要約を作成中: %1$s</string>
     <string name="ai_processing_notification_summarizing_untitled">要約を作成中…</string>
+    <!-- まとめての処理(一括の再処理・夜間の処理)の進み具合の通知 -->
+    <string name="bulk_processing_notification_title">まとめて処理中</string>
+    <string name="bulk_processing_notification_text">%1$d / %2$d 件</string>
+    <string name="bulk_processing_notification_cancel">やめる</string>
 </resources>
