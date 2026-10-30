@@ -263,6 +263,20 @@ class AppSettingsRepositoryImplTest {
 
         assertEquals(SummaryStyle(), repository.summaryStyle.first())
     }
+    @Test
+    fun 要約の出来の確認は既定でオン_オフにして保存できる() = runTest {
+        val repository = createRepository()
+        assertTrue(repository.summaryStyle.first().qualityCheck)
+
+        repository.updateSummaryStyle { it.copy(qualityCheck = false) }
+
+        assertFalse(repository.summaryStyle.first().qualityCheck)
+        // 言語・書き方には触れない
+        assertEquals(SummaryStyle(qualityCheck = false), repository.summaryStyle.first())
+        repository.resetToDefaults()
+        assertTrue(repository.summaryStyle.first().qualityCheck)
+    }
+
 }
 
 private class InMemorySettingsDataStore : DataStore<Preferences> {

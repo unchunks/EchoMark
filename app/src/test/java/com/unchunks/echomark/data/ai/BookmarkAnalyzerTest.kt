@@ -5,6 +5,8 @@ import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.bookmark.model.SummaryProblem
+import com.unchunks.echomark.domain.model.SummaryQuality
 import com.unchunks.echomark.domain.model.SummaryFormat
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
@@ -22,6 +24,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -30,6 +33,11 @@ import org.junit.Test
 class BookmarkAnalyzerTest {
 
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
+
+    init {
+        // 要約の出来の確認(#25)は、確かめるテストだけで有効にする(ここの AI の Fake は短い要約を返すため)
+        settings.summaryStyleFlow.value = SummaryStyle(qualityCheck = false)
+    }
     private val keys = FakeApiKeyRepository(mapOf(ApiProvider.CLAUDE to "sk-ant-test"))
     private val local = RecordingLlm("端末内")
     private val apiByTask = AiTask.entries.associateWith { RecordingLlm("API-${it.name}") }
@@ -54,17 +62,17 @@ class BookmarkAnalyzerTest {
 
     @Test
     fun 要約の言語と書き方は設定から読んでAIに渡す() = runBlocking {
-        settings.updateSummaryStyle { SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS) }
+        settings.updateSummaryStyle { SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS, qualityCheck = false) }
 
         analyzer.analyze(input, emptyList())
 
-        assertEquals(SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS), local.lastInput!!.style)
+        assertEquals(SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS, qualityCheck = false), local.lastInput!!.style)
     }
 
     @Test
     fun 設定を変えたら次の処理から反映される() = runBlocking {
         analyzer.analyze(input, emptyList())
-        assertEquals(SummaryStyle(), local.lastInput!!.style)
+        assertEquals(SummaryStyle(qualityCheck = false), local.lastInput!!.style)
 
         settings.updateSummaryStyle { it.copy(format = SummaryFormat.ONE_LINE) }
         analyzer.analyze(input, emptyList())
@@ -77,7 +85,7 @@ class BookmarkAnalyzerTest {
     fun 要約の履歴に残す元は要約の設定のAIと設定の言語_書き方() = runBlocking {
         // 要約はクラウド API、タグ付けは端末内。要約の元は「要約」の設定から
         settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
-        settings.updateSummaryStyle { SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS) }
+        settings.updateSummaryStyle { SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS, qualityCheck = false) }
 
         val origin = analyzer.summaryOrigin()
 
@@ -93,6 +101,111 @@ class BookmarkAnalyzerTest {
 
         assertEquals("端末内 AI(gemma-3-1b)", analyzer.summaryOrigin().generator)
         assertEquals("日本語・文章", analyzer.summaryOrigin().style)
+    }
+
+
+    // ---- 要約の出来の確認と作り直し(#25) ----
+
+    private val source = "Jetpack Compose は宣言的に UI を組み立てるツールキットです。状態が変わると関係する部分だけが再コンポーズされます。" +
+        "不安定な型や毎回生成されるラムダがあると、不要な再コンポーズが起きます。計測しながら改善する手順を紹介します。"
+    private val goodSummary = "状態が変わった部分だけが再コンポーズされること、不安定な型を避けること、計測して改善する手順を紹介した記事。"
+    private val checkedInput = AnalysisInput(title = "Compose の記事", text = source, kind = ContentKind.WEB_PAGE)
+
+    private fun enableQualityCheck() {
+        settings.summaryStyleFlow.value = SummaryStyle(qualityCheck = true)
+    }
+
+    @Test
+    fun 問題のない要約は作り直さない() = runBlocking {
+        enableQualityCheck()
+        local.summary = goodSummary
+
+        val analysis = analyzer.analyze(checkedInput, emptyList())
+
+        assertEquals(listOf(AnalysisScope.ALL), local.scopes)
+        assertEquals(goodSummary, analysis.summary)
+        assertNull(local.lastInput!!.feedback)
+    }
+
+    @Test
+    fun 問題のある要約は直し方を添えて要約だけを1回作り直す() = runBlocking {
+        enableQualityCheck()
+        local.summaries = ArrayDeque(listOf("短い。", goodSummary))
+
+        val analysis = analyzer.analyze(checkedInput, listOf("既存"))
+
+        // 最初は全部、作り直しは要約だけ。タグ・カテゴリは最初のものを使う
+        assertEquals(listOf(AnalysisScope.ALL, AnalysisScope.SUMMARY), local.scopes)
+        assertEquals(goodSummary, analysis.summary)
+        assertEquals(listOf("端末内のタグ"), analysis.tags)
+        assertEquals("端末内のカテゴリ", analysis.category)
+        assertEquals(SummaryQuality.feedback(listOf(SummaryProblem.EMPTY)), local.lastInput!!.feedback)
+    }
+
+    @Test
+    fun 作り直しても問題が増えるなら最初の要約を使う() = runBlocking {
+        enableQualityCheck()
+        // 最初: 長すぎる要約だけ(問題 1 つ)。作り直し: 長すぎて、さらに指定と違う言語(問題 2 つ)
+        val tooLong = "状態が変わった部分だけを再コンポーズする仕組みと、計測して改善する手順を説明する。".repeat(8)
+        val worse = "Compose recomposes only the parts whose state has changed. ".repeat(8)
+        local.summaries = ArrayDeque(listOf(tooLong, worse))
+
+        val analysis = analyzer.analyze(checkedInput, emptyList())
+
+        assertEquals(tooLong, analysis.summary)
+        assertEquals(2, local.scopes.size)
+    }
+
+    @Test
+    fun 作り直しは1回だけ_直らなくても何度も繰り返さない() = runBlocking {
+        enableQualityCheck()
+        local.summaries = ArrayDeque(listOf("短い。", "短い。", "短い。"))
+
+        analyzer.analyze(checkedInput, emptyList())
+
+        assertEquals(2, local.scopes.size)
+    }
+
+    @Test
+    fun 作り直しに失敗したら最初の要約を使う() = runBlocking {
+        enableQualityCheck()
+        local.summaries = ArrayDeque(listOf("短い。"))
+        local.failOnCall = 2
+
+        val analysis = analyzer.analyze(checkedInput, emptyList())
+
+        assertEquals("短い。", analysis.summary)
+    }
+
+    @Test
+    fun 設定でオフなら確かめない() = runBlocking {
+        settings.summaryStyleFlow.value = SummaryStyle(qualityCheck = false)
+        local.summary = "短い。"
+
+        analyzer.analyze(checkedInput, emptyList())
+
+        assertEquals(listOf(AnalysisScope.ALL), local.scopes)
+    }
+
+    @Test
+    fun タグだけの処理では要約を確かめない() = runBlocking {
+        enableQualityCheck()
+        local.summary = "短い。"
+
+        analyzer.analyze(checkedInput, emptyList(), AnalysisScope.TAGS)
+
+        assertEquals(listOf(AnalysisScope.TAGS), local.scopes)
+    }
+
+    @Test
+    fun 要約だけの再処理でも確かめて作り直す() = runBlocking {
+        enableQualityCheck()
+        local.summaries = ArrayDeque(listOf("短い。", goodSummary))
+
+        val analysis = analyzer.analyze(checkedInput, emptyList(), AnalysisScope.SUMMARY)
+
+        assertEquals(listOf(AnalysisScope.SUMMARY, AnalysisScope.SUMMARY), local.scopes)
+        assertEquals(goodSummary, analysis.summary)
     }
 
     @Test
@@ -268,10 +381,17 @@ class BookmarkAnalyzerTest {
         var cancelledCalls = 0
         /** 返す要約(null なら [name] 入りの要約) */
         var summary: String? = null
+        /** 呼び出しごとに順に返す要約(空になったら [summary]・既定へ) */
+        var summaries: ArrayDeque<String> = ArrayDeque()
+        /** この回数目の呼び出しを失敗させる(1 から数える。0 なら失敗させない) */
+        var failOnCall = 0
+        private var calls = 0
         var lastInput: AnalysisInput? = null
 
         override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis {
             scopes += scope
+            calls++
+            if (calls == failOnCall) throw IllegalStateException("失敗させる呼び出し")
             try {
                 delay(delayMillis)
             } catch (e: CancellationException) {
@@ -281,7 +401,7 @@ class BookmarkAnalyzerTest {
             failure?.let { throw it }
             lastExistingTags = existingTags
             lastInput = input
-            return BookmarkAnalysis(summary ?: "${name}の要約", listOf("${name}のタグ"), "${name}のカテゴリ")
+            return BookmarkAnalysis(summaries.removeFirstOrNull() ?: summary ?: "${name}の要約", listOf("${name}のタグ"), "${name}のカテゴリ")
         }
 
         override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =

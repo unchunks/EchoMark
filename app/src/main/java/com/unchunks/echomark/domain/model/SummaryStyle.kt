@@ -58,12 +58,14 @@ enum class SummaryFormat(val label: String, val description: String) {
 }
 
 /**
- * 要約の言語と書き方。設定で選ぶ。既定は今までどおり(日本語の文章)。
+ * 要約の言語と書き方と、出来の確認。設定で選ぶ。既定は今までどおり(日本語の文章)。
  * 要約を作るとき([com.unchunks.echomark.domain.model.AnalysisInput.style])に渡し、指示と出力の長さの上限を決める。
  */
 data class SummaryStyle(
     val language: SummaryLanguage = SummaryLanguage.DEFAULT,
-    val format: SummaryFormat = SummaryFormat.DEFAULT
+    val format: SummaryFormat = SummaryFormat.DEFAULT,
+    /** 作った要約の出来を確かめ、問題があれば1回だけ作り直す(#25) */
+    val qualityCheck: Boolean = true
 ) {
     /**
      * 種類・長さから決めた要約の長さ([baseMaxChars]。日本語の文字数)を、書き方に合わせて直す。

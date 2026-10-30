@@ -8,10 +8,12 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummarySource
+import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeProcessingStatsRepository
+import com.unchunks.echomark.testing.FakeSummaryTranslator
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,9 +39,10 @@ class BookmarkDetailViewModelTest {
     private val repository = FakeBookmarkRepository()
     private val recentlyDeleted = RecentlyDeletedBookmarks()
     private val stats = FakeProcessingStatsRepository()
+    private val translator = FakeSummaryTranslator()
 
     private fun createViewModel(id: Long = 1L) =
-        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats)
+        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator)
 
     @Test
     fun 処理の進み具合と段ごとの平均の所要時間を出す() = runTest {
@@ -272,5 +275,52 @@ class BookmarkDetailViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf(1L to AnalysisScope.ALL), repository.reprocessCalls)
+    }
+    @Test
+    fun 要約を翻訳すると読み込み中から結果になる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1).copy(summary = "要約の文章"))
+        translator.result = "Summary text"
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.translateSummary(SummaryLanguage.ENGLISH)
+        advanceUntilIdle()
+
+        assertEquals(listOf("要約の文章" to SummaryLanguage.ENGLISH), translator.calls)
+        assertEquals(TranslationState.Done(SummaryLanguage.ENGLISH, "Summary text"), viewModel.uiState.value.translation)
+    }
+
+    @Test
+    fun 翻訳に失敗したら理由を出し_閉じると消える() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1).copy(summary = "要約の文章"))
+        translator.failure = IllegalStateException("翻訳を取り出せませんでした")
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.translateSummary(SummaryLanguage.KOREAN)
+        advanceUntilIdle()
+
+        val failed = viewModel.uiState.value.translation as TranslationState.Failed
+        assertEquals(SummaryLanguage.KOREAN, failed.target)
+        assertTrue(failed.message, failed.message.contains("翻訳を取り出せませんでした"))
+        viewModel.clearTranslation()
+        advanceUntilIdle()
+        assertEquals(TranslationState.Idle, viewModel.uiState.value.translation)
+    }
+
+    @Test
+    fun 要約が無ければ翻訳しない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.translateSummary(SummaryLanguage.ENGLISH)
+        advanceUntilIdle()
+
+        assertTrue(translator.calls.isEmpty())
+        assertEquals(TranslationState.Idle, viewModel.uiState.value.translation)
     }
 }
