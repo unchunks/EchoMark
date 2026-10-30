@@ -270,7 +270,10 @@ fun AiSettingsContent(
                 installed = uiState.localModels,
                 state = uiState.catalogDownload,
                 onDownload = actions.onDownloadCatalogModel,
-                onCancel = actions.onCancelCatalogDownload
+                onCancel = actions.onCancelCatalogDownload,
+                device = uiState.deviceSpecs,
+                recommendations = uiState.recommendations,
+                showGpuTip = uiState.showGpuTip
             )
 
             SectionDivider()
