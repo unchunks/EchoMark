@@ -46,6 +46,7 @@ import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.components.composeui.readableWidth
 import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.domain.repository.AiTask
@@ -66,7 +67,11 @@ class AiSettingsActions(
     /** モデルファイルを選ぶ(ファイル選択画面は呼び出し側で開く) */
     val onPickModel: () -> Unit = {},
     val onCancelImport: () -> Unit = {},
-    val onDeleteModel: () -> Unit = {},
+    val onDeleteModel: (LocalModelInfo) -> Unit = {},
+    /** 用途でモデルを選んでいないときに使う端末内モデルを決める */
+    val onSetDefaultModel: (LocalModelInfo) -> Unit = {},
+    /** 用途で使う端末内モデルを選ぶ(null は既定のモデル) */
+    val onSelectLocalModel: (AiTask, String?) -> Unit = { _, _ -> },
     /** 埋め込みモデルのファイルを選ぶ(取り込むモデルの種類を渡す。ファイル選択画面は呼び出し側で開く) */
     val onPickEmbeddingModel: (EmbeddingModelProfile) -> Unit = {},
     val onCancelEmbeddingImport: () -> Unit = {},
@@ -135,6 +140,8 @@ fun AiSettingsScreen(
             onPickModel = { picker.launch(arrayOf("*/*")) },
             onCancelImport = viewModel::cancelImport,
             onDeleteModel = viewModel::deleteModel,
+            onSetDefaultModel = viewModel::setDefaultModel,
+            onSelectLocalModel = viewModel::setLocalModel,
             onPickEmbeddingModel = { profile ->
                 pendingEmbeddingProfileId = profile.id
                 embeddingPicker.launch(arrayOf("*/*"))
@@ -199,7 +206,15 @@ fun AiSettingsContent(
                     uiState = uiState,
                     onSelectBackend = { actions.onSelectBackend(task, it) },
                     onSelectProvider = { actions.onSelectProvider(task, it) },
-                    onSetModel = { provider, model -> actions.onSetModel(task, provider, model) }
+                    onSetModel = { provider, model -> actions.onSetModel(task, provider, model) },
+                    onSelectLocalModel = { actions.onSelectLocalModel(task, it) }
+                )
+            }
+            if (uiState.usesMultipleLocalModels) {
+                SettingsNotice(
+                    text = "用途ごとに別の端末内モデルを選んでいます。端末内で同時に読み込むモデルは1つだけのため、" +
+                        "用途が切り替わるたびにモデルを読み込み直します(数秒〜十数秒かかります)。",
+                    icon = Icons.Outlined.Info
                 )
             }
             if (uiState.analyzesSeparately) {
@@ -223,13 +238,14 @@ fun AiSettingsContent(
             SectionDivider()
             SectionHeader("端末内モデル")
             LocalModelSection(
-                model = uiState.localModel,
-                loadFailure = uiState.localModelLoadFailure,
+                models = uiState.localModels,
+                loadFailures = uiState.localModelLoadFailures,
                 importState = uiState.importState,
                 isSelected = uiState.usesLocal,
                 onPickModel = actions.onPickModel,
                 onCancelImport = actions.onCancelImport,
-                onDelete = actions.onDeleteModel
+                onDelete = actions.onDeleteModel,
+                onSetDefault = actions.onSetDefaultModel
             )
             if (uiState.localModel != null) {
                 LocalLlmGpuSetting(checked = uiState.localLlmUseGpu, onCheckedChange = actions.onSetLocalLlmUseGpu)

@@ -31,7 +31,7 @@ class BookmarkAnalyzerTest {
     private val local = RecordingLlm("端末内")
     private val apiByTask = AiTask.entries.associateWith { RecordingLlm("API-${it.name}") }
     private val analyzer = BookmarkAnalyzer(
-        LlmProviderResolver(local, { apiByTask.getValue(it) }, settings, keys),
+        LlmProviderResolver(LocalLlmProviders { local }, { apiByTask.getValue(it) }, settings, keys),
         settings
     )
     private val input = AnalysisInput(title = "タイトル", text = "本文", kind = ContentKind.WEB_PAGE)
@@ -182,6 +182,37 @@ class BookmarkAnalyzerTest {
      * 呼び出された範囲を記録し、[name] 入りの結果を返す LLM。[failure] があれば記録した後に投げる。
      * [delayMillis] だけ(仮想時間で)待ってから返す。
      */
+    @Test
+    fun 用途ごとに別の端末内モデルなら別々に作る() = runBlocking {
+        val byModel = mutableMapOf<String?, RecordingLlm>()
+        val perModel = BookmarkAnalyzer(
+            LlmProviderResolver(
+                LocalLlmProviders { id -> byModel.getOrPut(id) { RecordingLlm("端末内-$id") } },
+                { apiByTask.getValue(it) },
+                settings,
+                keys
+            ),
+            settings
+        )
+        settings.setLocalModel(AiTask.TAGGING, "qwen")
+
+        val analysis = perModel.analyze(input, emptyList())
+
+        assertEquals(listOf(AnalysisScope.TAGS), byModel.getValue("qwen").scopes)
+        assertEquals(listOf(AnalysisScope.SUMMARY), byModel.getValue(null).scopes)
+        assertEquals(BookmarkAnalysis("端末内-nullの要約", listOf("端末内-qwenのタグ"), "端末内-qwenのカテゴリ"), analysis)
+    }
+
+    @Test
+    fun 同じ端末内モデルを選んでいれば1回の推論でまとめる() = runBlocking {
+        settings.setLocalModel(AiTask.TAGGING, "gemma")
+        settings.setLocalModel(AiTask.SUMMARY, "gemma")
+
+        analyzer.analyze(input, emptyList())
+
+        assertEquals(listOf(AnalysisScope.ALL), local.scopes)
+    }
+
     private class RecordingLlm(private val name: String) : LlmProvider {
         val scopes = mutableListOf<AnalysisScope>()
         var lastExistingTags: List<String>? = null

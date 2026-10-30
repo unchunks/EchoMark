@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.ai
 
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -42,7 +43,7 @@ class AiPrewarmerTest {
     fun 端末内を使う設定のときだけ読み込みを始める() = runBlocking {
         val llm = FakeLlmProvider()
         val appSettings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
-        val prewarmer = AiPrewarmer(llm, appSettings)
+        val prewarmer = AiPrewarmer(LocalLlmProviders { llm }, appSettings)
 
         assertTrue(prewarmer.prewarmLocalLlmIfUsed())
         assertEquals(1, llm.prewarmCalls)
@@ -50,5 +51,42 @@ class AiPrewarmerTest {
         appSettings.setBackendForAll(LlmBackend.API)
         assertFalse(prewarmer.prewarmLocalLlmIfUsed())
         assertEquals(1, llm.prewarmCalls)
+    }
+
+    @Test
+    fun 用途ごとに別の端末内モデルなら最初に動くタグ付けのモデルを読み込む() = runBlocking {
+        val byModel = mutableMapOf<String?, FakeLlmProvider>()
+        val appSettings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
+        val prewarmer = AiPrewarmer(LocalLlmProviders { id -> byModel.getOrPut(id) { FakeLlmProvider() } }, appSettings)
+        appSettings.setLocalModel(AiTask.TAGGING, "tagger")
+        appSettings.setLocalModel(AiTask.SUMMARY, "summarizer")
+
+        assertTrue(prewarmer.prewarmLocalLlmIfUsed())
+        assertEquals(1, byModel.getValue("tagger").prewarmCalls)
+        assertFalse("summarizer" in byModel)
+    }
+
+    @Test
+    fun 先に読み込むモデルはタグ付けが端末内ならそのモデル_そうでなければ要約のモデル() {
+        val local = AiTaskSetting(backend = LlmBackend.LOCAL, localModelId = "a")
+        val api = AiTaskSetting(backend = LlmBackend.API, localModelId = "a")
+        val summary = AiTaskSetting(backend = LlmBackend.LOCAL, localModelId = "b")
+        assertEquals("a", analysisLocalModelToPrewarm(mapOf(AiTask.TAGGING to local, AiTask.SUMMARY to summary)))
+        assertEquals("b", analysisLocalModelToPrewarm(mapOf(AiTask.TAGGING to api, AiTask.SUMMARY to summary)))
+        assertEquals(null, analysisLocalModelToPrewarm(emptyMap()))
+    }
+
+    @Test
+    fun 要約だけ_タグだけの再処理ではその用途のモデルだけを見る() {
+        val tagging = AiTaskSetting(backend = LlmBackend.LOCAL, localModelId = "a")
+        val summary = AiTaskSetting(backend = LlmBackend.LOCAL, localModelId = "b")
+        val settings = mapOf(AiTask.TAGGING to tagging, AiTask.SUMMARY to summary)
+        assertEquals("b", analysisLocalModelToPrewarm(settings, AnalysisScope.SUMMARY))
+        assertEquals("a", analysisLocalModelToPrewarm(settings, AnalysisScope.TAGS))
+
+        // 片方だけ端末内なら、クラウド API の用途の再処理では端末内 AI を使わない
+        val mixed = settings(tagging = LlmBackend.LOCAL, summary = LlmBackend.API)
+        assertTrue(usesLocalLlmForAnalysis(mixed, AnalysisScope.TAGS))
+        assertFalse(usesLocalLlmForAnalysis(mixed, AnalysisScope.SUMMARY))
     }
 }

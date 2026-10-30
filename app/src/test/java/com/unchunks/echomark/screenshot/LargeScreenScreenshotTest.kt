@@ -7,6 +7,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -99,11 +100,15 @@ class LargeScreenScreenshotTest {
     private fun AiSettingsScreen() = AiSettingsContent(
         uiState = AiSettingsUiState(
             tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE),
-            localModel = LocalModelInfo(
-                fileName = "local_llm.litertlm",
-                displayName = "Gemma3-1B-IT_q4_ekv4096.litertlm",
-                sizeBytes = 555_000_000,
-                importedAt = 1_790_000_000_000L
+            localModels = InstalledModels(
+                listOf(
+                    LocalModelInfo(
+                        fileName = "local_llm.litertlm",
+                        displayName = "Gemma3-1B-IT_q4_ekv4096.litertlm",
+                        sizeBytes = 555_000_000,
+                        importedAt = 1_790_000_000_000L
+                    )
+                )
             ),
             keyProvider = ApiProvider.CLAUDE,
             configuredProviders = setOf(ApiProvider.CLAUDE)

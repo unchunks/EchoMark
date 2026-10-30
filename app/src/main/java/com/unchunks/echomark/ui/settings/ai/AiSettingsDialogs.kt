@@ -56,13 +56,22 @@ internal fun EmbeddingProfileDialog(onSelect: (EmbeddingModelProfile) -> Unit, o
 
 /** 端末内モデルの削除の確認。消すと、取り込み直すまで端末内での要約・チャットは使えない */
 @Composable
-internal fun DeleteLocalModelDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun DeleteLocalModelDialog(
+    modelName: String,
+    isLast: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("端末内モデルを削除しますか?") },
+        title = { Text("「$modelName」を削除しますか?") },
         text = {
             Text(
-                "削除すると、端末内での要約・チャットは再度取り込むまで使えません。",
+                if (isLast) {
+                    "削除すると、端末内での要約・チャットは再度取り込むまで使えません。"
+                } else {
+                    "このモデルを選んでいた用途は、既定のモデルを使うようになります。"
+                },
                 style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
             )
         },

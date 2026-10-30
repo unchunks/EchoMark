@@ -8,6 +8,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.data.ai.model.InstalledModels
+import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
@@ -30,6 +32,7 @@ class AiSettingsTaskSettingTest {
     private val backends = mutableListOf<Pair<AiTask, LlmBackend>>()
     private val providers = mutableListOf<Pair<AiTask, ApiProvider>>()
     private val models = mutableListOf<Triple<AiTask, ApiProvider, String>>()
+    private val localModels = mutableListOf<Pair<AiTask, String?>>()
 
     private fun setContent(state: AiSettingsUiState) {
         composeRule.setContent {
@@ -40,7 +43,8 @@ class AiSettingsTaskSettingTest {
                     actions = AiSettingsActions(
                         onSelectBackend = { task, backend -> backends += task to backend },
                         onSelectProvider = { task, provider -> providers += task to provider },
-                        onSetModel = { task, provider, model -> models += Triple(task, provider, model) }
+                        onSetModel = { task, provider, model -> models += Triple(task, provider, model) },
+                        onSelectLocalModel = { task, modelId -> localModels += task to modelId }
                     )
                 )
             }
@@ -76,6 +80,30 @@ class AiSettingsTaskSettingTest {
 
         assertEquals(listOf(AiTask.CHAT to ApiProvider.GEMINI), providers)
         assertEquals(listOf(Triple(AiTask.CHAT, ApiProvider.CLAUDE, "claude-haiku-4-5")), models)
+    }
+
+    @Test
+    fun 端末内モデルを2つ以上取り込んだら用途ごとに選べる() {
+        val gemma = LocalModelInfo("gemma.litertlm", "gemma.litertlm", 1, 0)
+        val qwen = LocalModelInfo("qwen.litertlm", "qwen.litertlm", 1, 0)
+        setContent(
+            AiSettingsUiState(tasks = aiTasks(LlmBackend.LOCAL), localModels = InstalledModels(listOf(gemma, qwen), gemma.id))
+        )
+
+        // 「既定」の選択肢はタグ付け・要約・チャットの順に並ぶ
+        composeRule.onAllNodesWithText("既定(gemma)").assertCountEquals(AiTask.entries.size)
+        composeRule.onAllNodesWithText("qwen")[2].performScrollTo().performClick()
+        composeRule.onAllNodesWithText("既定(gemma)")[0].performScrollTo().performClick()
+
+        assertEquals(listOf(AiTask.CHAT to qwen.id, AiTask.TAGGING to null), localModels)
+    }
+
+    @Test
+    fun 端末内モデルが1つなら用途ごとの選択を出さない() {
+        val gemma = LocalModelInfo("gemma.litertlm", "gemma.litertlm", 1, 0)
+        setContent(AiSettingsUiState(tasks = aiTasks(LlmBackend.LOCAL), localModels = InstalledModels(listOf(gemma), gemma.id)))
+
+        composeRule.onAllNodesWithText("既定(gemma)").assertCountEquals(0)
     }
 
     @Test

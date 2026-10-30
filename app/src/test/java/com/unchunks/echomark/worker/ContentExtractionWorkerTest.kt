@@ -8,6 +8,7 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
@@ -100,7 +101,7 @@ class ContentExtractionWorkerTest {
                     workerClassName: String,
                     workerParameters: WorkerParameters
                 ) = ContentExtractionWorker(
-                    appContext, workerParameters, repository, extractor, AiPrewarmer(localLlm, settings), stats,
+                    appContext, workerParameters, repository, extractor, AiPrewarmer(LocalLlmProviders { localLlm }, settings), stats,
                     ProcessingConcurrencyLimiter(settings)
                 )
             })

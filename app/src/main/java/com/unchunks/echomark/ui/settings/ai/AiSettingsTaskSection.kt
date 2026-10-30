@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.domain.provider.presets
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
@@ -43,6 +44,7 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.settings.SettingsNotice
 import com.unchunks.echomark.ui.settings.SettingsSwitchItem
 import com.unchunks.echomark.ui.settings.japaneseParagraph
+import com.unchunks.echomark.ui.settings.modelDisplayName
 import com.unchunks.echomark.ui.settings.shortName
 
 /*
@@ -71,7 +73,8 @@ internal fun TaskSettingCard(
     uiState: AiSettingsUiState,
     onSelectBackend: (LlmBackend) -> Unit,
     onSelectProvider: (ApiProvider) -> Unit,
-    onSetModel: (ApiProvider, String) -> Unit
+    onSetModel: (ApiProvider, String) -> Unit,
+    onSelectLocalModel: (String?) -> Unit = {}
 ) {
     val setting = uiState.setting(task)
     val provider = setting.apiProvider
@@ -110,6 +113,15 @@ internal fun TaskSettingCard(
                     }
                 }
             }
+            // 端末内モデルを2つ以上取り込んでいるときだけ、用途ごとに使うモデルを選ばせる
+            if (setting.backend == LlmBackend.LOCAL && uiState.localModels.models.size >= 2) {
+                FieldLabel("端末内モデル")
+                LocalModelSelector(
+                    models = uiState.localModels,
+                    selectedId = setting.localModelId?.takeIf { id -> uiState.localModels.models.any { it.id == id } },
+                    onSelect = onSelectLocalModel
+                )
+            }
             if (setting.backend == LlmBackend.API) {
                 FieldLabel("提供元")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -140,6 +152,29 @@ internal fun TaskSettingCard(
                     isError = true
                 )
             }
+        }
+    }
+}
+
+/**
+ * 用途で使う端末内モデルを選ぶ。「既定」は、端末内モデルの一覧で既定にしたモデルに従う(既定を変えると一緒に変わる)。
+ * @param selectedId 選んでいるモデルの id。null なら既定
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LocalModelSelector(models: InstalledModels, selectedId: String?, onSelect: (String?) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = selectedId == null,
+            onClick = { onSelect(null) },
+            label = { Text("既定(${models.default?.displayName?.let(::modelDisplayName).orEmpty()})") }
+        )
+        models.models.forEach { model ->
+            FilterChip(
+                selected = selectedId == model.id,
+                onClick = { onSelect(model.id) },
+                label = { Text(modelDisplayName(model.displayName)) }
+            )
         }
     }
 }

@@ -10,6 +10,7 @@ import com.unchunks.components.llm.cloud.ClaudeApiClient
 import com.unchunks.components.llm.cloud.GeminiApiClient
 import com.unchunks.components.llm.cloud.OpenAiApiClient
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
@@ -544,7 +545,7 @@ class ApiLlmProviderTest {
         val local = FakeLlmProvider()
         val api = FakeLlmProvider()
         val keys = FakeApiKeyRepository()
-        val resolver = LlmProviderResolver(local, { api }, settings, keys)
+        val resolver = LlmProviderResolver(LocalLlmProviders { local }, { api }, settings, keys)
 
         try {
             resolver.resolve(AiTask.SUMMARY)
@@ -560,11 +561,27 @@ class ApiLlmProviderTest {
     }
 
     @Test
+    fun Resolverは端末内なら用途に選んだモデルで動かす() = runBlocking {
+        val byModel = mutableMapOf<String?, FakeLlmProvider>()
+        val resolver = LlmProviderResolver(
+            LocalLlmProviders { id -> byModel.getOrPut(id) { FakeLlmProvider() } },
+            { FakeLlmProvider() },
+            settings,
+            FakeApiKeyRepository()
+        )
+        AiTask.entries.forEach { settings.setLlmBackend(it, LlmBackend.LOCAL) }
+        settings.setLocalModel(AiTask.CHAT, "qwen")
+
+        assertSame(resolver.resolve(AiTask.CHAT), byModel.getValue("qwen"))
+        assertSame(resolver.resolve(AiTask.SUMMARY), byModel.getValue(null))
+    }
+
+    @Test
     fun Resolverは用途ごとの実行場所と提供元で選ぶ() = runBlocking {
         val local = FakeLlmProvider()
         val apiByTask = AiTask.entries.associateWith { FakeLlmProvider() }
         val keys = FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKey"))
-        val resolver = LlmProviderResolver(local, { apiByTask.getValue(it) }, settings, keys)
+        val resolver = LlmProviderResolver(LocalLlmProviders { local }, { apiByTask.getValue(it) }, settings, keys)
         settings.setLlmBackend(AiTask.TAGGING, LlmBackend.LOCAL)
         settings.setApiProvider(AiTask.CHAT, ApiProvider.OPENAI)
 
