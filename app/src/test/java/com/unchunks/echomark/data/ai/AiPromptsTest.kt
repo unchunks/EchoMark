@@ -407,4 +407,37 @@ class AiPromptsTest {
             AiPrompts.summaryMaxChars(ContentKind.VIDEO, true, SummaryStyle(format = SummaryFormat.ONE_LINE))
         )
     }
+    // ---- GitHub のリポジトリ・ソースコード(#14・#15) ----
+
+    @Test
+    fun リポジトリは目的_機能_技術_使い方を書かせ_スター数やバッジは書かせない() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), profile = SummaryProfile.REPOSITORY)
+
+        assertTrue(prompt, prompt.contains("これは GitHub のリポジトリ。何のためのプロジェクトか(目的)を先に書き"))
+        assertTrue(prompt, prompt.contains("スター数・フォーク数・更新日・バッジ"))
+        assertTrue(prompt, prompt.contains("アーカイブ済み"))
+        assertTrue(prompt, prompt.contains("「リポジトリ:」「説明:」「言語:」「トピック:」などは GitHub の情報、「README:」より後は"))
+        assertTrue(prompt, prompt.contains("category は「技術」"))
+    }
+
+    @Test
+    fun ソースコードは何をするコードかを書かせ_1行ずつの説明はさせない() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), profile = SummaryProfile.SOURCE_CODE)
+
+        assertTrue(prompt, prompt.contains("これはソースコード。何をするコードか(目的・主な機能)を先に書き"))
+        assertTrue(prompt, prompt.contains("1行ずつ説明しない。import・ライセンス表記"))
+        assertTrue(prompt, prompt.contains("保存内容はコードそのもの。先頭に「リポジトリ:」「ファイル:」があれば"))
+        // メモに貼ったコードにも使える
+        assertTrue(AiPrompts.analyzeInstructions(ContentKind.MEMO, emptyList(), profile = SummaryProfile.SOURCE_CODE).contains("これはソースコード"))
+    }
+
+    @Test
+    fun 端末内向けの短い指示にもリポジトリとソースコードの主役を入れる() {
+        val repo = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, emptyList(), profile = SummaryProfile.REPOSITORY)
+        val code = AiPrompts.compactAnalyzeInstructions(ContentKind.MEMO, emptyList(), profile = SummaryProfile.SOURCE_CODE)
+
+        assertTrue(repo, repo.contains("何のためのプロジェクトかと、主な機能・使っている技術・使い方をまとめる"))
+        assertTrue(code, code.contains("何をするコードかと、言語・主な関数・使っているライブラリをまとめる"))
+        assertFalse(repo, repo.contains("記事の主張と要点をまとめる"))
+    }
 }

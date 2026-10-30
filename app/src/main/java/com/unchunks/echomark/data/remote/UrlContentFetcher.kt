@@ -10,6 +10,9 @@ import com.unchunks.components.web.isAllowedRedirect
 import com.unchunks.components.web.isPublicAddress
 import com.unchunks.echomark.data.attachment.extensionOf
 import com.unchunks.echomark.data.attachment.fallbackMimeTypeOf
+import com.unchunks.echomark.data.extract.TextFileReader
+import com.unchunks.echomark.domain.bookmark.model.GitHubFileRef
+import com.unchunks.echomark.domain.bookmark.model.GitHubUrls
 import com.unchunks.echomark.domain.bookmark.model.MAX_DOWNLOAD_BYTES
 import com.unchunks.echomark.domain.bookmark.model.StageProgressReporter
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
@@ -17,6 +20,7 @@ import com.unchunks.echomark.domain.bookmark.model.PageAccessLimit
 import com.unchunks.echomark.domain.bookmark.model.isDownloadableMimeType
 import com.unchunks.echomark.domain.bookmark.model.normalizeMimeType
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
+import com.unchunks.echomark.domain.extract.ExtractedContent
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -82,6 +86,8 @@ class UrlContentFetcher internal constructor(
     private val dispatcherProvider: DispatcherProvider,
     /** YouTube の字幕の取得先を差し替える(テスト用)。null なら本物の YouTube */
     youtubePlayerEndpoint: HttpUrl? = null,
+    /** GitHub の API の取得先を差し替える(テスト用)。null なら本物の GitHub */
+    githubApiEndpoint: HttpUrl? = null,
     /** 接続してよいアドレスか(テストではローカルのサーバーを許可する) */
     isAllowedAddress: (InetAddress) -> Boolean
 ) {
@@ -106,6 +112,10 @@ class UrlContentFetcher internal constructor(
         ?.let { YouTubeTranscriptFetcher(client, it, USER_AGENT) }
         ?: YouTubeTranscriptFetcher(client, userAgent = USER_AGENT)
 
+    private val githubFetcher = githubApiEndpoint
+        ?.let { GitHubRepoFetcher(client, USER_AGENT, it) }
+        ?: GitHubRepoFetcher(client, USER_AGENT)
+
     /**
      * 失敗時は Result.failure(例外) を返す。呼び出し側はタイトル=URLのまま続行できる。
      * YouTube の動画ページなら字幕も取得して本文に入れる(字幕が取れなくてもページの取得は成功として返す)。
@@ -116,8 +126,33 @@ class UrlContentFetcher internal constructor(
         // ダウンロードの進み具合の報告先(ワーカーが文脈に入れていれば)。取得はブロッキングで行うため先に取り出す
         val progress = currentCoroutineContext()[StageProgressReporter]
         return withContext(dispatcherProvider.io) {
-            runCatching { withTranscript(fetchBlocking(url, downloadSink, progress)) }
+            runCatching {
+                // GitHub のコードのファイルは、ページの HTML ではなく中身をそのまま取る(取れなければ通常のページとして取る)
+                val codeFile = GitHubUrls.codeFileOf(url)
+                codeFile?.let { runCatching { withGitHubFile(it, fetchBlocking(it.rawUrl, null, progress)) }.getOrNull() }
+                    ?: withGitHubRepo(url, withTranscript(fetchBlocking(url, downloadSink, progress)))
+            }
         }
+    }
+
+    /**
+     * GitHub のリポジトリのページなら、API の情報と README で本文とタイトルを差し替える(#14)。
+     * 取れなければ(上限・非公開など)、ページの HTML から取った内容のまま。画像(OG 画像)・サイト名はページのものを残す。
+     */
+    internal fun withGitHubRepo(url: String, content: FetchedContent): FetchedContent {
+        val repo = GitHubUrls.repoOf(url) ?: return content
+        val fetched = githubFetcher.fetch(repo) ?: return content
+        return content.copy(title = fetched.title, description = null, text = fetched.text, siteName = content.siteName ?: "GitHub")
+    }
+
+    /** GitHub のコードのファイルの中身に、置き場所(リポジトリとパス)の見出しを付ける。 */
+    internal fun withGitHubFile(file: GitHubFileRef, content: FetchedContent): FetchedContent {
+        require(content.text.isNotBlank()) { "empty file" }
+        return content.copy(
+            title = file.fileName,
+            text = "リポジトリ: ${file.repo.fullName}\nファイル: ${file.path}\n\n" + content.text,
+            siteName = "GitHub"
+        )
     }
 
     /** YouTube なら字幕を取得し、チャンネル名・説明文・字幕をまとめた本文に差し替える */
@@ -205,6 +240,8 @@ class UrlContentFetcher internal constructor(
             if (mediaType != null && mediaType.subtype != "html" && mediaType.subtype != "xhtml+xml") {
                 // PDF・画像・音声・動画なら、本文を読まずに閉じてダウンロードし直す
                 if (allowFile && isDownloadableMimeType(fileMimeType(mediaType, url))) return FetchStep.File(url)
+                // テキスト(ソースコード・Markdown・プレーンテキスト)は、そのまま本文にする
+                if (mediaType.type == "text") return FetchStep.Done(textFile(url, mediaType, body.byteStream()))
                 throw IOException("unsupported content type: $mediaType")
             }
 
@@ -216,6 +253,20 @@ class UrlContentFetcher internal constructor(
             )
             return FetchStep.Done(HtmlContentExtractor.extract(document).copy(links = PageLinks.collect(document)))
         }
+    }
+
+    /**
+     * テキストのファイル(HTML 以外の text 系の MIME タイプ)を本文にする。タイトルは URL の最後の部分(ファイル名)。
+     * 文字コードは Content-Type の指定を優先し、無ければ UTF-8・Shift_JIS の順に試す。
+     */
+    private fun textFile(url: HttpUrl, mediaType: MediaType, input: InputStream): FetchedContent {
+        val bytes = readCapped(input)
+        val decoded = mediaType.charset()?.let { String(bytes, it) } ?: TextFileReader.decode(bytes, truncatedInput = bytes.size >= MAX_BODY_BYTES)
+        return FetchedContent(
+            title = url.pathSegments.lastOrNull()?.takeIf { it.isNotBlank() }?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) },
+            description = null,
+            text = decoded.trim().take(ExtractedContent.MAX_TEXT_LENGTH)
+        )
     }
 
     /** 上限サイズまでだけ読み込む(巨大レスポンス対策) */
