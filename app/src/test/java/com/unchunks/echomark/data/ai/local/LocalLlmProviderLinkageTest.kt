@@ -83,7 +83,7 @@ class LocalLlmProviderLinkageTest {
                 assertTrue("原因は ${e.cause}", e.cause is LinkageError)
             }
         }
-        assertNull("ライブラリの失敗をモデルの失敗にしない", modelManager.loadFailure.first())
+        assertNull("ライブラリの失敗をモデルの失敗にしない", modelManager.loadFailures.first()["model"])
     }
 
     @Test

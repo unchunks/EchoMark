@@ -69,7 +69,7 @@ class ModelManagerTest {
         manager.startImport(Uri.parse("content://$BYTES/broken.litertlm"))
 
         assertEquals(ModelImportState.Failed(ModelImportError.InvalidModelFile(".litertlm")), manager.importState.value)
-        assertEquals(installed, manager.installedModel.value)
+        assertEquals(listOf(installed), manager.installed.value.models)
         assertTrue(File(context.filesDir, "models/${installed.fileName}").isFile)
         assertFalse(File(context.filesDir, "models/import.part").exists())
     }
@@ -80,28 +80,92 @@ class ModelManagerTest {
         manager.startImport(Uri.parse("content://$BYTES/gemma3-1b-it.task"))
 
         val installed = manager.installedModel.value!!
-        assertEquals("local_llm.task", installed.fileName)
+        assertTrue(installed.fileName, installed.fileName.startsWith("local_llm_") && installed.fileName.endsWith(".task"))
+        assertEquals(installed.id, LocalModelInfo.idOf(installed.fileName))
         assertTrue(installed.isLegacyTaskFormat)
     }
 
     @Test
-    fun 読み込めなかったことは今のモデルにだけ出し取り込み直すと消す() = runBlocking {
+    fun 取り込むたびに一覧に加え最初のモデルを既定にする() {
         BytesProvider.files["a.litertlm"] = "LITERTLM-a".toByteArray()
         BytesProvider.files["b.litertlm"] = "LITERTLM-b".toByteArray()
         manager.startImport(Uri.parse("content://$BYTES/a.litertlm"))
-        val first = manager.installedModel.value!!
-
-        manager.reportLoadFailure(first, IllegalStateException("Failed to select jinja prompt template"))
-        assertEquals(first, manager.loadFailure.first()?.model)
-        manager.reportLoaded(first)
-        assertNull(manager.loadFailure.first())
-
-        manager.reportLoadFailure(first, IllegalStateException("x"))
+        manager.clearImportResult()
         manager.startImport(Uri.parse("content://$BYTES/b.litertlm"))
-        assertNull(manager.loadFailure.first())
-        // 取り込み直す前のモデルの失敗は、今のモデルには出さない
-        manager.reportLoadFailure(first, IllegalStateException("x"))
-        assertNull(manager.loadFailure.first())
+
+        val installed = manager.installed.value
+        assertEquals(listOf("a.litertlm", "b.litertlm"), installed.models.map { it.displayName })
+        assertEquals(2, installed.models.map { it.id }.distinct().size)
+        assertEquals("a.litertlm", installed.default?.displayName)
+        assertEquals("a.litertlm", manager.installedModel.value?.displayName)
+        // 一覧はファイルに保存し、作り直した ModelManager でも読める
+        val reloaded = ModelManager(context, FakeBookmarkRepository(), TestDispatcherProvider(Dispatchers.Unconfined))
+        assertEquals(installed, reloaded.installed.value)
+        assertEquals(installed.models.sumOf { it.sizeBytes }, reloaded.totalBytes())
+    }
+
+    @Test
+    fun 既定のモデルを変え_既定を削除したら残りの先頭を既定にする() {
+        BytesProvider.files["a.litertlm"] = "LITERTLM-a".toByteArray()
+        BytesProvider.files["b.litertlm"] = "LITERTLM-b".toByteArray()
+        manager.startImport(Uri.parse("content://$BYTES/a.litertlm"))
+        manager.startImport(Uri.parse("content://$BYTES/b.litertlm"))
+        val (a, b) = manager.installed.value.models
+
+        manager.setDefaultModel(b.id)
+        assertEquals(b, manager.installedModel.value)
+        // 選んだモデルが無い・null なら既定のモデル
+        assertEquals(a, manager.installed.value.resolve(a.id))
+        assertEquals(b, manager.installed.value.resolve(null))
+        assertEquals(b, manager.installed.value.resolve("deleted"))
+
+        manager.deleteModel(b.id)
+        assertEquals(listOf(a), manager.installed.value.models)
+        assertEquals(a, manager.installedModel.value)
+        assertFalse(File(context.filesDir, "models/${b.fileName}").exists())
+
+        manager.deleteModel(a.id)
+        assertNull(manager.installedModel.value)
+        assertNull(manager.modelFile())
+    }
+
+    @Test
+    fun 以前の版の1つだけのモデルを一覧に移す() {
+        val modelsDir = File(context.filesDir, "models").apply { mkdirs() }
+        File(modelsDir, "local_llm.litertlm").writeBytes("LITERTLM".toByteArray())
+        File(modelsDir, "local_llm.json").writeText(
+            """{"fileName":"local_llm.litertlm","displayName":"Gemma3-1B-IT.litertlm","sizeBytes":8,"importedAt":1}"""
+        )
+
+        val migrated = ModelManager(context, FakeBookmarkRepository(), TestDispatcherProvider(Dispatchers.Unconfined))
+
+        val model = migrated.installedModel.value!!
+        assertEquals("local_llm", model.id)
+        assertEquals("Gemma3-1B-IT.litertlm", model.displayName)
+        assertFalse(File(modelsDir, "local_llm.json").exists())
+        assertTrue(File(modelsDir, "local_llm_models.json").isFile)
+    }
+
+    @Test
+    fun 読み込めなかったことはそのモデルにだけ出し削除すると消す() = runBlocking {
+        BytesProvider.files["a.litertlm"] = "LITERTLM-a".toByteArray()
+        BytesProvider.files["b.litertlm"] = "LITERTLM-b".toByteArray()
+        manager.startImport(Uri.parse("content://$BYTES/a.litertlm"))
+        manager.startImport(Uri.parse("content://$BYTES/b.litertlm"))
+        val (a, b) = manager.installed.value.models
+
+        manager.reportLoadFailure(a, IllegalStateException("Failed to select jinja prompt template"))
+        assertEquals(setOf(a.id), manager.loadFailures.first().keys)
+        assertEquals(a, manager.loadFailures.first().getValue(a.id).model)
+        manager.reportLoaded(a)
+        assertTrue(manager.loadFailures.first().isEmpty())
+
+        manager.reportLoadFailure(b, IllegalStateException("x"))
+        manager.deleteModel(b.id)
+        assertTrue(manager.loadFailures.first().isEmpty())
+        // 一覧に無いモデルの失敗は出さない
+        manager.reportLoadFailure(b, IllegalStateException("x"))
+        assertTrue(manager.loadFailures.first().isEmpty())
     }
 
     private companion object {

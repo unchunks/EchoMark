@@ -10,8 +10,15 @@ data class LocalModelInfo(
     val displayName: String,
     val sizeBytes: Long,
     /** 取り込んだ日時(epoch millis) */
-    val importedAt: Long
+    val importedAt: Long,
+    /** モデルを見分ける id(用途ごとのモデルの選択に保存する)。保存ファイル名の拡張子を除いた部分 */
+    val id: String = idOf(fileName)
 ) {
+    companion object {
+        /** 保存ファイル名から id を作る(拡張子を除く) */
+        fun idOf(fileName: String): String = fileName.substringBeforeLast('.')
+    }
+
     /** Gemma 系ならチャットテンプレート(<start_of_turn> 等)を明示的に指定する。 */
     val isGemma: Boolean get() = displayName.contains("gemma", ignoreCase = true)
 

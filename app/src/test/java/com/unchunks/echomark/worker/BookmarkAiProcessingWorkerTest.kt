@@ -17,6 +17,7 @@ import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.llm.LlmException
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.R
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
@@ -42,6 +43,7 @@ import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.TagSource
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
+import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
@@ -81,6 +83,8 @@ class BookmarkAiProcessingWorkerTest {
     private val embedding = RecordingEmbeddingProvider()
     /** 端末内モデルの先読みの呼び出しを数える(AiPrewarmer の先)。 */
     private val localLlmForPrewarm = FakeLlmProvider()
+    /** 先読みするモデルの id(null は既定のモデル)。 */
+    private val prewarmedModels = mutableListOf<String?>()
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
     private val stats = FakeProcessingStatsRepository()
 
@@ -125,7 +129,7 @@ class BookmarkAiProcessingWorkerTest {
         runAttemptCount: Int = 0,
         scope: AnalysisScope = AnalysisScope.ALL
     ): BookmarkAiProcessingWorker {
-        val analyzer = BookmarkAnalyzer(LlmProviderResolver(llm, { llm }, settings, FakeApiKeyRepository()), settings)
+        val analyzer = BookmarkAnalyzer(LlmProviderResolver(LocalLlmProviders { llm }, { llm }, settings, FakeApiKeyRepository()), settings)
         val worker = TestListenableWorkerBuilder<BookmarkAiProcessingWorker>(context)
             .setInputData(
                 workDataOf(
@@ -141,7 +145,7 @@ class BookmarkAiProcessingWorkerTest {
                     workerParameters: WorkerParameters
                 ) = BookmarkAiProcessingWorker(
                     appContext, workerParameters, repository, analyzer, embedding,
-                    AiPrewarmer(localLlmForPrewarm, settings), stats,
+                    AiPrewarmer(LocalLlmProviders { id -> prewarmedModels += id; localLlmForPrewarm }, settings), stats,
                     ProcessingConcurrencyLimiter(settings), ApiRateLimiter(settings)
                 )
             })
@@ -288,6 +292,20 @@ class BookmarkAiProcessingWorkerTest {
         assertEquals(1, localLlmForPrewarm.prewarmCalls)
         // 端末内 LLM と同時に読み込むとメモリが一気に増えて強制終了されうるため、要約の後に読み込む
         assertEquals(0, embedding.prewarmCalls)
+    }
+
+    @Test
+    fun 要約だけ_タグだけの再処理はその用途の端末内モデルを先読みする() = runBlocking {
+        settings.setLocalModel(AiTask.TAGGING, "tagger")
+        settings.setLocalModel(AiTask.SUMMARY, "summarizer")
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0, scope = AnalysisScope.SUMMARY)
+        assertEquals(listOf<String?>("summarizer"), prewarmedModels)
+
+        prewarmedModels.clear()
+        runWorker(id, runAttemptCount = 0, scope = AnalysisScope.TAGS)
+        assertEquals(listOf<String?>("tagger"), prewarmedModels)
     }
 
     @Test

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.filestorage.formatBytes
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
+import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
 import com.unchunks.echomark.data.ai.model.ModelImportState
@@ -50,39 +51,76 @@ import java.util.Date
  * AI 設定画面の「端末内モデル」と「検索用の埋め込みモデル」。モデルファイルの取り込み・入れ替え・削除。
  */
 
+/**
+ * 取り込んだ端末内モデルの一覧(既定のモデル・削除)と、モデルの取り込み。
+ * 2つ以上取り込むと、用途ごとに使うモデルを選べる(「用途ごとの AI」)。用途で選んでいなければ既定のモデルを使う。
+ */
 @Composable
 internal fun LocalModelSection(
-    model: LocalModelInfo?,
-    loadFailure: LocalModelLoadFailure?,
+    models: InstalledModels,
+    loadFailures: Map<String, LocalModelLoadFailure>,
     importState: ModelImportState,
     isSelected: Boolean,
     onPickModel: () -> Unit,
     onCancelImport: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: (LocalModelInfo) -> Unit,
+    onSetDefault: (LocalModelInfo) -> Unit
 ) {
     val context = LocalContext.current
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<LocalModelInfo?>(null) }
 
-    SettingsItem(
-        title = model?.displayName ?: "未取り込み",
-        icon = Icons.Outlined.Memory,
-        iconTint = if (model != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        summary = if (model == null) {
-            if (isSelected) "端末内で要約・チャットを行うには、モデルファイルを取り込んでください" else "取り込むと、端末内でも AI を使えます"
-        } else {
-            "${formatBytes(model.sizeBytes)}・取り込み: " +
-                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.importedAt))
-        },
-        trailing = if (model != null) {
-            {
-                IconButton(onClick = { showDeleteDialog = true }) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "モデルを削除")
+    if (models.models.isEmpty()) {
+        SettingsItem(
+            title = "未取り込み",
+            icon = Icons.Outlined.Memory,
+            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+            summary = if (isSelected) "端末内で要約・チャットを行うには、モデルファイルを取り込んでください" else "取り込むと、端末内でも AI を使えます"
+        )
+    }
+    models.models.forEach { model ->
+        val isDefault = model == models.default
+        SettingsItem(
+            title = model.displayName,
+            icon = Icons.Outlined.Memory,
+            iconTint = if (isDefault) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            summary = buildString {
+                if (isDefault && models.models.size >= 2) append("既定・")
+                append(formatBytes(model.sizeBytes))
+                append("・取り込み: ")
+                append(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.importedAt)))
+            },
+            trailing = {
+                IconButton(onClick = { deleting = model }) {
+                    Icon(Icons.Outlined.Delete, contentDescription = "「${model.displayName}」を削除")
                 }
             }
-        } else {
-            null
+        )
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val failure = loadFailures[model.id]
+            if (failure != null) {
+                StatusLine(
+                    icon = {
+                        Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    },
+                    text = failure.userMessage,
+                    isError = true
+                )
+            } else if (model.isLegacyTaskFormat) {
+                // 以前の版(MediaPipe の LLM Inference)で取り込んだ .task も、そのまま LiteRT-LM で動かす
+                SettingsNotice(
+                    text = "旧形式(.task)のモデルです。そのまま使えますが、読み込めない・回答が崩れるときは、" +
+                        "同じモデルの .litertlm 版を取り込み直してください。",
+                    icon = Icons.Outlined.Info
+                )
+            }
+            if (!isDefault) {
+                OutlinedButton(onClick = { onSetDefault(model) }) { Text("既定のモデルにする") }
+            }
         }
-    )
+    }
 
     Column(
         modifier = Modifier.padding(horizontal = 16.dp),
@@ -113,25 +151,9 @@ internal fun LocalModelSection(
                         isError = true
                     )
                 }
-                if (loadFailure != null) {
-                    StatusLine(
-                        icon = {
-                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                        },
-                        text = loadFailure.userMessage,
-                        isError = true
-                    )
-                } else if (model?.isLegacyTaskFormat == true) {
-                    // 以前の版(MediaPipe の LLM Inference)で取り込んだ .task も、そのまま LiteRT-LM で動かす
-                    SettingsNotice(
-                        text = "旧形式(.task)のモデルです。そのまま使えますが、読み込めない・回答が崩れるときは、" +
-                            "同じモデルの .litertlm 版を取り込み直してください。",
-                        icon = Icons.Outlined.Info
-                    )
-                }
                 Button(onClick = onPickModel) {
                     ButtonIcon(Icons.Outlined.UploadFile)
-                    Text(if (model == null) "モデルファイルを取り込む" else "別のモデルに入れ替える")
+                    Text(if (models.models.isEmpty()) "モデルファイルを取り込む" else "別のモデルを追加する")
                 }
             }
         }
@@ -139,7 +161,9 @@ internal fun LocalModelSection(
             "入手方法: Hugging Face の litert-community で公開されている Gemma 3 1B IT・Qwen3 0.6B" +
                 "(例: Gemma3-1B-IT の int4 版 .litertlm)などを端末にダウンロードし、上のボタンで選んでください。" +
                 "Gemma のダウンロードには、Hugging Face へのログインと利用規約への同意が必要です。\n" +
-                "対応形式: .litertlm(推奨)/ .task(旧形式)",
+                "対応形式: .litertlm(推奨)/ .task(旧形式)\n" +
+                "複数のモデルを取り込むと、用途(タグ付け・要約・チャット)ごとに使うモデルを選べます。" +
+                "モデルは1つあたり数百MB〜数GBあるため、使わないモデルは削除してください。",
             style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -152,13 +176,15 @@ internal fun LocalModelSection(
         }
     }
 
-    if (showDeleteDialog) {
+    deleting?.let { model ->
         DeleteLocalModelDialog(
+            modelName = model.displayName,
+            isLast = models.models.size <= 1,
             onConfirm = {
-                showDeleteDialog = false
-                onDelete()
+                deleting = null
+                onDelete(model)
             },
-            onDismiss = { showDeleteDialog = false }
+            onDismiss = { deleting = null }
         )
     }
 }

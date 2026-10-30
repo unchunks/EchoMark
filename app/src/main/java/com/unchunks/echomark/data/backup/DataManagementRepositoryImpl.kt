@@ -141,7 +141,7 @@ class DataManagementRepositoryImpl @Inject constructor(
         StorageUsage(
             databaseBytes = databaseBytes,
             embeddingBytes = runCatching { boxStore.dbSizeOnDisk }.getOrDefault(0L),
-            modelBytes = modelManager.installedModel.value?.sizeBytes ?: 0L,
+            modelBytes = modelManager.totalBytes(),
             attachmentBytes = attachmentStore.totalBytes()
         )
     }

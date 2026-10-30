@@ -113,7 +113,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             } else if (repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion) {
                 startStage(ProcessingStage.EMBED)
             }
-            prewarm(bookmarkId, needsAnalysis)
+            prewarm(bookmarkId, needsAnalysis, scope)
             var analysisOutcome = AnalysisOutcome.DONE
             var failureReason: ProcessingFailureReason? = null
             // この実行で作った要約。埋め込みに含めるため、作ったら埋め込みも作り直す
@@ -133,7 +133,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                         kind = bookmark.contentKind(),
                         attachment = attachment
                     )
-                    promoteToForegroundIfLong(bookmark, input)
+                    promoteToForegroundIfLong(bookmark, input, scope)
                     val analysis = AiPerfLog.measure("analysis", "textChars=${input.text.length}") {
                         bookmarkAnalyzer.analyze(input, repository.getTagNamesForAi(), scope)
                     }
@@ -228,8 +228,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
      * 要約の作成が長くかかりそうなら、通知つきのフォアグラウンドにする。
      * 始められなくても(Android 12 以降のバックグラウンドからの開始の制限など)処理は続ける。
      */
-    private suspend fun promoteToForegroundIfLong(bookmark: Bookmark, input: AnalysisInput) {
-        if (!shouldRunInForeground(aiPrewarmer.usesLocalLlm(), input.text.length, input.attachment != null)) return
+    private suspend fun promoteToForegroundIfLong(bookmark: Bookmark, input: AnalysisInput, scope: AnalysisScope) {
+        if (!shouldRunInForeground(aiPrewarmer.usesLocalLlm(scope), input.text.length, input.attachment != null)) return
         try {
             setForeground(AiProcessingNotification.foregroundInfo(applicationContext, bookmark.title))
         } catch (e: CancellationException) {
@@ -257,8 +257,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
      * 端末内 LLM(数百MB〜数GB)と同時に読み込むとメモリの使用量が一気に増え、端末によってはアプリが強制終了されるため、
      * そのときは要約の後に埋め込みの中で読み込む。
      */
-    private suspend fun prewarm(bookmarkId: Long, needsSummary: Boolean) {
-        val localLlmRuns = needsSummary && aiPrewarmer.prewarmLocalLlmIfUsed()
+    private suspend fun prewarm(bookmarkId: Long, needsSummary: Boolean, scope: AnalysisScope) {
+        val localLlmRuns = needsSummary && aiPrewarmer.prewarmLocalLlmIfUsed(scope)
         if (!localLlmRuns &&
             (needsSummary || repository.getEmbeddingModelVersion(bookmarkId) != embeddingProvider.modelVersion)
         ) {

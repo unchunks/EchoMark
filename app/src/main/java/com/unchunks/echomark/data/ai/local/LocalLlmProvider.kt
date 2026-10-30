@@ -19,6 +19,7 @@ import com.unchunks.components.llm.ondevice.shouldReleaseEngineOnTrim
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.AnalysisSchema
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelManager
@@ -80,6 +81,9 @@ import javax.inject.Singleton
  * - 解放: エンジンはジョブの間は保持するが、最後に使ってから [IDLE_RELEASE_MS] 経つか、メモリが逼迫したとき
  *   ([trimMemory]。使用中は解放しない)に閉じる。モデルは数百MB〜数GBあり、持ち続けるとバックグラウンドの
  *   プロセスが OOM で終了されやすくなるため。次に使うときに読み込み直す
+ * - 用途ごとのモデル: [forModel] で、用途ごとに選んだモデルで動く [LlmProvider] を返す。同時に読み込むモデルは1つだけで、
+ *   別のモデルを使う呼び出しが来たら、読み込んでいるモデルを解放してから読み込む(2つ持つとメモリが足りなくなるため)。
+ *   この [LlmProvider] としての呼び出し(analyze など)は既定のモデルを使う
  */
 @Singleton
 class LocalLlmProvider @Inject constructor(
@@ -87,7 +91,24 @@ class LocalLlmProvider @Inject constructor(
     private val modelManager: ModelManager,
     private val appSettings: AppSettingsRepository,
     private val dispatcherProvider: DispatcherProvider
-) : LlmProvider {
+) : LlmProvider, LocalLlmProviders {
+
+    /** [modelId] のモデル(null・見つからなければ既定のモデル)で動く端末内 AI。 */
+    override fun forModel(modelId: String?): LlmProvider = object : LlmProvider {
+        override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope) =
+            this@LocalLlmProvider.analyze(modelId, input, existingTags, scope)
+
+        override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>) =
+            this@LocalLlmProvider.chatStream(modelId, userMessage, context, history)
+                .fold("") { acc, chunk -> acc + chunk }.trim()
+
+        override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>) =
+            this@LocalLlmProvider.chatStream(modelId, userMessage, context, history)
+
+        override suspend fun complete(prompt: String) = this@LocalLlmProvider.complete(modelId, prompt)
+
+        override fun prewarm() = this@LocalLlmProvider.prewarm(modelId)
+    }
 
     /** 読み込み済みのエンジン。[verified] は、このエンジンで推論に成功したことがあるか。 */
     private class LoadedEngine(
@@ -123,6 +144,9 @@ class LocalLlmProvider @Inject constructor(
         BackendSelector(FileBackendStore(File(File(context.filesDir, "models"), BACKEND_FILE_NAME)))
     }
 
+    /** エンジンを作る処理(テストで差し替える) */
+    internal var engineFactory: (File, LocalModelInfo, EngineBackend) -> LocalTextEngine = ::createEngine
+
     private val digester = LongTextDigester(LONG_TEXT)
 
     private val lifecycleLock = Any()
@@ -147,10 +171,13 @@ class LocalLlmProvider @Inject constructor(
         latest = WeakReference(this)
     }
 
-    /** 現在のモデルのエンジン。必ず [inferenceMutex] を持った状態で呼ぶ。 */
-    private suspend fun engineLocked(): LoadedEngine {
-        val model = modelManager.installedModel.value
-        val file = modelManager.modelFile()
+    /**
+     * [modelId] のモデル(null・見つからなければ既定のモデル)のエンジン。別のモデルを読み込んでいれば、解放してから読み込む。
+     * 必ず [inferenceMutex] を持った状態で呼ぶ。
+     */
+    private suspend fun engineLocked(modelId: String?): LoadedEngine {
+        val model = modelManager.installed.value.resolve(modelId)
+        val file = model?.let(modelManager::modelFile)
         if (model == null || file == null) {
             // モデルが削除された場合は保持しているエンジンも破棄する
             releaseLocked("モデルが無い")
@@ -159,11 +186,11 @@ class LocalLlmProvider @Inject constructor(
         val allowGpu = appSettings.localLlmUseGpu.first()
         // GPU の設定をオフにしたら、GPU で読み込んだエンジンは CPU で作り直す
         loaded?.let { if (it.model == model && (allowGpu || it.backend == EngineBackend.CPU)) return it }
-        releaseLocked("モデルか演算装置の設定が変わった")
+        releaseLocked("使うモデルか演算装置の設定が変わった")
         val modelKey = "${model.fileName}:${model.sizeBytes}:${model.importedAt}"
         val start = System.nanoTime()
         val created = try {
-            backendSelector.create(modelKey, allowGpu) { backend -> createEngine(file, model, backend) }
+            backendSelector.create(modelKey, allowGpu) { backend -> engineFactory(file, model, backend) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LinkageError) {
@@ -236,10 +263,10 @@ class LocalLlmProvider @Inject constructor(
      * [block] を、エンジンを読み込んで(読み込み済みならそのまま)排他的に実行する。
      * GPU で作れたエンジンで最初の推論が失敗したら、以後は CPU を使うよう覚えてエンジンを閉じる(例外はそのまま投げる)。
      */
-    private suspend fun <T> withEngine(block: suspend (LoadedEngine) -> T): T =
+    private suspend fun <T> withEngine(modelId: String?, block: suspend (LoadedEngine) -> T): T =
         inferenceMutex.withLock {
             try {
-                val current = engineLocked()
+                val current = engineLocked(modelId)
                 try {
                     block(current).also {
                         if (!current.verified && current.backend == EngineBackend.GPU) backendSelector.confirmGpu()
@@ -263,7 +290,7 @@ class LocalLlmProvider @Inject constructor(
                     throw e
                 }
             } catch (e: LinkageError) {
-                // MediaPipe のクラスの静的初期化・ネイティブライブラリの読み込みに失敗した(ExceptionInInitializerError、
+                // LiteRT-LM のクラスの静的初期化・ネイティブライブラリの読み込みに失敗した(ExceptionInInitializerError、
                 // 2回目以降は NoClassDefFoundError / UnsatisfiedLinkError)。Error のまま投げると、ワーカーは状態を
                 // 「処理中」のまま残して失敗し、画面からの呼び出しではアプリごと落ちるため、端末内 AI が使えない例外にする
                 Timber.e(e, "端末内 AI のライブラリを初期化できない")
@@ -278,17 +305,20 @@ class LocalLlmProvider @Inject constructor(
      * 推論を始めるときに読み込み済みにする。読み込み中は [inferenceMutex] を持つため、先に推論が呼ばれても
      * 読み込みが終わるのを待つだけで、二重には読み込まない。モデルが無い・読み込みに失敗しても何も起きない(推論の側で失敗する)。
      */
-    override fun prewarm() {
+    override fun prewarm() = prewarm(null)
+
+    /** [prewarm] の、[modelId] のモデルを読み込む版。 */
+    private fun prewarm(modelId: String?) {
         // 読み込み済みなら何もしない(推論中のロック待ちを増やさない)
         val current = loaded
-        if (current != null && current.model == modelManager.installedModel.value) return
+        if (current != null && current.model == modelManager.installed.value.resolve(modelId)) return
         synchronized(lifecycleLock) {
             if (prewarmJob?.isActive == true) return
             prewarmJob = backgroundScope.launch {
                 try {
                     inferenceMutex.withLock {
                         try {
-                            engineLocked()
+                            engineLocked(modelId)
                         } finally {
                             markUsedLocked()
                         }
@@ -337,6 +367,7 @@ class LocalLlmProvider @Inject constructor(
      * @throws LlmException.Timeout 時間内に生成が終わらなかった、または出力が上限を超えたとき
      */
     private suspend fun generateAnalysis(
+        modelId: String?,
         prompt: String,
         label: String,
         maxOutputChars: Int = ANALYZE_MAX_OUTPUT_CHARS,
@@ -346,7 +377,7 @@ class LocalLlmProvider @Inject constructor(
         // 画面で待っている生成(チャットなど)があれば、それが終わるまで始めない。生成中に割り込まれたら、終わるのを待ってやり直す
         while (true) {
             interactiveCount.first { it == 0 }
-            generateAnalysisOnce(prompt, label, maxOutputChars, timeoutMillis, preemptible = true, responseSchema)
+            generateAnalysisOnce(modelId, prompt, label, maxOutputChars, timeoutMillis, preemptible = true, responseSchema)
                 ?.let { return it }
             Timber.i("画面での生成を先にするため、解析の生成を中断した。後でやり直す: %s", label)
         }
@@ -359,6 +390,7 @@ class LocalLlmProvider @Inject constructor(
      * そのモデルでは以後スキーマを付けない。時間切れ・キャンセル・入力が長すぎる失敗は、スキーマのせいではないためそのまま投げる。
      */
     private suspend fun generateAnalysisOnce(
+        modelId: String?,
         prompt: String,
         label: String,
         maxOutputChars: Int,
@@ -368,7 +400,7 @@ class LocalLlmProvider @Inject constructor(
     ): String? {
         val bookmarkId = AiPerfLog.currentBookmarkId()
         return withContext(dispatcherProvider.default) {
-            withEngine { loaded ->
+            withEngine(modelId) { loaded ->
                 if (preemptible && interactiveCount.value > 0) return@withEngine null
                 val schema = responseSchema?.takeIf { loaded.modelKey !in schemaUnsupportedModels }
                 try {
@@ -524,6 +556,14 @@ class LocalLlmProvider @Inject constructor(
         input: AnalysisInput,
         existingTags: List<String>,
         scope: AnalysisScope
+    ): BookmarkAnalysis = analyze(null, input, existingTags, scope)
+
+    /** [modelId] のモデルでの [analyze]。 */
+    private suspend fun analyze(
+        modelId: String?,
+        input: AnalysisInput,
+        existingTags: List<String>,
+        scope: AnalysisScope
     ): BookmarkAnalysis {
         // 端末内 AI はファイルそのものを読めない。取り出したテキストも無ければ、ファイル名だけの要約は作らない
         if (input.attachment != null && input.text.isBlank()) throw NothingToAnalyzeException()
@@ -536,7 +576,7 @@ class LocalLlmProvider @Inject constructor(
             ).joinToString("\n")
             // メモは壊れていても緩く読めるため、作り直させない(部分ごとに数分かかるため)
             val response = generateAnalysis(
-                prompt, "part ${part.number}/${part.total}", PART_MAX_OUTPUT_CHARS, ::partTimeoutMillis,
+                modelId, prompt, "part ${part.number}/${part.total}", PART_MAX_OUTPUT_CHARS, ::partTimeoutMillis,
                 responseSchema = AnalysisSchema.notes(maxChars = LONG_TEXT.noteMaxChars * SCHEMA_LENGTH_FACTOR)
             )
             AnalysisParser.parseNotes(response)
@@ -555,9 +595,11 @@ class LocalLlmProvider @Inject constructor(
             validate = { StructuredOutput.problemOf(it, scope) }
         ) { problem, _ ->
             if (problem == null) {
-                generateAnalysis(prompt, "final", responseSchema = schema)
+                generateAnalysis(modelId, prompt, "final", responseSchema = schema)
             } else {
-                generateAnalysis(prompt + "\n\n" + AiPrompts.repairInstructions(problem, scope), "final repair", responseSchema = schema)
+                generateAnalysis(
+                    modelId, prompt + "\n\n" + AiPrompts.repairInstructions(problem, scope), "final repair", responseSchema = schema
+                )
             }
         }
         // 小さいモデルは指示の例やカテゴリの候補の語をタグに写すため、保存内容に出てくるタグだけを残す
@@ -571,8 +613,10 @@ class LocalLlmProvider @Inject constructor(
     ): String = chatStream(userMessage, context, history).fold("") { acc, chunk -> acc + chunk }.trim()
 
     /** 資料の選択など、画面で結果を待つ JSON の生成。背景の解析より先に動かす。 */
-    override suspend fun complete(prompt: String): String = asInteractive {
-        generateAnalysisOnce(prompt, "complete", ANALYZE_MAX_OUTPUT_CHARS, { ANALYZE_TIMEOUT_MS }, preemptible = false)!!
+    override suspend fun complete(prompt: String): String = complete(null, prompt)
+
+    private suspend fun complete(modelId: String?, prompt: String): String = asInteractive {
+        generateAnalysisOnce(modelId, prompt, "complete", ANALYZE_MAX_OUTPUT_CHARS, { ANALYZE_TIMEOUT_MS }, preemptible = false)!!
     }
 
     /**
@@ -586,6 +630,14 @@ class LocalLlmProvider @Inject constructor(
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>
+    ): Flow<String> = chatStream(null, userMessage, context, history)
+
+    /** [modelId] のモデルでの [chatStream]。 */
+    private fun chatStream(
+        modelId: String?,
+        userMessage: String,
+        context: List<String>,
+        history: List<ChatMessage>
     ): Flow<String> = flow {
         asInteractive {
             var maxChars = LocalChatPrompt.MAX_PROMPT_CHARS
@@ -593,7 +645,7 @@ class LocalLlmProvider @Inject constructor(
                 var emitted = false
                 try {
                     val guard = ChatOutputGuard()
-                    streamOnce(LocalChatPrompt.build(userMessage, context, history, maxChars))
+                    streamOnce(modelId, LocalChatPrompt.build(userMessage, context, history, maxChars))
                         .transformWhile { chunk ->
                             emit(guard.accept(chunk))
                             !guard.stopped
@@ -630,8 +682,8 @@ class LocalLlmProvider @Inject constructor(
     }
 
     /** 生成の増分を流す。収集側のキャンセルで生成を中断する。 */
-    private fun streamOnce(prompt: String): Flow<String> = callbackFlow {
-        withEngine { loaded ->
+    private fun streamOnce(modelId: String?, prompt: String): Flow<String> = callbackFlow {
+        withEngine(modelId) { loaded ->
             val finished = CompletableDeferred<Throwable?>()
             val generation = loaded.engine.start(
                 prompt,

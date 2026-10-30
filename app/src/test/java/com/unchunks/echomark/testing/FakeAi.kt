@@ -74,6 +74,9 @@ class FakeAppSettingsRepository(
     override suspend fun setApiModel(task: AiTask, provider: ApiProvider, modelId: String) = updateTask(task) {
         copy(apiModels = apiModels + (provider to modelId.trim().ifBlank { provider.defaultModel }))
     }
+    override suspend fun setLocalModel(task: AiTask, modelId: String?) = updateTask(task) {
+        copy(localModelId = modelId?.takeIf { it.isNotBlank() })
+    }
 
     override suspend fun setThemeMode(mode: ThemeMode) { themeModeFlow.value = mode }
     override suspend fun setDynamicColor(enabled: Boolean) { dynamicColorFlow.value = enabled }
