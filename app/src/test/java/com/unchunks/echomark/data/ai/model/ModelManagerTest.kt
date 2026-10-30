@@ -24,6 +24,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import java.io.File
+import java.security.MessageDigest
 
 /** 取り込み元(SAF のプロバイダ)が想定外の例外を投げても、クラッシュせず失敗として扱う。 */
 @RunWith(AndroidJUnit4::class)
@@ -31,6 +32,7 @@ class ModelManagerTest {
 
     private lateinit var context: Context
     private lateinit var manager: ModelManager
+    private val bookmarks = FakeBookmarkRepository()
 
     @Before
     fun setUp() {
@@ -39,7 +41,7 @@ class ModelManagerTest {
         Robolectric.setupContentProvider(OpenFailingProvider::class.java, OPEN_FAILING)
         Robolectric.setupContentProvider(BytesProvider::class.java, BYTES)
         File(context.filesDir, "models").deleteRecursively()
-        manager = ModelManager(context, FakeBookmarkRepository(), TestDispatcherProvider(Dispatchers.Unconfined))
+        manager = ModelManager(context, bookmarks, TestDispatcherProvider(Dispatchers.Unconfined))
     }
 
     @Test
@@ -166,6 +168,45 @@ class ModelManagerTest {
         // 一覧に無いモデルの失敗は出さない
         manager.reportLoadFailure(b, IllegalStateException("x"))
         assertTrue(manager.loadFailures.first().isEmpty())
+    }
+
+    private fun catalogEntry(content: ByteArray, sizeBytes: Long = content.size.toLong()) = ModelCatalogEntry(
+        id = "test",
+        name = "テストのモデル",
+        repo = "litert-community/test",
+        revision = "0".repeat(40),
+        fileName = "test-model.litertlm",
+        sizeBytes = sizeBytes,
+        sha256 = MessageDigest.getInstance("SHA-256").digest(content).joinToString("") { "%02x".format(it) },
+        license = "Apache-2.0",
+        suitedFor = "テスト"
+    )
+
+    @Test
+    fun ダウンロードしたモデルを確かめて一覧に加える() = runBlocking {
+        val content = "LITERTLM-download".toByteArray()
+        val file = File.createTempFile("download", ".litertlm").apply { writeBytes(content); deleteOnExit() }
+
+        assertTrue(manager.install(file, catalogEntry(content)))
+
+        val installed = manager.installedModel.value!!
+        assertEquals("test-model.litertlm", installed.displayName)
+        assertEquals(content.size.toLong(), installed.sizeBytes)
+        assertTrue(installed.fileName.endsWith(".litertlm"))
+        assertTrue(File(context.filesDir, "models/${installed.fileName}").readBytes().contentEquals(content))
+        assertEquals("モデル待ちのブックマークの処理を再開する", 1, bookmarks.waitingModelEnqueues)
+    }
+
+    @Test
+    fun 大きさかSHA256が合わないダウンロードは加えず一時ファイルを消す() = runBlocking {
+        val content = "LITERTLM-download".toByteArray()
+        val file = File.createTempFile("download", ".litertlm").apply { writeBytes(content); deleteOnExit() }
+
+        assertFalse(manager.install(file, catalogEntry("別の中身".toByteArray(), sizeBytes = content.size.toLong())))
+        assertFalse(manager.install(file, catalogEntry(content, sizeBytes = 1)))
+
+        assertNull(manager.installedModel.value)
+        assertFalse(File(context.filesDir, "models/download.part").exists())
     }
 
     private companion object {

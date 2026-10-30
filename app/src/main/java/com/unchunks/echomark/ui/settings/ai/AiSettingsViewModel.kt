@@ -6,11 +6,15 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
+import com.unchunks.echomark.data.ai.model.CatalogDownloadState
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
+import com.unchunks.echomark.data.ai.model.ModelCatalog
+import com.unchunks.echomark.data.ai.model.ModelCatalogDownloader
+import com.unchunks.echomark.data.ai.model.ModelCatalogEntry
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.model.EmbeddingProgress
@@ -30,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -67,7 +72,10 @@ data class AiSettingsUiState(
     /** クラウド API にファイル(画像・PDF・音声・動画)そのものも送って解析するか */
     val sendFilesToCloud: Boolean = true,
     /** 端末内 AI を GPU で動かすか(実験的。既定はオフ = CPU) */
-    val localLlmUseGpu: Boolean = false
+    val localLlmUseGpu: Boolean = false,
+    /** おすすめのモデル */
+    val catalog: List<ModelCatalogEntry> = ModelCatalog.entries,
+    val catalogDownload: CatalogDownloadState = CatalogDownloadState.Idle
 ) {
     fun setting(task: AiTask): AiTaskSetting = tasks[task] ?: AiTaskSetting()
 
@@ -133,6 +141,7 @@ class AiSettingsViewModel @Inject constructor(
     private val appSettings: AppSettingsRepository,
     private val apiKeyRepository: ApiKeyRepository,
     private val modelManager: ModelManager,
+    private val catalogDownloader: ModelCatalogDownloader,
     private val embeddingModelManager: EmbeddingModelManager,
     private val apiLlmProvider: ApiLlmProvider,
     private val bookmarkRepository: BookmarkRepository
@@ -152,9 +161,9 @@ class AiSettingsViewModel @Inject constructor(
             ::ModelsSnapshot
         ),
         selectedKeyProvider,
-        combine(appSettings.sendFilesToCloud, appSettings.localLlmUseGpu, ::Pair),
+        combine(appSettings.sendFilesToCloud, appSettings.localLlmUseGpu, catalogDownloadFlow(), ::Triple),
         apiKeyRepository.configuredProviders
-    ) { tasks, models, keyProvider, (sendFiles, useGpu), configured ->
+    ) { tasks, models, keyProvider, (sendFiles, useGpu, catalogDownload), configured ->
         AiSettingsUiState(
             tasks = tasks,
             localModels = models.llm.first,
@@ -168,9 +177,27 @@ class AiSettingsViewModel @Inject constructor(
                 ?: ApiProvider.CLAUDE,
             configuredProviders = configured,
             sendFilesToCloud = sendFiles,
-            localLlmUseGpu = useGpu
+            localLlmUseGpu = useGpu,
+            catalogDownload = catalogDownload
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AiSettingsUiState())
+
+    /** おすすめのモデルのダウンロードの進み具合を定期的に読む(画面を見ている間だけ動く。終わっていれば取り込む)。 */
+    private fun catalogDownloadFlow(): Flow<CatalogDownloadState> = channelFlow {
+        launch {
+            while (true) {
+                try {
+                    catalogDownloader.refresh()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "ダウンロードの進み具合を取得できない")
+                }
+                delay(EMBEDDING_PROGRESS_POLL_MILLIS)
+            }
+        }
+        catalogDownloader.state.collect { send(it) }
+    }
 
     /** 検索インデックスの更新状況を定期的に読む(画面を見ている間だけ動く)。 */
     private fun embeddingProgressFlow(): Flow<EmbeddingProgress?> = flow {
@@ -271,6 +298,15 @@ class AiSettingsViewModel @Inject constructor(
     fun importModel(uri: Uri) = modelManager.startImport(uri)
 
     fun cancelImport() = modelManager.cancelImport()
+
+    /** おすすめのモデルをダウンロードする。 */
+    fun downloadCatalogModel(entry: ModelCatalogEntry) {
+        viewModelScope.launch { catalogDownloader.start(entry) }
+    }
+
+    fun cancelCatalogDownload() {
+        viewModelScope.launch { catalogDownloader.cancel() }
+    }
 
     /** [model] を削除する。このモデルを選んでいた用途は既定のモデルに戻す。 */
     fun deleteModel(model: LocalModelInfo) {

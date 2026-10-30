@@ -47,6 +47,7 @@ import com.unchunks.components.composeui.readableWidth
 import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
+import com.unchunks.echomark.data.ai.model.ModelCatalogEntry
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.domain.repository.AiTask
@@ -70,6 +71,9 @@ class AiSettingsActions(
     val onDeleteModel: (LocalModelInfo) -> Unit = {},
     /** 用途でモデルを選んでいないときに使う端末内モデルを決める */
     val onSetDefaultModel: (LocalModelInfo) -> Unit = {},
+    /** おすすめのモデルをダウンロードする */
+    val onDownloadCatalogModel: (ModelCatalogEntry) -> Unit = {},
+    val onCancelCatalogDownload: () -> Unit = {},
     /** 用途で使う端末内モデルを選ぶ(null は既定のモデル) */
     val onSelectLocalModel: (AiTask, String?) -> Unit = { _, _ -> },
     /** 埋め込みモデルのファイルを選ぶ(取り込むモデルの種類を渡す。ファイル選択画面は呼び出し側で開く) */
@@ -141,6 +145,8 @@ fun AiSettingsScreen(
             onCancelImport = viewModel::cancelImport,
             onDeleteModel = viewModel::deleteModel,
             onSetDefaultModel = viewModel::setDefaultModel,
+            onDownloadCatalogModel = viewModel::downloadCatalogModel,
+            onCancelCatalogDownload = viewModel::cancelCatalogDownload,
             onSelectLocalModel = viewModel::setLocalModel,
             onPickEmbeddingModel = { profile ->
                 pendingEmbeddingProfileId = profile.id
@@ -250,6 +256,16 @@ fun AiSettingsContent(
             if (uiState.localModel != null) {
                 LocalLlmGpuSetting(checked = uiState.localLlmUseGpu, onCheckedChange = actions.onSetLocalLlmUseGpu)
             }
+
+            SectionDivider()
+            SectionHeader("おすすめのモデル")
+            ModelCatalogSection(
+                entries = uiState.catalog,
+                installed = uiState.localModels,
+                state = uiState.catalogDownload,
+                onDownload = actions.onDownloadCatalogModel,
+                onCancel = actions.onCancelCatalogDownload
+            )
 
             SectionDivider()
             SectionHeader("検索用の埋め込みモデル")

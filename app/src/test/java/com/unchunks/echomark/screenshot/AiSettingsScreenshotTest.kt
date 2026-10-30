@@ -7,9 +7,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.data.ai.model.CatalogDownloadState
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
+import com.unchunks.echomark.data.ai.model.ModelCatalog
 import com.unchunks.echomark.data.ai.model.ModelImportError
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.repository.AiTask
@@ -33,7 +35,7 @@ import java.util.TimeZone
 /** AI 設定サブ画面の主な状態(縦長の画面で全体を撮る)。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w400dp-h3400dp-xhdpi")
+@Config(qualifiers = "w400dp-h5600dp-xhdpi")
 class AiSettingsScreenshotTest {
 
     @get:Rule
@@ -67,7 +69,7 @@ class AiSettingsScreenshotTest {
 
     @Composable
     private fun Screen(state: AiSettingsUiState, connectionTest: ConnectionTestState = ConnectionTestState.Idle) {
-        Box(Modifier.height(3300.dp)) {
+        Box(Modifier.height(5500.dp)) {
             AiSettingsContent(uiState = state, connectionTest = connectionTest, actions = AiSettingsActions())
         }
     }
@@ -110,6 +112,22 @@ class AiSettingsScreenshotTest {
             AiSettingsUiState(
                 tasks = tasks + (AiTask.CHAT to tasks.getValue(AiTask.CHAT).copy(localModelId = qwen.id)),
                 localModels = InstalledModels(listOf(model, qwen), defaultId = model.id)
+            )
+        )
+    }
+
+    /** おすすめのモデルの一覧。1つは取り込み済みで、別の1つをダウンロード中 */
+    @Test
+    fun modelCatalog() = screenshot.captureLightDark("ai_settings_model_catalog") {
+        val installed = ModelCatalog.entries.first()
+        val downloading = ModelCatalog.entries.first { it.id == "gemma-4-e2b" }
+        Screen(
+            AiSettingsUiState(
+                tasks = aiTasks(LlmBackend.LOCAL),
+                localModels = InstalledModels(
+                    listOf(LocalModelInfo("local_llm.litertlm", installed.fileName, installed.sizeBytes, 1_790_000_000_000L))
+                ),
+                catalogDownload = CatalogDownloadState.Downloading(downloading, 900_000_000, waitingForNetwork = false)
             )
         )
     }
