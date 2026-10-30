@@ -10,6 +10,7 @@ import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
@@ -120,6 +121,8 @@ data class SettingsUiState(
     val dynamicColor: Boolean = false,
     val rediscover: RediscoverSettings = RediscoverSettings(),
     val processing: ProcessingSettings = ProcessingSettings(),
+    /** 要約の言語と書き方(#12・#16) */
+    val summaryStyle: SummaryStyle = SummaryStyle(),
     /** 計算中は null */
     val storage: StorageUsage? = null,
     val dataOperation: DataOperationState = DataOperationState.Idle,
@@ -181,13 +184,15 @@ class SettingsViewModel @Inject constructor(
 
     private val display = combine(appSettings.themeMode, appSettings.dynamicColor, ::Pair)
 
+    private val behavior = combine(appSettings.processingSettings, appSettings.summaryStyle, ::Pair)
+
     val uiState: StateFlow<SettingsUiState> = combine(
         aiSummary,
         display,
         appSettings.rediscoverSettings,
-        appSettings.processingSettings,
+        behavior,
         transient
-    ) { ai, (themeMode, dynamicColor), rediscover, processing, transient ->
+    ) { ai, (themeMode, dynamicColor), rediscover, (processing, summaryStyle), transient ->
         SettingsUiState(
             isLoaded = true,
             ai = ai,
@@ -195,6 +200,7 @@ class SettingsViewModel @Inject constructor(
             dynamicColor = dynamicColor,
             rediscover = rediscover,
             processing = processing,
+            summaryStyle = summaryStyle,
             storage = transient.storage,
             dataOperation = transient.operation,
             crashLog = transient.crashLog,
@@ -265,6 +271,11 @@ class SettingsViewModel @Inject constructor(
             appSettings.updateProcessingSettings(transform)
             processingScheduleController.onSettingsChanged(previous, appSettings.processingSettings.first())
         }
+    }
+
+    /** 要約の言語・書き方を書き換える(次に作る要約から反映される。保存済みの要約は再処理で作り直す)。 */
+    fun updateSummaryStyle(transform: (SummaryStyle) -> SummaryStyle) {
+        viewModelScope.launch { appSettings.updateSummaryStyle(transform) }
     }
 
     private suspend fun applySchedule() {

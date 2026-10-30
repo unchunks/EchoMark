@@ -9,6 +9,7 @@ import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmProvider
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
@@ -56,6 +57,13 @@ class FakeAppSettingsRepository(
     var resetCalls = 0
     val processingFlow = MutableStateFlow(ProcessingSettings())
 
+    val summaryStyleFlow = MutableStateFlow(SummaryStyle())
+
+    override val summaryStyle: Flow<SummaryStyle> = summaryStyleFlow
+    override suspend fun updateSummaryStyle(transform: (SummaryStyle) -> SummaryStyle) {
+        summaryStyleFlow.update(transform)
+    }
+
     override val processingSettings: Flow<ProcessingSettings> = processingFlow
     override suspend fun updateProcessingSettings(transform: (ProcessingSettings) -> ProcessingSettings) {
         processingFlow.update(transform)
@@ -100,6 +108,7 @@ class FakeAppSettingsRepository(
         localLlmUseGpuFlow.value = false
         bookmarkSortOrderFlow.value = BookmarkSortOrder.NEWEST
         processingFlow.value = ProcessingSettings()
+        summaryStyleFlow.value = SummaryStyle()
     }
     override suspend fun getRediscoverNotified(): Map<Long, Long> = TODO("not used")
     override suspend fun recordRediscoverNotified(ids: List<Long>, notifiedAt: Long) = TODO("not used")

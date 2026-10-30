@@ -673,7 +673,9 @@ class LocalLlmProvider @Inject constructor(
         val prompt = buildAnalyzePrompt(input, body.text, isLong, digest, existingTags, scope)
         val schema = AnalysisSchema.analysis(
             scope,
-            AnalysisSchema.Limits(summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong) * SCHEMA_LENGTH_FACTOR)
+            AnalysisSchema.Limits(
+                summaryMaxChars = input.style.schemaChars(AiPrompts.summaryMaxChars(input.kind, isLong, input.style)) * SCHEMA_LENGTH_FACTOR
+            )
         )
         // 形の崩れた出力(要約が空など)は、直す指示を付けて作り直させる(端末内は1回に数分かかるため、作り直しは少なく)
         val response = StructuredOutput.generateWithRepair(
@@ -893,10 +895,11 @@ class LocalLlmProvider @Inject constructor(
             // 小さいモデルは渡した既存のタグを内容に関係なく写すため、タイトルか本文に出てくるものだけを渡す
             // (続けて保存したブックマークのタグが、関係ないブックマークに付くのを防ぐ)
             AiPrompts.existingTagsMentionedIn(existingTags, input.combinedText()),
-            summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
+            summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong, input.style),
             scope = scope,
             digest = digest,
-            profile = input.profile
+            profile = input.profile,
+            style = input.style
         ),
         "",
         AiPrompts.analyzeInput(input.title, body, MAX_INPUT_CHARS)

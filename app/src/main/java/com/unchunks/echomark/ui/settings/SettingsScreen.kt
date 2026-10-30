@@ -64,6 +64,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.components.composeui.ReadableLazyColumn
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
@@ -85,7 +86,7 @@ import java.util.Locale
 /** 設定画面で開くダイアログ。スクリーンショットテストでは最初から開いた状態を渡せる。 */
 enum class SettingsDialog {
     THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG,
-    NIGHTLY_HOUR, CONCURRENCY, API_RATE
+    NIGHTLY_HOUR, CONCURRENCY, API_RATE, SUMMARY_LANGUAGE, SUMMARY_FORMAT
 }
 
 /** 設定画面の操作。既定は何もしない(プレビュー・スクリーンショット用)。 */
@@ -95,6 +96,8 @@ class SettingsActions(
     val onDynamicColorChange: (Boolean) -> Unit = {},
     /** 処理の設定(充電中だけ・夜間にまとめて・同時に処理する数など)を書き換える */
     val onProcessingSettingsChange: ((ProcessingSettings) -> ProcessingSettings) -> Unit = {},
+    /** 要約の言語・書き方を書き換える */
+    val onSummaryStyleChange: ((SummaryStyle) -> SummaryStyle) -> Unit = {},
     /** 処理の状況の画面を開く */
     val onOpenProcessingQueue: () -> Unit = {},
     /** 再発見通知のスイッチ。オンにするときの権限要求は呼び出し側で行う */
@@ -164,6 +167,7 @@ fun SettingsScreen(
             onThemeModeChange = viewModel::setThemeMode,
             onDynamicColorChange = viewModel::setDynamicColor,
             onProcessingSettingsChange = viewModel::updateProcessingSettings,
+            onSummaryStyleChange = viewModel::updateSummaryStyle,
             onOpenProcessingQueue = onOpenProcessingQueue,
             onRediscoverToggle = { enabled ->
                 when {
@@ -273,6 +277,8 @@ fun SettingsContent(
 
             // クラウドの AI を無効にしている間は、使用量の欄も出さない(CLOUD_AI_ENABLED。記録も無い)
             if (CLOUD_AI_ENABLED) apiUsageItems(uiState.apiUsage)
+
+            summarySettingsItems(uiState.summaryStyle, onOpenDialog = { dialog = it })
 
             item { SectionHeader("表示") }
             item {
@@ -478,6 +484,12 @@ fun SettingsContent(
             dialog = dialog!!,
             settings = uiState.processing,
             onChange = actions.onProcessingSettingsChange,
+            onDismiss = { dialog = null }
+        )
+        SettingsDialog.SUMMARY_LANGUAGE, SettingsDialog.SUMMARY_FORMAT -> SummarySettingsDialog(
+            dialog = dialog!!,
+            style = uiState.summaryStyle,
+            onChange = actions.onSummaryStyleChange,
             onDismiss = { dialog = null }
         )
         null -> Unit

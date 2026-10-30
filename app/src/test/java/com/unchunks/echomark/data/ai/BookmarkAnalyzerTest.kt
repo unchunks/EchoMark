@@ -5,6 +5,9 @@ import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmProvider
@@ -46,6 +49,27 @@ class BookmarkAnalyzerTest {
         assertEquals(listOf(AnalysisScope.ALL), local.scopes)
         assertEquals(BookmarkAnalysis("端末内の要約", listOf("端末内のタグ"), "端末内のカテゴリ"), analysis)
         assertEquals(listOf("既存"), local.lastExistingTags)
+    }
+
+
+    @Test
+    fun 要約の言語と書き方は設定から読んでAIに渡す() = runBlocking {
+        settings.updateSummaryStyle { SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS) }
+
+        analyzer.analyze(input, emptyList())
+
+        assertEquals(SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS), local.lastInput!!.style)
+    }
+
+    @Test
+    fun 設定を変えたら次の処理から反映される() = runBlocking {
+        analyzer.analyze(input, emptyList())
+        assertEquals(SummaryStyle(), local.lastInput!!.style)
+
+        settings.updateSummaryStyle { it.copy(format = SummaryFormat.ONE_LINE) }
+        analyzer.analyze(input, emptyList())
+
+        assertEquals(SummaryFormat.ONE_LINE, local.lastInput!!.style.format)
     }
 
     @Test

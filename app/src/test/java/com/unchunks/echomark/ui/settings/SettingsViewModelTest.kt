@@ -9,6 +9,9 @@ import com.unchunks.echomark.crash.CrashEnvironment
 import com.unchunks.echomark.crash.CrashLogKind
 import com.unchunks.echomark.crash.CrashLogStore
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.usage.ApiUsagePeriods
 import com.unchunks.echomark.domain.usage.ApiUsageRecord
@@ -85,6 +88,21 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(ApiUsagePeriods(), viewModel.uiState.value.apiUsage)
+    }
+
+    @Test
+    fun 要約の言語と書き方を書き換えると画面に出し_保存する() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertEquals(SummaryStyle(), viewModel.uiState.value.summaryStyle)
+
+        viewModel.updateSummaryStyle { it.copy(language = SummaryLanguage.CHINESE) }
+        viewModel.updateSummaryStyle { it.copy(format = SummaryFormat.BULLETS) }
+        advanceUntilIdle()
+
+        assertEquals(SummaryStyle(SummaryLanguage.CHINESE, SummaryFormat.BULLETS), viewModel.uiState.value.summaryStyle)
+        assertEquals(SummaryStyle(SummaryLanguage.CHINESE, SummaryFormat.BULLETS), settings.summaryStyleFlow.value)
     }
 
     @Test

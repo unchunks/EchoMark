@@ -2,6 +2,7 @@ package com.unchunks.echomark.domain.repository
 
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.model.SummaryStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.DayOfWeek
@@ -104,6 +105,12 @@ interface AppSettingsRepository {
 
     /** 処理の設定を書き換える(値は範囲に収めて保存する) */
     suspend fun updateProcessingSettings(transform: (ProcessingSettings) -> ProcessingSettings)
+
+    /** 要約の言語と書き方(#12・#16)。既定は日本語の文章 */
+    val summaryStyle: Flow<SummaryStyle>
+
+    /** 要約の言語・書き方を書き換える */
+    suspend fun updateSummaryStyle(transform: (SummaryStyle) -> SummaryStyle)
 
     /** 用途ごとの AI の設定(全用途がそろったマップ)。API キーは [ApiKeyRepository] 側で管理する。 */
     val aiTaskSettings: Flow<Map<AiTask, AiTaskSetting>>
