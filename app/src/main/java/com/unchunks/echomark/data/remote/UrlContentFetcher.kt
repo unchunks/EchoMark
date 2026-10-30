@@ -141,7 +141,7 @@ class UrlContentFetcher internal constructor(
      */
     internal fun withGitHubRepo(url: String, content: FetchedContent): FetchedContent {
         val repo = GitHubUrls.repoOf(url) ?: return content
-        val fetched = githubFetcher.fetch(repo) ?: return content
+        val fetched = githubFetcher.fetch(repo, GitHubUrls.folderOf(url)) ?: return content
         return content.copy(title = fetched.title, description = null, text = fetched.text, siteName = content.siteName ?: "GitHub")
     }
 

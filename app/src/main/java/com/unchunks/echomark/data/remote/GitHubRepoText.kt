@@ -50,18 +50,25 @@ object GitHubRepoText {
         null
     }
 
-    /** ブックマークのタイトル(`owner/repo: 説明`。説明が無ければ `owner/repo`) */
-    fun title(info: Info): String {
+    /**
+     * ブックマークのタイトル(`owner/repo: 説明`。説明が無ければ `owner/repo`)。
+     * [folder] があれば `owner/repo/ディレクトリ`(リポジトリの説明は、ディレクトリの説明にならないため付けない)。
+     */
+    fun title(info: Info, folder: String? = null): String {
+        if (folder != null) return shorten("${info.fullName}/$folder")
         val description = info.description?.replace(WHITESPACE, " ")?.trim()?.takeIf { it.isNotEmpty() }
             ?: return info.fullName
-        val title = "${info.fullName}: $description"
-        return if (title.length <= MAX_TITLE_CHARS) title else title.take(MAX_TITLE_CHARS - 1) + "…"
+        return shorten("${info.fullName}: $description")
     }
 
-    /** AI に渡す本文。README が無ければ情報だけ。[maxChars] を超える分は README を切る。 */
-    fun build(info: Info, readme: String?, maxChars: Int = MAX_TEXT_CHARS): String {
+    private fun shorten(title: String): String =
+        if (title.length <= MAX_TITLE_CHARS) title else title.take(MAX_TITLE_CHARS - 1) + "…"
+
+    /** AI に渡す本文。README が無ければ情報だけ。[maxChars] を超える分は README を切る。[folder] はリポジトリの中のディレクトリ。 */
+    fun build(info: Info, readme: String?, maxChars: Int = MAX_TEXT_CHARS, folder: String? = null): String {
         val header = listOfNotNull(
             "リポジトリ: ${info.fullName}",
+            folder?.let { "ディレクトリ: $it" },
             info.description?.let { "説明: ${it.replace(WHITESPACE, " ").trim()}" },
             info.language?.let { "言語: $it" },
             info.topics.takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "トピック: "),
