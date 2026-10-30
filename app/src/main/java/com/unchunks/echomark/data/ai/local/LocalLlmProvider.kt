@@ -13,6 +13,8 @@ import com.unchunks.components.llm.ondevice.EngineBackend
 import com.unchunks.components.llm.ondevice.FileBackendStore
 import com.unchunks.components.llm.ondevice.GenerationKind
 import com.unchunks.components.llm.ondevice.LiteRtLmTextEngine
+import com.unchunks.components.llm.ondevice.LocalChatInput
+import com.unchunks.components.llm.ondevice.LocalGeneration
 import com.unchunks.components.llm.ondevice.LocalTextEngine
 import com.unchunks.components.llm.ondevice.isInputTooLong
 import com.unchunks.components.llm.ondevice.shouldReleaseEngineOnTrim
@@ -27,6 +29,7 @@ import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.provider.ChatContextUsage
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
@@ -40,7 +43,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,6 +63,7 @@ import timber.log.Timber
 import java.io.File
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -104,6 +107,17 @@ class LocalLlmProvider @Inject constructor(
 
         override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>) =
             this@LocalLlmProvider.chatStream(modelId, userMessage, context, history)
+
+        override fun chatStream(
+            userMessage: String,
+            context: List<String>,
+            history: List<ChatMessage>,
+            memory: String?,
+            onContextUsage: (ChatContextUsage) -> Unit
+        ) = this@LocalLlmProvider.chatStream(modelId, userMessage, context, history, memory, onContextUsage)
+
+        override suspend fun summarizeConversation(previousSummary: String?, messages: List<ChatMessage>) =
+            this@LocalLlmProvider.summarizeConversation(modelId, previousSummary, messages)
 
         override suspend fun complete(prompt: String) = this@LocalLlmProvider.complete(modelId, prompt)
 
@@ -624,6 +638,7 @@ class LocalLlmProvider @Inject constructor(
      * - 入力が文脈長を超えたと言われたら(文字数の見積もりが外れた)、文脈と履歴を減らして組み立て直す
      * - 何も出力されなかったらやり直す(小型モデルはまれに、すぐ終わりの印を出す)。試すのは最初の1回を含めて [MAX_CHAT_ATTEMPTS] 回まで
      * - 同じ行の繰り返し・長すぎる出力は [ChatOutputGuard] で止め、そこまでを回答にする
+     * - 文脈をどれだけ使ったか(LiteRT-LM の数えたトークン数)を [onContextUsage] で知らせる。入力が長すぎて失敗したときも知らせる
      * 収集側のキャンセルで生成を中断する。
      */
     override fun chatStream(
@@ -632,20 +647,32 @@ class LocalLlmProvider @Inject constructor(
         history: List<ChatMessage>
     ): Flow<String> = chatStream(null, userMessage, context, history)
 
+    override fun chatStream(
+        userMessage: String,
+        context: List<String>,
+        history: List<ChatMessage>,
+        memory: String?,
+        onContextUsage: (ChatContextUsage) -> Unit
+    ): Flow<String> = chatStream(null, userMessage, context, history, memory, onContextUsage)
+
     /** [modelId] のモデルでの [chatStream]。 */
     private fun chatStream(
         modelId: String?,
         userMessage: String,
         context: List<String>,
-        history: List<ChatMessage>
+        history: List<ChatMessage>,
+        memory: String? = null,
+        onContextUsage: (ChatContextUsage) -> Unit = {}
     ): Flow<String> = flow {
         asInteractive {
             var maxChars = LocalChatPrompt.MAX_PROMPT_CHARS
             for (attempt in 1..MAX_CHAT_ATTEMPTS) {
                 var emitted = false
+                val usedTokens = AtomicReference<Int?>()
+                fun usage() = ChatContextUsage(usedTokens.get(), MAX_TOKENS, maxChars < LocalChatPrompt.MAX_PROMPT_CHARS)
                 try {
                     val guard = ChatOutputGuard()
-                    streamOnce(modelId, LocalChatPrompt.build(userMessage, context, history, maxChars))
+                    streamOnce(modelId, LocalChatPrompt.input(userMessage, context, history, maxChars, memory), usedTokens::set)
                         .transformWhile { chunk ->
                             emit(guard.accept(chunk))
                             !guard.stopped
@@ -657,15 +684,58 @@ class LocalLlmProvider @Inject constructor(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    if (emitted || attempt == MAX_CHAT_ATTEMPTS || !isInputTooLong(e)) throw e
+                    if (emitted || attempt == MAX_CHAT_ATTEMPTS || !isInputTooLong(e)) {
+                        if (isInputTooLong(e)) onContextUsage(usage().copy(promptShrunk = true))
+                        throw e
+                    }
                     maxChars = maxChars * PROMPT_SHRINK_PERCENT / 100
                     Timber.w(e, "端末内 AI の入力が長すぎたため、文脈を減らしてやり直す: %d 文字まで", maxChars)
                     continue
                 }
-                if (emitted) return@asInteractive
+                if (emitted) {
+                    onContextUsage(usage())
+                    return@asInteractive
+                }
                 Timber.w("端末内 AI の回答が空だったため、やり直す(%d 回目)", attempt)
             }
         }
+    }
+
+    override suspend fun summarizeConversation(previousSummary: String?, messages: List<ChatMessage>): String? =
+        summarizeConversation(null, previousSummary, messages)
+
+    /**
+     * 会話の古い発言を要約する。回答を待たせないよう背景の処理として動かし、画面での生成が来たら譲って null を返す
+     * (次の回答の後にやり直す)。入力が文脈長を超えたら発言を短くしてやり直す。
+     */
+    private suspend fun summarizeConversation(
+        modelId: String?,
+        previousSummary: String?,
+        messages: List<ChatMessage>
+    ): String? {
+        var maxChars = LocalChatMemoryPrompt.MAX_PROMPT_CHARS
+        for (attempt in 1..MAX_CHAT_ATTEMPTS) {
+            if (interactiveCount.value > 0) return null
+            try {
+                val response = generateAnalysisOnce(
+                    modelId,
+                    LocalChatMemoryPrompt.build(previousSummary, messages, maxChars),
+                    "memory",
+                    PART_MAX_OUTPUT_CHARS,
+                    ::partTimeoutMillis,
+                    preemptible = true,
+                    responseSchema = AnalysisSchema.notes(maxChars = LocalChatPrompt.MAX_MEMORY_CHARS * SCHEMA_LENGTH_FACTOR)
+                ) ?: return null
+                return AnalysisParser.parseNotes(response).take(LocalChatPrompt.MAX_MEMORY_CHARS).trim().ifEmpty { null }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (attempt == MAX_CHAT_ATTEMPTS || !isInputTooLong(e)) throw e
+                maxChars = maxChars * PROMPT_SHRINK_PERCENT / 100
+                Timber.w(e, "会話の要約の入力が長すぎたため、短くしてやり直す: %d 文字まで", maxChars)
+            }
+        }
+        return null
     }
 
     /**
@@ -681,29 +751,61 @@ class LocalLlmProvider @Inject constructor(
         }
     }
 
-    /** 生成の増分を流す。収集側のキャンセルで生成を中断する。 */
-    private fun streamOnce(modelId: String?, prompt: String): Flow<String> = callbackFlow {
+    /** 会話の形([LocalTextEngine.startChat])を書式が受け付けなかったモデル([LoadedEngine.modelKey])。アプリを起動し直すまで覚える */
+    private val plainPromptChatModels: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /**
+     * 生成の増分を流す。収集側のキャンセルで生成を中断する。文脈に入ったトークン数が分かれば [onTokenCount] に渡す。
+     * 指示と履歴を役割ごとに分けた会話の形で始め、モデルの書式が受け付けなければ、1つにまとめたプロンプトでやり直す
+     * (そのモデルでは以後まとめたプロンプトを使う)。入力が長すぎる失敗は、形のせいではないためそのまま返す。
+     */
+    private fun streamOnce(modelId: String?, input: LocalChatInput, onTokenCount: (Int) -> Unit): Flow<String> = callbackFlow {
         withEngine(modelId) { loaded ->
-            val finished = CompletableDeferred<Throwable?>()
-            val generation = loaded.engine.start(
-                prompt,
-                GenerationKind.CHAT,
-                onPartial = { partial -> trySend(partial) },
-                onDone = { error ->
-                    finished.complete(error)
-                    close(error)
-                }
-            )
-            try {
-                awaitClose()
-            } finally {
-                // 途中で止められた場合は生成を中断し、終わるのを待ってから閉じる
-                if (!finished.isCompleted) generation.cancel()
-                withContext(NonCancellable) { awaitFinished(finished) }
-                generation.close()
+            val sentAny = AtomicBoolean(false)
+            val onPartial: (String) -> Unit = { partial ->
+                sentAny.set(true)
+                trySend(partial)
             }
+            val startPlain: ((Throwable?) -> Unit) -> LocalGeneration = { onDone ->
+                loaded.engine.start(input.plainPrompt, GenerationKind.CHAT, onPartial, onDone)
+            }
+            val useTurns = loaded.modelKey !in plainPromptChatModels
+            var error = if (useTurns) {
+                try {
+                    runChatGeneration(onTokenCount) { onDone -> loaded.engine.startChat(input, onPartial, onDone) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    e
+                }
+            } else {
+                runChatGeneration(onTokenCount, startPlain)
+            }
+            if (useTurns && error != null && !sentAny.get() && error !is CancellationException && !isInputTooLong(error)) {
+                Timber.w(error, "会話の形の入力に失敗したため、このモデルでは以後プロンプトをまとめて渡す: %s", loaded.model.displayName)
+                plainPromptChatModels += loaded.modelKey
+                error = runChatGeneration(onTokenCount, startPlain)
+            }
+            close(error)
         }
     }.buffer(Channel.UNLIMITED).flowOn(dispatcherProvider.default)
+
+    /** [start] で生成を始めて終わるのを待ち、失敗ならその例外を返す。途中で止められたら生成を中断し、終わるのを待ってから閉じる。 */
+    private suspend fun runChatGeneration(
+        onTokenCount: (Int) -> Unit,
+        start: ((Throwable?) -> Unit) -> LocalGeneration
+    ): Throwable? {
+        val finished = CompletableDeferred<Throwable?>()
+        val generation = start { error -> finished.complete(error) }
+        try {
+            return finished.await()
+        } finally {
+            if (!finished.isCompleted) generation.cancel()
+            withContext(NonCancellable) { awaitFinished(finished) }
+            generation.tokenCount()?.let(onTokenCount)
+            generation.close()
+        }
+    }
 
     private fun buildAnalyzePrompt(
         input: AnalysisInput,

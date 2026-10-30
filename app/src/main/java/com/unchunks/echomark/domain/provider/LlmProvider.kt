@@ -44,6 +44,27 @@ interface LlmProvider {
         flow { emit(chat(userMessage, context, history)) }
 
     /**
+     * [chatStream] の、会話の記憶を渡す版。文脈に上限のある端末内 AI で使う。既定実装は記憶を使わない。
+     * @param memory 会話の古い発言の要約。[history] より前の発言をまとめたもの。無ければ null
+     * @param onContextUsage 生成が終わったときに、文脈をどれだけ使ったかを知らせる(知らせない実装もある)
+     */
+    fun chatStream(
+        userMessage: String,
+        context: List<String>,
+        history: List<ChatMessage>,
+        memory: String?,
+        onContextUsage: (ChatContextUsage) -> Unit
+    ): Flow<String> = chatStream(userMessage, context, history)
+
+    /**
+     * 会話の古い発言([messages]、古い順)を、これまでの要約([previousSummary])とまとめて短い要約にする。
+     * 画面で待っている生成より先に動かさない。
+     * @return 要約。作らない実装(クラウド API)・画面での生成に譲って作らなかったときは null
+     * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
+     */
+    suspend fun summarizeConversation(previousSummary: String?, messages: List<ChatMessage>): String? = null
+
+    /**
      * [prompt] の指示だけで JSON を1つ返させる(資料の選択など、チャットの文脈を付けない呼び出し)。
      * 応答は JSON オブジェクトの文字列。解析は呼び出し側で行う。
      * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
@@ -56,6 +77,23 @@ interface LlmProvider {
      * (本番の推論で改めて失敗する)。準備の要らない実装(クラウド API)は何もしない。
      */
     fun prewarm() {}
+}
+
+/**
+ * 1回のチャットの生成で、文脈(入力と出力の合計の上限)をどれだけ使ったか。
+ * @property usedTokens 使ったトークン数。数えられなければ null
+ * @property maxTokens 文脈の上限のトークン数
+ * @property promptShrunk 入力が文脈に入らず、文脈と履歴を減らして組み立て直したか
+ */
+data class ChatContextUsage(val usedTokens: Int?, val maxTokens: Int, val promptShrunk: Boolean) {
+    /** 文脈に余裕が無いか。古い発言を早めに要約して、次の入力を小さくする */
+    val isTight: Boolean
+        get() = promptShrunk || (usedTokens != null && usedTokens * 100 >= maxTokens * TIGHT_PERCENT)
+
+    private companion object {
+        /** 文脈のこの割合を超えたら余裕が無いとみなす(次の回答の分を残す) */
+        const val TIGHT_PERCENT = 75
+    }
 }
 
 /** LLM のモデルファイルが端末に存在せず、推論できないことを表す。 */

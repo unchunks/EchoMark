@@ -52,6 +52,25 @@ interface ConversationDao {
     @Query("UPDATE conversations SET title = :title, isTitleManuallySet = 1 WHERE id = :id")
     suspend fun rename(id: Long, title: String)
 
+    /**
+     * 会話の要約を保存する。作っている間に別の要約が保存された、含めた最後の発言が消えた(回答の作り直し・質問の編集)ときは、
+     * 古い内容を残さないよう保存しない。
+     * @param coveredUntil 要約に含めた最後の発言の日時
+     * @param previousCoveredUntil 作り始めたときの [ConversationEntity.summaryCoveredUntil]
+     */
+    @Query(
+        """
+        UPDATE conversations SET summary = :summary, summaryCoveredUntil = :coveredUntil
+        WHERE id = :id AND summaryCoveredUntil IS :previousCoveredUntil
+            AND EXISTS (SELECT 1 FROM chat_messages m WHERE m.conversationId = :id AND m.createdAt = :coveredUntil)
+        """
+    )
+    suspend fun updateSummary(id: Long, summary: String, coveredUntil: Long, previousCoveredUntil: Long?)
+
+    /** [createdAt] 以降の発言を含む要約を消す(消した発言を要約に残さない。次に要約を作るときに作り直す)。 */
+    @Query("UPDATE conversations SET summary = NULL, summaryCoveredUntil = NULL WHERE id = :id AND summaryCoveredUntil >= :createdAt")
+    suspend fun clearSummaryFrom(id: Long, createdAt: Long)
+
     /** 会話を削除する。メッセージは外部キーの CASCADE で一緒に消える。 */
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun deleteById(id: Long)

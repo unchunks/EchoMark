@@ -5,6 +5,7 @@ import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.embedding.EmbeddingUnavailableException
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
+import com.unchunks.echomark.data.ai.ChatMemoryCompressor
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
@@ -16,6 +17,7 @@ import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.chat.ChatMemoryPolicy
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
@@ -45,6 +47,7 @@ class ChatRepositoryImpl @Inject constructor(
     private val embeddingProvider: EmbeddingProvider,
     private val llmProviderResolver: LlmProviderResolver,
     private val bookmarkRepository: BookmarkRepository,
+    private val chatMemory: ChatMemoryCompressor,
     private val dispatcherProvider: DispatcherProvider
 ) : ChatRepository {
 
@@ -101,8 +104,9 @@ class ChatRepositoryImpl @Inject constructor(
 
         val answer = StringBuilder()
         var failure: Throwable? = null
+        var contextTight = false
         try {
-            provider.chatStream(userMessage, prepared.context, prepared.history)
+            provider.chatStream(userMessage, prepared.context, prepared.history, prepared.memory) { contextTight = it.isTight }
                 // 生成側の失敗だけを受け取る(collect 側の例外は素通し)
                 .catch { failure = it }
                 .collect { chunk ->
@@ -122,6 +126,8 @@ class ChatRepositoryImpl @Inject constructor(
 
         // 失敗時は途中までの出力を破棄する(拒否などで不完全な回答を残さない)
         failure?.let {
+            // 入力が文脈に入らなかったなら、やり直す前に古い発言を要約しておく
+            if (contextTight) chatMemory.compressIfNeeded(conversationId, tight = true)
             emit(ChatStreamEvent.Failed(it))
             return@flow
         }
@@ -130,7 +136,9 @@ class ChatRepositoryImpl @Inject constructor(
             emit(ChatStreamEvent.Failed(LlmException.Unexpected("応答が空でした")))
             return@flow
         }
-        emit(ChatStreamEvent.Completed(saveAssistantMessage(conversationId, text, prepared.referencedIds)))
+        val messageId = saveAssistantMessage(conversationId, text, prepared.referencedIds)
+        chatMemory.compressIfNeeded(conversationId, contextTight)
+        emit(ChatStreamEvent.Completed(messageId))
     }.flowOn(dispatcherProvider.io)
 
     /** 送信前の準備: 履歴の取得、ユーザー発言の保存、文脈(関連ブックマーク)の検索。 */
@@ -146,9 +154,13 @@ class ChatRepositoryImpl @Inject constructor(
         val recent = chatMessageDao.getRecentMessages(conversationId, RagSupport.HISTORY_LIMIT + 1)
         val last = recent.lastOrNull()
         val reuseLastUserMessage = isRetry && last?.role == ChatRole.USER && last.content == userMessage
+        // 要約に含めた発言は、要約の方で渡す
+        val conversation = conversationDao.getById(conversationId)
+        val coveredUntil = conversation?.summaryCoveredUntil
         val history = (if (reuseLastUserMessage) recent.dropLast(1) else recent)
             .takeLast(RagSupport.HISTORY_LIMIT)
             .map { it.toDomain() }
+            .let { ChatMemoryPolicy.notCovered(it, coveredUntil) }
 
         // 1. ユーザーの発言を保存
         val userTime = System.currentTimeMillis()
@@ -210,7 +222,12 @@ class ChatRepositoryImpl @Inject constructor(
         val attachmentContext = attachment?.let {
             RagSupport.formatContextEntry(usedBookmarks.size + 1, "添付「${it.name}」", it.text)
         }
-        return PreparedChat(history, bookmarkContext + listOfNotNull(attachmentContext), usedBookmarks.map { it.id })
+        return PreparedChat(
+            history,
+            bookmarkContext + listOfNotNull(attachmentContext),
+            usedBookmarks.map { it.id },
+            memory = conversation?.summary?.takeIf { coveredUntil != null }
+        )
     }
 
     /**
@@ -308,6 +325,7 @@ class ChatRepositoryImpl @Inject constructor(
     override suspend fun deleteMessagesFrom(message: ChatMessage): Unit =
         withContext(dispatcherProvider.io) {
             chatMessageDao.deleteFrom(message.conversationId, message.createdAt, message.id)
+            conversationDao.clearSummaryFrom(message.conversationId, message.createdAt)
         }
 
     override suspend fun renameConversation(conversationId: Long, title: String): Unit =
@@ -339,7 +357,9 @@ class ChatRepositoryImpl @Inject constructor(
     private class PreparedChat(
         val history: List<ChatMessage>,
         val context: List<String>,
-        val referencedIds: List<Long>
+        val referencedIds: List<Long>,
+        /** 会話の古い発言の要約。無ければ null */
+        val memory: String?
     )
 
     companion object {
