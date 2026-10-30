@@ -211,7 +211,10 @@ abstract class BackupDao {
     @Query("DELETE FROM bookmarks")
     abstract suspend fun deleteAllBookmarks()
 
-    /** ブックマーク・タグ・会話をすべて削除する(外部キーの子から順に消す)。 */
+    @Query("DELETE FROM api_usage")
+    abstract suspend fun deleteAllApiUsage()
+
+    /** ブックマーク・タグ・会話・クラウド API の使用量の記録をすべて削除する(外部キーの子から順に消す)。 */
     @Transaction
     open suspend fun deleteAll() {
         deleteAllMessages()
@@ -219,5 +222,6 @@ abstract class BackupDao {
         deleteAllCrossRefs()
         deleteAllTags()
         deleteAllBookmarks()
+        deleteAllApiUsage()
     }
 }

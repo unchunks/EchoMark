@@ -22,9 +22,11 @@ import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
+import com.unchunks.echomark.testing.FakeApiUsageRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeLlmProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -45,6 +47,7 @@ class ApiLlmProviderTest {
 
     private lateinit var server: MockWebServer
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.API, provider = ApiProvider.GEMINI)
+    private val usage = FakeApiUsageRepository()
 
     @Before
     fun setUp() {
@@ -69,7 +72,8 @@ class ApiLlmProviderTest {
             openAi = OpenAiApiClient(OkHttpClient(), dispatchers, server.url("/")),
             appSettings = settings,
             apiKeyRepository = keys,
-            attachmentLoader = loader
+            attachmentLoader = loader,
+            usageRepository = usage
         )
     }
 
@@ -115,6 +119,81 @@ class ApiLlmProviderTest {
             }
         )
         .build()
+
+
+    /** 使用量(usageMetadata)つきの Gemini の SSE 応答。 */
+    private fun geminiSseWithUsage(text: String, promptTokens: Int, outputTokens: Int, thoughtTokens: Int = 0) =
+        MockResponse.Builder()
+            .addHeader("Content-Type", "text/event-stream")
+            .body(
+                """data: {"candidates":[{"content":{"parts":[{"text":${JSONObject.quote(text)}}]}}],""" +
+                    """"usageMetadata":{"promptTokenCount":$promptTokens,"candidatesTokenCount":$outputTokens,""" +
+                    """"thoughtsTokenCount":$thoughtTokens}}""" + "\n\n"
+            )
+            .build()
+
+    @Test
+    fun 要約の呼び出しごとに使ったトークン数を用途とモデルつきで記録する() = runBlocking {
+        settings.setApiModel(AiTask.SUMMARY, ApiProvider.GEMINI, "gemini-3.5-flash-lite")
+        server.enqueue(geminiSseWithUsage("""{"summary":"要約","tags":["a"],"category":"技術"}""", 500, 40, thoughtTokens = 60))
+
+        provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+            .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
+
+        val record = usage.records.value.single()
+        assertEquals(ApiProvider.GEMINI, record.provider)
+        assertEquals("gemini-3.5-flash-lite", record.model)
+        assertEquals(AiTask.SUMMARY, record.task)
+        assertEquals(500L, record.inputTokens)
+        // 思考のトークンも出力に数える
+        assertEquals(100L, record.outputTokens)
+    }
+
+    @Test
+    fun 作り直しの呼び出しも1回ずつ記録する() = runBlocking {
+        // 1回目は形が崩れた出力、2回目で正しい出力(作り直し)
+        server.enqueue(geminiSseWithUsage("これは JSON ではない", 500, 10))
+        server.enqueue(geminiSseWithUsage("""{"summary":"要約","tags":["a"],"category":"技術"}""", 560, 30))
+
+        provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+            .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
+
+        assertEquals(listOf(500L, 560L), usage.records.value.map { it.inputTokens })
+    }
+
+    @Test
+    fun チャットのストリームの使用量を用途つきで記録する() = runBlocking {
+        server.enqueue(geminiSseWithUsage("こんにちは", 200, 8))
+
+        provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.CHAT)
+            .chatStream("こんにちは", emptyList(), emptyList()).toList()
+
+        val record = usage.records.value.single()
+        assertEquals(AiTask.CHAT, record.task)
+        assertEquals(200L, record.inputTokens)
+        assertEquals(8L, record.outputTokens)
+    }
+
+    @Test
+    fun トークン数の無い応答は記録しない() = runBlocking {
+        server.enqueue(geminiSse("""{"summary":"要約","tags":["a"],"category":"技術"}"""))
+
+        provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+            .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
+
+        assertTrue(usage.records.value.isEmpty())
+    }
+
+    @Test
+    fun 記録に失敗しても要約の結果は返す() = runBlocking {
+        usage.failure = IllegalStateException("DB が開けない")
+        server.enqueue(geminiSseWithUsage("""{"summary":"要約","tags":["a"],"category":"技術"}""", 500, 40))
+
+        val analysis = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")))
+            .analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
+
+        assertEquals("要約", analysis.summary)
+    }
 
     @Test
     fun キー未設定ならApiKeyMissing() = runBlocking {

@@ -244,8 +244,8 @@ class MigrationTest {
     }
 
     @Test
-    fun migrate12To13_addsSummaryCoveredUntilAsEmpty() {
-        helper.createDatabase(12).apply {
+    fun migrate13To14_addsSummaryCoveredUntilAsEmpty() {
+        helper.createDatabase(13).apply {
             execSQL(
                 """
                 INSERT INTO conversations (id, title, isTitleManuallySet, createdAt, updatedAt)
@@ -255,8 +255,8 @@ class MigrationTest {
             close()
         }
 
-        // スキーマ v13 と一致するか(列・既定値・インデックス)も検証される
-        val connection = helper.runMigrationsAndValidate(13, listOf(MIGRATION_12_13))
+        // スキーマ v14 と一致するか(列・既定値・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(14, listOf(MIGRATION_13_14))
 
         val row = connection.prepare("SELECT title, summary, summaryCoveredUntil FROM conversations").use { stmt ->
             stmt.step()
@@ -351,6 +351,39 @@ class MigrationTest {
             VALUES (1, 'URL', NULL, 'https://example.com/a', '既存のタイトル', '既存の要約', NULL, 100, 200, 'DONE')
             """.trimIndent()
         )
+    }
+
+    @Test
+    fun migrate12To13_addsEmptyApiUsageTableAndKeepsBookmarks() {
+        helper.createDatabase(12).apply {
+            execSQL(
+                """
+                INSERT INTO bookmarks (id, type, content, contentUri, title, createdAt, lastAccessedAt, aiStatus)
+                VALUES (1, 'TEXT', 'a', NULL, '既存のタイトル', 100, 100, 'DONE')
+                """.trimIndent()
+            )
+            close()
+        }
+
+        // スキーマ v13 と一致するか(テーブル・列・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(13, listOf(MIGRATION_12_13))
+
+        // 既存の行はそのまま、使用量の記録は空から始まる
+        val titles = connection.prepare("SELECT title FROM bookmarks").use { stmt ->
+            buildList { while (stmt.step()) add(stmt.getText(0)) }
+        }
+        assertEquals(listOf("既存のタイトル"), titles)
+        val usageRows = connection.prepare("SELECT COUNT(*) FROM api_usage").use { stmt ->
+            stmt.step()
+            stmt.getLong(0)
+        }
+        assertEquals(0L, usageRows)
+        // 新しいテーブルに書ける
+        connection.execSQL(
+            "INSERT INTO api_usage (createdAt, provider, model, task, inputTokens, outputTokens) " +
+                "VALUES (1, 'CLAUDE', 'claude-haiku-5-5', 'SUMMARY', 100, 20)"
+        )
+        connection.close()
     }
 
     private companion object {

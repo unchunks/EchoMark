@@ -10,10 +10,13 @@ import com.unchunks.echomark.crash.CrashLogKind
 import com.unchunks.echomark.crash.CrashLogStore
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.usage.ApiUsagePeriods
+import com.unchunks.echomark.domain.usage.ApiUsageRecord
 import com.unchunks.echomark.domain.repository.DataOperationException
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.testing.FakeApiKeyRepository
+import com.unchunks.echomark.testing.FakeApiUsageRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeDataManagementRepository
@@ -47,7 +50,7 @@ class SettingsViewModelTest {
     private val scheduler = FakeRediscoverScheduleController()
     private val processingScheduler = FakeProcessingScheduleController()
 
-    private fun createViewModel() = SettingsViewModel(
+    private fun createViewModel(usage: FakeApiUsageRepository = FakeApiUsageRepository()) = SettingsViewModel(
         appSettings = settings,
         apiKeyRepository = apiKeys,
         modelManager = ModelManager(
@@ -58,6 +61,7 @@ class SettingsViewModelTest {
         dataRepository = data,
         scheduleController = scheduler,
         processingScheduleController = processingScheduler,
+        apiUsageRepository = usage,
         crashLogs = crashLogs,
         dispatchers = TestDispatcherProvider(mainRule.dispatcher)
     )
@@ -67,6 +71,20 @@ class SettingsViewModelTest {
 
     private val crashLogs by lazy {
         CrashLogStore(tmp.newFolder("crash-logs"), { CrashEnvironment("1.0 (1)", "Test Device", "Android 16 (API 36)") })
+    }
+
+    @Test
+    fun クラウドAIを使えない間は使用量を読まず_欄も空のまま() = runTest {
+        // クラウド AI を無効にしている間は記録が無いので、DB も読まない(CLOUD_AI_ENABLED)
+        val usage = FakeApiUsageRepository()
+        usage.record(
+            ApiUsageRecord(System.currentTimeMillis(), ApiProvider.CLAUDE, "claude-haiku-5-5", AiTask.SUMMARY, 100, 20)
+        )
+        val viewModel = createViewModel(usage)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(ApiUsagePeriods(), viewModel.uiState.value.apiUsage)
     }
 
     @Test
