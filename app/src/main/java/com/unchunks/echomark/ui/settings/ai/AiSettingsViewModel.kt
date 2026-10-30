@@ -7,6 +7,8 @@ import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.model.CatalogDownloadState
+import com.unchunks.echomark.data.ai.model.DeviceSpecs
+import com.unchunks.echomark.data.ai.model.DeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
 import com.unchunks.echomark.data.ai.model.InstalledModels
@@ -20,6 +22,8 @@ import com.unchunks.echomark.data.ai.model.ModelCatalogDownloader
 import com.unchunks.echomark.data.ai.model.ModelCatalogEntry
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.data.ai.model.ModelRecommendation
+import com.unchunks.echomark.data.ai.model.ModelRecommender
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiTask
@@ -41,6 +45,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -81,9 +86,18 @@ data class AiSettingsUiState(
     val localLlmUseGpu: Boolean = false,
     /** おすすめのモデル */
     val catalog: List<ModelCatalogEntry> = ModelCatalog.entries,
-    val catalogDownload: CatalogDownloadState = CatalogDownloadState.Idle
+    val catalogDownload: CatalogDownloadState = CatalogDownloadState.Idle,
+    /** この端末の性能。読むまでは null(おすすめの判断を出さない) */
+    val deviceSpecs: DeviceSpecs? = null
 ) {
     fun setting(task: AiTask): AiTaskSetting = tasks[task] ?: AiTaskSetting()
+
+    /** おすすめのモデルが、この端末に合うかの判断。合う順。端末の性能を読むまでは空 */
+    val recommendations: List<ModelRecommendation>
+        get() = deviceSpecs?.let { ModelRecommender.recommend(it, catalog, localModels, benchmarks) }.orEmpty()
+
+    /** 測った結果で GPU の方が速いのに、GPU を使う設定になっていないか */
+    val showGpuTip: Boolean get() = !localLlmUseGpu && ModelRecommender.isGpuFaster(benchmarks)
 
     /** 既定の端末内モデル。1つも取り込んでいなければ null */
     val localModel: LocalModelInfo? get() = localModels.default
@@ -147,7 +161,8 @@ private data class ModelsSnapshot(
     val llmImport: ModelImportState,
     val embedding: EmbeddingModelInfo?,
     val embeddingImport: ModelImportState,
-    val embeddingProgress: EmbeddingProgress?
+    val embeddingProgress: EmbeddingProgress?,
+    val deviceSpecs: DeviceSpecs?
 )
 
 @HiltViewModel
@@ -156,6 +171,7 @@ class AiSettingsViewModel @Inject constructor(
     private val apiKeyRepository: ApiKeyRepository,
     private val modelManager: ModelManager,
     private val catalogDownloader: ModelCatalogDownloader,
+    private val deviceSpecsReader: DeviceSpecsReader,
     private val benchmarkManager: ModelBenchmarkManager,
     private val embeddingModelManager: EmbeddingModelManager,
     private val apiLlmProvider: ApiLlmProvider,
@@ -174,9 +190,10 @@ class AiSettingsViewModel @Inject constructor(
             modelManager.importState,
             embeddingModelManager.installedModel,
             embeddingModelManager.importState,
-            embeddingProgressFlow(),
-            ::ModelsSnapshot
-        ),
+            combine(embeddingProgressFlow(), deviceSpecsFlow(), ::Pair)
+        ) { llm, llmImport, embedding, embeddingImport, (embeddingProgress, deviceSpecs) ->
+            ModelsSnapshot(llm, llmImport, embedding, embeddingImport, embeddingProgress, deviceSpecs)
+        },
         selectedKeyProvider,
         combine(appSettings.sendFilesToCloud, appSettings.localLlmUseGpu, catalogDownloadFlow(), ::Triple),
         apiKeyRepository.configuredProviders
@@ -189,6 +206,7 @@ class AiSettingsViewModel @Inject constructor(
             benchmarkState = models.llm.benchmarkState,
             importState = models.llmImport,
             embeddingProgress = models.embeddingProgress,
+            deviceSpecs = models.deviceSpecs,
             embeddingModel = models.embedding,
             embeddingImportState = models.embeddingImport,
             keyProvider = keyProvider
@@ -200,6 +218,9 @@ class AiSettingsViewModel @Inject constructor(
             catalogDownload = catalogDownload
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AiSettingsUiState())
+
+    /** この端末の性能。空き容量が変わるため、モデルの一覧が変わるたびに読み直す。 */
+    private fun deviceSpecsFlow(): Flow<DeviceSpecs?> = modelManager.installed.map { deviceSpecsReader.read() }
 
     /** おすすめのモデルのダウンロードの進み具合を定期的に読む(画面を見ている間だけ動く。終わっていれば取り込む)。 */
     private fun catalogDownloadFlow(): Flow<CatalogDownloadState> = channelFlow {

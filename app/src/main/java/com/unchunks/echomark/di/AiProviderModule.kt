@@ -7,7 +7,9 @@ import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProviderFactory
 import com.unchunks.echomark.data.ai.api.AttachmentLoader
 import com.unchunks.echomark.data.ai.local.LocalLlmProvider
+import com.unchunks.echomark.data.ai.model.AndroidDeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.AndroidModelDownloadClient
+import com.unchunks.echomark.data.ai.model.DeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.DownloadedModelInstaller
 import com.unchunks.echomark.data.ai.model.ModelDownloadClient
 import com.unchunks.echomark.data.ai.model.ModelManager
@@ -38,6 +40,10 @@ abstract class AiProviderModule {
     /** ダウンロードしたモデルを一覧に加える */
     @Binds
     abstract fun bindDownloadedModelInstaller(impl: ModelManager): DownloadedModelInstaller
+
+    /** この端末の性能を読む */
+    @Binds
+    abstract fun bindDeviceSpecsReader(impl: AndroidDeviceSpecsReader): DeviceSpecsReader
 
     @Binds
     abstract fun bindAttachmentLoader(impl: AndroidAttachmentLoader): AttachmentLoader

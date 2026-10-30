@@ -20,7 +20,6 @@ import com.unchunks.echomark.data.ai.model.ModelCatalogEntry
 import com.unchunks.echomark.data.ai.model.PublishedModelPerformance
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -119,8 +118,8 @@ class AiSettingsCatalogTest {
         val same = LocalModelInfo("a.litertlm", free.fileName, free.sizeBytes, 0)
         val otherSize = LocalModelInfo("b.litertlm", free.fileName, 1, 0)
 
-        assertTrue(InstalledModels(listOf(same)).contains(free))
-        assertFalse(InstalledModels(listOf(otherSize)).contains(free))
+        assertEquals(same, InstalledModels(listOf(same)).modelFor(free))
+        assertEquals(null, InstalledModels(listOf(otherSize)).modelFor(free))
     }
 
     @Test

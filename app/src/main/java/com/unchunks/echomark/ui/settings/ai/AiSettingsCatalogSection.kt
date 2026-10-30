@@ -5,11 +5,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -30,11 +34,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.unchunks.components.filestorage.formatBytes
 import com.unchunks.echomark.data.ai.model.CatalogDownloadState
+import com.unchunks.echomark.data.ai.model.DeviceSpecs
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.ModelCatalog
 import com.unchunks.echomark.data.ai.model.ModelCatalogEntry
+import com.unchunks.echomark.data.ai.model.ModelFit
+import com.unchunks.echomark.data.ai.model.ModelRecommendation
 import com.unchunks.echomark.data.ai.model.PublishedModelPerformance
 import com.unchunks.echomark.ui.common.openUrl
+import com.unchunks.echomark.ui.settings.SettingsNotice
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import java.util.Locale
 
@@ -42,9 +50,20 @@ import java.util.Locale
  * AI 設定画面の「おすすめのモデル」。公開されているモデルの一覧と、ダウンロード。
  */
 
-/** [entry] を取り込み済みか(ファイル名と大きさで見る。手で取り込んだものも含む)。 */
-internal fun InstalledModels.contains(entry: ModelCatalogEntry): Boolean =
-    models.any { it.displayName == entry.fileName && it.sizeBytes == entry.sizeBytes }
+/** 判断の見出し。 */
+internal fun ModelRecommendation.label(): String = when {
+    isTopPick -> "この端末へのおすすめ"
+    fit == ModelFit.RECOMMENDED -> "この端末に合います"
+    fit == ModelFit.POSSIBLE -> "動くかもしれません"
+    else -> "この端末には重そうです"
+}
+
+/** この端末の性能の1行。 */
+internal fun deviceSpecsSummary(device: DeviceSpecs): String = buildString {
+    append("この端末: メモリ ${formatBytes(device.totalRamBytes)}・空き容量 ${formatBytes(device.availableStorageBytes)}")
+    val soc = listOfNotNull(device.socManufacturer, device.socModel).joinToString(" ")
+    if (soc.isNotEmpty()) append("・SoC $soc")
+}
 
 /** 公開ページの性能の1行。 */
 internal fun publishedPerformanceSummary(published: PublishedModelPerformance): String = buildString {
@@ -61,13 +80,33 @@ internal fun ModelCatalogSection(
     installed: InstalledModels,
     state: CatalogDownloadState,
     onDownload: (ModelCatalogEntry) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    device: DeviceSpecs? = null,
+    recommendations: List<ModelRecommendation> = emptyList(),
+    showGpuTip: Boolean = false
 ) {
     var confirming by remember { mutableStateOf<ModelCatalogEntry?>(null) }
-    entries.forEach { entry ->
+    device?.let {
+        Text(
+            deviceSpecsSummary(it),
+            style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
+    }
+    if (showGpuTip) {
+        SettingsNotice(
+            text = "測った結果では、この端末は GPU の方が速く動きます。上の「GPU で動かす」をオンにすると回答が速くなります。",
+            icon = Icons.Outlined.Info
+        )
+    }
+    val byId = recommendations.associateBy { it.entry.id }
+    // 判断があれば合う順に並べる
+    (recommendations.map { it.entry }.ifEmpty { entries }).forEach { entry ->
         ModelCatalogCard(
             entry = entry,
-            isInstalled = installed.contains(entry),
+            recommendation = byId[entry.id],
+            isInstalled = installed.modelFor(entry) != null,
             state = state,
             onDownload = { confirming = entry },
             onCancel = onCancel
@@ -108,6 +147,7 @@ internal fun ModelCatalogSection(
 @Composable
 private fun ModelCatalogCard(
     entry: ModelCatalogEntry,
+    recommendation: ModelRecommendation?,
     isInstalled: Boolean,
     state: CatalogDownloadState,
     onDownload: () -> Unit,
@@ -120,6 +160,7 @@ private fun ModelCatalogCard(
             .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            recommendation?.let { RecommendationLabel(it) }
             Text(entry.name, style = MaterialTheme.typography.titleMedium)
             Text(
                 "${formatBytes(entry.sizeBytes)}・.${entry.format}・${entry.license}",
@@ -134,6 +175,13 @@ private fun ModelCatalogCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            recommendation?.reasons?.forEach { reason ->
+                Text(
+                    reason,
+                    style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             CatalogAction(entry, isInstalled, state, onDownload, onCancel)
             TextButton(
                 onClick = { openUrl(context, entry.pageUrl) },
@@ -143,6 +191,20 @@ private fun ModelCatalogCard(
                 Text("モデルのページを開く")
             }
         }
+    }
+}
+
+@Composable
+private fun RecommendationLabel(recommendation: ModelRecommendation) {
+    val (icon, color) = when {
+        recommendation.isTopPick -> Icons.Outlined.Star to MaterialTheme.colorScheme.primary
+        recommendation.fit == ModelFit.RECOMMENDED -> Icons.Outlined.CheckCircle to MaterialTheme.colorScheme.primary
+        recommendation.fit == ModelFit.POSSIBLE -> Icons.Outlined.Info to MaterialTheme.colorScheme.onSurfaceVariant
+        else -> Icons.Outlined.WarningAmber to MaterialTheme.colorScheme.error
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+        Text(recommendation.label(), style = MaterialTheme.typography.labelMedium, color = color)
     }
 }
 

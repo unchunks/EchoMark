@@ -41,6 +41,10 @@ data class InstalledModels(
 
     /** [id] のモデル。null か、一覧に無い(削除した)なら既定のモデル */
     fun resolve(id: String?): LocalModelInfo? = id?.let { wanted -> models.firstOrNull { it.id == wanted } } ?: default
+
+    /** おすすめのモデル [entry] を取り込んだもの(ファイル名と大きさで見る。手で取り込んだものも含む)。無ければ null */
+    fun modelFor(entry: ModelCatalogEntry): LocalModelInfo? =
+        models.firstOrNull { it.displayName == entry.fileName && it.sizeBytes == entry.sizeBytes }
 }
 
 /**

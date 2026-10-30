@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.llm.ondevice.EngineBackend
 import com.unchunks.echomark.data.ai.model.CatalogDownloadState
+import com.unchunks.echomark.data.ai.model.DeviceSpecs
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
@@ -38,7 +39,7 @@ import java.util.TimeZone
 /** AI 設定サブ画面の主な状態(縦長の画面で全体を撮る)。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w400dp-h5600dp-xhdpi")
+@Config(qualifiers = "w400dp-h6400dp-xhdpi")
 class AiSettingsScreenshotTest {
 
     @get:Rule
@@ -72,7 +73,7 @@ class AiSettingsScreenshotTest {
 
     @Composable
     private fun Screen(state: AiSettingsUiState, connectionTest: ConnectionTestState = ConnectionTestState.Idle) {
-        Box(Modifier.height(5500.dp)) {
+        Box(Modifier.height(6300.dp)) {
             AiSettingsContent(uiState = state, connectionTest = connectionTest, actions = AiSettingsActions())
         }
     }
@@ -131,6 +132,23 @@ class AiSettingsScreenshotTest {
                     listOf(LocalModelInfo("local_llm.litertlm", installed.fileName, installed.sizeBytes, 1_790_000_000_000L))
                 ),
                 catalogDownload = CatalogDownloadState.Downloading(downloading, 900_000_000, waitingForNetwork = false)
+            )
+        )
+    }
+
+    /** この端末に合うモデルの判断。測った結果では GPU の方が速い */
+    @Test
+    fun modelRecommendations() = screenshot.captureLightDark("ai_settings_model_recommendations") {
+        val installed = ModelCatalog.entries.first()
+        val local = LocalModelInfo("local_llm.litertlm", installed.fileName, installed.sizeBytes, 1_790_000_000_000L)
+        fun result(backend: EngineBackend, decode: Double) =
+            ModelBenchmarkResult(local.id, backend, 1_790_200_000_000L, 2.1, 2.5, 120.0, decode, 256, 64, 900_000_000)
+        Screen(
+            AiSettingsUiState(
+                tasks = aiTasks(LlmBackend.LOCAL),
+                localModels = InstalledModels(listOf(local)),
+                benchmarks = listOf(result(EngineBackend.CPU, 9.5), result(EngineBackend.GPU, 31.2)),
+                deviceSpecs = DeviceSpecs(7_600_000_000, 40_000_000_000, "Qualcomm", "SM8650")
             )
         )
     }
