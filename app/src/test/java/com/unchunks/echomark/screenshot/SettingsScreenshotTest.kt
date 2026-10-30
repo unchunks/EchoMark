@@ -7,6 +7,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
@@ -78,6 +81,15 @@ class SettingsScreenshotTest {
                 processing = ProcessingSettings(chargingOnly = true, nightlyBatch = true, nightlyHour = 2, maxConcurrent = 1)
             ),
             height = 1100
+        )
+    }
+
+    /** 要約の言語と書き方を変えている */
+    @Test
+    fun settingsSummary() = screenshot.captureLightDark("settings_summary") {
+        Screen(
+            readyState.copy(summaryStyle = SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS)),
+            height = 1300
         )
     }
 

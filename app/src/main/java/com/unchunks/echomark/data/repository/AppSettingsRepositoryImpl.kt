@@ -16,6 +16,9 @@ import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -185,6 +188,22 @@ class AppSettingsRepositoryImpl @Inject constructor(
         apiRequestsPerMinute = this[KEY_PROCESSING_API_RATE] ?: 0
     )
 
+    override val summaryStyle: Flow<SummaryStyle> = data.map { it.toSummaryStyle() }
+
+    override suspend fun updateSummaryStyle(transform: (SummaryStyle) -> SummaryStyle) {
+        dataStore.edit { prefs ->
+            val next = transform(prefs.toSummaryStyle())
+            prefs[KEY_SUMMARY_LANGUAGE] = next.language.name
+            prefs[KEY_SUMMARY_FORMAT] = next.format.name
+        }
+    }
+
+    // 読めない値(新しい版で増えたもの)は既定に戻す
+    private fun Preferences.toSummaryStyle() = SummaryStyle(
+        language = SummaryLanguage.entries.firstOrNull { it.name == this[KEY_SUMMARY_LANGUAGE] } ?: SummaryLanguage.DEFAULT,
+        format = SummaryFormat.entries.firstOrNull { it.name == this[KEY_SUMMARY_FORMAT] } ?: SummaryFormat.DEFAULT
+    )
+
     override suspend fun resetToDefaults() {
         dataStore.edit { prefs ->
             val onboardingCompleted = prefs[KEY_ONBOARDING_COMPLETED]
@@ -221,6 +240,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_PROCESSING_NIGHTLY_HOUR = intPreferencesKey("processing_nightly_hour")
         val KEY_PROCESSING_MAX_CONCURRENT = intPreferencesKey("processing_max_concurrent")
         val KEY_PROCESSING_API_RATE = intPreferencesKey("processing_api_requests_per_minute")
+        val KEY_SUMMARY_LANGUAGE = stringPreferencesKey("summary_language")
+        val KEY_SUMMARY_FORMAT = stringPreferencesKey("summary_format")
     }
 }
 

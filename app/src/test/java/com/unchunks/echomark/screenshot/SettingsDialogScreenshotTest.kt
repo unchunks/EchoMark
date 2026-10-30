@@ -11,10 +11,13 @@ import com.unchunks.echomark.ui.settings.DataOperationState
 import com.unchunks.echomark.ui.settings.DeleteConfirmDialog
 import com.unchunks.echomark.ui.settings.DeleteFinalDialog
 import com.unchunks.echomark.ui.settings.LicensesDialog
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.ui.settings.PrivacyDialog
 import com.unchunks.echomark.ui.settings.ProcessingSettingsDialog
 import com.unchunks.echomark.ui.settings.SettingsDialog
+import com.unchunks.echomark.ui.settings.SummarySettingsDialog
 import com.unchunks.echomark.ui.settings.ThemeModeDialog
 import org.junit.Rule
 import org.junit.Test
@@ -51,6 +54,26 @@ class SettingsDialogScreenshotTest {
         ProcessingSettingsDialog(
             dialog = SettingsDialog.NIGHTLY_HOUR,
             settings = ProcessingSettings(nightlyBatch = true),
+            onChange = {},
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun summaryLanguageDialog() = screenshot.captureDialogLightDark("settings_dialog_summary_language") {
+        SummarySettingsDialog(
+            dialog = SettingsDialog.SUMMARY_LANGUAGE,
+            style = SummaryStyle(),
+            onChange = {},
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun summaryFormatDialog() = screenshot.captureDialogLightDark("settings_dialog_summary_format") {
+        SummarySettingsDialog(
+            dialog = SettingsDialog.SUMMARY_FORMAT,
+            style = SummaryStyle(format = SummaryFormat.BULLETS),
             onChange = {},
             onDismiss = {}
         )

@@ -169,9 +169,10 @@ class ApiLlmProvider @Inject constructor(
             system = AiPrompts.analyzeInstructions(
                 input.kind,
                 existingTags,
-                summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
+                summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong, input.style),
                 scope = scope,
-                profile = input.profile
+                profile = input.profile,
+                style = input.style
             ),
             messages = listOf(
                 ApiMessage(

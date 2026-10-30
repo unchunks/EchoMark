@@ -5,6 +5,9 @@ import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
 import com.unchunks.echomark.domain.bookmark.model.SummaryProfile
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.model.TagNames
 
 /**
@@ -29,12 +32,13 @@ object AiPrompts {
         maxExistingTags: Int = API_MAX_EXISTING_TAGS,
         maxExistingTagChars: Int = API_MAX_EXISTING_TAG_CHARS,
         scope: AnalysisScope = AnalysisScope.ALL,
-        profile: SummaryProfile = SummaryProfile.GENERAL
+        profile: SummaryProfile = SummaryProfile.GENERAL,
+        style: SummaryStyle = SummaryStyle()
     ): String {
         val withSummary = scope != AnalysisScope.TAGS
         val withTags = scope != AnalysisScope.SUMMARY
         val tags = if (withTags) existingTagsForPrompt(existingTags, maxExistingTags, maxExistingTagChars) else emptyList()
-        val summaryField = """"summary": "${summaryMaxChars}文字以内の日本語の要約""""
+        val summaryField = """"summary": "${summaryFieldText(style, summaryMaxChars)}""""
         val tagFields = """"tags": ["タグ1", "タグ2"], "category": "カテゴリ名1つ""""
         return buildList {
             add("あなたはブックマーク整理アシスタントです。次の保存内容(${kindLabel(kind)})を分析し、JSONのみを出力してください。")
@@ -57,7 +61,7 @@ object AiPrompts {
             add("")
             add("ルール:")
             if (withSummary) {
-                add("- summary は日本語で簡潔に。")
+                addAll(summaryRules(style))
                 add("- summary には要約の本文だけを書く。チャンネル名・投稿者名・サイト名、動画や記事のタイトル、「この動画では」「この記事は」のような前置きは書かない。")
             }
             if (withTags) {
@@ -85,6 +89,7 @@ object AiPrompts {
      * 例のタグを写したものは、保存内容に出てこないタグを除く処理(AnalysisParser.keepMentionedTags)で落とす。
      * @param digest 本文が、長い本文を部分ごとに要約したメモのとき true
      * @param profile 要約の型。型に合う短い言い方で、要約の主役を伝える
+     * @param style 要約の言語と書き方。例の要約も、言語と書き方に合わせる
      */
     fun compactAnalyzeInstructions(
         kind: ContentKind,
@@ -92,7 +97,8 @@ object AiPrompts {
         summaryMaxChars: Int = DEFAULT_SUMMARY_CHARS,
         scope: AnalysisScope = AnalysisScope.ALL,
         digest: Boolean = false,
-        profile: SummaryProfile = SummaryProfile.GENERAL
+        profile: SummaryProfile = SummaryProfile.GENERAL,
+        style: SummaryStyle = SummaryStyle()
     ): String {
         val withSummary = scope != AnalysisScope.TAGS
         val withTags = scope != AnalysisScope.SUMMARY
@@ -109,7 +115,7 @@ object AiPrompts {
             add("次の保存内容(${kindLabel(kind)})を読み、JSONだけを出力してください。")
             add(output("要約", "\"語\", \"語\"", "分類"))
             if (withSummary) {
-                add("- summary: ${compactGuidance(kind, profile)}。${summaryMaxChars}文字以内の日本語。本文を写さず短く言い換える。" +
+                add("- summary: ${compactGuidance(kind, profile)}。${style.language.limitPhrase(summaryMaxChars)}。${compactFormatHint(style)}本文を写さず短く言い換える。" +
                     "タイトル・サイト名・チャンネル名・前置きは書かない。")
                 if (digest) add("- 本文が「[部分 1/3]」のように分かれたメモなら、全体を通してまとめる。")
                 add(COMPACT_LIMITED_ACCESS_RULE)
@@ -125,7 +131,7 @@ object AiPrompts {
             add("")
             add("例:")
             add("保存内容: 鶏もも肉にしょうゆ・みりん・砂糖のたれを絡めて、皮目から焼く。")
-            add("出力: " + output("鶏もも肉を甘辛いたれで焼く照り焼きの作り方。", "\"照り焼き\", \"鶏もも肉\"", "レシピ"))
+            add("出力: " + output(exampleSummary(style), "\"照り焼き\", \"鶏もも肉\"", "レシピ"))
         }.joinToString("\n")
     }
 
@@ -293,6 +299,60 @@ object AiPrompts {
         kind == ContentKind.WEB_PAGE -> MEDIUM_SUMMARY_CHARS
         else -> DEFAULT_SUMMARY_CHARS
     }
+
+    /** summary の項目の説明(出力形式の例の中身)。書き方と言語に合わせる。 */
+    internal fun summaryFieldText(style: SummaryStyle, maxChars: Int): String {
+        val limit = style.language.limitPhrase(maxChars)
+        return when (style.format) {
+            SummaryFormat.PARAGRAPH -> "${limit}の要約"
+            SummaryFormat.BULLETS -> "${limit}の箇条書きの要約(行頭は「・」、行は \\n で区切る)"
+            SummaryFormat.ONE_LINE -> "${limit}の1文の要約"
+        }
+    }
+
+    /** summary のルール(言語と書き方)。日本語の文章は今までのルール1行だけ。 */
+    internal fun summaryRules(style: SummaryStyle): List<String> {
+        val language = style.language.promptName
+        return buildList {
+            add(
+                when (style.format) {
+                    SummaryFormat.PARAGRAPH -> "- summary は${language}で簡潔に。"
+                    SummaryFormat.BULLETS ->
+                        "- summary は${language}で、要点を3〜5行の箇条書きにする。各行は短い1文で、行頭を「・」にし、行の間は改行(\\n)で区切る。"
+                    SummaryFormat.ONE_LINE -> "- summary は${language}で、1文だけにする。改行しない。"
+                }
+            )
+            if (style.language != SummaryLanguage.JAPANESE) {
+                add("- 本文が別の言語でも、summary は必ず${language}で書く。固有名詞・製品名・技術用語は原文のままでよい。")
+            }
+        }
+    }
+
+    /** [compactAnalyzeInstructions] の summary の行に足す、書き方の短い指示。文章なら空。 */
+    private fun compactFormatHint(style: SummaryStyle): String = when (style.format) {
+        SummaryFormat.PARAGRAPH -> ""
+        SummaryFormat.BULLETS -> "3〜5行の箇条書き(行頭は「・」、行は \\n で区切る)。"
+        SummaryFormat.ONE_LINE -> "1文だけ。"
+    }
+
+    /** [compactAnalyzeInstructions] の出力の例の要約。言語と書き方に合わせる(例が日本語のままだと、他の言語の出力が日本語に寄る)。 */
+    private fun exampleSummary(style: SummaryStyle): String {
+        val bullets = style.format == SummaryFormat.BULLETS
+        return when (style.language) {
+            SummaryLanguage.JAPANESE ->
+                if (bullets) "・鶏もも肉を皮目から焼く\\n・しょうゆ・みりん・砂糖のたれを絡める" else "鶏もも肉を甘辛いたれで焼く照り焼きの作り方。"
+            SummaryLanguage.ENGLISH ->
+                if (bullets) "・Pan-fry chicken thighs skin side down\\n・Coat with a soy sauce, mirin and sugar glaze" else "How to make teriyaki chicken thighs in a sweet-savory glaze."
+            SummaryLanguage.CHINESE ->
+                if (bullets) "・鸡腿肉从带皮的一面开始煎\\n・裹上酱油、味醂和砂糖的酱汁" else "用甜咸酱汁煎鸡腿肉的照烧做法。"
+            SummaryLanguage.KOREAN ->
+                if (bullets) "・닭다릿살을 껍질 쪽부터 굽는다\\n・간장, 미림, 설탕 양념을 입힌다" else "달콤짭짤한 양념으로 닭다릿살을 굽는 데리야키 만드는 법."
+        }
+    }
+
+    /** 書き方([style])に合わせた要約の長さの上限。[summaryMaxChars] の上限を、箇条書きは長く・1 行は短くする。 */
+    fun summaryMaxChars(kind: ContentKind, isLong: Boolean, style: SummaryStyle): Int =
+        style.maxChars(summaryMaxChars(kind, isLong))
 
     const val DEFAULT_SUMMARY_CHARS = 100
 

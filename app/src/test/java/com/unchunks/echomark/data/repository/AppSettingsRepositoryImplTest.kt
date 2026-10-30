@@ -7,6 +7,9 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -233,6 +236,32 @@ class AppSettingsRepositoryImplTest {
         repository.resetToDefaults()
 
         assertFalse(repository.onboardingCompleted.first())
+    }
+
+    @Test
+    fun 要約の言語と書き方は既定が日本語の文章で_書き換えて保存し_読めない値は既定に戻す() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertEquals(SummaryStyle(), repository.summaryStyle.first())
+
+        repository.updateSummaryStyle { it.copy(language = SummaryLanguage.ENGLISH) }
+        repository.updateSummaryStyle { it.copy(format = SummaryFormat.BULLETS) }
+
+        assertEquals(SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS), createRepository(dataStore).summaryStyle.first())
+
+        // 新しい版で増えた値などで読めなければ既定に戻す(どちらか一方だけ)
+        dataStore.edit { it[stringPreferencesKey("summary_language")] = "KLINGON" }
+        assertEquals(SummaryStyle(SummaryLanguage.JAPANESE, SummaryFormat.BULLETS), repository.summaryStyle.first())
+    }
+
+    @Test
+    fun 初期化すると要約の言語と書き方も既定に戻る() = runTest {
+        val repository = createRepository()
+        repository.updateSummaryStyle { SummaryStyle(SummaryLanguage.KOREAN, SummaryFormat.ONE_LINE) }
+
+        repository.resetToDefaults()
+
+        assertEquals(SummaryStyle(), repository.summaryStyle.first())
     }
 }
 

@@ -39,7 +39,9 @@ class BookmarkAnalyzer @Inject constructor(
         scope: AnalysisScope = AnalysisScope.ALL
     ): BookmarkAnalysis {
         // 動画の本文は、字幕の効果音・つなぎ言葉や説明文の宣伝を除いてから渡す(同じ長さに入る話の量を増やす)
-        val prepared = if (input.kind == ContentKind.VIDEO) input.copy(text = VideoAnalysisText.prepare(input.text)) else input
+        val withText = if (input.kind == ContentKind.VIDEO) input.copy(text = VideoAnalysisText.prepare(input.text)) else input
+        // 要約の言語と書き方は設定から(呼び出しのたびに読むため、変えたら次の処理から反映される)
+        val prepared = withText.copy(style = appSettings.summaryStyle.first())
         val analysis = when (scope) {
             AnalysisScope.ALL -> analyzeWithTaskSettings(prepared, existingTags)
             AnalysisScope.SUMMARY -> resolver.resolve(AiTask.SUMMARY).analyze(prepared, existingTags, AnalysisScope.SUMMARY)

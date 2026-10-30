@@ -4,6 +4,9 @@ import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
 import com.unchunks.echomark.domain.bookmark.model.SummaryProfile
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -302,5 +305,106 @@ class AiPromptsTest {
         assertTrue(compact, compact.contains(LimitedAccess.MARKER))
         // タグだけを作るときは要約の方針を入れない
         assertFalse(AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), scope = AnalysisScope.TAGS).contains(LimitedAccess.MARKER))
+    }
+    // ---- 要約の言語と書き方(#12・#16) ----
+
+    @Test
+    fun 既定の言語と書き方なら今までと同じ指示() {
+        ContentKind.entries.forEach { kind ->
+            assertEquals(
+                AiPrompts.analyzeInstructions(kind, listOf("Android")),
+                AiPrompts.analyzeInstructions(kind, listOf("Android"), style = SummaryStyle())
+            )
+            assertEquals(
+                AiPrompts.compactAnalyzeInstructions(kind, listOf("Android")),
+                AiPrompts.compactAnalyzeInstructions(kind, listOf("Android"), style = SummaryStyle())
+            )
+        }
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList())
+        assertTrue(prompt, prompt.contains("- summary は日本語で簡潔に。"))
+        assertFalse(prompt, prompt.contains("必ず"))
+    }
+
+    @Test
+    fun 英語を選ぶと英語で書かせ_本文が日本語でも英語にする() {
+        val style = SummaryStyle(language = SummaryLanguage.ENGLISH)
+
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), summaryMaxChars = 100, style = style)
+
+        assertTrue(prompt, prompt.contains("\"summary\": \"60語以内の英語の要約\""))
+        assertTrue(prompt, prompt.contains("- summary は英語で簡潔に。"))
+        assertTrue(prompt, prompt.contains("本文が別の言語でも、summary は必ず英語で書く"))
+        assertFalse(prompt, prompt.contains("日本語"))
+    }
+
+    @Test
+    fun 箇条書きは3から5行で行頭を中黒にして改行で区切らせる() {
+        val style = SummaryStyle(format = SummaryFormat.BULLETS)
+
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), summaryMaxChars = 150, style = style)
+
+        assertTrue(prompt, prompt.contains("150文字以内の日本語の箇条書きの要約(行頭は「・」、行は \\n で区切る)"))
+        assertTrue(prompt, prompt.contains("要点を3〜5行の箇条書きにする。各行は短い1文で、行頭を「・」にし"))
+    }
+
+    @Test
+    fun 一行は1文だけで改行しない() {
+        val style = SummaryStyle(format = SummaryFormat.ONE_LINE)
+
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), summaryMaxChars = 60, style = style)
+
+        assertTrue(prompt, prompt.contains("60文字以内の日本語の1文の要約"))
+        assertTrue(prompt, prompt.contains("1文だけにする。改行しない。"))
+    }
+
+    @Test
+    fun タグだけを作るときは要約の言語と書き方を入れない() {
+        val prompt = AiPrompts.analyzeInstructions(
+            ContentKind.WEB_PAGE, emptyList(), scope = AnalysisScope.TAGS, style = SummaryStyle(language = SummaryLanguage.ENGLISH)
+        )
+
+        assertFalse(prompt, prompt.contains("英語"))
+        assertFalse(prompt, prompt.contains("summary"))
+    }
+
+    @Test
+    fun 端末内向けの短い指示にも言語と書き方と例を合わせる() {
+        val english = AiPrompts.compactAnalyzeInstructions(
+            ContentKind.WEB_PAGE, emptyList(), summaryMaxChars = 100, style = SummaryStyle(language = SummaryLanguage.ENGLISH)
+        )
+        val bullets = AiPrompts.compactAnalyzeInstructions(
+            ContentKind.WEB_PAGE, emptyList(), style = SummaryStyle(format = SummaryFormat.BULLETS)
+        )
+
+        assertTrue(english, english.contains("60語以内の英語"))
+        // 例の要約も英語にする(日本語のままだと出力が日本語に寄る)
+        assertTrue(english, english.contains("How to make teriyaki chicken thighs"))
+        assertFalse(english, english.contains("照り焼きの作り方"))
+        assertTrue(bullets, bullets.contains("3〜5行の箇条書き(行頭は「・」、行は \\n で区切る)"))
+        assertTrue(bullets, bullets.contains("・鶏もも肉を皮目から焼く\\n・しょうゆ"))
+    }
+
+    @Test
+    fun 全部の言語と書き方で例の要約を持つ() {
+        SummaryLanguage.entries.forEach { language ->
+            SummaryFormat.entries.forEach { format ->
+                val prompt = AiPrompts.compactAnalyzeInstructions(
+                    ContentKind.WEB_PAGE, emptyList(), style = SummaryStyle(language, format)
+                )
+                assertTrue("$language $format", prompt.contains("出力: {\"summary\": \""))
+            }
+        }
+    }
+
+    @Test
+    fun 要約の長さの上限は書き方に合わせる() {
+        val paragraph = AiPrompts.summaryMaxChars(ContentKind.WEB_PAGE, isLong = true, style = SummaryStyle())
+
+        assertEquals(paragraph, AiPrompts.summaryMaxChars(ContentKind.WEB_PAGE, true))
+        assertEquals(paragraph * 3 / 2, AiPrompts.summaryMaxChars(ContentKind.WEB_PAGE, true, SummaryStyle(format = SummaryFormat.BULLETS)))
+        assertEquals(
+            SummaryStyle.ONE_LINE_MAX_CHARS,
+            AiPrompts.summaryMaxChars(ContentKind.VIDEO, true, SummaryStyle(format = SummaryFormat.ONE_LINE))
+        )
     }
 }
