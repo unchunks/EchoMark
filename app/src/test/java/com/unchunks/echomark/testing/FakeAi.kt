@@ -14,6 +14,7 @@ import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
 import kotlinx.coroutines.flow.Flow
@@ -53,6 +54,12 @@ class FakeAppSettingsRepository(
     val localLlmUseGpuFlow = MutableStateFlow(false)
     val bookmarkSortOrderFlow = MutableStateFlow(BookmarkSortOrder.NEWEST)
     var resetCalls = 0
+    val processingFlow = MutableStateFlow(ProcessingSettings())
+
+    override val processingSettings: Flow<ProcessingSettings> = processingFlow
+    override suspend fun updateProcessingSettings(transform: (ProcessingSettings) -> ProcessingSettings) {
+        processingFlow.update(transform)
+    }
 
     override val rediscoverSettings: Flow<RediscoverSettings> = rediscoverFlow
     override val themeMode: Flow<ThemeMode> = themeModeFlow
@@ -89,6 +96,7 @@ class FakeAppSettingsRepository(
         sendFilesToCloudFlow.value = true
         localLlmUseGpuFlow.value = false
         bookmarkSortOrderFlow.value = BookmarkSortOrder.NEWEST
+        processingFlow.value = ProcessingSettings()
     }
     override suspend fun getRediscoverNotified(): Map<Long, Long> = TODO("not used")
     override suspend fun recordRediscoverNotified(ids: List<Long>, notifiedAt: Long) = TODO("not used")

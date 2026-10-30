@@ -10,6 +10,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.SUMMARY_DEFAULT_CLAUDE_MODEL
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -39,6 +40,24 @@ class AppSettingsRepositoryImplTest {
         assertEquals(ThemeMode.SYSTEM, repository.themeMode.first())
         assertFalse(repository.dynamicColor.first())
         assertFalse(repository.onboardingCompleted.first())
+    }
+
+    @Test
+    fun 処理の設定は既定値から書き換えられ_範囲の外の値は収めて保存する() = runTest {
+        val repository = createRepository()
+        assertEquals(ProcessingSettings(), repository.processingSettings.first())
+
+        repository.updateProcessingSettings {
+            it.copy(chargingOnly = true, nightlyBatch = true, nightlyHour = 30, maxConcurrent = 99, apiRequestsPerMinute = -1)
+        }
+
+        assertEquals(
+            ProcessingSettings(
+                chargingOnly = true, nightlyBatch = true, nightlyHour = 23,
+                maxConcurrent = ProcessingSettings.MAX_CONCURRENT_LIMIT, apiRequestsPerMinute = 0
+            ),
+            repository.processingSettings.first()
+        )
     }
 
     @Test

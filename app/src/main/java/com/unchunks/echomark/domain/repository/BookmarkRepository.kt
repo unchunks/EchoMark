@@ -98,6 +98,12 @@ interface BookmarkRepository {
      * - 処理待ちのまま、対応するワークが残っていない(取り消された・失われた)ものは積み直す
      */
     suspend fun enqueueStalledProcessing(processStartedAt: Long): Int
+    /**
+     * 処理待ちのまま、ワークを積んでいないブックマーク(夜間にまとめて処理する設定で、保存したまま夜を待っているもの)を
+     * 1件ずつ順番に処理する列に積む。[nightly] なら夜間の処理として充電中を条件にする。
+     * 夜間にまとめて処理する設定のままで [nightly] でなければ積まない。積んだ件数を返す。
+     */
+    suspend fun enqueueWaitingProcessing(nightly: Boolean): Int
 
     // Delete
     suspend fun deleteBookmark(bookmark: Bookmark)

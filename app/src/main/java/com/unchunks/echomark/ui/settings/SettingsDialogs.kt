@@ -48,7 +48,7 @@ import java.time.DayOfWeek
 
 /** ラジオボタンで1つ選ぶダイアログ。行全体をタップ対象にする。 */
 @Composable
-private fun <T> ChoiceDialog(
+internal fun <T> ChoiceDialog(
     title: String,
     options: List<T>,
     selected: T,

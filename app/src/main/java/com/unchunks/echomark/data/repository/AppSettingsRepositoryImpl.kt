@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.domain.repository.defaultApiModel
@@ -154,6 +155,29 @@ class AppSettingsRepositoryImpl @Inject constructor(
         }
     }
 
+    override val processingSettings: Flow<ProcessingSettings> = data.map { it.toProcessingSettings() }
+
+    override suspend fun updateProcessingSettings(transform: (ProcessingSettings) -> ProcessingSettings) {
+        dataStore.edit { prefs ->
+            val next = transform(prefs.toProcessingSettings())
+            prefs[KEY_PROCESSING_CHARGING_ONLY] = next.chargingOnly
+            prefs[KEY_PROCESSING_UNMETERED_ONLY] = next.unmeteredOnly
+            prefs[KEY_PROCESSING_NIGHTLY] = next.nightlyBatch
+            prefs[KEY_PROCESSING_NIGHTLY_HOUR] = next.nightlyHour.coerceIn(0, 23)
+            prefs[KEY_PROCESSING_MAX_CONCURRENT] = next.maxConcurrent.coerceIn(1, ProcessingSettings.MAX_CONCURRENT_LIMIT)
+            prefs[KEY_PROCESSING_API_RATE] = next.apiRequestsPerMinute.coerceAtLeast(0)
+        }
+    }
+
+    private fun Preferences.toProcessingSettings() = ProcessingSettings(
+        chargingOnly = this[KEY_PROCESSING_CHARGING_ONLY] ?: false,
+        unmeteredOnly = this[KEY_PROCESSING_UNMETERED_ONLY] ?: false,
+        nightlyBatch = this[KEY_PROCESSING_NIGHTLY] ?: false,
+        nightlyHour = this[KEY_PROCESSING_NIGHTLY_HOUR] ?: ProcessingSettings.DEFAULT_NIGHTLY_HOUR,
+        maxConcurrent = this[KEY_PROCESSING_MAX_CONCURRENT] ?: ProcessingSettings.DEFAULT_MAX_CONCURRENT,
+        apiRequestsPerMinute = this[KEY_PROCESSING_API_RATE] ?: 0
+    )
+
     override suspend fun resetToDefaults() {
         dataStore.edit { prefs ->
             val onboardingCompleted = prefs[KEY_ONBOARDING_COMPLETED]
@@ -183,6 +207,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
+        val KEY_PROCESSING_CHARGING_ONLY = booleanPreferencesKey("processing_charging_only")
+        val KEY_PROCESSING_UNMETERED_ONLY = booleanPreferencesKey("processing_unmetered_only")
+        val KEY_PROCESSING_NIGHTLY = booleanPreferencesKey("processing_nightly_batch")
+        val KEY_PROCESSING_NIGHTLY_HOUR = intPreferencesKey("processing_nightly_hour")
+        val KEY_PROCESSING_MAX_CONCURRENT = intPreferencesKey("processing_max_concurrent")
+        val KEY_PROCESSING_API_RATE = intPreferencesKey("processing_api_requests_per_minute")
     }
 }
 

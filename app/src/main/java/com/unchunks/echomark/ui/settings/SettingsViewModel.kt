@@ -15,9 +15,11 @@ import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.DataOperationException
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.worker.ProcessingScheduleController
 import com.unchunks.echomark.worker.RediscoverScheduleController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -107,6 +109,7 @@ data class SettingsUiState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = false,
     val rediscover: RediscoverSettings = RediscoverSettings(),
+    val processing: ProcessingSettings = ProcessingSettings(),
     /** 計算中は null */
     val storage: StorageUsage? = null,
     val dataOperation: DataOperationState = DataOperationState.Idle,
@@ -121,6 +124,7 @@ class SettingsViewModel @Inject constructor(
     modelManager: ModelManager,
     private val dataRepository: DataManagementRepository,
     private val scheduleController: RediscoverScheduleController,
+    private val processingScheduleController: ProcessingScheduleController,
     private val crashLogs: CrashLogStore,
     private val dispatchers: DispatcherProvider
 ) : ViewModel() {
@@ -148,14 +152,16 @@ class SettingsViewModel @Inject constructor(
         aiSummary,
         display,
         appSettings.rediscoverSettings,
+        appSettings.processingSettings,
         transient
-    ) { ai, (themeMode, dynamicColor), rediscover, (storage, operation, crashLog) ->
+    ) { ai, (themeMode, dynamicColor), rediscover, processing, (storage, operation, crashLog) ->
         SettingsUiState(
             isLoaded = true,
             ai = ai,
             themeMode = themeMode,
             dynamicColor = dynamicColor,
             rediscover = rediscover,
+            processing = processing,
             storage = storage,
             dataOperation = operation,
             crashLog = crashLog,
@@ -212,6 +218,18 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             appSettings.setRediscoverSchedule(dayOfWeek, hour, minute)
             applySchedule()
+        }
+    }
+
+    /**
+     * 処理の設定を書き換え、夜間の処理の予定と待っている処理に反映する
+     * (時刻を変えたら予定を登録し直し、夜間の処理をやめたら夜を待っていたものをすぐ積む)。
+     */
+    fun updateProcessingSettings(transform: (ProcessingSettings) -> ProcessingSettings) {
+        viewModelScope.launch {
+            val previous = appSettings.processingSettings.first()
+            appSettings.updateProcessingSettings(transform)
+            processingScheduleController.onSettingsChanged(previous, appSettings.processingSettings.first())
         }
     }
 

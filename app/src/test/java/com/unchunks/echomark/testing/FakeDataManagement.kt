@@ -3,8 +3,10 @@ package com.unchunks.echomark.testing
 import com.unchunks.echomark.domain.repository.BackupExportSummary
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.domain.repository.DataManagementRepository
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
+import com.unchunks.echomark.worker.ProcessingScheduleController
 import com.unchunks.echomark.worker.RediscoverScheduleController
 
 /** データ操作の Fake。呼び出しを記録し、[failure] があれば投げる。 */
@@ -50,5 +52,14 @@ class FakeRediscoverScheduleController : RediscoverScheduleController {
     val applied = mutableListOf<RediscoverSettings>()
     override fun apply(settings: RediscoverSettings) {
         applied += settings
+    }
+}
+
+/** 処理の設定の反映を記録する Fake。 */
+class FakeProcessingScheduleController : ProcessingScheduleController {
+    val changes = mutableListOf<Pair<ProcessingSettings, ProcessingSettings>>()
+    override fun ensureScheduled(settings: ProcessingSettings) = Unit
+    override suspend fun onSettingsChanged(previous: ProcessingSettings, current: ProcessingSettings) {
+        changes += previous to current
     }
 }

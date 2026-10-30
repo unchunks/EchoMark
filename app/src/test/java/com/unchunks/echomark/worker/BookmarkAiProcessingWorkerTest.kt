@@ -129,7 +129,8 @@ class BookmarkAiProcessingWorkerTest {
                     workerParameters: WorkerParameters
                 ) = BookmarkAiProcessingWorker(
                     appContext, workerParameters, repository, analyzer, embedding,
-                    AiPrewarmer(localLlmForPrewarm, settings), stats
+                    AiPrewarmer(localLlmForPrewarm, settings), stats,
+                    ProcessingConcurrencyLimiter(settings), ApiRateLimiter(settings)
                 )
             })
             .build()

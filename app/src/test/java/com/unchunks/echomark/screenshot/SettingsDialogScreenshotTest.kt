@@ -11,7 +11,10 @@ import com.unchunks.echomark.ui.settings.DataOperationState
 import com.unchunks.echomark.ui.settings.DeleteConfirmDialog
 import com.unchunks.echomark.ui.settings.DeleteFinalDialog
 import com.unchunks.echomark.ui.settings.LicensesDialog
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.ui.settings.PrivacyDialog
+import com.unchunks.echomark.ui.settings.ProcessingSettingsDialog
+import com.unchunks.echomark.ui.settings.SettingsDialog
 import com.unchunks.echomark.ui.settings.ThemeModeDialog
 import org.junit.Rule
 import org.junit.Test
@@ -31,6 +34,26 @@ class SettingsDialogScreenshotTest {
     @Test
     fun themeDialog() = screenshot.captureDialogLightDark("settings_dialog_theme") {
         ThemeModeDialog(selected = ThemeMode.SYSTEM, onSelect = {}, onDismiss = {})
+    }
+
+    @Test
+    fun concurrencyDialog() = screenshot.captureDialogLightDark("settings_dialog_concurrency") {
+        ProcessingSettingsDialog(
+            dialog = SettingsDialog.CONCURRENCY,
+            settings = ProcessingSettings(),
+            onChange = {},
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun nightlyHourDialog() = screenshot.captureDialogLightDark("settings_dialog_nightly_hour") {
+        ProcessingSettingsDialog(
+            dialog = SettingsDialog.NIGHTLY_HOUR,
+            settings = ProcessingSettings(nightlyBatch = true),
+            onChange = {},
+            onDismiss = {}
+        )
     }
 
     @Test

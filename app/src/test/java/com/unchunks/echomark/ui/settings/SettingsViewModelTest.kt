@@ -17,6 +17,8 @@ import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeDataManagementRepository
+import com.unchunks.echomark.testing.FakeProcessingScheduleController
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.testing.FakeRediscoverScheduleController
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -43,6 +45,7 @@ class SettingsViewModelTest {
     private val apiKeys = FakeApiKeyRepository()
     private val data = FakeDataManagementRepository()
     private val scheduler = FakeRediscoverScheduleController()
+    private val processingScheduler = FakeProcessingScheduleController()
 
     private fun createViewModel() = SettingsViewModel(
         appSettings = settings,
@@ -54,6 +57,7 @@ class SettingsViewModelTest {
         ),
         dataRepository = data,
         scheduleController = scheduler,
+        processingScheduleController = processingScheduler,
         crashLogs = crashLogs,
         dispatchers = TestDispatcherProvider(mainRule.dispatcher)
     )
@@ -100,6 +104,19 @@ class SettingsViewModelTest {
         assertEquals("Claude API(claude-opus-5-5)", state.ai.label)
         assertEquals(ThemeMode.DARK, state.themeMode)
         assertEquals(data.storage, state.storage)
+    }
+
+    @Test
+    fun 処理の設定を書き換えると画面に出し_予定と待っている処理に反映する() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.updateProcessingSettings { it.copy(chargingOnly = true, nightlyBatch = true, nightlyHour = 3) }
+        advanceUntilIdle()
+
+        val expected = ProcessingSettings(chargingOnly = true, nightlyBatch = true, nightlyHour = 3)
+        assertEquals(expected, viewModel.uiState.value.processing)
+        assertEquals(listOf(ProcessingSettings() to expected), processingScheduler.changes)
     }
 
     @Test

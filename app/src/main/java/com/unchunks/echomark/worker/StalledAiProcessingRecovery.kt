@@ -4,11 +4,13 @@ import android.os.Process
 import android.os.SystemClock
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.ai.AiPrewarmer
+import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import dagger.Lazy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -25,6 +27,8 @@ class StalledAiProcessingRecovery @Inject constructor(
     // アプリ起動時(メインスレッド)に DB などを作らないよう、使うときに取り出す
     private val bookmarkRepository: Lazy<BookmarkRepository>,
     private val aiPrewarmer: Lazy<AiPrewarmer>,
+    private val appSettings: Lazy<AppSettingsRepository>,
+    private val processingScheduleController: Lazy<ProcessingScheduleController>,
     dispatcherProvider: DispatcherProvider
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
@@ -44,6 +48,14 @@ class StalledAiProcessingRecovery @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Timber.w(e, "止まっている AI 処理の確認に失敗")
+            }
+            // 夜間の仕事(夜間にまとめて処理するなど)の予定を登録する(登録済みならそのまま)
+            try {
+                processingScheduleController.get().ensureScheduled(appSettings.get().processingSettings.first())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "夜間の仕事の予定を登録できない")
             }
         }
     }

@@ -64,6 +64,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.components.composeui.ReadableLazyColumn
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.common.formatFileSize
@@ -81,13 +82,18 @@ import java.util.Locale
 
 
 /** 設定画面で開くダイアログ。スクリーンショットテストでは最初から開いた状態を渡せる。 */
-enum class SettingsDialog { THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG }
+enum class SettingsDialog {
+    THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG,
+    NIGHTLY_HOUR, CONCURRENCY, API_RATE
+}
 
 /** 設定画面の操作。既定は何もしない(プレビュー・スクリーンショット用)。 */
 class SettingsActions(
     val onOpenAiSettings: () -> Unit = {},
     val onThemeModeChange: (ThemeMode) -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
+    /** 処理の設定(充電中だけ・夜間にまとめて・同時に処理する数など)を書き換える */
+    val onProcessingSettingsChange: ((ProcessingSettings) -> ProcessingSettings) -> Unit = {},
     /** 再発見通知のスイッチ。オンにするときの権限要求は呼び出し側で行う */
     val onRediscoverToggle: (Boolean) -> Unit = {},
     val onRediscoverScheduleChange: (DayOfWeek, Int, Int) -> Unit = { _, _, _ -> },
@@ -153,6 +159,7 @@ fun SettingsScreen(
             onOpenAiSettings = onOpenAiSettings,
             onThemeModeChange = viewModel::setThemeMode,
             onDynamicColorChange = viewModel::setDynamicColor,
+            onProcessingSettingsChange = viewModel::updateProcessingSettings,
             onRediscoverToggle = { enabled ->
                 when {
                     !enabled -> {
@@ -251,6 +258,12 @@ fun SettingsContent(
                     }
                 )
             }
+
+            processingSettingsItems(
+                settings = uiState.processing,
+                onChange = actions.onProcessingSettingsChange,
+                onOpenDialog = { dialog = it }
+            )
 
             item { SectionHeader("表示") }
             item {
@@ -450,6 +463,12 @@ fun SettingsContent(
             crashLog = uiState.crashLog,
             onShare = actions.onShareCrashLog,
             onClear = actions.onClearCrashLog,
+            onDismiss = { dialog = null }
+        )
+        SettingsDialog.NIGHTLY_HOUR, SettingsDialog.CONCURRENCY, SettingsDialog.API_RATE -> ProcessingSettingsDialog(
+            dialog = dialog!!,
+            settings = uiState.processing,
+            onChange = actions.onProcessingSettingsChange,
             onDismiss = { dialog = null }
         )
         null -> Unit

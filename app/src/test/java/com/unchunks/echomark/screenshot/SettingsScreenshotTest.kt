@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -66,7 +67,18 @@ class SettingsScreenshotTest {
     /** 全セクション(縦長で全体を撮る) */
     @Test
     fun settingsAll() = screenshot.captureLightDark("settings_all") {
-        Screen(readyState, height = 2000)
+        Screen(readyState, height = 2500)
+    }
+
+    /** 処理の設定(充電中だけ・夜間にまとめて処理する・同時に処理する数) */
+    @Test
+    fun settingsProcessing() = screenshot.captureLightDark("settings_processing") {
+        Screen(
+            readyState.copy(
+                processing = ProcessingSettings(chargingOnly = true, nightlyBatch = true, nightlyHour = 2, maxConcurrent = 1)
+            ),
+            height = 1100
+        )
     }
 
     /** AI 未設定・通知が拒否されている・ストレージ計算中 */
