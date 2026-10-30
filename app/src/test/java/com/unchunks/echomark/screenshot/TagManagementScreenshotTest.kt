@@ -2,6 +2,7 @@ package com.unchunks.echomark.screenshot
 
 import androidx.compose.material3.SnackbarHostState
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.echomark.domain.model.TagVariants
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.ui.tags.TagManagementContent
 import com.unchunks.echomark.ui.tags.TagManagementUiState
@@ -10,7 +11,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
 
-/** タグ管理画面(一覧・空)の見た目。一覧には AI が作ったタグ(パフォーマンス)も含める。 */
+/** タグ管理画面(一覧・空)の見た目。一覧には AI が作ったタグ(パフォーマンス)と、表記ゆれの候補(Android / android)も含める。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class TagManagementScreenshotTest {
@@ -18,19 +19,23 @@ class TagManagementScreenshotTest {
     @get:Rule
     val screenshot = ScreenshotRule()
 
+    private val tags = listOf(
+        TagWithCount(1, "Android", 12),
+        TagWithCount(2, "Compose", 8),
+        TagWithCount(3, "パフォーマンス", 3, isUserTag = false),
+        TagWithCount(4, "読書", 5),
+        TagWithCount(5, "とても長いタグ名の例: 機械学習とデータ分析の基礎から応用まで", 1),
+        TagWithCount(6, "未使用のタグ", 0),
+        TagWithCount(7, "android", 2, isUserTag = false)
+    )
+
     @Test
     fun list() = screenshot.captureScreenLightDark("library_tags") {
         TagManagementContent(
             uiState = TagManagementUiState(
                 isLoading = false,
-                tags = listOf(
-                    TagWithCount(1, "Android", 12),
-                    TagWithCount(2, "Compose", 8),
-                    TagWithCount(3, "パフォーマンス", 3, isUserTag = false),
-                    TagWithCount(4, "読書", 5),
-                    TagWithCount(5, "とても長いタグ名の例: 機械学習とデータ分析の基礎から応用まで", 1),
-                    TagWithCount(6, "未使用のタグ", 0)
-                )
+                tags = tags,
+                variantGroups = TagVariants.groups(tags)
             ),
             snackbarHostState = SnackbarHostState(),
             onBack = {},

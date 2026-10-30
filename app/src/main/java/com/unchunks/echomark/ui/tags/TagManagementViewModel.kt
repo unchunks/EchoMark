@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.tags
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.echomark.domain.model.TagVariants
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.repository.TagRenameResult
 import com.unchunks.echomark.domain.repository.TagRepository
@@ -22,6 +23,8 @@ import javax.inject.Inject
 data class TagManagementUiState(
     val isLoading: Boolean = true,
     val tags: List<TagWithCount> = emptyList(),
+    /** 表記ゆれの候補(同じ意味に見えるタグのまとまり)。各グループの先頭が、残すタグの候補 */
+    val variantGroups: List<List<TagWithCount>> = emptyList(),
     val errorMessage: String? = null
 )
 
@@ -29,6 +32,8 @@ data class TagManagementUiState(
 sealed interface TagManagementMessage {
     data class Renamed(val newName: String) : TagManagementMessage
     data class Merged(val fromName: String, val intoName: String) : TagManagementMessage
+    /** 表記ゆれの候補を [intoName] の1つにまとめた。[count] は無くなったタグの数 */
+    data class Unified(val count: Int, val intoName: String) : TagManagementMessage
     data class Deleted(val name: String) : TagManagementMessage
     data class Failed(val message: String) : TagManagementMessage
 }
@@ -42,7 +47,7 @@ class TagManagementViewModel @Inject constructor(
     val messages: Flow<TagManagementMessage> = messageChannel.receiveAsFlow()
 
     val uiState: StateFlow<TagManagementUiState> = tagRepository.observeTagsWithCount()
-        .map { TagManagementUiState(isLoading = false, tags = it) }
+        .map { TagManagementUiState(isLoading = false, tags = it, variantGroups = TagVariants.groups(it)) }
         .catch { e ->
             if (e is CancellationException) throw e
             Timber.w(e, "タグ一覧の読み込みに失敗")
@@ -65,6 +70,31 @@ class TagManagementViewModel @Inject constructor(
             } catch (e: Exception) {
                 Timber.w(e, "タグ名の変更に失敗")
                 TagManagementMessage.Failed("タグ名を変更できませんでした")
+            }
+            message?.let { messageChannel.send(it) }
+        }
+    }
+
+    /** [from] を [into] に統合する(付いていたブックマークは [into] に付け替わる) */
+    fun merge(from: TagWithCount, into: TagWithCount) {
+        mergeAll(listOf(from), into) { TagManagementMessage.Merged(from.name, into.name) }
+    }
+
+    /** 表記ゆれの候補 [group] を、[into] の1つにまとめる */
+    fun unify(group: List<TagWithCount>, into: TagWithCount) {
+        val others = group.filter { it.id != into.id }
+        mergeAll(others, into) { TagManagementMessage.Unified(others.size, into.name) }
+    }
+
+    private fun mergeAll(from: List<TagWithCount>, into: TagWithCount, success: () -> TagManagementMessage) {
+        viewModelScope.launch {
+            val message = try {
+                if (tagRepository.mergeTags(into.id, from.map { it.id }) > 0) success() else null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "タグの統合に失敗")
+                TagManagementMessage.Failed("タグを統合できませんでした")
             }
             message?.let { messageChannel.send(it) }
         }

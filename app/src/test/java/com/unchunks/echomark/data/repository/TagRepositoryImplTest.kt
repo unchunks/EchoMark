@@ -125,4 +125,32 @@ class TagRepositoryImplTest {
         assertEquals(listOf("android"), repository.observeTagsWithCount().first().map { it.name })
         assertEquals(1, db.bookmarkDao().observeCount().first())
     }
+
+
+    @Test
+    fun 名前は整えて保存し_表記ゆれの違いは既存のタグに統合する() = runTest {
+        bookmark(1); bookmark(2)
+        val from = tag("andorid", 1)
+        val into = tag("Android", 2)
+
+        assertEquals(TagRenameResult.Merged(into), repository.renameTag(from, " ａｎｄｒｏｉｄ "))
+        assertEquals(listOf("Android" to 2), repository.observeTagsWithCount().first().map { it.name to it.bookmarkCount })
+
+        val other = tag("kotln", 1)
+        assertEquals(TagRenameResult.Renamed(other), repository.renameTag(other, "＃Ｋｏｔｌｉｎ"))
+        assertEquals(listOf("Kotlin"), tagsOf(1).filter { it != "Android" })
+    }
+
+    @Test
+    fun 複数のタグを1つに統合して件数が合算される() = runTest {
+        bookmark(1); bookmark(2); bookmark(3)
+        val into = tag("Android", 1, 2)
+        val a = tag("android", 2, 3)
+        val b = tag("アンドロイド")
+
+        assertEquals(2, repository.mergeTags(into, listOf(a, b)))
+
+        assertEquals(listOf("Android" to 3), repository.observeTagsWithCount().first().map { it.name to it.bookmarkCount })
+        assertEquals(listOf("Android"), tagsOf(3))
+    }
 }

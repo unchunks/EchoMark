@@ -191,4 +191,77 @@ class TagDaoTest {
         assertFalse(rows.getValue("AI").isUserCreated)
         assertEquals(1, rows.getValue("AI").bookmarkCount)
     }
+
+
+    @Test
+    fun 名前の変更は大文字小文字と全角半角の違いを除いて同じタグに統合する() = runTest {
+        insertBookmark(1)
+        insertBookmark(2)
+        link(1, "Android", TagSource.USER)
+        link(2, "andoroid", TagSource.AI)
+        val from = dao.getTagByName("andoroid")!!.id
+
+        val into = dao.renameOrMerge(from, "android")
+
+        assertEquals(dao.getTagByName("Android")!!.id, into)
+        assertEquals(setOf("Android"), tagNames())
+        assertEquals(mapOf("Android" to TagSource.AI), linksOf(2))
+    }
+
+    @Test
+    fun 自分自身の大文字小文字だけを変える名前の変更は統合にならない() = runTest {
+        insertBookmark(1)
+        link(1, "kotlin", TagSource.USER)
+        val id = dao.getTagByName("kotlin")!!.id
+
+        assertEquals(id, dao.renameOrMerge(id, "Kotlin"))
+        assertEquals(setOf("Kotlin"), tagNames())
+    }
+
+    @Test
+    fun タグの統合では付けた人を引き継ぎ_元のタグは消える() = runTest {
+        insertBookmark(1)
+        insertBookmark(2)
+        insertBookmark(3)
+        link(1, "Android", TagSource.AI)
+        link(1, "android", TagSource.USER)
+        link(2, "android", TagSource.AI)
+        link(3, "ＡＮＤＲＯＩＤ", TagSource.AI)
+        val into = dao.getTagByName("Android")!!.id
+        val fromIds = listOf("android", "ＡＮＤＲＯＩＤ").map { dao.getTagByName(it)!!.id }
+
+        assertEquals(2, dao.mergeTags(into, fromIds + into + 999L))
+
+        assertEquals(setOf("Android"), tagNames())
+        assertEquals(mapOf("Android" to TagSource.USER), linksOf(1))
+        assertEquals(mapOf("Android" to TagSource.AI), linksOf(2))
+        assertEquals(mapOf("Android" to TagSource.AI), linksOf(3))
+        // 名前を付け直すわけではないが、ユーザーのタグが混ざっていれば統合先もユーザーのタグ
+        assertTrue(isUserCreated("Android"))
+    }
+
+    @Test
+    fun AIのタグ同士の統合では統合先もAIのタグのまま() = runTest {
+        insertBookmark(1)
+        dao.replaceAiTags(1, listOf("android", "Android"))
+        link(1, "ANDROID", TagSource.AI)
+        val into = dao.getTagByName("android")!!.id
+        val from = dao.getTagByName("ANDROID")!!.id
+
+        dao.mergeTags(into, listOf(from))
+
+        assertFalse(isUserCreated("android"))
+        // 件数 0 になれば自動で消える AI のタグのまま
+        dao.replaceAiTags(1, emptyList())
+        assertTrue(tagNames().isEmpty())
+    }
+
+    @Test
+    fun 統合先が無ければ何もしない() = runTest {
+        insertBookmark(1)
+        link(1, "kotlin", TagSource.USER)
+
+        assertEquals(0, dao.mergeTags(999, listOf(dao.getTagByName("kotlin")!!.id)))
+        assertEquals(setOf("kotlin"), tagNames())
+    }
 }

@@ -168,15 +168,21 @@ interface TagDao {
         deleteTagById(tagId)
     }
 
+    @Query("SELECT * FROM tags")
+    suspend fun getAllTagsOnce(): List<TagEntity>
+
     /**
-     * タグ名を変更する。同名の別タグが既にあれば、そのタグへ統合(紐付けを移して元のタグを削除)する。
+     * タグ名を変更する。同名(完全一致を優先し、無ければ大文字小文字・全角半角の違いを除いて同じ)の別タグが既にあれば、
+     * そのタグへ統合(紐付けを移して元のタグを削除)する。
      * 変更後に残ったタグの ID を返す(統合したときは統合先の ID)。
      * ユーザーが名前を決めたタグなので、残ったタグはユーザーのタグにする(件数 0 になっても自動では消さない)。
      */
     @Transaction
     suspend fun renameOrMerge(tagId: Long, newName: String): Long {
-        val existing = getTagByName(newName)
-        if (existing == null || existing.id == tagId) {
+        val others = getAllTagsOnce().filter { it.id != tagId }
+        val sameName = TagNames.findSame(newName, others.map { it.name })
+        val existing = others.firstOrNull { it.name == sameName }
+        if (existing == null) {
             updateTagName(tagId, newName)
             markUserCreated(tagId)
             return tagId
@@ -186,5 +192,27 @@ interface TagDao {
         deleteTagWithRefs(tagId)
         markUserCreated(existing.id)
         return existing.id
+    }
+
+    /**
+     * [fromTagIds] のタグを [intoTagId] に統合する(紐付けを移して元のタグを削除。表記ゆれの整理用)。
+     * 付けた人は引き継ぐ。名前を付け直すわけではないので、統合先がユーザーのタグになるのは、
+     * どれかがユーザーのタグだったときだけ。統合したタグの数を返す(統合先が無ければ 0)。
+     */
+    @Transaction
+    suspend fun mergeTags(intoTagId: Long, fromTagIds: List<Long>): Int {
+        val into = getTagById(intoTagId) ?: return 0
+        var merged = 0
+        var anyUser = into.isUserCreated
+        fromTagIds.distinct().filter { it != intoTagId }.forEach { fromId ->
+            val from = getTagById(fromId) ?: return@forEach
+            copyCrossRefs(fromTagId = fromId, toTagId = intoTagId)
+            promoteMergedCrossRefs(fromTagId = fromId, toTagId = intoTagId)
+            deleteTagWithRefs(fromId)
+            anyUser = anyUser || from.isUserCreated
+            merged++
+        }
+        if (anyUser) markUserCreated(intoTagId)
+        return merged
     }
 }

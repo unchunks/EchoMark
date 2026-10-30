@@ -33,6 +33,7 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
+import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.repository.BookmarkSearchResult
 import com.unchunks.echomark.domain.repository.TagRenameResult
@@ -391,11 +392,12 @@ class FakeTagRepository : TagRepository {
     override fun observeTagsWithCount(): Flow<List<TagWithCount>> = tags
 
     override suspend fun renameTag(tagId: Long, newName: String): TagRenameResult {
-        val name = newName.trim()
+        val name = TagNames.clean(newName)
         val current = tags.value.firstOrNull { it.id == tagId } ?: return TagRenameResult.Invalid
         if (name.isEmpty()) return TagRenameResult.Invalid
         if (current.name == name) return TagRenameResult.Unchanged
-        val existing = tags.value.firstOrNull { it.name == name }
+        val others = tags.value.filter { it.id != tagId }
+        val existing = TagNames.findSame(name, others.map { it.name })?.let { same -> others.first { it.name == same } }
         return if (existing == null) {
             tags.value = tags.value.map { if (it.id == tagId) it.copy(name = name) else it }
             TagRenameResult.Renamed(tagId)
@@ -405,6 +407,18 @@ class FakeTagRepository : TagRepository {
                 .map { if (it.id == existing.id) it.copy(bookmarkCount = it.bookmarkCount + current.bookmarkCount) else it }
             TagRenameResult.Merged(existing.id)
         }
+    }
+
+    val mergeCalls = mutableListOf<Pair<Long, List<Long>>>()
+
+    override suspend fun mergeTags(intoTagId: Long, fromTagIds: List<Long>): Int {
+        mergeCalls += intoTagId to fromTagIds
+        val into = tags.value.firstOrNull { it.id == intoTagId } ?: return 0
+        val from = tags.value.filter { it.id in fromTagIds && it.id != intoTagId }
+        tags.value = tags.value
+            .filterNot { tag -> from.any { it.id == tag.id } }
+            .map { if (it.id == into.id) it.copy(bookmarkCount = it.bookmarkCount + from.sumOf { f -> f.bookmarkCount }) else it }
+        return from.size
     }
 
     override suspend fun deleteTag(tagId: Long) {
