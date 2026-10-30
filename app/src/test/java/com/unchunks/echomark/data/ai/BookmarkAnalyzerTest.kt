@@ -72,6 +72,29 @@ class BookmarkAnalyzerTest {
         assertEquals(SummaryFormat.ONE_LINE, local.lastInput!!.style.format)
     }
 
+
+    @Test
+    fun 要約の履歴に残す元は要約の設定のAIと設定の言語_書き方() = runBlocking {
+        // 要約はクラウド API、タグ付けは端末内。要約の元は「要約」の設定から
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+        settings.updateSummaryStyle { SummaryStyle(SummaryLanguage.ENGLISH, SummaryFormat.BULLETS) }
+
+        val origin = analyzer.summaryOrigin()
+
+        assertEquals("${ApiProvider.CLAUDE.displayName} ${settings.setting(AiTask.SUMMARY).apiModel}", origin.generator)
+        assertEquals("English・箇条書き", origin.style)
+    }
+
+    @Test
+    fun 端末内なら端末内のAIと選んだモデル() = runBlocking {
+        assertEquals("端末内 AI", analyzer.summaryOrigin().generator)
+
+        settings.setLocalModel(AiTask.SUMMARY, "gemma-3-1b")
+
+        assertEquals("端末内 AI(gemma-3-1b)", analyzer.summaryOrigin().generator)
+        assertEquals("日本語・文章", analyzer.summaryOrigin().style)
+    }
+
     @Test
     fun 同じ提供元とモデルのクラウドAPIなら1回の推論でまとめて作る() = runBlocking {
         settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)

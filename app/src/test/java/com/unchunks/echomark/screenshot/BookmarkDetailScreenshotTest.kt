@@ -13,6 +13,8 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
+import com.unchunks.echomark.domain.model.SummarySource
+import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.ui.components.PreviewSamples
 import com.unchunks.echomark.ui.detail.BookmarkDetailCallbacks
 import com.unchunks.echomark.ui.detail.BookmarkDetailContent
@@ -35,12 +37,13 @@ class BookmarkDetailScreenshotTest {
         bookmark: Bookmark?,
         related: List<Bookmark> = emptyList(),
         stageProgress: Float? = null,
-        stageAverages: Map<StageDurationKey, Long> = emptyMap()
+        stageAverages: Map<StageDurationKey, Long> = emptyMap(),
+        summaryHistory: List<SummaryVersion> = emptyList()
     ): @Composable () -> Unit = {
         BookmarkDetailContent(
             uiState = BookmarkDetailUiState(
                 isLoading = false, bookmark = bookmark, related = related,
-                stageProgress = stageProgress, stageAverages = stageAverages
+                stageProgress = stageProgress, stageAverages = stageAverages, summaryHistory = summaryHistory
             ),
             snackbarHostState = SnackbarHostState(),
             callbacks = BookmarkDetailCallbacks(),
@@ -75,8 +78,28 @@ class BookmarkDetailScreenshotTest {
         )
     )
 
+    /** 要約を手で直した(印と履歴ボタンが出る) */
+    @Test
+    fun summaryEdited() = screenshot.captureScreenLightDark(
+        "library_detail_summary_edited",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                aiStatus = AiStatus.DONE,
+                category = "読書",
+                summary = "編集して知識に変える、という考え方を自分の言葉で直したメモ。",
+                summaryEdited = true,
+                content = "情報は編集することで知識になる。"
+            ),
+            summaryHistory = listOf(
+                SummaryVersion(2, 3, "編集して知識に変える、という考え方を自分の言葉で直したメモ。", SummarySource.MANUAL, null, null, PreviewSamples.NOW - 60_000),
+                SummaryVersion(1, 3, "情報を「編集」することで自分の知識に変えるという考え方のメモ。", SummarySource.AI, "端末内 AI", "日本語・文章", PreviewSamples.NOW - 3_600_000)
+            )
+        )
+    )
+
     @Test
     fun processing() = screenshot.captureScreenLightDark(
+
         "library_detail_processing",
         content = content(PreviewSamples.processingBookmark)
     )

@@ -4,6 +4,9 @@ import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
+import com.unchunks.echomark.domain.model.SummaryOrigin
+import com.unchunks.echomark.domain.model.generatorLabel
+import com.unchunks.echomark.domain.model.label
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
@@ -49,6 +52,15 @@ class BookmarkAnalyzer @Inject constructor(
         }
         val summary = SummaryCleaner.clean(analysis.summary, input.title, SummaryCleaner.channelOf(input.text))
         return analysis.copy(summary = summary)
+    }
+
+    /**
+     * いま「要約」の設定で作る AI と、設定の要約の言語・書き方(要約の履歴に残す。#21)。
+     * 要約は常に「要約」の設定の AI で作る(タグ付けと同じ AI のときも、その設定でまとめて作る)。
+     */
+    suspend fun summaryOrigin(): SummaryOrigin {
+        val setting = appSettings.aiTaskSettings.first()[AiTask.SUMMARY] ?: AiTaskSetting()
+        return SummaryOrigin(generator = setting.generatorLabel(), style = appSettings.summaryStyle.first().label)
     }
 
     private suspend fun analyzeWithTaskSettings(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {

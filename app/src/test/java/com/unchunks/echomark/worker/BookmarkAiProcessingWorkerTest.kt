@@ -40,6 +40,7 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummarySource
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.TagSource
@@ -66,6 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -421,6 +423,47 @@ class BookmarkAiProcessingWorkerTest {
 
         assertEquals(AiStatus.FAILED, statusOf(cancelled))
         assertEquals(AiStatus.DONE, statusOf(next))
+    }
+
+    @Test
+    fun 作った要約は履歴にAIの版として作ったAIと言語_書き方つきで残る() = runBlocking {
+        val id = insertBookmark()
+
+        runWorker(id, runAttemptCount = 0)
+
+        val history = repository.observeSummaryHistory(id).first()
+        assertEquals(listOf("要約"), history.map { it.summary })
+        assertEquals(SummarySource.AI, history.single().source)
+        assertEquals("端末内 AI", history.single().generator)
+        assertEquals("日本語・文章", history.single().style)
+    }
+
+    @Test
+    fun 手で直した要約はタグだけの再処理でそのまま残る() = runBlocking {
+        val id = insertBookmark()
+        repository.saveGeneratedSummary(id, "AI の要約", null)
+        repository.editSummary(id, "直した要約")
+
+        runWorker(id, runAttemptCount = 0, scope = AnalysisScope.TAGS)
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals("直した要約", bookmark.summary)
+        assertTrue(bookmark.summaryEdited)
+        assertEquals(AiStatus.DONE, bookmark.aiStatus)
+    }
+
+    @Test
+    fun 要約だけの再処理で作った要約が直した要約を置き換え_直した版は履歴に残る() = runBlocking {
+        val id = insertBookmark()
+        repository.saveGeneratedSummary(id, "AI の要約", null)
+        repository.editSummary(id, "直した要約")
+
+        runWorker(id, runAttemptCount = 0, scope = AnalysisScope.SUMMARY)
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals("要約", bookmark.summary)
+        assertFalse(bookmark.summaryEdited)
+        assertEquals(listOf("要約", "直した要約", "AI の要約"), repository.observeSummaryHistory(id).first().map { it.summary })
     }
 
     @Test

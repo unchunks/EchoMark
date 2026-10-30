@@ -147,7 +147,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     if (scope != AnalysisScope.TAGS) {
                         // 有料・会員限定で一部しか取得できていないページは、全文の要約ではないと分かるようにする
                         val summary = LimitedAccess.annotateSummary(analysis.summary, input.text)
-                        repository.updateSummary(bookmarkId, summary)
+                        repository.saveGeneratedSummary(bookmarkId, summary, bookmarkAnalyzer.summaryOrigin())
                         newSummary = summary
                     }
                     // 所要時間の目安は全部を作ったときだけ記録する(部分の再処理は短く、目安を下げてしまう)

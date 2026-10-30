@@ -15,12 +15,13 @@ import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.Converters
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 
 @Database(
     entities = [
         BookmarkEntity::class, TagEntity::class, BookmarkTagCrossRef::class,
-        ConversationEntity::class, ChatMessageEntity::class, ApiUsageEntity::class
+        ConversationEntity::class, ChatMessageEntity::class, ApiUsageEntity::class, SummaryHistoryEntity::class
     ],
     version = AppDatabase.VERSION,
     exportSchema = true
@@ -39,6 +40,6 @@ abstract class AppDatabase : RoomDatabase() {
          * DB のスキーマの版。テーブル・列・インデックスを変えたら 1 つ上げ、Migrations.kt にマイグレーションを足す
          * (手順は docs/database-migrations.md)。
          */
-        const val VERSION = 14
+        const val VERSION = 15
     }
 }

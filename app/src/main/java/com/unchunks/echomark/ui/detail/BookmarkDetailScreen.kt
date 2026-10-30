@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.Refresh
@@ -109,6 +110,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.bookmark.model.processingDurationMillis
 import com.unchunks.echomark.domain.bookmark.model.processingProgress
 import com.unchunks.echomark.domain.extract.ExtractedBody
@@ -179,8 +181,10 @@ fun BookmarkDetailScreen(
                             actionLabel = "AIで要約し直す",
                             duration = SnackbarDuration.Long
                         )
-                        if (result == SnackbarResult.ActionPerformed) viewModel.reprocess()
+                        if (result == SnackbarResult.ActionPerformed) viewModel.reprocessAfterEdit()
                     }
+                    BookmarkDetailMessage.SummaryEdited -> snackbarHostState.showSnackbar("要約を保存しました。前の要約は履歴に残っています")
+                    BookmarkDetailMessage.SummaryRestored -> snackbarHostState.showSnackbar("要約を戻しました")
                     is BookmarkDetailMessage.TagRemoved -> {
                         val result = snackbarHostState.showSnackbar(
                             message = "タグ「${message.name}」を外しました",
@@ -213,6 +217,8 @@ fun BookmarkDetailScreen(
             onReprocessPart = viewModel::reprocess,
             onDelete = { viewModel.delete(onDeleted = onBack) },
             onSaveEdit = viewModel::saveEdit,
+            onEditSummary = viewModel::editSummary,
+            onRestoreSummary = viewModel::restoreSummary,
             onAddTag = viewModel::addTag,
             onRemoveTag = viewModel::removeTag
         ),
@@ -237,6 +243,10 @@ class BookmarkDetailCallbacks(
     val onReprocessPart: (AnalysisScope) -> Unit = {},
     val onDelete: () -> Unit = {},
     val onSaveEdit: (title: String, content: String) -> Unit = { _, _ -> },
+    /** 要約を手で直す(#19) */
+    val onEditSummary: (String) -> Unit = {},
+    /** 履歴の版(ID)に要約を戻す(#20) */
+    val onRestoreSummary: (Long) -> Unit = {},
     val onAddTag: (String) -> Unit = {},
     val onRemoveTag: (String) -> Unit = {}
 )
@@ -487,7 +497,7 @@ private fun DetailBody(
             Spacer(Modifier.height(16.dp))
             PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
             Spacer(Modifier.height(20.dp))
-            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, callbacks)
+            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, callbacks)
             Spacer(Modifier.height(24.dp))
             TagSection(
                 tags = bookmark.tags,
@@ -721,10 +731,13 @@ private fun AiSection(
     bookmark: Bookmark,
     stageProgress: Float?,
     stageAverages: Map<StageDurationKey, Long>,
+    summaryHistory: List<SummaryVersion>,
     callbacks: BookmarkDetailCallbacks
 ) {
     val summary = bookmark.summary
     if (bookmark.aiStatus == AiStatus.DONE && !summary.isNullOrBlank()) {
+        var showSummaryEdit by rememberSaveable { mutableStateOf(false) }
+        var showSummaryHistory by rememberSaveable { mutableStateOf(false) }
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -737,7 +750,7 @@ private fun AiSection(
                     Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        "AI要約",
+                        if (bookmark.summaryEdited) "要約(手で編集)" else "AI要約",
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier
                             .weight(1f)
@@ -761,6 +774,29 @@ private fun AiSection(
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(summary, style = MaterialTheme.typography.bodyLarge)
+                if (bookmark.summaryEdited) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "手で直した要約です。「AIで処理し直す」では置き換わりません",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LocalContentColor.current.copy(alpha = 0.7f)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    TextButton(onClick = { showSummaryEdit = true }) {
+                        Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                        Text("要約を直す")
+                    }
+                    // 作り直し・手直しで版が2つ以上になったら、見比べたり戻したりできる
+                    if (summaryHistory.size >= 2) {
+                        TextButton(onClick = { showSummaryHistory = true }) {
+                            Icon(Icons.Outlined.History, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                            Text("履歴(${summaryHistory.size})")
+                        }
+                    }
+                }
                 bookmark.processingDurationMillis()?.let { duration ->
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -770,6 +806,24 @@ private fun AiSection(
                     )
                 }
             }
+        }
+        if (showSummaryEdit) {
+            SummaryEditSheet(
+                initial = summary,
+                onDismiss = { showSummaryEdit = false },
+                onSave = {
+                    showSummaryEdit = false
+                    callbacks.onEditSummary(it)
+                }
+            )
+        }
+        if (showSummaryHistory) {
+            SummaryHistorySheet(
+                current = summary,
+                versions = summaryHistory,
+                onDismiss = { showSummaryHistory = false },
+                onRestore = callbacks.onRestoreSummary
+            )
         }
         return
     }

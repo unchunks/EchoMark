@@ -3,6 +3,8 @@ package com.unchunks.echomark.testing
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
+import com.unchunks.echomark.domain.model.SummaryOrigin
+import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
@@ -254,6 +256,28 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun getTagNamesForAi(): List<String> = TODO("not used")
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String) = TODO("not used")
     override suspend fun updateSummary(id: Long, summary: String) = TODO("not used")
+    /** 作った要約の保存(履歴の版は持たず、要約と印だけ) */
+    val generatedSummaries = mutableListOf<Triple<Long, String, SummaryOrigin?>>()
+    val editedSummaries = mutableListOf<Pair<Long, String>>()
+    val restoredSummaryVersions = mutableListOf<Long>()
+    val summaryHistory = MutableStateFlow<List<SummaryVersion>>(emptyList())
+
+    override suspend fun saveGeneratedSummary(id: Long, summary: String, origin: SummaryOrigin?) {
+        generatedSummaries += Triple(id, summary, origin)
+        updateBookmark(id) { it.copy(summary = summary, summaryEdited = false) }
+    }
+
+    override suspend fun editSummary(id: Long, summary: String) {
+        editedSummaries += id to summary
+        updateBookmark(id) { it.copy(summary = summary, summaryEdited = true) }
+    }
+
+    override suspend fun restoreSummary(id: Long, versionId: Long) {
+        restoredSummaryVersions += versionId
+    }
+
+    override fun observeSummaryHistory(id: Long): Flow<List<SummaryVersion>> = summaryHistory
+
     override suspend fun updateCategory(id: Long, category: String) = TODO("not used")
     /** 処理の状況(処理中・処理待ち・失敗を bookmarks から作る) */
     override fun observeProcessingQueue(): Flow<ProcessingQueue> = bookmarks.map { list ->
