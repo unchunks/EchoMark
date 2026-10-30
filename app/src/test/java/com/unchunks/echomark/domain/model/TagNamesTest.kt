@@ -1,5 +1,6 @@
 package com.unchunks.echomark.domain.model
 
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -36,5 +37,26 @@ class TagNamesTest {
             listOf("android"),
             TagNames.resolve(listOf("ANDROID"), existing = listOf("android", "Android"))
         )
+    }
+
+
+    @Test
+    fun 表記ゆれの候補のキーは区切りとかなと語尾の長音を無視する() {
+        assertEquals(TagNames.variantKey("Machine Learning"), TagNames.variantKey("machine-learning"))
+        assertEquals(TagNames.variantKey("サーバー"), TagNames.variantKey("サーバ"))
+        assertEquals(TagNames.variantKey("ネコ"), TagNames.variantKey("ねこ"))
+        assertEquals(TagNames.variantKey("ｱﾝﾄﾞﾛｲﾄﾞ"), TagNames.variantKey("あんどろいど"))
+        // 語中の長音は残す
+        assertNotEquals(TagNames.variantKey("ラーメン"), TagNames.variantKey("ラメン"))
+        assertNotEquals(TagNames.variantKey("C"), TagNames.variantKey("C++"))
+    }
+
+    @Test
+    fun 同じタグは完全一致を優先し_無ければ表記ゆれの範囲で探す() {
+        val existing = listOf("Android", "android", "Kotlin")
+
+        assertEquals("android", TagNames.findSame("android", existing))
+        assertEquals("Kotlin", TagNames.findSame("ＫＯＴＬＩＮ", existing))
+        assertEquals(null, TagNames.findSame("Compose", existing))
     }
 }

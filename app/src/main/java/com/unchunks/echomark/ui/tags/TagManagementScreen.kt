@@ -3,21 +3,28 @@ package com.unchunks.echomark.ui.tags
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.automirrored.outlined.MergeType
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -42,12 +50,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.ReadableLazyColumn
+import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.EmptyState
@@ -56,7 +67,7 @@ import com.unchunks.echomark.ui.components.LoadingState
 import kotlinx.coroutines.launch
 
 /**
- * タグの管理(件数つき一覧・名前変更・統合・削除)。ViewModel をつなぐだけの薄いラッパー。
+ * タグの管理(件数つき一覧・名前変更・統合・表記ゆれの整理・削除)。ViewModel をつなぐだけの薄いラッパー。
  * 自分のタグと AI が作ったタグを見分けて表示し、どちらかに絞り込める。
  * @param onOpenTag タグをタップしたとき。そのタグで絞り込んだ一覧へ戻る
  */
@@ -77,6 +88,7 @@ fun TagManagementScreen(
                     when (message) {
                         is TagManagementMessage.Renamed -> "「${message.newName}」に変更しました"
                         is TagManagementMessage.Merged -> "「${message.fromName}」を「${message.intoName}」に統合しました"
+                        is TagManagementMessage.Unified -> "${message.count + 1}個のタグを「${message.intoName}」にまとめました"
                         is TagManagementMessage.Deleted -> "タグ「${message.name}」を削除しました"
                         is TagManagementMessage.Failed -> message.message
                     }
@@ -91,11 +103,13 @@ fun TagManagementScreen(
         onBack = onBack,
         onOpenTag = onOpenTag,
         onRename = viewModel::rename,
-        onDelete = viewModel::delete
+        onDelete = viewModel::delete,
+        onMerge = viewModel::merge,
+        onUnify = viewModel::unify
     )
 }
 
-/** タグ管理画面の本体(状態を受け取って描くだけ)。名前変更・削除の確認ダイアログもここで出す */
+/** タグ管理画面の本体(状態を受け取って描くだけ)。名前変更・統合・削除の確認ダイアログもここで出す */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TagManagementContent(
@@ -105,13 +119,19 @@ fun TagManagementContent(
     onOpenTag: (Long) -> Unit,
     onRename: (TagWithCount, String) -> Unit,
     onDelete: (TagWithCount) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onMerge: (from: TagWithCount, into: TagWithCount) -> Unit = { _, _ -> },
+    onUnify: (group: List<TagWithCount>, into: TagWithCount) -> Unit = { _, _ -> }
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var renameTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var deleteTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var mergeTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // 表記ゆれの候補は、先頭のタグの ID で見分ける(まとめたあとは先頭が変わるのでダイアログは閉じる)
+    var unifyGroupId by rememberSaveable { mutableStateOf<Long?>(null) }
     var originFilter by rememberSaveable { mutableStateOf(TagOriginFilter.ALL) }
-    val visibleTags = uiState.tags.filter { originFilter.matches(it) }
+    var sort by rememberSaveable { mutableStateOf(TagSort.NAME) }
+    val visibleTags = sort.apply(uiState.tags.filter { originFilter.matches(it) })
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -141,8 +161,29 @@ fun TagManagementContent(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
+                    if (uiState.variantGroups.isNotEmpty()) {
+                        item(key = "variants-header") {
+                            Text(
+                                text = "表記ゆれの候補(${uiState.variantGroups.size}組)",
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+                            )
+                        }
+                        items(uiState.variantGroups, key = { group -> "variants-${group.first().id}" }) { group ->
+                            VariantGroupCard(
+                                group = group,
+                                onUnify = { unifyGroupId = group.first().id },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
+                    }
                     item(key = "filter") {
-                        TagOriginFilterRow(selected = originFilter, onSelect = { originFilter = it })
+                        TagListOptionsRow(
+                            origin = originFilter,
+                            onOrigin = { originFilter = it },
+                            sort = sort,
+                            onSort = { sort = it }
+                        )
                     }
                     item(key = "hint") {
                         Text(
@@ -157,6 +198,7 @@ fun TagManagementContent(
                             tag = tag,
                             onClick = { onOpenTag(tag.id) },
                             onRename = { renameTargetId = tag.id },
+                            onMerge = { mergeTargetId = tag.id },
                             onDelete = { deleteTargetId = tag.id },
                             modifier = Modifier.animateItem()
                         )
@@ -174,6 +216,29 @@ fun TagManagementContent(
             onConfirm = { newName ->
                 renameTargetId = null
                 onRename(target, newName)
+            }
+        )
+    }
+
+    uiState.tags.firstOrNull { it.id == mergeTargetId }?.let { target ->
+        MergeIntoDialog(
+            tag = target,
+            candidates = uiState.tags.filter { it.id != target.id },
+            onDismiss = { mergeTargetId = null },
+            onConfirm = { into ->
+                mergeTargetId = null
+                onMerge(target, into)
+            }
+        )
+    }
+
+    uiState.variantGroups.firstOrNull { it.first().id == unifyGroupId }?.let { group ->
+        UnifyVariantsDialog(
+            group = group,
+            onDismiss = { unifyGroupId = null },
+            onConfirm = { into ->
+                unifyGroupId = null
+                onUnify(group, into)
             }
         )
     }
@@ -219,19 +284,72 @@ internal enum class TagOriginFilter(val label: String) {
     }
 }
 
+/** タグ一覧の並び順。 */
+internal enum class TagSort(val label: String) {
+    NAME("名前順"),
+    COUNT("件数順");
+
+    fun apply(tags: List<TagWithCount>): List<TagWithCount> = when (this) {
+        NAME -> tags
+        COUNT -> tags.sortedWith(
+            compareByDescending<TagWithCount> { it.bookmarkCount }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TagOriginFilterRow(selected: TagOriginFilter, onSelect: (TagOriginFilter) -> Unit) {
-    Row(
+private fun TagListOptionsRow(
+    origin: TagOriginFilter,
+    onOrigin: (TagOriginFilter) -> Unit,
+    sort: TagSort,
+    onSort: (TagSort) -> Unit
+) {
+    Column(
         modifier = Modifier.padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        TagOriginFilter.entries.forEach { filter ->
-            FilterChip(
-                selected = filter == selected,
-                onClick = { onSelect(filter) },
-                label = { Text(filter.label) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TagOriginFilter.entries.forEach { filter ->
+                FilterChip(
+                    selected = filter == origin,
+                    onClick = { onOrigin(filter) },
+                    label = { Text(filter.label) }
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TagSort.entries.forEach { option ->
+                FilterChip(
+                    selected = option == sort,
+                    onClick = { onSort(option) },
+                    label = { Text(option.label) }
+                )
+            }
+        }
+    }
+}
+
+/** 表記ゆれの候補1組。名前と件数を並べ、「まとめる」で残す名前を選ぶ。 */
+@Composable
+private fun VariantGroupCard(group: List<TagWithCount>, onUnify: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = group.joinToString(" / ") { "${it.name}(${it.bookmarkCount})" },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
             )
+            TextButton(onClick = onUnify) { Text("まとめる") }
         }
     }
 }
@@ -241,6 +359,7 @@ private fun TagRow(
     tag: TagWithCount,
     onClick: () -> Unit,
     onRename: () -> Unit,
+    onMerge: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -266,11 +385,19 @@ private fun TagRow(
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text("名前を変更・統合") },
+                        text = { Text("名前を変更") },
                         leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                         onClick = {
                             menuOpen = false
                             onRename()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("他のタグに統合") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.MergeType, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onMerge()
                         }
                     )
                     DropdownMenuItem(
@@ -301,9 +428,10 @@ private fun RenameTagDialog(
     onConfirm: (String) -> Unit
 ) {
     var name by rememberSaveable(tag.id) { mutableStateOf(tag.name) }
-    val trimmed = name.trim()
-    val mergeTarget = allTags.firstOrNull { it.id != tag.id && it.name == trimmed }
-    val canConfirm = trimmed.isNotEmpty() && trimmed != tag.name
+    val cleaned = TagNames.clean(name)
+    val others = allTags.filter { it.id != tag.id }
+    val mergeTarget = TagNames.findSame(cleaned, others.map { it.name })?.let { same -> others.first { it.name == same } }
+    val canConfirm = cleaned.isNotEmpty() && cleaned != tag.name
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -319,19 +447,131 @@ private fun RenameTagDialog(
                         when {
                             mergeTarget != null ->
                                 "「${mergeTarget.name}」(${mergeTarget.bookmarkCount}件)と統合されます"
-                            trimmed.isEmpty() -> "タグ名を入力してください"
-                            else -> "既存のタグと同じ名前にすると、1つに統合されます"
+                            cleaned.isEmpty() -> "タグ名を入力してください"
+                            else -> "既存のタグと同じ名前(大文字小文字・全角半角の違いは無視)にすると、1つに統合されます"
                         }
                     )
                 },
-                isError = trimmed.isEmpty()
+                isError = cleaned.isEmpty()
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(trimmed) }, enabled = canConfirm) {
+            TextButton(onClick = { onConfirm(cleaned) }, enabled = canConfirm) {
                 Text(if (mergeTarget != null) "統合" else "変更")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
     )
+}
+
+/** 統合先を選ぶダイアログ。タグが多いときは名前で絞り込める */
+@Composable
+private fun MergeIntoDialog(
+    tag: TagWithCount,
+    candidates: List<TagWithCount>,
+    onDismiss: () -> Unit,
+    onConfirm: (TagWithCount) -> Unit
+) {
+    var query by rememberSaveable(tag.id) { mutableStateOf("") }
+    var selectedId by rememberSaveable(tag.id) { mutableStateOf<Long?>(null) }
+    val queryKey = TagNames.key(query)
+    val shown = candidates.filter { queryKey.isEmpty() || TagNames.key(it.name).contains(queryKey) }
+    val selected = candidates.firstOrNull { it.id == selectedId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("「${tag.name}」の統合先") },
+        text = {
+            Column {
+                Text(
+                    "このタグが付いたブックマークは、選んだタグに付け替わります。「${tag.name}」は削除されます。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    label = { Text("タグを絞り込み") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                )
+                if (shown.isEmpty()) {
+                    Text(
+                        "該当するタグがありません",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                } else {
+                    LazyColumn(Modifier.selectableGroup()) {
+                        items(shown, key = { it.id }) { candidate ->
+                            TagChoiceRow(
+                                label = "${candidate.name}(${candidate.bookmarkCount}件)",
+                                selected = candidate.id == selectedId,
+                                onSelect = { selectedId = candidate.id }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { selected?.let(onConfirm) }, enabled = selected != null) { Text("統合") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
+}
+
+/** 表記ゆれの候補をまとめるダイアログ。残す名前を選ぶ(最初は先頭の候補) */
+@Composable
+private fun UnifyVariantsDialog(
+    group: List<TagWithCount>,
+    onDismiss: () -> Unit,
+    onConfirm: (TagWithCount) -> Unit
+) {
+    var selectedId by rememberSaveable(group.first().id) { mutableStateOf(group.first().id) }
+    val selected = group.firstOrNull { it.id == selectedId } ?: group.first()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("1つにまとめる") },
+        text = {
+            Column {
+                Text(
+                    "残す名前を選んでください。ほかのタグが付いたブックマークには、選んだタグが付きます。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Column(
+                    Modifier
+                        .selectableGroup()
+                        .padding(top = 8.dp)
+                ) {
+                    group.forEach { tag ->
+                        TagChoiceRow(
+                            label = "${tag.name}(${tag.bookmarkCount}件)",
+                            selected = tag.id == selected.id,
+                            onSelect = { selectedId = tag.id }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text("まとめる") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
+}
+
+@Composable
+private fun TagChoiceRow(label: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, onClick = onSelect, role = Role.RadioButton)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Text(label, modifier = Modifier.padding(start = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
 }

@@ -93,4 +93,62 @@ class TagManagementViewModelTest {
         assertEquals(listOf(kotlinJa), viewModel.uiState.value.tags)
         assertEquals(listOf<TagManagementMessage>(TagManagementMessage.Deleted("kotlin")), messages)
     }
+
+
+    @Test
+    fun 表記ゆれの候補を一覧と一緒に返す() = runTest {
+        val upper = TagWithCount(3, "Android", 5)
+        val lower = TagWithCount(4, "android", 1)
+        repository.tags.value = listOf(kotlin, upper, lower)
+        val viewModel = TagManagementViewModel(repository)
+        start(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf(upper, lower)), viewModel.uiState.value.variantGroups)
+    }
+
+    @Test
+    fun 他のタグに統合すると付け替えて知らせる() = runTest {
+        repository.tags.value = listOf(kotlin, kotlinJa)
+        val viewModel = TagManagementViewModel(repository)
+        val messages = start(viewModel)
+
+        viewModel.merge(kotlinJa, kotlin)
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L to listOf(2L)), repository.mergeCalls)
+        assertEquals(listOf(TagWithCount(1, "kotlin", 5)), viewModel.uiState.value.tags)
+        assertEquals(listOf<TagManagementMessage>(TagManagementMessage.Merged("Kotlin言語", "kotlin")), messages)
+    }
+
+    @Test
+    fun 表記ゆれの候補を選んだ名前の1つにまとめる() = runTest {
+        val upper = TagWithCount(3, "Android", 5)
+        val lower = TagWithCount(4, "android", 1)
+        val full = TagWithCount(5, "ＡＮＤＲＯＩＤ", 2)
+        repository.tags.value = listOf(upper, lower, full)
+        val viewModel = TagManagementViewModel(repository)
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.unify(viewModel.uiState.value.variantGroups.single(), into = lower)
+        advanceUntilIdle()
+
+        assertEquals(listOf(4L to listOf(3L, 5L)), repository.mergeCalls)
+        assertEquals(listOf(TagWithCount(4, "android", 8)), viewModel.uiState.value.tags)
+        assertTrue(viewModel.uiState.value.variantGroups.isEmpty())
+        assertEquals(listOf<TagManagementMessage>(TagManagementMessage.Unified(2, "android")), messages)
+    }
+
+    @Test
+    fun 統合先が無くなっていたら何も知らせない() = runTest {
+        repository.tags.value = listOf(kotlin)
+        val viewModel = TagManagementViewModel(repository)
+        val messages = start(viewModel)
+
+        viewModel.merge(kotlin, kotlinJa)
+        advanceUntilIdle()
+
+        assertTrue(messages.isEmpty())
+    }
 }

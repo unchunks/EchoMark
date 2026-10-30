@@ -2,6 +2,7 @@ package com.unchunks.echomark.data.repository
 
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.local.dao.TagDao
+import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.repository.TagRenameResult
 import com.unchunks.echomark.domain.repository.TagRepository
@@ -23,7 +24,7 @@ class TagRepositoryImpl @Inject constructor(
 
     override suspend fun renameTag(tagId: Long, newName: String): TagRenameResult =
         withContext(dispatcherProvider.io) {
-            val name = newName.trim()
+            val name = TagNames.clean(newName)
             val current = tagDao.getTagById(tagId)
             when {
                 name.isEmpty() || current == null -> TagRenameResult.Invalid
@@ -33,6 +34,11 @@ class TagRepositoryImpl @Inject constructor(
                     if (resultId == tagId) TagRenameResult.Renamed(tagId) else TagRenameResult.Merged(resultId)
                 }
             }
+        }
+
+    override suspend fun mergeTags(intoTagId: Long, fromTagIds: List<Long>): Int =
+        withContext(dispatcherProvider.io) {
+            tagDao.mergeTags(intoTagId, fromTagIds)
         }
 
     override suspend fun deleteTag(tagId: Long) =
