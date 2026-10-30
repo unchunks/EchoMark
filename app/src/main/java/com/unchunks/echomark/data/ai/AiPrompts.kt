@@ -305,6 +305,20 @@ object AiPrompts {
         add("- この部分に要点が無ければ notes は空文字にする。")
     }.joinToString("\n")
 
+    /** 会話の古い発言を、続きの会話で思い出すためのメモに要約させる指示(端末内 AI 向けの短いもの)。 */
+    fun conversationMemoryInstructions(maxChars: Int): String = buildList {
+        add("次の会話を、この先の会話で思い出すためのメモにまとめ、JSONのみを出力してください。")
+        add("説明文やコードブロックは出力しないでください。")
+        add("")
+        add("出力形式:")
+        add("""{"notes": "会話の要点(${maxChars}文字以内の日本語)"}""")
+        add("")
+        add("方針:")
+        add("- 話題、分かったこと、決まったこと、ユーザーの好みや条件、まだ答えていない質問を残す。")
+        add("- これまでの要約があれば、必要なことを残して新しい発言と1つにまとめる。")
+        add("- あいさつは書かない。会話に無いことは書かない。")
+    }.joinToString("\n")
+
     /** 部分要約の入力。 */
     fun partInput(title: String, part: TextPart): String = buildList {
         if (title.isNotBlank()) add("タイトル: ${title.trim()}")

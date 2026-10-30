@@ -38,12 +38,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 5):
+ * 形式(version 6):
  * ```
- * { "format": "echomark-backup", "version": 5, "exportedAt": 1700000000000,
+ * { "format": "echomark-backup", "version": 6, "exportedAt": 1700000000000,
  *   "bookmarks": [ {全列} ], "tags": [ {id, name, isUserCreated} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
- *   "conversations": [ {全列。aboutBookmarkId は通常の会話なら省略} ],
+ *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil は無ければ省略} ],
  *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
@@ -59,10 +59,11 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   読み込む端末にファイルが無ければ filePath を外す(読み込む側で確かめる)。3 以前ではファイルなしとして読む
  * - 5: ブックマークに contentFetchedAt(URL の本文を取得できた日時)を追加。4 以前では DB のマイグレーションと同じく、
  *   本文のある URL は保存日時で取得済み、それ以外は未取得として読む
+ * - 6: 会話に summaryCoveredUntil(要約に含めた最後の発言の日時)を追加。5 以前では要約はまだ無いものとして読む
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 5
+    const val CURRENT_VERSION = 6
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -180,6 +181,7 @@ object BackupJson {
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
         .apply { aboutBookmarkId?.let { put("aboutBookmarkId", it) } }
+        .apply { summaryCoveredUntil?.let { put("summaryCoveredUntil", it) } }
 
     private fun ChatMessageEntity.toJson() = JSONObject()
         .put("id", id)
@@ -256,7 +258,9 @@ object BackupJson {
             createdAt = createdAt,
             updatedAt = longOrNull("updatedAt") ?: createdAt,
             // version 1 には無い(通常の会話として読む)
-            aboutBookmarkId = longOrNull("aboutBookmarkId")
+            aboutBookmarkId = longOrNull("aboutBookmarkId"),
+            // version 5 以前には無い(要約はまだ無いものとして読む)
+            summaryCoveredUntil = longOrNull("summaryCoveredUntil")
         )
     }
 

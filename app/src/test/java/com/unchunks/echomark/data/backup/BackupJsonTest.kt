@@ -43,7 +43,10 @@ class BackupJsonTest {
         tags = listOf(TagEntity(10, "kotlin", isUserCreated = true), TagEntity(11, "android")),
         bookmarkTags = listOf(BookmarkTagCrossRef(1, 10, TagSource.USER), BookmarkTagCrossRef(1, 11, TagSource.AI)),
         conversations = listOf(
-            ConversationEntity(id = 5, title = "質問", isTitleManuallySet = true, summary = null, createdAt = 400, updatedAt = 500),
+            ConversationEntity(
+                id = 5, title = "質問", isTitleManuallySet = true, summary = "これまでの要約", createdAt = 400, updatedAt = 500,
+                summaryCoveredUntil = 401
+            ),
             ConversationEntity(id = 6, title = "記事Aについて", isTitleManuallySet = true, createdAt = 600, updatedAt = 700, aboutBookmarkId = 1)
         ),
         messages = listOf(
@@ -60,6 +63,18 @@ class BackupJsonTest {
         val decoded = BackupJson.decode(BackupJson.encode(sample))
         assertEquals(sample, decoded.data)
         assertEquals(0, decoded.invalidRecords)
+    }
+
+    @Test
+    fun 古い版のバックアップの会話は要約がまだ無いものとして読む() {
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":5,"exportedAt":1,
+             "conversations":[{"id":3,"title":"会話","isTitleManuallySet":false,"createdAt":20,"updatedAt":30}]}
+            """.trimIndent()
+        )
+
+        assertEquals(null, decoded.data.conversations.single().summaryCoveredUntil)
     }
 
     @Test

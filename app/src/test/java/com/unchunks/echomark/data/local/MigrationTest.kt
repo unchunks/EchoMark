@@ -244,6 +244,30 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate13To14_addsSummaryCoveredUntilAsEmpty() {
+        helper.createDatabase(13).apply {
+            execSQL(
+                """
+                INSERT INTO conversations (id, title, isTitleManuallySet, createdAt, updatedAt)
+                VALUES (1, '会話', 0, 100, 200)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        // スキーマ v14 と一致するか(列・既定値・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(14, listOf(MIGRATION_13_14))
+
+        val row = connection.prepare("SELECT title, summary, summaryCoveredUntil FROM conversations").use { stmt ->
+            stmt.step()
+            Triple(stmt.getText(0), stmt.isNull(1), stmt.isNull(2))
+        }
+        // 既存の会話に要約はまだ無い(次の発言の後に作り始める)
+        assertEquals(Triple("会話", true, true), row)
+        connection.close()
+    }
+
+    @Test
     fun migrate11To12_processingBecomesPendingAndPendingGetsQueuedAt() {
         helper.createDatabase(11).apply {
             execSQL(

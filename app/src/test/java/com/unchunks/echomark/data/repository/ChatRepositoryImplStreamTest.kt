@@ -7,6 +7,7 @@ import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.data.ai.ChatMemoryCompressor
 import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
@@ -24,6 +25,7 @@ import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.provider.ChatContextUsage
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -78,6 +80,13 @@ class ChatRepositoryImplStreamTest {
         override suspend fun embedQuery(text: String): FloatArray = throw EmbeddingUnavailableException()
     }
 
+    private fun chatMemory(llm: LlmProvider, settings: FakeAppSettingsRepository) = ChatMemoryCompressor(
+        conversationDao,
+        messageDao,
+        LlmProviderResolver(LocalLlmProviders { llm }, { llm }, settings, FakeApiKeyRepository()),
+        TestDispatcherProvider(Dispatchers.Unconfined)
+    )
+
     private fun repository(
         llm: LlmProvider,
         settings: FakeAppSettingsRepository = FakeAppSettingsRepository(LlmBackend.LOCAL),
@@ -89,6 +98,7 @@ class ChatRepositoryImplStreamTest {
         embeddingProvider = embeddingProvider,
         llmProviderResolver = LlmProviderResolver(LocalLlmProviders { llm }, { llm }, settings, FakeApiKeyRepository()),
         bookmarkRepository = bookmarkRepository,
+        chatMemory = chatMemory(llm, settings),
         dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
     )
 
@@ -151,6 +161,7 @@ class ChatRepositoryImplStreamTest {
                 FakeLlmProvider(listOf("回答")).let { l -> LocalLlmProviders { l } }, { FakeLlmProvider() }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()
             ),
             bookmarkRepository = brokenSearch,
+            chatMemory = chatMemory(FakeLlmProvider(), FakeAppSettingsRepository(LlmBackend.LOCAL)),
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
         )
 
@@ -164,7 +175,13 @@ class ChatRepositoryImplStreamTest {
     fun 添付の本文は今回の回答の根拠にだけ使い_会話には本文を保存しない() = runBlocking {
         var seenContext: List<String> = emptyList()
         val llm: LlmProvider = object : LlmProvider by FakeLlmProvider() {
-            override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> {
+            override fun chatStream(
+                userMessage: String,
+                context: List<String>,
+                history: List<ChatMessage>,
+                memory: String?,
+                onContextUsage: (ChatContextUsage) -> Unit
+            ): Flow<String> {
                 seenContext = context
                 return flow { emit("回答") }
             }
@@ -181,6 +198,62 @@ class ChatRepositoryImplStreamTest {
         assertTrue(seenContext.last(), seenContext.last().contains("添付の本文です"))
         assertTrue(seenContext.last(), seenContext.last().contains("資料.txt"))
         assertEquals(listOf("この資料の要点は?", "回答"), messageDao.all.value.map { it.content })
+    }
+
+    /** 渡された会話の記憶と履歴を記録する LLM。 */
+    private class MemoryRecordingLlm(private val base: FakeLlmProvider = FakeLlmProvider(listOf("回答"))) : LlmProvider by base {
+        var memory: String? = null
+        var history: List<ChatMessage> = emptyList()
+
+        override fun chatStream(
+            userMessage: String,
+            context: List<String>,
+            history: List<ChatMessage>,
+            memory: String?,
+            onContextUsage: (ChatContextUsage) -> Unit
+        ): Flow<String> {
+            this.memory = memory
+            this.history = history
+            return base.chatStream(userMessage, context, history)
+        }
+    }
+
+    @Test
+    fun 要約があれば要約を渡し_要約に含めた発言は履歴に入れない() = runBlocking {
+        conversationDao.conversation = ConversationEntity(
+            id = 1, title = "会話", summary = "これまでの要約", createdAt = 0, updatedAt = 0, summaryCoveredUntil = 20
+        )
+        listOf(10L to "要約済みの質問", 20L to "要約済みの回答", 30L to "新しい質問", 40L to "新しい回答").forEachIndexed { i, (time, text) ->
+            messageDao.insert(
+                ChatMessageEntity(
+                    conversationId = 1, role = if (i % 2 == 0) ChatRole.USER else ChatRole.ASSISTANT, content = text, createdAt = time
+                )
+            )
+        }
+        val llm = MemoryRecordingLlm()
+
+        repository(llm).sendMessageStream(1L, "質問").toList()
+
+        assertEquals("これまでの要約", llm.memory)
+        assertEquals(listOf("新しい質問", "新しい回答"), llm.history.map { it.content })
+    }
+
+    @Test
+    fun 要約の無い会話には何も渡さない() = runBlocking {
+        val llm = MemoryRecordingLlm()
+
+        repository(llm).sendMessageStream(1L, "質問").toList()
+
+        assertEquals(null, llm.memory)
+    }
+
+    @Test
+    fun 発言を消したらその発言を含む要約も消す() = runBlocking {
+        val message = ChatMessage(id = 3, conversationId = 1, role = ChatRole.USER, content = "質問", createdAt = 30)
+
+        repository(FakeLlmProvider()).deleteMessagesFrom(message)
+
+        assertEquals(listOf(1L to 30L), conversationDao.summaryClearedFrom)
     }
 
     @Test
@@ -442,17 +515,26 @@ private class FakeChatMessageDao : ChatMessageDao {
 
     override suspend fun getFirstByRole(conversationId: Long, role: ChatRole): ChatMessageEntity? =
         all.value.firstOrNull { it.conversationId == conversationId && it.role == role }
+
+    override suspend fun getMessagesAfter(conversationId: Long, after: Long, limit: Int): List<ChatMessageEntity> =
+        all.value.filter { it.conversationId == conversationId && it.createdAt > after }.take(limit)
 }
 
 private class FakeConversationDao : ConversationDao {
     var autoTitle: String? = null
     val inserted = mutableListOf<ConversationEntity>()
+    var conversation: ConversationEntity? = null
+    val summaryClearedFrom = mutableListOf<Pair<Long, Long>>()
 
     override suspend fun insert(conversation: ConversationEntity): Long {
         inserted += conversation
         return 1L
     }
-    override suspend fun getById(id: Long): ConversationEntity? = null
+    override suspend fun getById(id: Long): ConversationEntity? = conversation
+    override suspend fun updateSummary(id: Long, summary: String, coveredUntil: Long, previousCoveredUntil: Long?) = Unit
+    override suspend fun clearSummaryFrom(id: Long, createdAt: Long) {
+        summaryClearedFrom += id to createdAt
+    }
     override fun observeById(id: Long): Flow<ConversationEntity?> = MutableStateFlow(null)
     override fun observeAllWithLastMessage(): Flow<List<ConversationWithLastMessage>> =
         MutableStateFlow(emptyList())
