@@ -2,6 +2,7 @@ package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
@@ -252,6 +253,40 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String) = TODO("not used")
     override suspend fun updateSummary(id: Long, summary: String) = TODO("not used")
     override suspend fun updateCategory(id: Long, category: String) = TODO("not used")
+    /** 処理の状況(処理中・処理待ち・失敗を bookmarks から作る) */
+    override fun observeProcessingQueue(): Flow<ProcessingQueue> = bookmarks.map { list ->
+        ProcessingQueue(
+            running = list.filter { it.aiStatus == AiStatus.PROCESSING },
+            waiting = list.filter { it.aiStatus == AiStatus.PENDING },
+            recentFailures = list.filter { it.aiStatus == AiStatus.FAILED }
+        )
+    }
+
+    val cancelledIds = mutableListOf<Long>()
+    val processNowIds = mutableListOf<Long>()
+    var bulkCancelled = 0
+
+    override suspend fun cancelProcessing(ids: List<Long>) {
+        cancelledIds += ids
+        ids.forEach { id ->
+            updateBookmark(id) {
+                it.copy(
+                    aiStatus = AiStatus.FAILED,
+                    processing = it.processing.copy(stage = null, failureReason = ProcessingFailureReason.CANCELLED)
+                )
+            }
+        }
+    }
+
+    override suspend fun processNow(id: Long) {
+        processNowIds += id
+    }
+
+    override suspend fun cancelBulkProcessing(): Int {
+        bulkCancelled++
+        return 0
+    }
+
     /** observeStageProgress が返す、実行中の段の進み具合 */
     val stageProgress = MutableStateFlow<Float?>(null)
     override fun observeStageProgress(id: Long): Flow<Float?> = stageProgress

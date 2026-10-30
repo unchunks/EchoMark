@@ -19,6 +19,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
+import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
@@ -34,6 +35,7 @@ import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -219,6 +221,38 @@ class BookmarkRepositoryImpl @Inject constructor(
         }
 
     override fun observeStageProgress(id: Long): Flow<Float?> = workScheduler.observeStageProgress(id)
+
+    override fun observeProcessingQueue(): Flow<ProcessingQueue> =
+        combine(
+            bookmarkDao.observeProcessingQueue(),
+            bookmarkDao.observeRecentFailures(RECENT_FAILURES_LIMIT)
+        ) { queue, failures ->
+            val (running, waiting) = queue.map { it.toDomain() }.partition { it.aiStatus == AiStatus.PROCESSING }
+            ProcessingQueue(running = running, waiting = waiting, recentFailures = failures.map { it.toDomain() })
+        }.flowOn(dispatcherProvider.io)
+
+    override suspend fun cancelProcessing(ids: List<Long>) =
+        withContext(dispatcherProvider.io) {
+            // 先にやめたことにしてから、1件ごとのワークを取り消す(取り消しで処理待ちに戻らないよう)。
+            // 一括の列のワークは後続を止めないよう取り消さず、ワーカーがやめたものを飛ばす
+            bookmarkDao.cancelProcessing(ids, System.currentTimeMillis())
+            ids.forEach { workScheduler.cancel(it) }
+        }
+
+    override suspend fun processNow(id: Long) =
+        withContext(dispatcherProvider.io) {
+            val bookmark = bookmarkDao.getById(id) ?: return@withContext
+            val target = with(bookmark) { reprocessTarget(id, type, content, filePath, contentFetchedAt) }
+            // 一括の列にも残っているが、各工程は済んでいれば飛ばすため、後で列の順番が来ても二重には作らない
+            workScheduler.enqueue(id, fetchContent = target.fetchContent, extractContent = target.extractContent)
+            Unit
+        }
+
+    override suspend fun cancelBulkProcessing(): Int =
+        withContext(dispatcherProvider.io) {
+            val ids = workScheduler.cancelBulk()
+            if (ids.isEmpty()) 0 else bookmarkDao.cancelProcessing(ids.toList(), System.currentTimeMillis())
+        }
 
     override suspend fun startProcessingStage(id: Long, stage: ProcessingStage): Long =
         withContext(dispatcherProvider.io) {
@@ -597,6 +631,9 @@ class BookmarkRepositoryImpl @Inject constructor(
 
         /** ID の一覧で問い合わせるときの1回あたりの件数(SQLite の変数の上限より十分小さく) */
         const val ID_QUERY_CHUNK_SIZE = 500
+
+        /** 処理の状況の画面に出す、最近の失敗の数 */
+        const val RECENT_FAILURES_LIMIT = 20
 
         /** AI に渡す既存タグ名の最大数(プロンプトに入れる量は各 LlmProvider がさらに絞る) */
         const val MAX_TAG_NAMES_FOR_AI = 100

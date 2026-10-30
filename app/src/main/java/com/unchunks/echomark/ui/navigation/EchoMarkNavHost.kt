@@ -67,6 +67,7 @@ import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
+import com.unchunks.echomark.ui.settings.queue.ProcessingQueueScreen
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import kotlinx.coroutines.flow.first
 
@@ -300,7 +301,20 @@ fun EchoMarkNavHost(
             composable(TopLevelDestination.SETTINGS.route) {
                 SettingsScreen(
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
-                    onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) }
+                    onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) },
+                    onOpenProcessingQueue = { navController.navigate(Routes.PROCESSING_QUEUE) }
+                )
+            }
+            // 処理の状況(設定の「処理」の欄・まとめての処理の通知から開く)
+            composable(
+                route = Routes.PROCESSING_QUEUE,
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.PROCESSING_QUEUE_DEEP_LINK }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                ProcessingQueueScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )
             }
             composable(

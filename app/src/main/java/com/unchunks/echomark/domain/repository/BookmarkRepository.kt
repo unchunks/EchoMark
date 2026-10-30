@@ -5,6 +5,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -85,6 +86,14 @@ interface BookmarkRepository {
     suspend fun enqueueFailedAndWaitingProcessing(): Int
 
     // 処理の状態の移り変わり(ワーカーから呼ぶ。ProcessingInfo の説明を参照)
+    /** 処理の状況(処理中・処理待ち・最近の失敗)。 */
+    fun observeProcessingQueue(): Flow<ProcessingQueue>
+    /** 処理をやめる(処理待ち・処理中のものだけ)。やめたものは失敗(理由はやめたこと)になり、再処理で戻せる。 */
+    suspend fun cancelProcessing(ids: List<Long>)
+    /** 処理待ちのものを今すぐ(順番待ちの列を飛ばして)処理する。夜間にまとめて処理する設定でもすぐ積む。 */
+    suspend fun processNow(id: Long)
+    /** まとめての処理の列を止め、列にあったものの処理をやめる。やめた件数を返す。 */
+    suspend fun cancelBulkProcessing(): Int
     /** 実行中の段の進み具合(0〜1)。段が報告していない(ダウンロード・文字起こし以外)・実行中でなければ null。 */
     fun observeStageProgress(id: Long): Flow<Float?>
     /** 処理の段を始める(処理中にする)。始めた日時を返す。段を終えるとき・中断されたときに [endProcessingStage] へ渡す。 */

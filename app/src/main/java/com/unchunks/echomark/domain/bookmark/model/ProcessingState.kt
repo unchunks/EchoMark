@@ -51,9 +51,25 @@ enum class ProcessingFailureReason {
     SERVER_ERROR,
     /** システムによる中断などで、試行の回数の上限に達した */
     TOO_MANY_ATTEMPTS,
+    /** ユーザーが処理をやめた(処理の状況の画面・まとめての処理の通知から)。再処理するまでワーカーは何もしない */
+    CANCELLED,
     /** 上のどれにも当たらない */
     UNKNOWN
 }
+
+/** 処理の状況の画面に出すもの(#65)。 */
+data class ProcessingQueue(
+    /** 処理中(段の名前付き) */
+    val running: List<Bookmark> = emptyList(),
+    /** 処理待ち(頼んだ順) */
+    val waiting: List<Bookmark> = emptyList(),
+    /** 最近失敗したもの(新しい順) */
+    val recentFailures: List<Bookmark> = emptyList()
+)
+
+/** ユーザーが処理をやめたものか(ワーカーは処理せず、状態も書き換えない)。 */
+val Bookmark.isProcessingCancelled: Boolean
+    get() = aiStatus == AiStatus.FAILED && processing.failureReason == ProcessingFailureReason.CANCELLED
 
 /**
  * 処理の状態の詳細([AiStatus] を補う)。日時はすべて epoch ミリ秒で、分からなければ null。

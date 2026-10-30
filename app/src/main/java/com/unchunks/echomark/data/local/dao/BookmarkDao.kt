@@ -63,7 +63,7 @@ interface BookmarkDao {
     @Query(
         "UPDATE bookmarks SET aiStatus = 'PROCESSING', processingStage = :stage, stageStartedAt = :now, " +
             "processingStartedAt = COALESCE(processingStartedAt, :now), processingFinishedAt = NULL " +
-            "WHERE id = :id"
+            "WHERE id = :id AND NOT (aiStatus = 'FAILED' AND COALESCE(failureReason, '') = 'CANCELLED')"
     )
     suspend fun startStage(id: Long, stage: ProcessingStage, now: Long)
 
@@ -80,14 +80,15 @@ interface BookmarkDao {
     /** 再試行を待つ(処理待ちに戻し、直前の失敗の理由を残す)。 */
     @Query(
         "UPDATE bookmarks SET aiStatus = 'PENDING', processingStage = NULL, stageStartedAt = NULL, " +
-            "failureReason = :reason WHERE id = :id"
+            "failureReason = :reason WHERE id = :id AND NOT (aiStatus = 'FAILED' AND COALESCE(failureReason, '') = 'CANCELLED')"
     )
     suspend fun markRetrying(id: Long, reason: ProcessingFailureReason)
 
     /** 処理を終える(完了・失敗・準備待ち)。 */
     @Query(
         "UPDATE bookmarks SET aiStatus = :status, processingStage = NULL, stageStartedAt = NULL, " +
-            "processingFinishedAt = :now, failureReason = :reason WHERE id = :id"
+            "processingFinishedAt = :now, failureReason = :reason " +
+            "WHERE id = :id AND NOT (aiStatus = 'FAILED' AND COALESCE(failureReason, '') = 'CANCELLED')"
     )
     suspend fun finishProcessing(id: Long, status: AiStatus, reason: ProcessingFailureReason?, now: Long)
 
@@ -101,6 +102,33 @@ interface BookmarkDao {
             "WHERE aiStatus = 'PROCESSING' AND (stageStartedAt IS NULL OR stageStartedAt < :before)"
     )
     suspend fun resetProcessingStartedBefore(before: Long): Int
+
+    /**
+     * 処理をやめる(失敗にし、理由をユーザーがやめたことにする)。処理待ち・処理中のものだけを変える。
+     * やめたものはワーカーが処理せず、状態も書き換えない(再処理で処理待ちに戻すまで)。
+     */
+    @Query(
+        "UPDATE bookmarks SET aiStatus = 'FAILED', processingStage = NULL, stageStartedAt = NULL, " +
+            "processingFinishedAt = :now, failureReason = 'CANCELLED' " +
+            "WHERE id IN (:ids) AND aiStatus IN ('PENDING', 'PROCESSING')"
+    )
+    suspend fun cancelProcessing(ids: List<Long>, now: Long): Int
+
+    // ---- 処理の状況の画面 ----
+
+    /** 処理中・処理待ちのもの。処理中を先に、処理待ちは頼んだ順(古い順)に並べる */
+    @Query(
+        "SELECT * FROM bookmarks WHERE aiStatus IN ('PENDING', 'PROCESSING') " +
+            "ORDER BY CASE aiStatus WHEN 'PROCESSING' THEN 0 ELSE 1 END, COALESCE(queuedAt, createdAt), id"
+    )
+    fun observeProcessingQueue(): Flow<List<BookmarkEntity>>
+
+    /** 処理に失敗したもの(新しい順、[limit] 件まで) */
+    @Query(
+        "SELECT * FROM bookmarks WHERE aiStatus = 'FAILED' " +
+            "ORDER BY COALESCE(processingFinishedAt, createdAt) DESC, id DESC LIMIT :limit"
+    )
+    fun observeRecentFailures(limit: Int): Flow<List<BookmarkEntity>>
 
     @Query("UPDATE bookmarks SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun updateFavorite(id: Long, isFavorite: Boolean)

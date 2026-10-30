@@ -21,13 +21,18 @@ internal object AiProcessingNotification {
     private const val MAX_TITLE_CHARS = 40
 
     /** [bookmarkTitle] のブックマークの要約を作っている、という通知つきの [ForegroundInfo]。タイトルが分からなければ汎用の文言にする。 */
-    fun foregroundInfo(context: Context, bookmarkTitle: String?): ForegroundInfo {
+    /** 通知のチャンネルを作る(作成済みなら何もしない)。まとめての処理の通知([BulkProcessingNotifier])も使う */
+    fun ensureChannel(context: Context) {
         NotificationManagerCompat.from(context).createNotificationChannel(
             NotificationChannelCompat.Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
                 .setName(context.getString(R.string.notification_channel_ai_processing))
                 .setDescription(context.getString(R.string.notification_channel_ai_processing_desc))
                 .build()
         )
+    }
+
+    fun foregroundInfo(context: Context, bookmarkTitle: String?): ForegroundInfo {
+        ensureChannel(context)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.ai_processing_notification_title))
