@@ -338,7 +338,10 @@ class FakeBookmarkRepository : BookmarkRepository {
                 )
             )
         }
-    override suspend fun enqueueWaitingModelProcessing() = TODO("not used")
+    var waitingModelEnqueues = 0
+    override suspend fun enqueueWaitingModelProcessing() {
+        waitingModelEnqueues++
+    }
     override suspend fun enqueueFailedAndWaitingProcessing(): Int = TODO("not used")
     override suspend fun enqueueStalledProcessing(processStartedAt: Long): Int = TODO("not used")
     /** enqueueWaitingProcessing の呼び出し([nightly] の値) */

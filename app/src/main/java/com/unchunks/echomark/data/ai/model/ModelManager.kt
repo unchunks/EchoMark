@@ -18,11 +18,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,8 +55,8 @@ data class InstalledModels(
 class ModelManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val bookmarkRepository: BookmarkRepository,
-    dispatcherProvider: DispatcherProvider
-) {
+    private val dispatcherProvider: DispatcherProvider
+) : DownloadedModelInstaller {
     // 取り込み・削除の想定外の失敗でアプリを落とさない(取り込みの失敗は importInternal で状態に反映する)
     private val scope = CoroutineScope(
         SupervisorJob() + dispatcherProvider.io +
@@ -186,27 +189,7 @@ class ModelManager @Inject constructor(
                 return
             }
 
-            // モデルごとに別の名前で保存する(取り込んだ時刻で区別する)
-            val importedAt = System.currentTimeMillis()
-            val id = uniqueId("${MODEL_FILE_BASE_NAME}_$importedAt")
-            val fileName = id + extension
-            val dest = File(modelsDir, fileName)
-            dest.delete()
-            if (!part.renameTo(dest)) throw IOException("rename failed")
-
-            val info = LocalModelInfo(
-                fileName = fileName,
-                displayName = displayName,
-                sizeBytes = copied,
-                importedAt = importedAt,
-                id = id
-            )
-            synchronized(lock) {
-                val current = _installed.value
-                publish(current.copy(models = current.models + info))
-            }
-            _importState.value = ModelImportState.Succeeded(info)
-            Timber.i("オンデバイスモデルを取り込み: ${info.displayName} (${info.sizeBytes} bytes)")
+            _importState.value = ModelImportState.Succeeded(addModel(part, displayName, extension, copied))
 
             // モデル待ちだったブックマークの AI 処理を再開する
             bookmarkRepository.enqueueWaitingModelProcessing()
@@ -237,6 +220,56 @@ class ModelManager @Inject constructor(
             part.delete()
             _importState.value = ModelImportState.Failed(ModelImportError.ReadFailed)
         }
+    }
+
+    /**
+     * ダウンロードしたおすすめのモデルの [file] を `filesDir/models/` へコピーして一覧に加える。
+     * 公開ページの大きさと SHA-256 に合わなければ(途中で切れた・別のファイルが届いた)加えず、false を返す。
+     */
+    override suspend fun install(file: File, entry: ModelCatalogEntry): Boolean = withContext(dispatcherProvider.io) {
+        val part = File(modelsDir, DOWNLOAD_PART_FILE_NAME)
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            DigestInputStream(file.inputStream(), digest).use { input ->
+                part.outputStream().use { output -> input.copyTo(output, COPY_BUFFER_BYTES) }
+            }
+            val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
+            if (part.length() != entry.sizeBytes || sha256 != entry.sha256) {
+                Timber.w("ダウンロードしたモデルが公開の値と合わない: %s (%d bytes)", entry.name, part.length())
+                part.delete()
+                return@withContext false
+            }
+            addModel(part, entry.fileName, ".${entry.format}", part.length())
+            bookmarkRepository.enqueueWaitingModelProcessing()
+            true
+        } catch (e: Exception) {
+            part.delete()
+            throw e
+        }
+    }
+
+    /** 確かめ終えた [part] をモデルごとの名前(取り込んだ時刻で区別する)に変えて、一覧に加える。 */
+    private fun addModel(part: File, displayName: String, extension: String, sizeBytes: Long): LocalModelInfo {
+        val importedAt = System.currentTimeMillis()
+        val id = uniqueId("${MODEL_FILE_BASE_NAME}_$importedAt")
+        val fileName = id + extension
+        val dest = File(modelsDir, fileName)
+        dest.delete()
+        if (!part.renameTo(dest)) throw IOException("rename failed")
+
+        val info = LocalModelInfo(
+            fileName = fileName,
+            displayName = displayName,
+            sizeBytes = sizeBytes,
+            importedAt = importedAt,
+            id = id
+        )
+        synchronized(lock) {
+            val current = _installed.value
+            publish(current.copy(models = current.models + info))
+        }
+        Timber.i("オンデバイスモデルを取り込み: ${info.displayName} (${info.sizeBytes} bytes)")
+        return info
     }
 
     /** 同じ時刻に取り込んだモデルと id がぶつからないようにする。 */
@@ -331,5 +364,7 @@ class ModelManager @Inject constructor(
         /** 以前の版(モデルは1つだけ)の情報のファイル */
         const val LEGACY_METADATA_FILE_NAME = "local_llm.json"
         const val PART_FILE_NAME = "import.part"
+        const val DOWNLOAD_PART_FILE_NAME = "download.part"
+        const val COPY_BUFFER_BYTES = 1024 * 1024
     }
 }
