@@ -12,6 +12,7 @@ import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupImportSummary
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.DataOperationException
 import com.unchunks.echomark.domain.repository.LlmBackend
@@ -19,6 +20,10 @@ import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.domain.usage.ApiUsagePeriods
+import com.unchunks.echomark.domain.usage.ApiUsageRepository
+import com.unchunks.echomark.domain.usage.apiUsageReadFrom
+import com.unchunks.echomark.domain.usage.summarizeByPeriod
 import com.unchunks.echomark.worker.ProcessingScheduleController
 import com.unchunks.echomark.worker.RediscoverScheduleController
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,8 +32,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -114,6 +124,8 @@ data class SettingsUiState(
     val storage: StorageUsage? = null,
     val dataOperation: DataOperationState = DataOperationState.Idle,
     val crashLog: CrashLogSummary = CrashLogSummary(),
+    /** クラウド AI の使用量(クラウド AI を使えない間は空) */
+    val apiUsage: ApiUsagePeriods = ApiUsagePeriods(),
     val versionLabel: String = ""
 )
 
@@ -125,6 +137,7 @@ class SettingsViewModel @Inject constructor(
     private val dataRepository: DataManagementRepository,
     private val scheduleController: RediscoverScheduleController,
     private val processingScheduleController: ProcessingScheduleController,
+    private val apiUsageRepository: ApiUsageRepository,
     private val crashLogs: CrashLogStore,
     private val dispatchers: DispatcherProvider
 ) : ViewModel() {
@@ -132,7 +145,27 @@ class SettingsViewModel @Inject constructor(
     private val storage = MutableStateFlow<StorageUsage?>(null)
     private val dataOperation = MutableStateFlow<DataOperationState>(DataOperationState.Idle)
     private val crashLog = MutableStateFlow(CrashLogSummary())
-    private val transient = combine(storage, dataOperation, crashLog, ::Triple)
+    /** クラウド AI の使用量。クラウド AI を使えない間は記録も無いため、DB を読まない */
+    private val apiUsage: Flow<ApiUsagePeriods> =
+        if (!CLOUD_AI_ENABLED) {
+            flowOf(ApiUsagePeriods())
+        } else {
+            flow {
+                emitAll(
+                    apiUsageRepository.observeSince(apiUsageReadFrom(System.currentTimeMillis()))
+                        .map { summarizeByPeriod(it, System.currentTimeMillis()) }
+                )
+            }
+        }
+
+    private class TransientState(
+        val storage: StorageUsage?,
+        val operation: DataOperationState,
+        val crashLog: CrashLogSummary,
+        val apiUsage: ApiUsagePeriods
+    )
+
+    private val transient = combine(storage, dataOperation, crashLog, apiUsage, ::TransientState)
 
     private val aiSummary = combine(
         appSettings.aiTaskSettings,
@@ -154,7 +187,7 @@ class SettingsViewModel @Inject constructor(
         appSettings.rediscoverSettings,
         appSettings.processingSettings,
         transient
-    ) { ai, (themeMode, dynamicColor), rediscover, processing, (storage, operation, crashLog) ->
+    ) { ai, (themeMode, dynamicColor), rediscover, processing, transient ->
         SettingsUiState(
             isLoaded = true,
             ai = ai,
@@ -162,9 +195,10 @@ class SettingsViewModel @Inject constructor(
             dynamicColor = dynamicColor,
             rediscover = rediscover,
             processing = processing,
-            storage = storage,
-            dataOperation = operation,
-            crashLog = crashLog,
+            storage = transient.storage,
+            dataOperation = transient.operation,
+            crashLog = transient.crashLog,
+            apiUsage = transient.apiUsage,
             versionLabel = VERSION_LABEL
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())

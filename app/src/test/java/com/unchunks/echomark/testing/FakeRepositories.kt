@@ -6,6 +6,8 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
+import com.unchunks.echomark.domain.usage.ApiUsageRecord
+import com.unchunks.echomark.domain.usage.ApiUsageRepository
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
@@ -515,4 +517,20 @@ class FakeProcessingStatsRepository : ProcessingStatsRepository {
         recorded += key to millis
         averages.value = averages.value + (key to millis)
     }
+}
+
+/** クラウド API の使用量の記録の Fake。記録した値をそのまま持つ。 */
+class FakeApiUsageRepository : ApiUsageRepository {
+    val records = MutableStateFlow<List<ApiUsageRecord>>(emptyList())
+
+    /** 設定すると、記録がこの例外で失敗する */
+    var failure: Exception? = null
+
+    override suspend fun record(usage: ApiUsageRecord) {
+        failure?.let { throw it }
+        records.value = records.value + usage
+    }
+
+    override fun observeSince(from: Long): Flow<List<ApiUsageRecord>> =
+        records.map { list -> list.filter { it.createdAt >= from } }
 }

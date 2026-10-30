@@ -93,12 +93,28 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
 }
 
 /**
+ * v12 → v13: クラウド API の使用量(トークン数)の記録テーブル(api_usage)を追加(#69)。
+ * 新しいテーブルを足すだけで、既存のテーブル・行には触れない(記録は空から始まる)。
+ */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // スキーマ JSON(13.json)の createSql と同じ
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `api_usage` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, `provider` TEXT NOT NULL, `model` TEXT NOT NULL, " +
+                "`task` TEXT NOT NULL, `inputTokens` INTEGER NOT NULL, `outputTokens` INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_api_usage_createdAt` ON `api_usage` (`createdAt`)")
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
  */
 val ALL_MIGRATIONS: Array<Migration> =
-    arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+    arrayOf(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */
 const val OLDEST_MIGRATABLE_VERSION = 6

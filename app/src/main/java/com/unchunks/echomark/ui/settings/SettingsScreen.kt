@@ -64,6 +64,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.components.composeui.ReadableLazyColumn
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -269,6 +270,9 @@ fun SettingsContent(
                 onOpenDialog = { dialog = it },
                 onOpenQueue = actions.onOpenProcessingQueue
             )
+
+            // クラウドの AI を無効にしている間は、使用量の欄も出さない(CLOUD_AI_ENABLED。記録も無い)
+            if (CLOUD_AI_ENABLED) apiUsageItems(uiState.apiUsage)
 
             item { SectionHeader("表示") }
             item {

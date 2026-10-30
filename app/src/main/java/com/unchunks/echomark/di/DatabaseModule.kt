@@ -8,6 +8,7 @@ import com.unchunks.echomark.BuildConfig
 import com.unchunks.echomark.data.local.ALL_MIGRATIONS
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.DESTRUCTIVE_MIGRATION_FROM_VERSIONS
+import com.unchunks.echomark.data.local.dao.ApiUsageDao
 import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
@@ -67,6 +68,11 @@ object DatabaseModule {
     @Provides
     fun provideBackupDao(database: AppDatabase): BackupDao {
         return database.backupDao()
+    }
+
+    @Provides
+    fun provideApiUsageDao(database: AppDatabase): ApiUsageDao {
+        return database.apiUsageDao()
     }
 }
 
