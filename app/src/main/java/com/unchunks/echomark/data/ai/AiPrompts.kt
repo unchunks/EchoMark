@@ -2,6 +2,8 @@ package com.unchunks.echomark.data.ai
 
 import com.unchunks.components.llm.TextPart
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
+import com.unchunks.echomark.domain.bookmark.model.SummaryProfile
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.TagNames
 
@@ -18,6 +20,7 @@ object AiPrompts {
      * 渡すのは先頭から [maxExistingTags] 個・合計 [maxExistingTagChars] 文字まで(長すぎるタグ名は飛ばす)。
      * @param summaryMaxChars 要約の文字数の上限。長い動画・文書などは [summaryMaxChars] で長めにする
      * @param scope 作らせる項目。要約だけ・タグとカテゴリだけのときは、出力形式とルールをその項目に絞る
+     * @param profile 要約の型(論文・Q&A・レシピなど)。型に合う方針を種類ごとの方針に足す
      */
     fun analyzeInstructions(
         kind: ContentKind,
@@ -25,7 +28,8 @@ object AiPrompts {
         summaryMaxChars: Int = DEFAULT_SUMMARY_CHARS,
         maxExistingTags: Int = API_MAX_EXISTING_TAGS,
         maxExistingTagChars: Int = API_MAX_EXISTING_TAG_CHARS,
-        scope: AnalysisScope = AnalysisScope.ALL
+        scope: AnalysisScope = AnalysisScope.ALL,
+        profile: SummaryProfile = SummaryProfile.GENERAL
     ): String {
         val withSummary = scope != AnalysisScope.TAGS
         val withTags = scope != AnalysisScope.SUMMARY
@@ -41,8 +45,10 @@ object AiPrompts {
             add("")
             add(if (withSummary) "要約の方針:" else "内容の捉え方:")
             addAll(kindGuidance(kind))
+            addAll(profileGuidance(profile))
             if (withSummary) {
                 add("- 本文に書かれていないことを推測で補わない。本文が無いときは、タイトルや添付から分かる範囲で書く。")
+                add(LIMITED_ACCESS_RULE)
             }
             add("- 本文が「部分ごとの要約メモ」のときは、全体を通した主題と要点${if (withSummary) "をまとめる" else "から判断する"}。")
             add("")
@@ -61,7 +67,7 @@ object AiPrompts {
                     add("- tags は、下の「既存のタグ」に内容に合うものがあれば、表記を変えずにそのまま使ってください。")
                     add("- 既存のタグに合うものが無いときだけ、新しいタグを作ってください(同じ意味の言い換えや表記ゆれは作らない)。")
                 }
-                add("- category は${categoryExamples(kind).joinToString("") { "「$it」" }}のように短い1語。")
+                add("- category は${categoryExamples(kind, profile).joinToString("") { "「$it」" }}のように短い1語。")
             }
             if (tags.isNotEmpty()) {
                 add("")
@@ -78,13 +84,15 @@ object AiPrompts {
      * 遅い端末ではプロンプトの読み込みに 100 文字あたり数秒かかるため、規則は要点だけにする。
      * 例のタグを写したものは、保存内容に出てこないタグを除く処理(AnalysisParser.keepMentionedTags)で落とす。
      * @param digest 本文が、長い本文を部分ごとに要約したメモのとき true
+     * @param profile 要約の型。型に合う短い言い方で、要約の主役を伝える
      */
     fun compactAnalyzeInstructions(
         kind: ContentKind,
         existingTags: List<String>,
         summaryMaxChars: Int = DEFAULT_SUMMARY_CHARS,
         scope: AnalysisScope = AnalysisScope.ALL,
-        digest: Boolean = false
+        digest: Boolean = false,
+        profile: SummaryProfile = SummaryProfile.GENERAL
     ): String {
         val withSummary = scope != AnalysisScope.TAGS
         val withTags = scope != AnalysisScope.SUMMARY
@@ -101,9 +109,10 @@ object AiPrompts {
             add("次の保存内容(${kindLabel(kind)})を読み、JSONだけを出力してください。")
             add(output("要約", "\"語\", \"語\"", "分類"))
             if (withSummary) {
-                add("- summary: ${compactGuidance(kind)}。${summaryMaxChars}文字以内の日本語。本文を写さず短く言い換える。" +
+                add("- summary: ${compactGuidance(kind, profile)}。${summaryMaxChars}文字以内の日本語。本文を写さず短く言い換える。" +
                     "タイトル・サイト名・チャンネル名・前置きは書かない。")
                 if (digest) add("- 本文が「[部分 1/3]」のように分かれたメモなら、全体を通してまとめる。")
+                add(COMPACT_LIMITED_ACCESS_RULE)
             }
             if (withTags) {
                 add("- tags: 本文に出てくる、この内容に固有の語(料理名・製品名・技術名・人名・地名など)を1〜${MAX_TAGS}個。")
@@ -111,7 +120,7 @@ object AiPrompts {
                     add("- tags は、次の既存のタグに合うものがあれば表記を変えずに使う: " +
                         tags.joinToString(prefix = "[", postfix = "]", separator = ", ") { quote(it) })
                 }
-                add("- category: ${categoryExamples(kind).joinToString("") { "「$it」" }}から1つ選ぶ。")
+                add("- category: ${categoryExamples(kind, profile).joinToString("") { "「$it」" }}から1つ選ぶ。")
             }
             add("")
             add("例:")
@@ -135,7 +144,7 @@ object AiPrompts {
     ).joinToString("\n")
 
     /** 種類ごとの要約の主役([compactAnalyzeInstructions] 用の短い言い方)。 */
-    private fun compactGuidance(kind: ContentKind): String = when (kind) {
+    private fun compactGuidance(kind: ContentKind, profile: SummaryProfile): String = compactProfileGuidance(profile) ?: when (kind) {
         ContentKind.WEB_PAGE -> "記事の主張と要点をまとめる"
         ContentKind.VIDEO -> "動画で話している内容の要点をまとめる。あいさつ・宣伝・チャンネル登録のお願いは書かない"
         ContentKind.MEMO -> "書かれている要点をそのまま短くまとめる"
@@ -194,6 +203,73 @@ object AiPrompts {
         }
         add("- 「--- 読み取った文字 ---」のような「--- 〜 ---」の行は、ファイルから取り出した部分(画像内の文字・PDF のテキスト・音声の文字起こしなど)の見出し。読み取りの誤りを含むことがある。")
         add("- 「[部分 1/3]」のような見出しは、長い本文を分けて要約したメモの区切り。")
+    }
+
+    /** 型ごとの、種類ごとの方針に足す方針(型が [SummaryProfile.GENERAL] なら何も足さない)。 */
+    internal fun profileGuidance(profile: SummaryProfile): List<String> = when (profile) {
+        SummaryProfile.GENERAL -> emptyList()
+        SummaryProfile.PAPER -> listOf(
+            "- これは論文。研究の目的、手法、主な結果、結論の順に要点を選び、精度・件数などの数値は残す。",
+            "- 著者名・所属・謝辞・参考文献の一覧は要点にしない。"
+        )
+        SummaryProfile.REFERENCE -> listOf(
+            "- これは技術資料・リファレンス。何のための資料か(API・機能・手順)と、使い方の要点を書く。",
+            "- 対象のバージョン、非推奨・注意点・制限が書かれていれば残す。目次やリンクの一覧は要点にしない。"
+        )
+        SummaryProfile.QA -> listOf(
+            "- これは質問と回答のページ。何に困っている質問かを先に書き、続けて採用された・評価の高い回答の結論と理由を書く。",
+            "- 回答が無い・解決していないときは、その旨を書く。投稿者名・投票数は書かない。"
+        )
+        SummaryProfile.SOCIAL_POST -> listOf(
+            "- これは SNS の投稿。投稿の主張・伝えたいことを書く。短い投稿は言い換えすぎず、そのまま要点にする。",
+            "- 投稿者名・ハンドル・ハッシュタグの羅列・いいね/リポストの数・「返信」「フォロー」などの画面の文言は書かない。"
+        )
+        SummaryProfile.PRODUCT -> listOf(
+            "- これは商品ページ。何の商品か(種類・名称)と、主な特徴・仕様・価格を書く。",
+            "- 広告のうたい文句・レビューの引用・配送やポイントの案内は要点にしない。価格や在庫は変わるため、ページに書かれたものとして書く。"
+        )
+        SummaryProfile.RECIPE -> listOf(
+            "- これはレシピ。何の料理か、主な材料と、作り方の流れ(調理時間・人数が分かれば)を書く。",
+            "- 投稿者の思い出話・コメント欄・広告は要点にしない。"
+        )
+        SummaryProfile.LIST -> listOf(
+            "- これは項目を並べたメモ。何のリスト(ToDo・買い物・読みたい本など)かと、主な項目を書く。",
+            "- 全項目を写さず、多いときは件数も添える。完了済み(チェック済み)の項目は、残りと分けて書く。"
+        )
+    }
+
+    /** [compactAnalyzeInstructions] 用の、型の短い言い方。型が [SummaryProfile.GENERAL] なら null(種類の既定を使う)。 */
+    private fun compactProfileGuidance(profile: SummaryProfile): String? = when (profile) {
+        SummaryProfile.GENERAL -> null
+        SummaryProfile.PAPER -> "論文の目的・手法・主な結果・結論をまとめる。数値は残し、著者や参考文献は書かない"
+        SummaryProfile.REFERENCE -> "何の資料か(API・機能・手順)と使い方の要点、注意点をまとめる"
+        SummaryProfile.QA -> "何に困っている質問かと、回答の結論をまとめる"
+        SummaryProfile.SOCIAL_POST -> "投稿の主張をまとめる。投稿者名・ハッシュタグ・いいねの数は書かない"
+        SummaryProfile.PRODUCT -> "何の商品かと、主な特徴・仕様・価格をまとめる。広告のうたい文句は書かない"
+        SummaryProfile.RECIPE -> "何の料理かと、主な材料・作り方の流れをまとめる"
+        SummaryProfile.LIST -> "何のリストかと主な項目をまとめる。多いときは件数も書く"
+    }
+
+    /** 本文が有料・会員限定ページの一部だけのときの方針([LimitedAccess])。 */
+    private const val LIMITED_ACCESS_RULE =
+        "- 本文の先頭に「${LimitedAccess.MARKER}」の行があるときは、有料・会員限定などで冒頭しか取得できていない。取得できた範囲だけを要約し、続きを推測で補わない。"
+
+    private const val COMPACT_LIMITED_ACCESS_RULE =
+        "- 本文に「${LimitedAccess.MARKER}」とあれば冒頭だけの取得。見えている範囲だけを要約し、続きは補わない。"
+
+    /** category の例(型があれば、型に合う候補を先に出す)。 */
+    internal fun categoryExamples(kind: ContentKind, profile: SummaryProfile): List<String> {
+        val first = when (profile) {
+            SummaryProfile.PAPER -> listOf("論文")
+            SummaryProfile.REFERENCE -> listOf("技術")
+            SummaryProfile.QA -> listOf("技術", "学習")
+            SummaryProfile.SOCIAL_POST -> listOf("ニュース", "趣味")
+            SummaryProfile.PRODUCT -> listOf("買い物")
+            SummaryProfile.RECIPE -> listOf("レシピ")
+            SummaryProfile.LIST -> listOf("ToDo", "買い物")
+            SummaryProfile.GENERAL -> emptyList()
+        }
+        return (first + categoryExamples(kind)).distinct()
     }
 
     /** category の例。種類に合う候補を先に出す。 */
@@ -291,7 +367,7 @@ object AiPrompts {
      * 長い本文の一部を要約させる指示(分割要約の map 側)。後でまとめるためのメモを JSON で出力させる。
      * JSON にするのは、ローカル LLM で JSON が閉じた時点で生成を打ち切れるようにするため(繰り返しに陥っても止まる)。
      */
-    fun partInstructions(kind: ContentKind, noteMaxChars: Int): String = buildList {
+    fun partInstructions(kind: ContentKind, noteMaxChars: Int, profile: SummaryProfile = SummaryProfile.GENERAL): String = buildList {
         add("あなたは長い保存内容(${kindLabel(kind)})を読むアシスタントです。次の本文は全体の一部です。")
         add("この部分の要点を、後で全体の要約を作るためのメモとして書き出し、JSONのみを出力してください。")
         add("説明文やコードブロックは出力しないでください。")
@@ -301,6 +377,7 @@ object AiPrompts {
         add("")
         add("方針:")
         addAll(kindGuidance(kind))
+        addAll(profileGuidance(profile))
         add("- 固有名詞・数値・結論は残す。本文に書かれていないことは書かない。")
         add("- この部分に要点が無ければ notes は空文字にする。")
     }.joinToString("\n")

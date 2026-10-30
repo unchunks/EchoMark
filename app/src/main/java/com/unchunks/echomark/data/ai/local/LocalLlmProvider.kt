@@ -584,7 +584,7 @@ class LocalLlmProvider @Inject constructor(
         // 上限を超える本文は、部分ごとに要約してからまとめる
         val body = digester.prepare(input.text) { part ->
             val prompt = listOf(
-                AiPrompts.partInstructions(input.kind, LONG_TEXT.noteMaxChars),
+                AiPrompts.partInstructions(input.kind, LONG_TEXT.noteMaxChars, input.profile),
                 "",
                 AiPrompts.partInput(input.title, part)
             ).joinToString("\n")
@@ -822,7 +822,8 @@ class LocalLlmProvider @Inject constructor(
             AiPrompts.existingTagsMentionedIn(existingTags, input.combinedText()),
             summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong),
             scope = scope,
-            digest = digest
+            digest = digest,
+            profile = input.profile
         ),
         "",
         AiPrompts.analyzeInput(input.title, body, MAX_INPUT_CHARS)

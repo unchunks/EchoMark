@@ -321,4 +321,50 @@ class HtmlContentExtractorTest {
         assertEquals("字幕(自動生成):\n話した内容", text)
         assertNull(HtmlContentExtractor.youtubeText(video.copy(author = null, description = null), transcript = null))
     }
+    @Test
+    fun 記事の外の部品と段落を整えて本文にする() {
+        val result = extract(
+            """
+            <html><body><article>
+              <h1>見出し</h1><p>1段落目。</p>
+              <div class="share-buttons">ツイート</div>
+              <p>2段落目。</p>
+              <div class="related-posts">関連記事</div>
+            </article></body></html>
+            """.trimIndent()
+        )
+
+        assertEquals("見出し\n1段落目。\n2段落目。", result.text)
+        assertNull(result.accessLimit)
+    }
+
+    @Test
+    fun 有料ページは冒頭の本文を残して有料と判定する() {
+        val result = extract(
+            """
+            <html><head><title>有料記事</title><meta property="og:description" content="記事の概要"></head><body><article>
+              <p>記事の冒頭の数行です。</p><p>続きを読むには有料会員登録が必要です。</p>
+            </article></body></html>
+            """.trimIndent()
+        )
+
+        assertEquals(com.unchunks.echomark.domain.bookmark.model.PageAccessLimit.PAYWALL, result.accessLimit)
+        assertEquals("有料記事", result.title)
+        assertTrue(result.text.startsWith("記事の冒頭の数行です。"))
+    }
+
+    @Test
+    fun ボット対策のページはタイトルも本文も保存しない() {
+        val result = extract(
+            """
+            <html><head><title>Just a moment...</title><meta name="description" content="Enable JavaScript"></head>
+            <body><p>Enable JavaScript and cookies to continue</p></body></html>
+            """.trimIndent()
+        )
+
+        assertEquals(com.unchunks.echomark.domain.bookmark.model.PageAccessLimit.BLOCKED, result.accessLimit)
+        assertNull(result.title)
+        assertNull(result.description)
+        assertTrue(result.text.isEmpty())
+    }
 }

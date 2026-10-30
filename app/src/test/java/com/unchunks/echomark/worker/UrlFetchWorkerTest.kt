@@ -5,7 +5,11 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.worker.UrlFetchWorker.Companion.contentAfterFetch
 import com.unchunks.echomark.worker.UrlFetchWorker.Companion.titleAfterFetch
+import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
+import com.unchunks.echomark.domain.bookmark.model.PageAccessLimit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** 本文取得ワーカーが書き戻すタイトル・本文(取得の間に編集された最新の内容をもとに組み立てる)。 */
@@ -47,5 +51,31 @@ class UrlFetchWorkerTest {
     @Test
     fun 本文を取れなかったときは今の本文のまま() {
         assertEquals("メモ", contentAfterFetch(bookmark(content = "メモ"), FetchedContent(null, null, "")))
+    }
+    @Test
+    fun 有料ページは冒頭の本文の前に一部のみ取得の印を入れる() {
+        val limited = FetchedContent(null, "説明", "冒頭の本文", accessLimit = PageAccessLimit.PAYWALL)
+
+        val content = contentAfterFetch(bookmark(content = null), limited)!!
+
+        assertTrue(content, content.startsWith(LimitedAccess.MARKER))
+        assertTrue(content, content.endsWith("説明\n\n冒頭の本文"))
+        // 取得し直しても二重に足さない
+        assertEquals(content, contentAfterFetch(bookmark(content = content), limited))
+    }
+
+    @Test
+    fun 冒頭も説明も取れなかった有料ページは印だけの本文にしない() {
+        val limited = FetchedContent(null, null, "", accessLimit = PageAccessLimit.LOGIN_REQUIRED)
+
+        assertEquals("メモ", contentAfterFetch(bookmark(content = "メモ"), limited))
+        assertNull(contentAfterFetch(bookmark(content = null), limited))
+    }
+
+    @Test
+    fun ボット対策のページは本文を足さない() {
+        val blocked = FetchedContent(null, null, "", accessLimit = PageAccessLimit.BLOCKED)
+
+        assertEquals("メモ", contentAfterFetch(bookmark(content = "メモ"), blocked))
     }
 }

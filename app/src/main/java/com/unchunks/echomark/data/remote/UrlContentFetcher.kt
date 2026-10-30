@@ -13,6 +13,7 @@ import com.unchunks.echomark.data.attachment.fallbackMimeTypeOf
 import com.unchunks.echomark.domain.bookmark.model.MAX_DOWNLOAD_BYTES
 import com.unchunks.echomark.domain.bookmark.model.StageProgressReporter
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.bookmark.model.PageAccessLimit
 import com.unchunks.echomark.domain.bookmark.model.isDownloadableMimeType
 import com.unchunks.echomark.domain.bookmark.model.normalizeMimeType
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
@@ -48,7 +49,9 @@ data class FetchedContent(
     /** リンク先が PDF・画像・音声・動画で、ダウンロードして保存したファイル(HTML なら null) */
     val file: StoredAttachment? = null,
     /** ページ内のリンク(資料を探すときの候補。HTML 以外や、リンクを取らない取得では空) */
-    val links: List<PageLink> = emptyList()
+    val links: List<PageLink> = emptyList(),
+    /** 有料・会員限定・ボット対策などで全文を見せてくれなかったページの、その理由(通常のページは null) */
+    val accessLimit: PageAccessLimit? = null
 )
 
 /** リンク先が PDF・画像・音声・動画だったときに、本体を保存する先。 */

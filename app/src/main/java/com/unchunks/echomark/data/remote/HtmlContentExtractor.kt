@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.remote
 
 import com.unchunks.components.web.CaptionTranscript
+import com.unchunks.echomark.domain.bookmark.model.PageAccessLimit
 import org.json.JSONObject
 import org.json.JSONTokener
 import org.jsoup.nodes.Document
@@ -28,6 +29,10 @@ object HtmlContentExtractor {
             ?: metaContent(document, "meta[name=application-name]"))
             ?.trim()?.takeIf { it.isNotEmpty() }
 
+        // ノイズを除く前に、有料・会員限定などで全文を見せていないページの目印と、ページ全体の文字を控える
+        val accessMarkup = PageAccessDetector.markupOf(document)
+        val pageText = document.body().text()
+
         // script を除去する前に、YouTube なら動画の説明文などをインライン JSON から取り出す
         val youtube = youtubeDetails(document, siteName)
         val youtubeText = youtube?.let { youtubeText(it, transcript = null) }
@@ -35,7 +40,7 @@ object HtmlContentExtractor {
         // ノイズ要素を除去してから本文を取り出す
         document.select("script, style, noscript, nav, header, footer, aside, form, iframe, svg").remove()
         val root = document.selectFirst("article") ?: document.selectFirst("main") ?: document.body()
-        var text = root.text().trim().take(MAX_TEXT_CHARS)
+        var text = BodyCleaner.extractText(root, MAX_TEXT_CHARS)
 
         if (youtube != null && youtubeText != null) {
             // YouTube のページ本体は JS アプリで本文が空に近い。og:title が無ければ動画タイトルを使う
@@ -48,12 +53,22 @@ object HtmlContentExtractor {
             if (!youtube.description.isNullOrBlank()) description = null
         }
 
+        // YouTube の本文は字幕などで、ページの制限の対象ではない
+        val accessLimit = if (youtube == null) PageAccessDetector.detect(title, pageText, text.length, accessMarkup) else null
+        if (accessLimit == PageAccessLimit.BLOCKED) {
+            // ボット対策のページの文言(「Just a moment...」など)をタイトルや本文として保存しない
+            title = null
+            description = null
+            text = ""
+        }
+
         return FetchedContent(
             title = title,
             description = description,
             text = text,
             imageUrl = imageUrl,
             siteName = siteName,
+            accessLimit = accessLimit,
             // 字幕が取れなかったときに説明文だけの本文へ戻れるよう、YouTube なら本文の材料も返す
             youtube = youtube?.takeIf { youtubeText != null || it.videoId != null }
         )
