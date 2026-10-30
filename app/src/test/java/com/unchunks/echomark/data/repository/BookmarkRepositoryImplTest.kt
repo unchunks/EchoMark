@@ -21,6 +21,8 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryOrigin
+import com.unchunks.echomark.domain.model.SummarySource
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
@@ -38,6 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -748,5 +751,165 @@ class BookmarkRepositoryImplTest {
 
         assertEquals(0, repository.enqueueStalledProcessing(System.currentTimeMillis()))
         assertTrue(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME).isEmpty())
+    }
+    // ---- 要約の履歴・手で直した要約(#19・#20・#21) ----
+
+    private fun origin(generator: String = "端末内 AI") = SummaryOrigin(generator, "日本語・文章")
+
+    @Test
+    fun 作った要約は保存して履歴にAIの版として残す() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+
+        repository.saveGeneratedSummary(id, "最初の要約", origin("Claude"))
+        repository.saveGeneratedSummary(id, "作り直した要約", origin("端末内 AI"))
+
+        assertEquals("作り直した要約", repository.getBookmarkById(id)!!.summary)
+        assertFalse(repository.getBookmarkById(id)!!.summaryEdited)
+        val history = repository.observeSummaryHistory(id).first()
+        // 新しい版から先に
+        assertEquals(listOf("作り直した要約", "最初の要約"), history.map { it.summary })
+        assertEquals(listOf(SummarySource.AI, SummarySource.AI), history.map { it.source })
+        assertEquals(listOf("端末内 AI", "Claude"), history.map { it.generator })
+        assertEquals("日本語・文章", history.first().style)
+    }
+
+    @Test
+    fun 削除済みのブックマークの要約は保存しない() = runBlocking {
+        repository.saveGeneratedSummary(999L, "要約", null)
+
+        assertTrue(repository.observeSummaryHistory(999L).first().isEmpty())
+    }
+
+    @Test
+    fun 手で直した要約は印を付けて履歴に残し_埋め込みを作り直す() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.saveGeneratedSummary(id, "AI の要約", origin())
+        repository.saveEmbedding(id, FloatArray(768), currentVersion)
+
+        repository.editSummary(id, "  自分で直した要約  ")
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals("自分で直した要約", bookmark.summary)
+        assertTrue(bookmark.summaryEdited)
+        val history = repository.observeSummaryHistory(id).first()
+        assertEquals(listOf(SummarySource.MANUAL, SummarySource.AI), history.map { it.source })
+        assertNull(history.first().generator)
+        // 古い要約から作ったベクトルは捨て、AI 処理のワーク(要約があるので埋め込みだけ)を積む
+        assertNull(repository.getEmbeddingModelVersion(id))
+        assertEquals(AiStatus.PENDING, bookmark.aiStatus)
+        assertEquals(1, unfinished("process_bookmark_$id").size)
+    }
+
+    @Test
+    fun 変えていない要約_空白だけの要約は何もしない() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.saveGeneratedSummary(id, "AI の要約", origin())
+        repository.editSummary(id, "直した要約")
+
+        repository.editSummary(id, "直した要約")
+        repository.editSummary(id, "   ")
+
+        assertEquals(2, repository.observeSummaryHistory(id).first().size)
+        assertEquals("直した要約", repository.getBookmarkById(id)!!.summary)
+    }
+
+    @Test
+    fun 手で直した要約はAIで処理し直しても置き換えない() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.saveGeneratedSummary(id, "AI の要約", origin())
+        repository.editSummary(id, "直した要約")
+
+        repository.reprocess(id)
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals("直した要約", bookmark.summary)
+        assertTrue(bookmark.summaryEdited)
+        assertEquals(AiStatus.PENDING, bookmark.aiStatus)
+        assertEquals(1, unfinished("process_bookmark_$id").size)
+    }
+
+    @Test
+    fun 手で直していない要約は今までどおりAIで処理し直すと消える() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.saveGeneratedSummary(id, "AI の要約", origin())
+
+        repository.reprocess(id)
+
+        assertNull(repository.getBookmarkById(id)!!.summary)
+    }
+
+    @Test
+    fun 要約だけ作り直すと直した要約を置き換え_履歴から戻せる() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.saveGeneratedSummary(id, "AI の要約", origin())
+        repository.editSummary(id, "直した要約")
+
+        // 要約だけの再処理は、前の要約をそのまま残す(置き換えるのは AI が新しい要約を保存したとき)
+        repository.reprocess(id, AnalysisScope.SUMMARY)
+        assertEquals("直した要約", repository.getBookmarkById(id)!!.summary)
+        repository.saveGeneratedSummary(id, "作り直した要約", origin("Gemini"))
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals("作り直した要約", bookmark.summary)
+        assertFalse(bookmark.summaryEdited)
+        val history = repository.observeSummaryHistory(id).first()
+        assertEquals(listOf("作り直した要約", "直した要約", "AI の要約"), history.map { it.summary })
+
+        // 直した版に戻すと、直した印も戻る
+        repository.restoreSummary(id, history[1].id)
+        val restored = repository.getBookmarkById(id)!!
+        assertEquals("直した要約", restored.summary)
+        assertTrue(restored.summaryEdited)
+        // AI の版に戻すと、印は外れる
+        repository.restoreSummary(id, history[2].id)
+        val restoredAi = repository.getBookmarkById(id)!!
+        assertEquals("AI の要約", restoredAi.summary)
+        assertFalse(restoredAi.summaryEdited)
+        // 戻しても履歴は増えも減りもしない
+        assertEquals(3, repository.observeSummaryHistory(id).first().size)
+    }
+
+    @Test
+    fun 別のブックマークの版には戻せない() = runBlocking {
+        val first = repository.saveBookmark(textBookmark("1")).id
+        val second = repository.saveBookmark(textBookmark("2")).id
+        repository.saveGeneratedSummary(first, "1 の要約", origin())
+        repository.saveGeneratedSummary(second, "2 の要約", origin())
+        val firstVersion = repository.observeSummaryHistory(first).first().single()
+
+        repository.restoreSummary(second, firstVersion.id)
+
+        assertEquals("2 の要約", repository.getBookmarkById(second)!!.summary)
+    }
+
+    @Test
+    fun 履歴は新しい20版までで古い版から消える() = runBlocking {
+        val historyLimit = 20
+        val id = repository.saveBookmark(textBookmark()).id
+
+        repeat(historyLimit + 5) { repository.saveGeneratedSummary(id, "要約 $it", origin()) }
+
+        val history = repository.observeSummaryHistory(id).first()
+        assertEquals(historyLimit, history.size)
+        assertEquals("要約 ${historyLimit + 4}", history.first().summary)
+        assertEquals("要約 5", history.last().summary)
+    }
+
+    @Test
+    fun ブックマークを削除すると履歴も消え_元に戻すと今の要約が版として残る() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.saveGeneratedSummary(id, "AI の要約", origin())
+        repository.editSummary(id, "直した要約")
+        val bookmark = repository.getBookmarkById(id)!!
+
+        repository.deleteBookmark(bookmark)
+        assertTrue(repository.observeSummaryHistory(id).first().isEmpty())
+        repository.restoreBookmark(bookmark)
+
+        val history = repository.observeSummaryHistory(id).first()
+        assertEquals(listOf("直した要約"), history.map { it.summary })
+        assertEquals(SummarySource.MANUAL, history.single().source)
+        // 直した印も残る
+        assertTrue(repository.getBookmarkById(id)!!.summaryEdited)
     }
 }

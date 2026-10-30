@@ -7,6 +7,7 @@ import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
+import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.mapper.toEntity
@@ -26,6 +27,9 @@ import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.splitSearchTerms
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryOrigin
+import com.unchunks.echomark.domain.model.SummarySource
+import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.TagSource
@@ -120,9 +124,14 @@ class BookmarkRepositoryImpl @Inject constructor(
      * 処理をやり直す(再処理・復元・モデル待ちからの再開など)。同じブックマークの処理は置き換える。
      * 本文が未取得の URL は本文の取得から、ファイルのあるものは中身の取り出しから、それ以外は AI 処理のみ
      */
-    private suspend fun enqueueReprocessing(bookmark: Bookmark) {
+    private suspend fun enqueueReprocessing(bookmark: Bookmark, scope: AnalysisScope = AnalysisScope.ALL) {
         val target = with(bookmark) { reprocessTarget(id, type, content, filePath, contentFetchedAt) }
-        workScheduler.enqueue(bookmark.id, fetchContent = target.fetchContent, extractContent = target.extractContent)
+        workScheduler.enqueue(
+            bookmark.id,
+            fetchContent = target.fetchContent,
+            extractContent = target.extractContent,
+            scope = scope
+        )
     }
 
     /**
@@ -214,6 +223,66 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             bookmarkDao.updateSummary(id, summary)
         }
+
+    override suspend fun saveGeneratedSummary(id: Long, summary: String, origin: SummaryOrigin?) {
+        withContext(dispatcherProvider.io) {
+            if (!bookmarkDao.exists(id)) return@withContext
+            bookmarkDao.setSummary(id, summary, edited = false)
+            addSummaryVersion(id, summary, SummarySource.AI, origin)
+        }
+    }
+
+    override suspend fun editSummary(id: Long, summary: String) {
+        withContext(dispatcherProvider.io) {
+            val text = summary.trim()
+            if (text.isEmpty()) return@withContext
+            val current = bookmarkDao.getById(id) ?: return@withContext
+            // 変えていなければ、履歴を増やさず埋め込みも作り直さない
+            if (current.summary == text && current.summaryEdited) return@withContext
+            bookmarkDao.setSummary(id, text, edited = true)
+            addSummaryVersion(id, text, SummarySource.MANUAL, null)
+            refreshEmbedding(id)
+        }
+    }
+
+    override suspend fun restoreSummary(id: Long, versionId: Long) {
+        withContext(dispatcherProvider.io) {
+            val version = bookmarkDao.getSummaryVersion(versionId)?.takeIf { it.bookmarkId == id } ?: return@withContext
+            val manual = version.source == SummarySource.MANUAL.name
+            bookmarkDao.setSummary(id, version.summary, edited = manual)
+            refreshEmbedding(id)
+        }
+    }
+
+    override fun observeSummaryHistory(id: Long): Flow<List<SummaryVersion>> =
+        bookmarkDao.observeSummaryHistory(id)
+            .map { versions -> versions.map { it.toDomain() } }
+            .flowOn(dispatcherProvider.io)
+
+    /** 履歴に1版を足し、古い版を [SUMMARY_HISTORY_LIMIT] 版までに絞る。 */
+    private suspend fun addSummaryVersion(id: Long, summary: String, source: SummarySource, origin: SummaryOrigin?) {
+        bookmarkDao.insertSummaryVersion(
+            SummaryHistoryEntity(
+                bookmarkId = id,
+                summary = summary,
+                source = source.name,
+                generator = origin?.generator,
+                style = origin?.style,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        bookmarkDao.trimSummaryHistory(id, SUMMARY_HISTORY_LIMIT)
+    }
+
+    /**
+     * 要約を変えたので、埋め込みを作り直す。古いベクトルを消して AI 処理のワークを積む
+     * (要約があるので解析はせず、埋め込みだけを作る。クラウド API は呼ばない)。
+     */
+    private suspend fun refreshEmbedding(id: Long) {
+        vectorSearch.deleteByBookmarkId(id)
+        bookmarkDao.markQueued(id, System.currentTimeMillis())
+        workScheduler.enqueue(id, fetchContent = false, extractContent = false)
+    }
 
     override suspend fun updateCategory(id: Long, category: String) =
         withContext(dispatcherProvider.io) {
@@ -320,7 +389,12 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun reprocess(id: Long, scope: AnalysisScope) =
         withContext(dispatcherProvider.io) {
             val bookmark = bookmarkDao.getById(id) ?: return@withContext
-            if (scope == AnalysisScope.ALL) {
+            if (scope == AnalysisScope.ALL && bookmark.summaryEdited && !bookmark.summary.isNullOrBlank()) {
+                // 手で直した要約は置き換えない(#19)。要約は今のまま、本文の取り直しとタグ・カテゴリ・埋め込みだけをやり直す。
+                // 要約も作り直したいときは、「要約だけ作り直す」(履歴に残るので、前の要約には戻せる)
+                bookmarkDao.markQueued(id, System.currentTimeMillis())
+                enqueueReprocessing(bookmark.toDomain(), AnalysisScope.TAGS)
+            } else if (scope == AnalysisScope.ALL) {
                 bookmarkDao.resetAiResult(id, System.currentTimeMillis())
                 enqueueReprocessing(bookmark.toDomain())
             } else {
@@ -343,6 +417,10 @@ class BookmarkRepositoryImpl @Inject constructor(
             val (aiTags, userTags) = bookmark.tags.partition { it in bookmark.aiTags }
             tagDao.addTagsToBookmark(bookmark.id, userTags, TagSource.USER)
             tagDao.addTagsToBookmark(bookmark.id, aiTags, TagSource.AI)
+            // 削除で履歴は消えている。今の要約だけは版として残す
+            bookmark.summary?.takeIf { it.isNotBlank() }?.let {
+                addSummaryVersion(bookmark.id, it, if (bookmark.summaryEdited) SummarySource.MANUAL else SummarySource.AI, null)
+            }
             enqueueReprocessing(bookmark)
         }
     }
@@ -631,6 +709,9 @@ class BookmarkRepositoryImpl @Inject constructor(
 
         /** ID の一覧で問い合わせるときの1回あたりの件数(SQLite の変数の上限より十分小さく) */
         const val ID_QUERY_CHUNK_SIZE = 500
+
+        /** 要約の履歴に残す版の数(これを超えたら古い版から消す) */
+        const val SUMMARY_HISTORY_LIMIT = 20
 
         /** 処理の状況の画面に出す、最近の失敗の数 */
         const val RECENT_FAILURES_LIMIT = 20

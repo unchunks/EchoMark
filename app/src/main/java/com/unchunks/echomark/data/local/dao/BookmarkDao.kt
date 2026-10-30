@@ -9,6 +9,7 @@ import androidx.room.Transaction
 import androidx.room.Update
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
+import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
@@ -42,6 +43,29 @@ interface BookmarkDao {
 
     @Query("UPDATE bookmarks SET summary = :summary WHERE id = :id")
     suspend fun updateSummary(id: Long, summary: String)
+
+    /** 要約を書き換える([edited] は手で直した要約か。AI が作り直したら false に戻す) */
+    @Query("UPDATE bookmarks SET summary = :summary, summaryEdited = :edited WHERE id = :id")
+    suspend fun setSummary(id: Long, summary: String, edited: Boolean)
+
+    // ---- 要約の履歴(#21) ----
+
+    @Insert
+    suspend fun insertSummaryVersion(version: SummaryHistoryEntity): Long
+
+    /** 新しい版から先に */
+    @Query("SELECT * FROM summary_history WHERE bookmarkId = :bookmarkId ORDER BY createdAt DESC, id DESC")
+    fun observeSummaryHistory(bookmarkId: Long): Flow<List<SummaryHistoryEntity>>
+
+    @Query("SELECT * FROM summary_history WHERE id = :id")
+    suspend fun getSummaryVersion(id: Long): SummaryHistoryEntity?
+
+    /** [bookmarkId] の履歴を、新しい [keep] 版だけ残して古い版を消す */
+    @Query(
+        "DELETE FROM summary_history WHERE bookmarkId = :bookmarkId AND id NOT IN (" +
+            "SELECT id FROM summary_history WHERE bookmarkId = :bookmarkId ORDER BY createdAt DESC, id DESC LIMIT :keep)"
+    )
+    suspend fun trimSummaryHistory(bookmarkId: Long, keep: Int)
 
     @Query("UPDATE bookmarks SET category = :category WHERE id = :id")
     suspend fun updateCategory(id: Long, category: String)

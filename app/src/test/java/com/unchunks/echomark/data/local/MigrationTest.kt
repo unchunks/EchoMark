@@ -386,6 +386,64 @@ class MigrationTest {
         connection.close()
     }
 
+
+    @Test
+    fun migrate14To15_existingSummariesBecomeAiVersionsAndNothingIsMarkedEdited() {
+        helper.createDatabase(14).apply {
+            execSQL(
+                """
+                INSERT INTO bookmarks (id, type, content, contentUri, title, summary, createdAt, lastAccessedAt, aiStatus, processingFinishedAt)
+                VALUES (1, 'TEXT', 'a', NULL, '要約あり', 'AI の要約', 100, 100, 'DONE', 500),
+                       (2, 'TEXT', 'b', NULL, '完了時刻なし', '古い要約', 200, 200, 'DONE', NULL),
+                       (3, 'TEXT', 'c', NULL, '要約なし', NULL, 300, 300, 'PENDING', NULL),
+                       (4, 'TEXT', 'd', NULL, '空白だけ', '   ', 400, 400, 'DONE', 600)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        // スキーマ v15 と一致するか(列・既定値・外部キー・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(15, listOf(MIGRATION_14_15))
+
+        // 手で直した印は、既存の行ではすべて 0
+        val edited = connection.prepare("SELECT summaryEdited FROM bookmarks ORDER BY id").use { stmt ->
+            buildList { while (stmt.step()) add(stmt.getLong(0)) }
+        }
+        assertEquals(listOf(0L, 0L, 0L, 0L), edited)
+        // 要約のあるものだけ、AI の版として1版ずつ。作った日時は処理を終えた日時(無ければ保存日時)
+        val versions = connection.prepare(
+            "SELECT bookmarkId, summary, source, generator, style, createdAt FROM summary_history ORDER BY bookmarkId"
+        ).use { stmt ->
+            buildList {
+                while (stmt.step()) {
+                    add(
+                        listOf(
+                            stmt.getLong(0).toString(), stmt.getText(1), stmt.getText(2),
+                            if (stmt.isNull(3)) null else stmt.getText(3), if (stmt.isNull(4)) null else stmt.getText(4),
+                            stmt.getLong(5).toString()
+                        )
+                    )
+                }
+            }
+        }
+        assertEquals(
+            listOf(
+                listOf("1", "AI の要約", "AI", null, null, "500"),
+                listOf("2", "古い要約", "AI", null, null, "200")
+            ),
+            versions
+        )
+        // ブックマークを消すと履歴も消える(外部キーの連鎖)
+        connection.execSQL("PRAGMA foreign_keys = ON")
+        connection.execSQL("DELETE FROM bookmarks WHERE id = 1")
+        val remaining = connection.prepare("SELECT COUNT(*) FROM summary_history").use { stmt ->
+            stmt.step()
+            stmt.getLong(0)
+        }
+        assertEquals(1L, remaining)
+        connection.close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
     }

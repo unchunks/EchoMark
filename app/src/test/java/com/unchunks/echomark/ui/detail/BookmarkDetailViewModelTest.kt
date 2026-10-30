@@ -7,6 +7,8 @@ import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummarySource
+import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeProcessingStatsRepository
@@ -211,5 +213,64 @@ class BookmarkDetailViewModelTest {
         assertEquals(listOf("Kotlin Coroutines", "mykotlin"), tagSuggestions("kot", all, current = listOf("Kotlin")))
         assertEquals(emptyList<String>(), tagSuggestions("  ", all, current = emptyList()))
         assertEquals(listOf("Android"), tagSuggestions("#andr", all, current = emptyList()))
+    }
+    @Test
+    fun 要約を手で直すと保存して知らせる_空白だけなら何もしない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+
+        viewModel.editSummary("   ")
+        viewModel.editSummary("直した要約")
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L to "直した要約"), repository.editedSummaries)
+        assertEquals(listOf<BookmarkDetailMessage>(BookmarkDetailMessage.SummaryEdited), messages)
+    }
+
+    @Test
+    fun 履歴を出し_版に戻せる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val versions = listOf(
+            SummaryVersion(2, 1, "新しい要約", SummarySource.MANUAL, null, null, 200),
+            SummaryVersion(1, 1, "古い要約", SummarySource.AI, "端末内 AI", "日本語・文章", 100)
+        )
+        repository.summaryHistory.value = versions
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(versions, viewModel.uiState.value.summaryHistory)
+        viewModel.restoreSummary(1)
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L), repository.restoredSummaryVersions)
+        assertEquals(listOf<BookmarkDetailMessage>(BookmarkDetailMessage.SummaryRestored), messages)
+    }
+
+    @Test
+    fun 直した後のAIで要約し直すは_手で直した要約なら要約を作り直す() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1).copy(summary = "直した要約", summaryEdited = true))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.reprocessAfterEdit()
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L to AnalysisScope.SUMMARY), repository.reprocessCalls)
+    }
+
+    @Test
+    fun 直した後のAIで要約し直すは_手で直していなければ全部やり直す() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1).copy(summary = "AI の要約"))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.reprocessAfterEdit()
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L to AnalysisScope.ALL), repository.reprocessCalls)
     }
 }

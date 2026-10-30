@@ -8,6 +8,8 @@ data class Bookmark(
     val contentUri: String? = null,
     val title: String,
     val summary: String? = null,
+    /** 要約をユーザーが手で直したもの。再処理しても要約は置き換えない(要約だけを作り直すときは、確かめてから置き換える) */
+    val summaryEdited: Boolean = false,
     val category: String? = null,
     val createdAt: Long,
     val lastAccessedAt: Long,

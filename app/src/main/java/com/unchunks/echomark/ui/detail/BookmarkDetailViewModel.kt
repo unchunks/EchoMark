@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
@@ -38,7 +39,9 @@ data class BookmarkDetailUiState(
     /** 実行中の段の進み具合(0〜1)。段が報告していなければ null */
     val stageProgress: Float? = null,
     /** 段・中身の種類ごとの平均の所要時間(残り時間の目安に使う) */
-    val stageAverages: Map<StageDurationKey, Long> = emptyMap()
+    val stageAverages: Map<StageDurationKey, Long> = emptyMap(),
+    /** 要約の履歴(新しい版から先に。#21) */
+    val summaryHistory: List<SummaryVersion> = emptyList()
 )
 
 /** 詳細画面で一度だけ伝える出来事(Snackbar で知らせる)。 */
@@ -54,6 +57,12 @@ sealed interface BookmarkDetailMessage {
 
     /** AI の再処理を始めた */
     data object ReprocessStarted : BookmarkDetailMessage
+
+    /** 要約を手で直した */
+    data object SummaryEdited : BookmarkDetailMessage
+
+    /** 履歴の版に要約を戻した */
+    data object SummaryRestored : BookmarkDetailMessage
 
     /** 操作に失敗した */
     data class Failed(val message: String) : BookmarkDetailMessage
@@ -109,7 +118,15 @@ class BookmarkDetailViewModel @Inject constructor(
         .catch { emit(emptyMap()) }
         .onStart { emit(emptyMap()) }
 
-    val uiState: StateFlow<BookmarkDetailUiState> =
+    /** 要約の履歴。補助的な表示なので、取れなくても詳細は出す */
+    private val summaryHistoryFlow = repository.observeSummaryHistory(bookmarkId)
+        .catch { e ->
+            if (e is CancellationException) throw e
+            emit(emptyList())
+        }
+        .onStart { emit(emptyList()) }
+
+    private val baseState =
         combine(
             bookmarkFlow, relatedFlow, tagNamesFlow, stageProgressFlow, stageAveragesFlow
         ) { bookmark, related, tagNames, stageProgress, stageAverages ->
@@ -117,7 +134,10 @@ class BookmarkDetailViewModel @Inject constructor(
                 isLoading = false, bookmark = bookmark, related = related, allTagNames = tagNames,
                 stageProgress = stageProgress, stageAverages = stageAverages
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
+        }
+
+    val uiState: StateFlow<BookmarkDetailUiState> =
+        combine(baseState, summaryHistoryFlow) { state, history -> state.copy(summaryHistory = history) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
     init {
         // 開いたことを記録する(再発見の判定などに使う)
@@ -168,6 +188,32 @@ class BookmarkDetailViewModel @Inject constructor(
             repository.reprocess(bookmarkId, scope)
             messageChannel.send(BookmarkDetailMessage.ReprocessStarted)
         }
+    }
+
+    /** 要約を手で直す。直した要約は、再処理しても置き換わらない(#19) */
+    fun editSummary(summary: String) {
+        if (summary.isBlank()) return
+        viewModelScope.launch {
+            repository.editSummary(bookmarkId, summary)
+            messageChannel.send(BookmarkDetailMessage.SummaryEdited)
+        }
+    }
+
+    /** 履歴の版に要約を戻す(#20) */
+    fun restoreSummary(versionId: Long) {
+        viewModelScope.launch {
+            repository.restoreSummary(bookmarkId, versionId)
+            messageChannel.send(BookmarkDetailMessage.SummaryRestored)
+        }
+    }
+
+    /**
+     * タイトル・本文を直した後の「AIで要約し直す」。手で直した要約は、ふつうの再処理では置き換わらないため、
+     * このときは要約を作り直す(直した要約は履歴に残る)。
+     */
+    fun reprocessAfterEdit() {
+        val edited = uiState.value.bookmark?.summaryEdited == true
+        reprocess(if (edited) AnalysisScope.SUMMARY else AnalysisScope.ALL)
     }
 
     /** 削除して、完了後に onDeleted を呼ぶ(画面を閉じる用)。戻った一覧で「元に戻す」を出せるよう知らせる */

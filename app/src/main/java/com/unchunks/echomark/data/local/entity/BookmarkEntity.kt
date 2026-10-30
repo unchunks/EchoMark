@@ -48,5 +48,8 @@ data class BookmarkEntity (
     val processingStartedAt: Long? = null,
     val stageStartedAt: Long? = null,
     val processingFinishedAt: Long? = null,
-    val failureReason: ProcessingFailureReason? = null
+    val failureReason: ProcessingFailureReason? = null,
+    // v15 で追加。要約をユーザーが手で直したもの(再処理しても要約は置き換えない。#19)
+    @ColumnInfo(defaultValue = "0")
+    val summaryEdited: Boolean = false
 )

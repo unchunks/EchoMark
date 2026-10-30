@@ -299,4 +299,30 @@ class BackupJsonTest {
         assertEquals("3,4", formatReferencedIds(listOf(3, 4)))
         assertNull(formatReferencedIds(emptyList()))
     }
+    @Test
+    fun 手で直した要約の印は書き出して読み込める() {
+        val edited = sample.bookmarks[0].copy(summary = "直した要約", summaryEdited = true)
+        val data = sample.copy(bookmarks = listOf(edited, sample.bookmarks[1]))
+
+        val json = JSONObject(BackupJson.encode(data))
+        val bookmarks = json.getJSONArray("bookmarks")
+
+        assertTrue(bookmarks.getJSONObject(0).getBoolean("summaryEdited"))
+        // 手で直していないものには書かない(古い版と同じ形のまま)
+        assertFalse(bookmarks.getJSONObject(1).has("summaryEdited"))
+        assertEquals(data, BackupJson.decode(json.toString()).data)
+    }
+
+    @Test
+    fun 古い版のバックアップの要約は手で直していないものとして読む() {
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":6,"exportedAt":1,
+             "bookmarks":[{"id":1,"type":"TEXT","title":"メモ","summary":"要約","createdAt":10,"aiStatus":"DONE"}]}
+            """.trimIndent()
+        )
+
+        assertFalse(decoded.data.bookmarks.single().summaryEdited)
+        assertEquals("要約", decoded.data.bookmarks.single().summary)
+    }
 }

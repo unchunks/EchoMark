@@ -9,6 +9,8 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryOrigin
+import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +50,21 @@ interface BookmarkRepository {
 
     // Update
     suspend fun updateSummary(id: Long, summary: String)
+
+    /** AI が作った要約を保存し、履歴に AI の版として残す。手で直した印は外れる(#21)。削除済みなら何もしない。 */
+    suspend fun saveGeneratedSummary(id: Long, summary: String, origin: SummaryOrigin?)
+
+    /**
+     * 要約をユーザーが手で直す(#19)。履歴に手で直した版として残し、再処理しても置き換えない印を付け、埋め込みを作り直す。
+     * 空白だけなら何もしない。
+     */
+    suspend fun editSummary(id: Long, summary: String)
+
+    /** 履歴の [versionId] の版に戻す(#20)。戻した版が手で直したものなら、その印も戻る。埋め込みを作り直す。 */
+    suspend fun restoreSummary(id: Long, versionId: Long)
+
+    /** 要約の履歴(新しい版から先に。#21) */
+    fun observeSummaryHistory(id: Long): Flow<List<SummaryVersion>>
     suspend fun updateCategory(id: Long, category: String)
     suspend fun updateTitleAndContent(id: Long, title: String, content: String?)
 

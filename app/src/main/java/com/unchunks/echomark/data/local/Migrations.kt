@@ -119,6 +119,31 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
 }
 
 /**
+ * v14 → v15: 要約の履歴(summary_history、#21)と、要約を手で直した印(bookmarks.summaryEdited、#19)を追加。
+ * - 履歴: 既にある要約は、AI が作った版として1版ずつ入れる(作った日時は処理を終えた日時、無ければ保存日時)。
+ *   手で直す機能が無かったため、既存の要約はすべて AI が作ったもの
+ * - 印: 既存の行はすべて 0(手で直していない)
+ */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `summaryEdited` INTEGER NOT NULL DEFAULT 0")
+        // スキーマ JSON(15.json)の createSql と同じ
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `summary_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`bookmarkId` INTEGER NOT NULL, `summary` TEXT NOT NULL, `source` TEXT NOT NULL, `generator` TEXT, " +
+                "`style` TEXT, `createdAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`bookmarkId`) REFERENCES `bookmarks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_summary_history_bookmarkId` ON `summary_history` (`bookmarkId`)")
+        db.execSQL(
+            "INSERT INTO `summary_history` (`bookmarkId`, `summary`, `source`, `generator`, `style`, `createdAt`) " +
+                "SELECT `id`, `summary`, 'AI', NULL, NULL, COALESCE(`processingFinishedAt`, `createdAt`) " +
+                "FROM `bookmarks` WHERE `summary` IS NOT NULL AND TRIM(`summary`) != ''"
+        )
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
@@ -126,7 +151,7 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
 val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-        MIGRATION_13_14
+        MIGRATION_13_14, MIGRATION_14_15
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

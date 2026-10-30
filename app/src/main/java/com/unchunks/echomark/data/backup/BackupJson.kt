@@ -38,10 +38,10 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 6):
+ * 形式(version 7):
  * ```
- * { "format": "echomark-backup", "version": 6, "exportedAt": 1700000000000,
- *   "bookmarks": [ {全列} ], "tags": [ {id, name, isUserCreated} ],
+ * { "format": "echomark-backup", "version": 7, "exportedAt": 1700000000000,
+ *   "bookmarks": [ {全列。summaryEdited は手で直した要約のときだけ} ], "tags": [ {id, name, isUserCreated} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
  *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil は無ければ省略} ],
  *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ] }
@@ -60,10 +60,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 5: ブックマークに contentFetchedAt(URL の本文を取得できた日時)を追加。4 以前では DB のマイグレーションと同じく、
  *   本文のある URL は保存日時で取得済み、それ以外は未取得として読む
  * - 6: 会話に summaryCoveredUntil(要約に含めた最後の発言の日時)を追加。5 以前では要約はまだ無いものとして読む
+ * - 7: ブックマークに summaryEdited(要約をユーザーが手で直した印。再処理しても要約を置き換えない)を追加。6 以前では手で直していないものとして読む。
+ *   要約の履歴(DB v15 の summary_history)は端末の中の記録のため含めない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 6
+    const val CURRENT_VERSION = 7
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -153,6 +155,7 @@ object BackupJson {
         .put("title", title)
         .putNullable("summary", summary)
         .putNullable("category", category)
+        .apply { if (summaryEdited) put("summaryEdited", true) }
         .put("createdAt", createdAt)
         .put("lastAccessedAt", lastAccessedAt)
         .put("aiStatus", aiStatus.name)
@@ -207,6 +210,8 @@ object BackupJson {
             contentUri = contentUri,
             title = title,
             summary = stringOrNull("summary"),
+            // version 6 以前には無い(手で直していないものとして読む)
+            summaryEdited = optBoolean("summaryEdited", false),
             category = stringOrNull("category"),
             createdAt = createdAt,
             lastAccessedAt = longOrNull("lastAccessedAt") ?: createdAt,
