@@ -1,12 +1,11 @@
 package com.unchunks.echomark.di
 
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.api.AndroidAttachmentLoader
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProviderFactory
 import com.unchunks.echomark.data.ai.api.AttachmentLoader
 import com.unchunks.echomark.data.ai.local.LocalLlmProvider
-import com.unchunks.echomark.di.qualifier.LocalAi
-import com.unchunks.echomark.domain.provider.LlmProvider
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -16,9 +15,9 @@ import dagger.hilt.components.SingletonComponent
 @InstallIn(SingletonComponent::class)
 abstract class AiProviderModule {
 
+    /** 端末内 AI。用途ごとに選んだ端末内モデルで動く LlmProvider を返す */
     @Binds
-    @LocalAi
-    abstract fun bindLocalLlmProvider(impl: LocalLlmProvider): LlmProvider
+    abstract fun bindLocalLlmProviders(impl: LocalLlmProvider): LocalLlmProviders
 
     @Binds
     abstract fun bindApiLlmProviderFactory(impl: ApiLlmProvider): ApiLlmProviderFactory

@@ -187,6 +187,20 @@ class AppSettingsRepositoryImplTest {
     }
 
     @Test
+    fun 端末内モデルは用途ごとに選べ_既定は既定のモデル_nullで戻す() = runTest {
+        val repository = createRepository()
+        assertEquals(null, repository.aiTaskSettings.first().getValue(AiTask.CHAT).localModelId)
+
+        repository.setLocalModel(AiTask.CHAT, "local_llm_123")
+        val settings = repository.aiTaskSettings.first()
+        assertEquals("local_llm_123", settings.getValue(AiTask.CHAT).localModelId)
+        assertEquals(null, settings.getValue(AiTask.SUMMARY).localModelId)
+
+        repository.setLocalModel(AiTask.CHAT, null)
+        assertEquals(null, repository.aiTaskSettings.first().getValue(AiTask.CHAT).localModelId)
+    }
+
+    @Test
     fun 用途を分ける前の共通の設定を全用途に引き継ぐ() = runTest {
         val dataStore = InMemorySettingsDataStore()
         dataStore.edit {

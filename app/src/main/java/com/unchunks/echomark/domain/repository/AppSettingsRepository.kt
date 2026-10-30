@@ -33,21 +33,30 @@ fun AiTask.defaultApiModel(provider: ApiProvider): String =
 const val CLOUD_AI_ENABLED = false
 
 /**
- * 1つの用途の AI の設定。端末内モデルは全用途で共通(取り込めるのは1つだけ)。
+ * 1つの用途の AI の設定。
  * @property apiModels 提供元ごとのモデル ID(提供元を切り替えても、提供元ごとの選択を覚えておく)
+ * @property localModelId 端末内で動かすときのモデル(取り込んだモデルの id)。null なら既定のモデル。
+ *   選んだモデルを削除したときも既定のモデルを使う
  */
 data class AiTaskSetting(
     val backend: LlmBackend = LlmBackend.LOCAL,
     val apiProvider: ApiProvider = ApiProvider.CLAUDE,
-    val apiModels: Map<ApiProvider, String> = emptyMap()
+    val apiModels: Map<ApiProvider, String> = emptyMap(),
+    val localModelId: String? = null
 ) {
     /** 選択中の提供元で使うモデル ID */
     val apiModel: String get() = apiModels[apiProvider]?.takeIf { it.isNotBlank() } ?: apiProvider.defaultModel
 
-    /** 同じ AI(実行場所が同じで、クラウドなら提供元とモデルも同じ)で動くか。同じなら1回の推論にまとめられる */
+    /**
+     * 同じ AI(実行場所が同じで、クラウドなら提供元とモデル、端末内なら選んだモデルも同じ)で動くか。同じなら1回の推論にまとめられる。
+     * 端末内のモデルは選んだ id で比べる(片方が「既定」で、もう片方がたまたま既定と同じモデルを選んでいるときは、別々に推論する)
+     */
     fun sameEngineAs(other: AiTaskSetting): Boolean =
         backend == other.backend &&
-            (backend == LlmBackend.LOCAL || (apiProvider == other.apiProvider && apiModel == other.apiModel))
+            when (backend) {
+                LlmBackend.LOCAL -> localModelId == other.localModelId
+                LlmBackend.API -> apiProvider == other.apiProvider && apiModel == other.apiModel
+            }
 }
 
 /** 画面の明暗。SYSTEM は端末の設定に合わせる。 */
@@ -129,6 +138,9 @@ interface AppSettingsRepository {
 
     /** [task] で [provider] を使うときのモデル ID を保存する。空白なら既定値に戻す。 */
     suspend fun setApiModel(task: AiTask, provider: ApiProvider, modelId: String)
+
+    /** [task] を端末内で動かすときのモデル([AiTaskSetting.localModelId])を保存する。null なら既定のモデルに戻す。 */
+    suspend fun setLocalModel(task: AiTask, modelId: String?)
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setDynamicColor(enabled: Boolean)
     suspend fun setOnboardingCompleted(completed: Boolean)

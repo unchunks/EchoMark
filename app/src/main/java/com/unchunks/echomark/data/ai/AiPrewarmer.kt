@@ -1,7 +1,5 @@
 package com.unchunks.echomark.data.ai
 
-import com.unchunks.echomark.di.qualifier.LocalAi
-import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
@@ -15,26 +13,32 @@ import javax.inject.Inject
  * AI 処理の前段(本文取得・中身の取り出し・AI 処理の開始)で、端末内モデルの読み込み(数秒〜十数秒)を先に始めておく。
  * 読み込みはバックグラウンドで進み、本文取得などと重なるため、AI 処理が始まったときには読み込み済みのことが多い。
  * 要約・タグ付けのどちらにも端末内 AI を使わない設定なら何もしない。
+ * 用途ごとに別の端末内モデルを選んでいるときは、最初に動くモデル([analysisLocalModelToPrewarm])だけを読み込む
+ * (同時に読み込むモデルは1つのため)。
  */
 class AiPrewarmer @Inject constructor(
-    @param:LocalAi private val localProvider: LlmProvider,
+    private val localProviders: LocalLlmProviders,
     private val appSettings: AppSettingsRepository
 ) {
+
     /** ブックマークの AI 処理(要約・タグ付け)に端末内 AI を使う設定か。読めなければ false。 */
-    suspend fun usesLocalLlm(): Boolean = try {
-        usesLocalLlmForAnalysis(appSettings.aiTaskSettings.first())
+    suspend fun usesLocalLlm(): Boolean = readSettings()?.let(::usesLocalLlmForAnalysis) ?: false
+
+    /** 端末内 AI を使う設定なら読み込みを始める(完了は待たない)。始めたら true。 */
+    suspend fun prewarmLocalLlmIfUsed(): Boolean {
+        val settings = readSettings() ?: return false
+        if (!usesLocalLlmForAnalysis(settings)) return false
+        localProviders.forModel(analysisLocalModelToPrewarm(settings)).prewarm()
+        return true
+    }
+
+    private suspend fun readSettings(): Map<AiTask, AiTaskSetting>? = try {
+        appSettings.aiTaskSettings.first()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         Timber.w(e, "AI の設定を読めないため、端末内モデルの先読みをしない")
-        false
-    }
-
-    /** 端末内 AI を使う設定なら読み込みを始める(完了は待たない)。始めたら true。 */
-    suspend fun prewarmLocalLlmIfUsed(): Boolean {
-        if (!usesLocalLlm()) return false
-        localProvider.prewarm()
-        return true
+        null
     }
 }
 
@@ -44,3 +48,13 @@ class AiPrewarmer @Inject constructor(
  */
 internal fun usesLocalLlmForAnalysis(settings: Map<AiTask, AiTaskSetting>): Boolean =
     listOf(AiTask.TAGGING, AiTask.SUMMARY).any { (settings[it] ?: AiTaskSetting()).backend == LlmBackend.LOCAL }
+
+/**
+ * ブックマークの AI 処理で最初に動く端末内モデルの id(null は既定のモデル)。BookmarkAnalyzer は端末内の推論を先にし、
+ * タグ付けと要約が別々の端末内モデルならタグ付けから動かすため、タグ付けが端末内ならそのモデル、そうでなければ要約のモデル。
+ */
+internal fun analysisLocalModelToPrewarm(settings: Map<AiTask, AiTaskSetting>): String? {
+    val tagging = settings[AiTask.TAGGING] ?: AiTaskSetting()
+    val summary = settings[AiTask.SUMMARY] ?: AiTaskSetting()
+    return if (tagging.backend == LlmBackend.LOCAL) tagging.localModelId else summary.localModelId
+}

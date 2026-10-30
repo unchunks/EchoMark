@@ -8,6 +8,7 @@ import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
+import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
 import com.unchunks.echomark.data.ai.model.ModelImportState
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -48,9 +50,10 @@ sealed interface ConnectionTestState {
 data class AiSettingsUiState(
     /** 用途ごとの設定(実行場所・提供元・モデル) */
     val tasks: Map<AiTask, AiTaskSetting> = AiTask.entries.associateWith { AiTaskSetting() },
-    val localModel: LocalModelInfo? = null,
-    /** 取り込んだ端末内モデルを読み込めなかったこと。null なら失敗していない(まだ読み込んでいない場合も) */
-    val localModelLoadFailure: LocalModelLoadFailure? = null,
+    /** 取り込んだ端末内モデルの一覧と既定のモデル */
+    val localModels: InstalledModels = InstalledModels(),
+    /** モデルの id ごとの、読み込めなかったこと(無ければ失敗していない。まだ読み込んでいない場合も) */
+    val localModelLoadFailures: Map<String, LocalModelLoadFailure> = emptyMap(),
     val importState: ModelImportState = ModelImportState.Idle,
     /** 取り込んだ埋め込みモデル。null なら同梱のモデルを使っている */
     val embeddingModel: EmbeddingModelInfo? = null,
@@ -67,6 +70,16 @@ data class AiSettingsUiState(
     val localLlmUseGpu: Boolean = false
 ) {
     fun setting(task: AiTask): AiTaskSetting = tasks[task] ?: AiTaskSetting()
+
+    /** 既定の端末内モデル。1つも取り込んでいなければ null */
+    val localModel: LocalModelInfo? get() = localModels.default
+
+    /** [task] を端末内で動かすときに使うモデル(選んだモデルが無ければ既定のモデル) */
+    fun localModelFor(task: AiTask): LocalModelInfo? = localModels.resolve(setting(task).localModelId)
+
+    /** 端末内で動かす用途が、別々の端末内モデルを使うか(用途が切り替わるたびに読み込み直す) */
+    val usesMultipleLocalModels: Boolean
+        get() = AiTask.entries.filter { setting(it).backend == LlmBackend.LOCAL }.mapNotNull(::localModelFor).distinct().size > 1
 
     /** [task] に選んだ実行場所に必要なもの(端末内モデル・API キー)がそろっているか */
     fun isReady(task: AiTask): Boolean {
@@ -103,7 +116,7 @@ data class AiSettingsUiState(
 
 /** uiState にまとめる前の、モデル(端末内 LLM・埋め込み)に関する状態。 */
 private data class ModelsSnapshot(
-    val llm: Pair<LocalModelInfo?, LocalModelLoadFailure?>,
+    val llm: Pair<InstalledModels, Map<String, LocalModelLoadFailure>>,
     val llmImport: ModelImportState,
     val embedding: EmbeddingModelInfo?,
     val embeddingImport: ModelImportState,
@@ -126,7 +139,7 @@ class AiSettingsViewModel @Inject constructor(
     val uiState: StateFlow<AiSettingsUiState> = combine(
         appSettings.aiTaskSettings,
         combine(
-            combine(modelManager.installedModel, modelManager.loadFailure, ::Pair),
+            combine(modelManager.installed, modelManager.loadFailures, ::Pair),
             modelManager.importState,
             embeddingModelManager.installedModel,
             embeddingModelManager.importState,
@@ -139,8 +152,8 @@ class AiSettingsViewModel @Inject constructor(
     ) { tasks, models, keyProvider, (sendFiles, useGpu), configured ->
         AiSettingsUiState(
             tasks = tasks,
-            localModel = models.llm.first,
-            localModelLoadFailure = models.llm.second,
+            localModels = models.llm.first,
+            localModelLoadFailures = models.llm.second,
             importState = models.llmImport,
             embeddingProgress = models.embeddingProgress,
             embeddingModel = models.embedding,
@@ -254,9 +267,25 @@ class AiSettingsViewModel @Inject constructor(
 
     fun cancelImport() = modelManager.cancelImport()
 
-    fun deleteModel() {
-        modelManager.deleteModel()
-        _message.value = "端末内モデルを削除しました"
+    /** [model] を削除する。このモデルを選んでいた用途は既定のモデルに戻す。 */
+    fun deleteModel(model: LocalModelInfo) {
+        modelManager.deleteModel(model.id)
+        viewModelScope.launch {
+            appSettings.aiTaskSettings.first().filterValues { it.localModelId == model.id }.keys
+                .forEach { appSettings.setLocalModel(it, null) }
+        }
+        _message.value = "「${model.displayName}」を削除しました"
+    }
+
+    /** 用途ごとにモデルを選んでいないときに使うモデルを [model] にする。 */
+    fun setDefaultModel(model: LocalModelInfo) {
+        modelManager.setDefaultModel(model.id)
+        _message.value = "「${model.displayName}」を既定のモデルにしました"
+    }
+
+    /** [task] を端末内で動かすときのモデルを選ぶ。null なら既定のモデル。 */
+    fun setLocalModel(task: AiTask, modelId: String?) {
+        viewModelScope.launch { appSettings.setLocalModel(task, modelId) }
     }
 
     /** [profile] のモデルとして埋め込みモデルのファイルを取り込む(終わると埋め込みを作り直す)。 */

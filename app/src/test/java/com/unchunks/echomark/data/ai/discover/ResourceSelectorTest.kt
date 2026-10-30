@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.ai.discover
 
 import com.unchunks.components.web.PageLink
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
@@ -37,7 +38,7 @@ class ResourceSelectorTest {
         val llm: LlmProvider = object : LlmProvider by FakeLlmProvider() {
             override suspend fun complete(prompt: String): String = response
         }
-        val resolver = LlmProviderResolver(llm, { llm }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository())
+        val resolver = LlmProviderResolver(LocalLlmProviders { llm }, { llm }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository())
         return ResourceSelector(resolver, bookmarks, attachments)
     }
 

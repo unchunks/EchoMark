@@ -5,6 +5,7 @@ import com.unchunks.components.websearch.ResourceCandidate
 import com.unchunks.components.websearch.ResourceSearchClient
 import com.unchunks.components.websearch.ResourceSearcher
 import com.unchunks.components.websearch.ResourceSource
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.discover.ResourceDiscovery
 import com.unchunks.echomark.domain.model.AnalysisInput
@@ -62,7 +63,7 @@ class DiscoverViewModelTest {
     private fun createViewModel() = DiscoverViewModel(
         ResourceDiscovery(
             searcher = ResourceSearcher(listOf(articles)),
-            llmProviderResolver = LlmProviderResolver(llm, { llm }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()),
+            llmProviderResolver = LlmProviderResolver(LocalLlmProviders { llm }, { llm }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()),
             bookmarkRepository = bookmarks
         ),
         FakeAiSetupRepository()

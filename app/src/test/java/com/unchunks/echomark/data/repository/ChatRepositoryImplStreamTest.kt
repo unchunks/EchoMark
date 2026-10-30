@@ -7,6 +7,7 @@ import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
@@ -86,7 +87,7 @@ class ChatRepositoryImplStreamTest {
         chatMessageDao = messageDao,
         vectorSearch = unusedVectorSearch(),
         embeddingProvider = embeddingProvider,
-        llmProviderResolver = LlmProviderResolver(llm, { llm }, settings, FakeApiKeyRepository()),
+        llmProviderResolver = LlmProviderResolver(LocalLlmProviders { llm }, { llm }, settings, FakeApiKeyRepository()),
         bookmarkRepository = bookmarkRepository,
         dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
     )
@@ -147,7 +148,7 @@ class ChatRepositoryImplStreamTest {
             vectorSearch = unusedVectorSearch(),
             embeddingProvider = noEmbedding,
             llmProviderResolver = LlmProviderResolver(
-                FakeLlmProvider(listOf("回答")), { FakeLlmProvider() }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()
+                FakeLlmProvider(listOf("回答")).let { l -> LocalLlmProviders { l } }, { FakeLlmProvider() }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()
             ),
             bookmarkRepository = brokenSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)

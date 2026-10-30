@@ -57,7 +57,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
                 apiModels = ApiProvider.entries.associateWith { provider ->
                     (prefs[apiModelKey(task, provider)] ?: prefs[legacyApiModelKey(provider)])
                         ?.takeIf { it.isNotBlank() } ?: task.defaultApiModel(provider)
-                }
+                },
+                localModelId = prefs[localModelKey(task)]?.takeIf { it.isNotBlank() }
             )
         }
     }
@@ -131,6 +132,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { it[key] = trimmed }
     }
 
+    override suspend fun setLocalModel(task: AiTask, modelId: String?) {
+        dataStore.edit { prefs ->
+            if (modelId.isNullOrBlank()) prefs.remove(localModelKey(task)) else prefs[localModelKey(task)] = modelId
+        }
+    }
+
     override suspend fun setRediscoverEnabled(enabled: Boolean) {
         dataStore.edit { it[KEY_REDISCOVER_ENABLED] = enabled }
     }
@@ -189,6 +196,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
     private companion object {
         fun llmBackendKey(task: AiTask) = stringPreferencesKey("llm_backend_${task.name.lowercase()}")
         fun apiProviderKey(task: AiTask) = stringPreferencesKey("api_provider_${task.name.lowercase()}")
+        fun localModelKey(task: AiTask) = stringPreferencesKey("local_model_${task.name.lowercase()}")
         fun apiModelKey(task: AiTask, provider: ApiProvider) =
             stringPreferencesKey("api_model_${task.name.lowercase()}_${provider.name.lowercase()}")
 

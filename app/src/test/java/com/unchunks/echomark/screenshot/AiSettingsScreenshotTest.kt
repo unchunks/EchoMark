@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
 import com.unchunks.echomark.data.ai.model.ModelImportError
@@ -83,7 +84,7 @@ class AiSettingsScreenshotTest {
         Screen(
             AiSettingsUiState(
                 tasks = aiTasks(LlmBackend.LOCAL),
-                localModel = model,
+                localModels = InstalledModels(listOf(model)),
                 importState = ModelImportState.Copying(copiedBytes = 230_000_000, totalBytes = 555_000_000)
             )
         )
@@ -95,7 +96,20 @@ class AiSettingsScreenshotTest {
         Screen(
             AiSettingsUiState(
                 tasks = aiTasks(LlmBackend.LOCAL),
-                localModel = legacyModel
+                localModels = InstalledModels(listOf(legacyModel))
+            )
+        )
+    }
+
+    /** 端末内モデルを2つ取り込み、チャットだけ別のモデルを選んだ(用途ごとのモデルの選択と、読み込み直しの説明) */
+    @Test
+    fun localMultipleModels() = screenshot.captureLightDark("ai_settings_local_multiple_models") {
+        val qwen = LocalModelInfo("local_llm_2.litertlm", "Qwen3-0.6B.litertlm", 600_000_000, 1_790_100_000_000L)
+        val tasks = aiTasks(LlmBackend.LOCAL)
+        Screen(
+            AiSettingsUiState(
+                tasks = tasks + (AiTask.CHAT to tasks.getValue(AiTask.CHAT).copy(localModelId = qwen.id)),
+                localModels = InstalledModels(listOf(model, qwen), defaultId = model.id)
             )
         )
     }
@@ -106,8 +120,8 @@ class AiSettingsScreenshotTest {
         Screen(
             AiSettingsUiState(
                 tasks = aiTasks(LlmBackend.LOCAL),
-                localModel = legacyModel,
-                localModelLoadFailure = LocalModelLoadFailure(legacyModel, "Failed to select jinja prompt template")
+                localModels = InstalledModels(listOf(legacyModel)),
+                localModelLoadFailures = mapOf(legacyModel.id to LocalModelLoadFailure(legacyModel, "Failed to select jinja prompt template"))
             )
         )
     }
@@ -118,7 +132,7 @@ class AiSettingsScreenshotTest {
         Screen(
             AiSettingsUiState(
                 tasks = aiTasks(LlmBackend.API, ApiProvider.CLAUDE),
-                localModel = model,
+                localModels = InstalledModels(listOf(model)),
                 keyProvider = ApiProvider.CLAUDE,
                 configuredProviders = setOf(ApiProvider.CLAUDE)
             ),
@@ -140,7 +154,7 @@ class AiSettingsScreenshotTest {
                         mapOf(ApiProvider.CLAUDE to "claude-haiku-4-5")
                     )
                 ),
-                localModel = model,
+                localModels = InstalledModels(listOf(model)),
                 keyProvider = ApiProvider.GEMINI,
                 configuredProviders = setOf(ApiProvider.CLAUDE, ApiProvider.GEMINI)
             )

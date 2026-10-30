@@ -17,6 +17,7 @@ import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.llm.LlmException
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.R
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
@@ -118,7 +119,7 @@ class BookmarkAiProcessingWorkerTest {
         buildWorker(bookmarkId, runAttemptCount).doWork()
 
     private fun buildWorker(bookmarkId: Long, runAttemptCount: Int = 0): BookmarkAiProcessingWorker {
-        val analyzer = BookmarkAnalyzer(LlmProviderResolver(llm, { llm }, settings, FakeApiKeyRepository()), settings)
+        val analyzer = BookmarkAnalyzer(LlmProviderResolver(LocalLlmProviders { llm }, { llm }, settings, FakeApiKeyRepository()), settings)
         val worker = TestListenableWorkerBuilder<BookmarkAiProcessingWorker>(context)
             .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
             .setRunAttemptCount(runAttemptCount)
@@ -129,7 +130,7 @@ class BookmarkAiProcessingWorkerTest {
                     workerParameters: WorkerParameters
                 ) = BookmarkAiProcessingWorker(
                     appContext, workerParameters, repository, analyzer, embedding,
-                    AiPrewarmer(localLlmForPrewarm, settings), stats,
+                    AiPrewarmer(LocalLlmProviders { localLlmForPrewarm }, settings), stats,
                     ProcessingConcurrencyLimiter(settings), ApiRateLimiter(settings)
                 )
             })

@@ -42,7 +42,7 @@ class AiPrewarmerTest {
     fun 端末内を使う設定のときだけ読み込みを始める() = runBlocking {
         val llm = FakeLlmProvider()
         val appSettings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
-        val prewarmer = AiPrewarmer(llm, appSettings)
+        val prewarmer = AiPrewarmer(LocalLlmProviders { llm }, appSettings)
 
         assertTrue(prewarmer.prewarmLocalLlmIfUsed())
         assertEquals(1, llm.prewarmCalls)
@@ -50,5 +50,28 @@ class AiPrewarmerTest {
         appSettings.setBackendForAll(LlmBackend.API)
         assertFalse(prewarmer.prewarmLocalLlmIfUsed())
         assertEquals(1, llm.prewarmCalls)
+    }
+
+    @Test
+    fun 用途ごとに別の端末内モデルなら最初に動くタグ付けのモデルを読み込む() = runBlocking {
+        val byModel = mutableMapOf<String?, FakeLlmProvider>()
+        val appSettings = FakeAppSettingsRepository(backend = LlmBackend.LOCAL)
+        val prewarmer = AiPrewarmer(LocalLlmProviders { id -> byModel.getOrPut(id) { FakeLlmProvider() } }, appSettings)
+        appSettings.setLocalModel(AiTask.TAGGING, "tagger")
+        appSettings.setLocalModel(AiTask.SUMMARY, "summarizer")
+
+        assertTrue(prewarmer.prewarmLocalLlmIfUsed())
+        assertEquals(1, byModel.getValue("tagger").prewarmCalls)
+        assertFalse("summarizer" in byModel)
+    }
+
+    @Test
+    fun 先に読み込むモデルはタグ付けが端末内ならそのモデル_そうでなければ要約のモデル() {
+        val local = AiTaskSetting(backend = LlmBackend.LOCAL, localModelId = "a")
+        val api = AiTaskSetting(backend = LlmBackend.API, localModelId = "a")
+        val summary = AiTaskSetting(backend = LlmBackend.LOCAL, localModelId = "b")
+        assertEquals("a", analysisLocalModelToPrewarm(mapOf(AiTask.TAGGING to local, AiTask.SUMMARY to summary)))
+        assertEquals("b", analysisLocalModelToPrewarm(mapOf(AiTask.TAGGING to api, AiTask.SUMMARY to summary)))
+        assertEquals(null, analysisLocalModelToPrewarm(emptyMap()))
     }
 }
