@@ -14,6 +14,7 @@ import com.unchunks.components.llm.cloud.ApiLlmClient
 import com.unchunks.components.llm.cloud.ApiMessage
 import com.unchunks.components.llm.cloud.ApiPurpose
 import com.unchunks.components.llm.cloud.ApiRequest
+import com.unchunks.components.llm.cloud.ApiTokenUsage
 import com.unchunks.components.llm.cloud.AttachmentKind
 import com.unchunks.components.llm.cloud.AttachmentPolicy
 import com.unchunks.components.llm.cloud.ClaudeApiClient
@@ -34,10 +35,15 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.aiTaskSetting
+import com.unchunks.echomark.domain.usage.ApiUsageRecord
+import com.unchunks.echomark.domain.usage.ApiUsageRepository
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -59,7 +65,8 @@ class ApiLlmProvider @Inject constructor(
     openAi: OpenAiApiClient,
     private val appSettings: AppSettingsRepository,
     private val apiKeyRepository: ApiKeyRepository,
-    private val attachmentLoader: AttachmentLoader
+    private val attachmentLoader: AttachmentLoader,
+    private val usageRepository: ApiUsageRepository
 ) : ApiLlmProviderFactory {
 
     override fun forTask(task: AiTask): LlmProvider = TaskProvider(task)
@@ -85,7 +92,7 @@ class ApiLlmProvider @Inject constructor(
                 system = prompt,
                 messages = listOf(ApiMessage(ChatRole.USER, "上の指示に従い、JSON だけを出力してください。"))
             )
-            return client.completeJson(request, credentials)
+            return recordingUsage(task, client, credentials) { onUsage -> client.completeJson(request, credentials, onUsage) }
         }
     }
 
@@ -115,7 +122,7 @@ class ApiLlmProvider @Inject constructor(
         val fileIsPrimary = attachment != null && attachment.kind != AttachmentKind.IMAGE
         val config = ApiInputBudget.longTextConfig(client.provider, credentials.model)
         return try {
-            analyzeWith(config, client, credentials, input, existingTags, scope, attachment, fileIsPrimary)
+            analyzeWith(task, config, client, credentials, input, existingTags, scope, attachment, fileIsPrimary)
         } catch (e: LlmException.BadRequest) {
             // 1回で渡す長さの見積もりが外れた(文脈長を超えた)ときは、従来の小さい単位で分けて要約し直す
             val fallback = ApiInputBudget.fallbackConfig()
@@ -123,7 +130,7 @@ class ApiLlmProvider @Inject constructor(
                 throw e
             }
             Timber.w(e, "本文を1回で渡せなかったため、分けて要約し直す: %d 文字", input.text.length)
-            analyzeWith(fallback, client, credentials, input, existingTags, scope, attachment, fileIsPrimary)
+            analyzeWith(task, fallback, client, credentials, input, existingTags, scope, attachment, fileIsPrimary)
         }
     }
 
@@ -132,6 +139,7 @@ class ApiLlmProvider @Inject constructor(
      * 応答(JSON)はストリーミングで受け、JSON が閉じた時点で打ち切る([completeJson])。
      */
     private suspend fun analyzeWith(
+        task: AiTask,
         config: LongTextConfig,
         client: ApiLlmClient,
         credentials: ApiCredentials,
@@ -152,7 +160,7 @@ class ApiLlmProvider @Inject constructor(
                     jsonSchema = ApiJsonSchema(AnalysisSchema.NOTES_NAME, AnalysisSchema.notes())
                 )
                 // メモは壊れていても緩く読めるため、作り直させない(部分ごとに呼び出しが増えるため)
-                AnalysisParser.parseNotes(completeJson(client, request, credentials))
+                AnalysisParser.parseNotes(completeJson(task, client, request, credentials))
             }
         }
         val isLong = fileIsPrimary || body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
@@ -193,7 +201,7 @@ class ApiLlmProvider @Inject constructor(
                         ApiMessage(ChatRole.USER, AiPrompts.repairInstructions(problem, scope))
                 )
             }
-            completeJson(client, repair, credentials)
+            completeJson(task, client, repair, credentials)
         }
         return AnalysisParser.parse(response, input.combinedText())
     }
@@ -203,15 +211,23 @@ class ApiLlmProvider @Inject constructor(
      * モデルが構造化出力に対応していない・スキーマの書き方を受け付けない)、スキーマを外してやり直し、成功したらその提供元とモデルでは
      * 以後スキーマを付けない。外しても拒否されるなら(本文が長すぎるなど、スキーマのせいではない)その失敗をそのまま投げる。
      */
-    private suspend fun completeJson(client: ApiLlmClient, request: ApiRequest, credentials: ApiCredentials): String {
+    private suspend fun completeJson(
+        task: AiTask,
+        client: ApiLlmClient,
+        request: ApiRequest,
+        credentials: ApiCredentials
+    ): String {
         val key = "${client.provider}:${credentials.model}"
+        // 呼び出しごとに使用量を記録する(拒否されたやり直しの前の呼び出しは、トークン数が無ければ記録しない)
+        suspend fun call(request: ApiRequest) =
+            recordingUsage(task, client, credentials) { onUsage -> client.completeJson(request, credentials, onUsage) }
         if (request.jsonSchema == null || key in schemaRejected) {
-            return client.completeJson(request.copy(jsonSchema = null), credentials)
+            return call(request.copy(jsonSchema = null))
         }
         return try {
-            client.completeJson(request, credentials)
+            call(request)
         } catch (e: LlmException.BadRequest) {
-            val result = client.completeJson(request.copy(jsonSchema = null), credentials)
+            val result = call(request.copy(jsonSchema = null))
             Timber.w(e, "構造化出力を受け付けないため、以後スキーマを付けない: %s", key)
             schemaRejected += key
             result
@@ -239,7 +255,8 @@ class ApiLlmProvider @Inject constructor(
         history: List<ChatMessage>
     ): String {
         val (client, credentials) = current(task)
-        return client.complete(chatRequest(userMessage, context, history), credentials).trim()
+        val request = chatRequest(userMessage, context, history)
+        return recordingUsage(task, client, credentials) { onUsage -> client.complete(request, credentials, onUsage) }.trim()
     }
 
     private fun chatStream(
@@ -249,7 +266,51 @@ class ApiLlmProvider @Inject constructor(
         history: List<ChatMessage>
     ): Flow<String> = flow {
         val (client, credentials) = current(task)
-        emitAll(client.stream(chatRequest(userMessage, context, history), credentials))
+        var latest: ApiTokenUsage? = null
+        // 途中で止められても(収集のキャンセル・失敗)、そこまでに分かったトークン数を記録する
+        emitAll(
+            client.stream(chatRequest(userMessage, context, history), credentials) { latest = it }
+                .onCompletion { recordUsage(task, client, credentials, latest) }
+        )
+    }
+
+    /**
+     * [call] に使用量の受け取りを渡して呼び、終わったら(失敗・打ち切りでも)分かったトークン数を記録する。
+     * 記録できなくても AI の呼び出しの結果は変えない。
+     */
+    private suspend fun <T> recordingUsage(
+        task: AiTask,
+        client: ApiLlmClient,
+        credentials: ApiCredentials,
+        call: suspend ((ApiTokenUsage) -> Unit) -> T
+    ): T {
+        var latest: ApiTokenUsage? = null
+        try {
+            return call { latest = it }
+        } finally {
+            recordUsage(task, client, credentials, latest)
+        }
+    }
+
+    private suspend fun recordUsage(task: AiTask, client: ApiLlmClient, credentials: ApiCredentials, usage: ApiTokenUsage?) {
+        if (usage == null) return
+        // 呼び出しのキャンセルで記録を落とさない
+        withContext(NonCancellable) {
+            try {
+                usageRepository.record(
+                    ApiUsageRecord(
+                        createdAt = System.currentTimeMillis(),
+                        provider = client.provider,
+                        model = credentials.model,
+                        task = task,
+                        inputTokens = usage.inputTokens,
+                        outputTokens = usage.outputTokens
+                    )
+                )
+            } catch (e: Exception) {
+                Timber.w(e, "API の使用量を記録できない")
+            }
+        }
     }
 
     /**

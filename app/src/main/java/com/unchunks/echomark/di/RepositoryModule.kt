@@ -8,6 +8,7 @@ import com.unchunks.echomark.data.repository.ApiKeyRepositoryImpl
 import com.unchunks.echomark.data.repository.AppSettingsRepositoryImpl
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.data.repository.ChatRepositoryImpl
+import com.unchunks.echomark.data.repository.ApiUsageRepositoryImpl
 import com.unchunks.echomark.data.repository.ProcessingStatsRepositoryImpl
 import com.unchunks.echomark.data.repository.TagRepositoryImpl
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
@@ -19,6 +20,7 @@ import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
+import com.unchunks.echomark.domain.usage.ApiUsageRepository
 import com.unchunks.echomark.domain.repository.TagRepository
 import dagger.Binds
 import dagger.Module
@@ -70,6 +72,11 @@ abstract class RepositoryModule {
     abstract fun bindProcessingStatsRepository(
         impl: ProcessingStatsRepositoryImpl
     ): ProcessingStatsRepository
+
+    @Binds
+    abstract fun bindApiUsageRepository(
+        impl: ApiUsageRepositoryImpl
+    ): ApiUsageRepository
 
     @Binds
     abstract fun bindChatAttachmentSource(
