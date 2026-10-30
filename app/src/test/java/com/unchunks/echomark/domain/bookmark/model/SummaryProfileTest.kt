@@ -90,4 +90,58 @@ class SummaryProfileTest {
         assertEquals(SummaryProfile.GENERAL, summaryProfileOf(ContentKind.WEB_PAGE, null, "", ""))
         assertEquals(SummaryProfile.GENERAL, web("https://"))
     }
+    // ---- GitHub のリポジトリ・ソースコード(#14・#15) ----
+
+    @Test
+    fun GitHubのリポジトリのページはリポジトリ() {
+        assertEquals(SummaryProfile.REPOSITORY, web("https://github.com/unchunks/EchoMark"))
+        assertEquals(SummaryProfile.REPOSITORY, web("https://github.com/unchunks/EchoMark/tree/main/app"))
+        // リポジトリ以外の GitHub のページは型なし(Issue・プロフィールなど)
+        assertEquals(SummaryProfile.GENERAL, web("https://github.com/unchunks/EchoMark/issues/1"))
+        assertEquals(SummaryProfile.GENERAL, web("https://github.com/unchunks"))
+        assertEquals(SummaryProfile.GENERAL, web("https://github.com/features/copilot"))
+    }
+
+    @Test
+    fun コードのファイルのURLはソースコード() {
+        assertEquals(SummaryProfile.SOURCE_CODE, web("https://github.com/unchunks/EchoMark/blob/main/app/Main.kt"))
+        assertEquals(SummaryProfile.SOURCE_CODE, web("https://raw.githubusercontent.com/unchunks/EchoMark/main/script"))
+        assertEquals(SummaryProfile.SOURCE_CODE, web("https://gist.github.com/someone/0123456789abcdef"))
+        assertEquals(SummaryProfile.SOURCE_CODE, web("https://example.com/static/app.js"))
+        // Markdown のファイルや .php のページはソースコードにしない
+        assertEquals(SummaryProfile.GENERAL, web("https://github.com/unchunks/EchoMark/blob/main/README.md"))
+        assertEquals(SummaryProfile.GENERAL, web("https://example.com/index.php"))
+    }
+
+    @Test
+    fun 共有したコードのファイルは拡張子かMIMEタイプでソースコード() {
+        assertEquals(
+            SummaryProfile.SOURCE_CODE,
+            summaryProfileOf(ContentKind.MEMO, null, "Main", "fun main() {}", fileName = "Main.kt")
+        )
+        assertEquals(
+            SummaryProfile.SOURCE_CODE,
+            summaryProfileOf(ContentKind.MEMO, null, "run", "echo hi", mimeType = "text/x-shellscript")
+        )
+        // タイトルがファイル名のときも
+        assertEquals(SummaryProfile.SOURCE_CODE, summaryProfileOf(ContentKind.MEMO, null, "build.gradle", "plugins {}"))
+        assertEquals(SummaryProfile.GENERAL, summaryProfileOf(ContentKind.MEMO, null, "memo.txt", "今日の予定", fileName = "memo.txt"))
+    }
+
+    @Test
+    fun メモに貼ったコードはソースコード_箇条書きのメモより先に見る() {
+        val code = "import os\n\ndef main():\n    for name in os.listdir('.'):\n        print(name)\n\nif __name__ == '__main__':\n    main()\n"
+
+        assertEquals(SummaryProfile.SOURCE_CODE, summaryProfileOf(ContentKind.MEMO, null, "メモ", code))
+        // 箇条書きのメモは、コードに見えなければリスト
+        assertEquals(SummaryProfile.LIST, summaryProfileOf(ContentKind.MEMO, null, "買い物", "- 牛乳\n- 卵\n- パン\n- 米"))
+    }
+
+    @Test
+    fun リポジトリとソースコードは動画や画像には当てはめない() {
+        assertEquals(SummaryProfile.GENERAL, summaryProfileOf(ContentKind.VIDEO, "https://github.com/unchunks/EchoMark", "", ""))
+        assertEquals(SummaryProfile.GENERAL, summaryProfileOf(ContentKind.IMAGE, null, "Main.kt", "", fileName = "Main.kt"))
+        // PDF は論文以外の型を持たない(URL が GitHub でも、リポジトリにしない)
+        assertEquals(SummaryProfile.GENERAL, summaryProfileOf(ContentKind.DOCUMENT, "https://github.com/unchunks/EchoMark", "", ""))
+    }
 }

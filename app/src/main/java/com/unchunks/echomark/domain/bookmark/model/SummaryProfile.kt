@@ -8,7 +8,7 @@ import java.net.URI
  * 型は URL のホスト・パスと本文から決める([summaryProfileOf])。決められなければ [GENERAL](種類ごとの既定の指示)。
  *
  * 型を足すときは、ここに値を足し、[summaryProfileOf] の判定と AiPrompts の指示(型ごとの方針)を足す。
- * 今後の GitHub のリポジトリ・ソースコードの要約も、この型の1つとして足す。
+ * GitHub のリポジトリ([REPOSITORY]、#14)とソースコード([SOURCE_CODE]、#15)もこの型。
  *
  * @property kinds この型を使える中身の種類(これ以外の種類には当てはめない)
  */
@@ -34,12 +34,25 @@ enum class SummaryProfile(val kinds: Set<ContentKind>) {
     /** レシピ */
     RECIPE(setOf(ContentKind.WEB_PAGE)),
 
+    /** GitHub のリポジトリのページ(README と、説明・言語・トピックなどのメタデータで要約する) */
+    REPOSITORY(setOf(ContentKind.WEB_PAGE)),
+
+    /** ソースコード(コードのファイル・GitHub のファイル・Gist・メモに貼ったコード) */
+    SOURCE_CODE(setOf(ContentKind.WEB_PAGE, ContentKind.MEMO)),
+
     /** 項目を並べたメモ(ToDo・買い物リストなど) */
     LIST(setOf(ContentKind.MEMO))
 }
 
 /** このブックマークの要約の型。 */
-fun Bookmark.summaryProfile(): SummaryProfile = summaryProfileOf(contentKind(), contentUri.takeIf { type == BookmarkType.URL }, title, content.orEmpty())
+fun Bookmark.summaryProfile(): SummaryProfile = summaryProfileOf(
+    kind = contentKind(),
+    url = contentUri.takeIf { type == BookmarkType.URL },
+    title = title,
+    text = content.orEmpty(),
+    fileName = fileName,
+    mimeType = mimeType
+)
 
 /**
  * 要約の型を決める(純粋関数)。
@@ -47,17 +60,34 @@ fun Bookmark.summaryProfile(): SummaryProfile = summaryProfileOf(contentKind(), 
  * @param url リンク先の URL(URL のブックマークだけ。無ければ null)
  * @param title ブックマークのタイトル
  * @param text 取り出した本文(型を決める手がかりにする。長ければ先頭だけ見る)
+ * @param fileName 保存したファイルの名前(共有したコードのファイルなど。無ければ null)
+ * @param mimeType 保存したファイルの MIME タイプ(無ければ null)
  */
-fun summaryProfileOf(kind: ContentKind, url: String?, title: String, text: String): SummaryProfile {
+fun summaryProfileOf(
+    kind: ContentKind,
+    url: String?,
+    title: String,
+    text: String,
+    fileName: String? = null,
+    mimeType: String? = null
+): SummaryProfile {
     val profile = when (kind) {
         ContentKind.WEB_PAGE, ContentKind.DOCUMENT -> profileOfUrl(url) ?: profileOfText(kind, title, text)
-        ContentKind.MEMO -> if (looksLikeList(text)) SummaryProfile.LIST else null
+        ContentKind.MEMO -> when {
+            isSourceCodeFile(fileName ?: title, mimeType) -> SummaryProfile.SOURCE_CODE
+            looksLikeSourceCode(text) -> SummaryProfile.SOURCE_CODE
+            looksLikeList(text) -> SummaryProfile.LIST
+            else -> null
+        }
         ContentKind.VIDEO, ContentKind.IMAGE, ContentKind.AUDIO -> null
     }
     return profile?.takeIf { kind in it.kinds } ?: SummaryProfile.GENERAL
 }
 
 private fun profileOfUrl(url: String?): SummaryProfile? {
+    // GitHub のリポジトリのページ・コードのファイル・Gist(ホストの判定より先に見る)
+    if (GitHubUrls.repoOf(url) != null) return SummaryProfile.REPOSITORY
+    if (GitHubUrls.codeFileOf(url) != null || isSourceCodeUrl(url)) return SummaryProfile.SOURCE_CODE
     val uri = try {
         URI(url?.trim().orEmpty())
     } catch (_: Exception) {
@@ -66,6 +96,7 @@ private fun profileOfUrl(url: String?): SummaryProfile? {
     val host = uri.host?.lowercase()?.removePrefix("www.")?.removePrefix("m.") ?: return null
     val path = uri.path.orEmpty().lowercase()
     fun hostIs(vararg names: String) = names.any { host == it || host.endsWith(".$it") }
+    if (host == "gist.github.com") return SummaryProfile.SOURCE_CODE
     return when {
         hostIs(
             "arxiv.org", "openreview.net", "aclanthology.org", "pubmed.ncbi.nlm.nih.gov", "doi.org", "semanticscholar.org",

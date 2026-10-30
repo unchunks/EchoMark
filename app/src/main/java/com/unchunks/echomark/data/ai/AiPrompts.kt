@@ -57,7 +57,7 @@ object AiPrompts {
             add("- 本文が「部分ごとの要約メモ」のときは、全体を通した主題と要点${if (withSummary) "をまとめる" else "から判断する"}。")
             add("")
             add("本文の見出し:")
-            addAll(inputHeadingGuide(kind))
+            addAll(inputHeadingGuide(kind, profile))
             add("")
             add("ルール:")
             if (withSummary) {
@@ -202,7 +202,14 @@ object AiPrompts {
     }
 
     /** 本文に入りうる見出し(本文の取得・取り出しで付けるもの)の説明。 */
-    private fun inputHeadingGuide(kind: ContentKind): List<String> = buildList {
+    private fun inputHeadingGuide(kind: ContentKind, profile: SummaryProfile = SummaryProfile.GENERAL): List<String> = buildList {
+        when (profile) {
+            SummaryProfile.REPOSITORY ->
+                add("- 「リポジトリ:」「説明:」「言語:」「トピック:」などは GitHub の情報、「README:」より後はリポジトリの README の本文。")
+            SummaryProfile.SOURCE_CODE ->
+                add("- 保存内容はコードそのもの。先頭に「リポジトリ:」「ファイル:」があれば、そのコードの置き場所。")
+            else -> Unit
+        }
         if (kind == ContentKind.VIDEO) {
             add("- 「字幕:」「字幕(自動生成):」の後は動画の字幕。自動生成の字幕は誤認識や句読点の欠落を含む。")
             add("- 「チャプター:」は投稿者が付けた動画の章立て(話の流れの手がかり)、「キーワード:」は投稿者が付けた検索用の語。")
@@ -242,6 +249,16 @@ object AiPrompts {
             "- これは項目を並べたメモ。何のリスト(ToDo・買い物・読みたい本など)かと、主な項目を書く。",
             "- 全項目を写さず、多いときは件数も添える。完了済み(チェック済み)の項目は、残りと分けて書く。"
         )
+        SummaryProfile.REPOSITORY -> listOf(
+            "- これは GitHub のリポジトリ。何のためのプロジェクトか(目的)を先に書き、続けて主な機能、使っている言語・技術、使い方(導入や実行の方法)の要点を書く。",
+            "- スター数・フォーク数・更新日・バッジ・コントリビューションやライセンスの定型の案内は、要点でなければ書かない。アーカイブ済み(開発が終わっている)ならその旨を書く。",
+            "- README が無い・短いときは、説明・言語・トピックから分かる範囲で書く。"
+        )
+        SummaryProfile.SOURCE_CODE -> listOf(
+            "- これはソースコード。何をするコードか(目的・主な機能)を先に書き、続けて言語、主なクラス・関数、使っているライブラリや外部サービスを要点にする。",
+            "- コードを1行ずつ説明しない。import・ライセンス表記・自動生成のヘッダー・コメントアウトされたコードは要点にしない。",
+            "- コードから分からない動作は推測で補わない。コードの一部しか無いときは、その範囲で書く。"
+        )
     }
 
     /** [compactAnalyzeInstructions] 用の、型の短い言い方。型が [SummaryProfile.GENERAL] なら null(種類の既定を使う)。 */
@@ -254,6 +271,8 @@ object AiPrompts {
         SummaryProfile.PRODUCT -> "何の商品かと、主な特徴・仕様・価格をまとめる。広告のうたい文句は書かない"
         SummaryProfile.RECIPE -> "何の料理かと、主な材料・作り方の流れをまとめる"
         SummaryProfile.LIST -> "何のリストかと主な項目をまとめる。多いときは件数も書く"
+        SummaryProfile.REPOSITORY -> "何のためのプロジェクトかと、主な機能・使っている技術・使い方をまとめる。スター数やバッジは書かない"
+        SummaryProfile.SOURCE_CODE -> "何をするコードかと、言語・主な関数・使っているライブラリをまとめる。1行ずつは説明しない"
     }
 
     /** 本文が有料・会員限定ページの一部だけのときの方針([LimitedAccess])。 */
@@ -273,6 +292,7 @@ object AiPrompts {
             SummaryProfile.PRODUCT -> listOf("買い物")
             SummaryProfile.RECIPE -> listOf("レシピ")
             SummaryProfile.LIST -> listOf("ToDo", "買い物")
+            SummaryProfile.REPOSITORY, SummaryProfile.SOURCE_CODE -> listOf("技術")
             SummaryProfile.GENERAL -> emptyList()
         }
         return (first + categoryExamples(kind)).distinct()
