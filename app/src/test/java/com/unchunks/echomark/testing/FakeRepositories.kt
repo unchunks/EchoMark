@@ -14,6 +14,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
@@ -224,9 +225,15 @@ class FakeBookmarkRepository : BookmarkRepository {
         accessedIds += id
     }
 
-    override suspend fun reprocess(id: Long) {
+    /** reprocess の呼び出し(ID と作り直すもの) */
+    val reprocessCalls = mutableListOf<Pair<Long, AnalysisScope>>()
+
+    override suspend fun reprocess(id: Long, scope: AnalysisScope) {
         reprocessedIds += id
-        updateBookmark(id) { it.copy(aiStatus = AiStatus.PENDING, summary = null) }
+        reprocessCalls += id to scope
+        updateBookmark(id) {
+            if (scope == AnalysisScope.ALL) it.copy(aiStatus = AiStatus.PENDING, summary = null) else it.copy(aiStatus = AiStatus.PENDING)
+        }
     }
 
     override suspend fun updateTitleAndContent(id: Long, title: String, content: String?) =

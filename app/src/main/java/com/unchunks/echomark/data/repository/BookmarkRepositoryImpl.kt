@@ -24,6 +24,7 @@ import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.splitSearchTerms
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.TagSource
@@ -282,11 +283,17 @@ class BookmarkRepositoryImpl @Inject constructor(
             if (workScheduler.enqueueSequential(targetsOf(waiting), nightly = nightly)) waiting.size else 0
         }
 
-    override suspend fun reprocess(id: Long) =
+    override suspend fun reprocess(id: Long, scope: AnalysisScope) =
         withContext(dispatcherProvider.io) {
             val bookmark = bookmarkDao.getById(id) ?: return@withContext
-            bookmarkDao.resetAiResult(id, System.currentTimeMillis())
-            enqueueReprocessing(bookmark.toDomain())
+            if (scope == AnalysisScope.ALL) {
+                bookmarkDao.resetAiResult(id, System.currentTimeMillis())
+                enqueueReprocessing(bookmark.toDomain())
+            } else {
+                // 要約だけ・タグだけ: 今の本文のまま、AI 処理だけを行う(要約・タグのもう片方には触れない)
+                bookmarkDao.markQueued(id, System.currentTimeMillis())
+                workScheduler.enqueue(id, fetchContent = false, extractContent = false, scope = scope)
+            }
         }
 
     override suspend fun restoreBookmark(bookmark: Bookmark) {

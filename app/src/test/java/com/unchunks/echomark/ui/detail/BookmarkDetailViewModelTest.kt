@@ -6,6 +6,7 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeProcessingStatsRepository
@@ -171,6 +172,20 @@ class BookmarkDetailViewModelTest {
         assertEquals(listOf(1L), repository.reprocessedIds)
         assertEquals(AiStatus.PENDING, viewModel.uiState.value.bookmark?.aiStatus)
         assertEquals(listOf<BookmarkDetailMessage>(BookmarkDetailMessage.ReprocessStarted), messages)
+    }
+
+    @Test
+    fun 要約だけ_タグだけを作り直せる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.reprocess(AnalysisScope.SUMMARY)
+        viewModel.reprocess(AnalysisScope.TAGS)
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L to AnalysisScope.SUMMARY, 1L to AnalysisScope.TAGS), repository.reprocessCalls)
     }
 
     @Test
