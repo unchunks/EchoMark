@@ -115,13 +115,25 @@ class BookmarkAiProcessingWorkerTest {
             .toEntity()
     )
 
-    private suspend fun runWorker(bookmarkId: Long, runAttemptCount: Int): ListenableWorker.Result =
-        buildWorker(bookmarkId, runAttemptCount).doWork()
+    private suspend fun runWorker(
+        bookmarkId: Long,
+        runAttemptCount: Int,
+        scope: AnalysisScope = AnalysisScope.ALL
+    ): ListenableWorker.Result = buildWorker(bookmarkId, runAttemptCount, scope).doWork()
 
-    private fun buildWorker(bookmarkId: Long, runAttemptCount: Int = 0): BookmarkAiProcessingWorker {
+    private fun buildWorker(
+        bookmarkId: Long,
+        runAttemptCount: Int = 0,
+        scope: AnalysisScope = AnalysisScope.ALL
+    ): BookmarkAiProcessingWorker {
         val analyzer = BookmarkAnalyzer(LlmProviderResolver(LocalLlmProviders { llm }, { llm }, settings, FakeApiKeyRepository()), settings)
         val worker = TestListenableWorkerBuilder<BookmarkAiProcessingWorker>(context)
-            .setInputData(workDataOf(BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId))
+            .setInputData(
+                workDataOf(
+                    BookmarkAiProcessingWorker.KEY_BOOKMARK_ID to bookmarkId,
+                    BookmarkAiProcessingWorker.KEY_SCOPE to scope.name
+                )
+            )
             .setRunAttemptCount(runAttemptCount)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(
@@ -175,6 +187,46 @@ class BookmarkAiProcessingWorkerTest {
         // どこにも付かなくなった AI のタグは消え、ユーザーのタグ(別のブックマークに付いている Android)は残る
         val allTags = db.tagDao().getAllTags().first().map { it.name }.toSet()
         assertEquals(setOf("自分のタグ", "新しいAIタグ", "Android"), allTags)
+    }
+
+    @Test
+    fun 要約だけの再処理は要約を作り直し_タグとカテゴリはそのまま() = runBlocking {
+        val id = insertBookmark()
+        llm.tags = listOf("最初のタグ")
+        runWorker(id, runAttemptCount = 0)
+        llm.summary = "新しい要約"
+        llm.tags = listOf("使われないタグ")
+        llm.category = "使われないカテゴリ"
+
+        runWorker(id, runAttemptCount = 0, scope = AnalysisScope.SUMMARY)
+
+        val bookmark = repository.observeBookmark(id).first()!!
+        assertEquals(AnalysisScope.SUMMARY, llm.lastScope)
+        assertEquals("新しい要約", bookmark.summary)
+        assertEquals(setOf("最初のタグ"), bookmark.aiTags)
+        assertEquals("その他", bookmark.category)
+        assertEquals(AiStatus.DONE, bookmark.aiStatus)
+        // 要約が変わったので埋め込みも作り直す
+        assertEquals(2, embedding.documents.size)
+    }
+
+    @Test
+    fun タグだけの再処理はタグとカテゴリを付け直し_要約はそのまま() = runBlocking {
+        val id = insertBookmark()
+        runWorker(id, runAttemptCount = 0)
+        llm.summary = "使われない要約"
+        llm.tags = listOf("新しいタグ")
+        llm.category = "技術"
+
+        runWorker(id, runAttemptCount = 0, scope = AnalysisScope.TAGS)
+
+        val bookmark = repository.observeBookmark(id).first()!!
+        assertEquals(AnalysisScope.TAGS, llm.lastScope)
+        assertEquals("要約", bookmark.summary)
+        assertEquals(setOf("新しいタグ"), bookmark.aiTags)
+        assertEquals("技術", bookmark.category)
+        // 要約は変わらないので、埋め込みは作り直さない
+        assertEquals(1, embedding.documents.size)
     }
 
     private suspend fun insertBookmark2(): Long = db.bookmarkDao().insert(
@@ -530,15 +582,19 @@ private class ScriptedLlmProvider : LlmProvider {
     var tags: List<String> = listOf("タグ")
     var lastExistingTags: List<String>? = null
     var lastInput: AnalysisInput? = null
+    var lastScope: AnalysisScope? = null
+    var summary = "要約"
+    var category = "その他"
 
     override suspend fun analyze(input: AnalysisInput, existingTags: List<String>, scope: AnalysisScope): BookmarkAnalysis {
         calls++
         lastInput = input
+        lastScope = scope
         started.complete(Unit)
         if (hang) awaitCancellation()
         lastExistingTags = existingTags
         failure?.let { throw it }
-        return BookmarkAnalysis("要約", tags, "その他")
+        return BookmarkAnalysis(summary, tags, category)
     }
 
     override suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String =

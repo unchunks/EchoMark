@@ -29,12 +29,22 @@ class BookmarkAnalyzer @Inject constructor(
      * 要約だけ・タグだけが保存されることはない(再処理で両方を作り直す)。
      * 動画の本文は [VideoAnalysisText] で整えてから渡す。
      * 要約からは、書き出しに写されたタイトル・チャンネル名・「この動画では」のような前置きを除く([SummaryCleaner])。
+     * [scope] が [AnalysisScope.SUMMARY] なら「要約」の設定の AI で要約だけを、[AnalysisScope.TAGS] なら「タグ付け」の
+     * 設定の AI でタグとカテゴリだけを作る(要約だけ・タグだけの再処理。もう片方の結果は使わない)。
      * 例外は [LlmProvider.analyze] と同じ。
      */
-    suspend fun analyze(input: AnalysisInput, existingTags: List<String>): BookmarkAnalysis {
+    suspend fun analyze(
+        input: AnalysisInput,
+        existingTags: List<String>,
+        scope: AnalysisScope = AnalysisScope.ALL
+    ): BookmarkAnalysis {
         // 動画の本文は、字幕の効果音・つなぎ言葉や説明文の宣伝を除いてから渡す(同じ長さに入る話の量を増やす)
         val prepared = if (input.kind == ContentKind.VIDEO) input.copy(text = VideoAnalysisText.prepare(input.text)) else input
-        val analysis = analyzeWithTaskSettings(prepared, existingTags)
+        val analysis = when (scope) {
+            AnalysisScope.ALL -> analyzeWithTaskSettings(prepared, existingTags)
+            AnalysisScope.SUMMARY -> resolver.resolve(AiTask.SUMMARY).analyze(prepared, existingTags, AnalysisScope.SUMMARY)
+            AnalysisScope.TAGS -> resolver.resolve(AiTask.TAGGING).analyze(prepared, existingTags, AnalysisScope.TAGS)
+        }
         val summary = SummaryCleaner.clean(analysis.summary, input.title, SummaryCleaner.channelOf(input.text))
         return analysis.copy(summary = summary)
     }

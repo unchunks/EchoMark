@@ -9,6 +9,7 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
@@ -107,6 +108,39 @@ class BookmarkDetailScreenshotTest {
             PreviewSamples.textBookmark.copy(
                 aiStatus = AiStatus.DONE,
                 processing = ProcessingInfo(startedAt = 0L, finishedAt = 192_000L)
+            )
+        )
+    )
+
+    @Test
+    fun failedWithReason() = screenshot.captureScreenLightDark(
+        "library_detail_failed_reason",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                summary = null,
+                processing = ProcessingInfo(failureReason = ProcessingFailureReason.TIMEOUT)
+            )
+        )
+    )
+
+    @Test
+    fun waitingModelWithReason() = screenshot.captureScreenLightDark(
+        "library_detail_waiting_reason",
+        content = content(
+            PreviewSamples.waitingModelBookmark.copy(
+                processing = ProcessingInfo(failureReason = ProcessingFailureReason.MODEL_NOT_AVAILABLE)
+            )
+        )
+    )
+
+    @Test
+    fun retrying() = screenshot.captureScreenLightDark(
+        "library_detail_retrying",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                aiStatus = AiStatus.PENDING,
+                summary = null,
+                processing = ProcessingInfo(failureReason = ProcessingFailureReason.NETWORK)
             )
         )
     )

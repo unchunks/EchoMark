@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
@@ -161,9 +162,10 @@ class BookmarkDetailViewModel @Inject constructor(
     }
 
     /** 要約・タグ・カテゴリ・埋め込みの AI 処理をやり直す */
-    fun reprocess() {
+    /** AI 処理をやり直す。[scope] で要約だけ・タグだけを作り直せる(既定は全部) */
+    fun reprocess(scope: AnalysisScope = AnalysisScope.ALL) {
         viewModelScope.launch {
-            repository.reprocess(bookmarkId)
+            repository.reprocess(bookmarkId, scope)
             messageChannel.send(BookmarkDetailMessage.ReprocessStarted)
         }
     }

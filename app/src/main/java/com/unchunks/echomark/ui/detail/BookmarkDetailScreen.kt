@@ -42,7 +42,9 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Sell
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
@@ -106,6 +108,7 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.bookmark.model.processingDurationMillis
 import com.unchunks.echomark.domain.bookmark.model.processingProgress
 import com.unchunks.echomark.domain.extract.ExtractedBody
@@ -122,7 +125,10 @@ import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.description
 import com.unchunks.echomark.ui.components.formatElapsed
+import com.unchunks.echomark.ui.components.message
+import com.unchunks.echomark.ui.components.needsSetup
 import com.unchunks.echomark.ui.components.processingBadge
+import com.unchunks.echomark.ui.components.retryingMessage
 import com.unchunks.echomark.ui.components.rememberTickingNow
 import com.unchunks.echomark.ui.components.summaryText
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
@@ -203,7 +209,8 @@ fun BookmarkDetailScreen(
             onShare = { shareBookmark(context, it) },
             onToggleFavorite = viewModel::toggleFavorite,
             onSetArchived = { viewModel.setArchived(it) },
-            onReprocess = viewModel::reprocess,
+            onReprocess = { viewModel.reprocess() },
+            onReprocessPart = viewModel::reprocess,
             onDelete = { viewModel.delete(onDeleted = onBack) },
             onSaveEdit = viewModel::saveEdit,
             onAddTag = viewModel::addTag,
@@ -226,6 +233,8 @@ class BookmarkDetailCallbacks(
     val onToggleFavorite: () -> Unit = {},
     val onSetArchived: (Boolean) -> Unit = {},
     val onReprocess: () -> Unit = {},
+    /** 要約だけ・タグだけを作り直す */
+    val onReprocessPart: (AnalysisScope) -> Unit = {},
     val onDelete: () -> Unit = {},
     val onSaveEdit: (title: String, content: String) -> Unit = { _, _ -> },
     val onAddTag: (String) -> Unit = {},
@@ -388,6 +397,25 @@ private fun DetailTopBar(
                         callbacks.onReprocess()
                     }
                 )
+                // 要約が済んでいれば、要約だけ・タグだけを作り直せる(もう片方はそのまま)
+                if (bookmark.aiStatus == AiStatus.DONE && !bookmark.summary.isNullOrBlank()) {
+                    DropdownMenuItem(
+                        text = { Text("要約だけ作り直す") },
+                        leadingIcon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            callbacks.onReprocessPart(AnalysisScope.SUMMARY)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("タグだけ付け直す") },
+                        leadingIcon = { Icon(Icons.Outlined.Sell, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            callbacks.onReprocessPart(AnalysisScope.TAGS)
+                        }
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("削除", color = MaterialTheme.colorScheme.error) },
                     leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
@@ -639,6 +667,53 @@ private fun ProcessingProgressSection(
     )
 }
 
+/** 失敗の理由の一文(情報のアイコン付き) */
+@Composable
+private fun FailureReasonLine(text: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(
+            Icons.Outlined.Info,
+            contentDescription = null,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * 失敗・準備待ちのときの次の行動。ワンタップで再試行するか、AI 設定を開く。
+ * [setupFirst] なら「AI設定を開く」を先に(塗りのボタンで)出す。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RetryActions(setupFirst: Boolean, callbacks: BookmarkDetailCallbacks) {
+    // 文字が大きいときは折り返して次の行に並べる(ボタンの文字を切らない)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (setupFirst) {
+            Button(onClick = callbacks.onOpenAiSettings) {
+                Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("AI設定を開く")
+            }
+            OutlinedButton(onClick = callbacks.onReprocess) { Text("再試行") }
+        } else {
+            Button(onClick = callbacks.onReprocess) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("再試行")
+            }
+            OutlinedButton(onClick = callbacks.onOpenAiSettings) { Text("AI設定を開く") }
+        }
+    }
+}
+
 /** AI 要約(完了時)か、AI の状態と次の行動(処理中・失敗・準備待ち) */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -714,43 +789,36 @@ private fun AiSection(
         Column(Modifier.padding(16.dp)) {
             val badge = bookmark.processingBadge()
             AiStatusBadge(badge)
-            badge.description()?.let { description ->
+            // 失敗・準備待ちで理由が分かっているときは、一般的な説明の代わりに理由を出す
+            val hasSpecificReason = bookmark.processing.failureReason != null &&
+                (bookmark.aiStatus == AiStatus.FAILED || bookmark.aiStatus == AiStatus.WAITING_MODEL)
+            badge.description()?.takeUnless { hasSpecificReason }?.let { description ->
                 Spacer(Modifier.height(10.dp))
                 Text(description, style = MaterialTheme.typography.bodyMedium)
             }
+            val reason = bookmark.processing.failureReason
             when (bookmark.aiStatus) {
                 AiStatus.PENDING, AiStatus.PROCESSING -> {
+                    // 再試行を待っているときは、直前の失敗の理由と自動でやり直すことを伝える
+                    if (bookmark.aiStatus == AiStatus.PENDING && reason != null) {
+                        Spacer(Modifier.height(8.dp))
+                        FailureReasonLine(reason.retryingMessage())
+                    }
                     Spacer(Modifier.height(12.dp))
                     ProcessingProgressSection(bookmark, stageProgress, stageAverages)
                 }
-                AiStatus.FAILED -> {
-                    Spacer(Modifier.height(12.dp))
-                    // 文字が大きいときは折り返して次の行に並べる(ボタンの文字を切らない)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(onClick = callbacks.onReprocess) {
-                            Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text("再試行")
-                        }
-                        OutlinedButton(onClick = callbacks.onOpenAiSettings) { Text("AI設定を開く") }
+                AiStatus.FAILED, AiStatus.WAITING_MODEL -> {
+                    reason?.let {
+                        Spacer(Modifier.height(10.dp))
+                        Text(it.message(), style = MaterialTheme.typography.bodyMedium)
                     }
-                }
-                AiStatus.WAITING_MODEL -> {
                     Spacer(Modifier.height(12.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(onClick = callbacks.onOpenAiSettings) {
-                            Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text("AI設定を開く")
-                        }
-                        OutlinedButton(onClick = callbacks.onReprocess) { Text("再試行") }
-                    }
+                    // 設定を変えないと直らない理由なら「AI設定を開く」、一時的な失敗なら「再試行」を先に(目立つ形で)出す。
+                    // 理由が分からない(以前の版で失敗した)ときは、準備待ちなら設定、失敗なら再試行を先にする
+                    RetryActions(
+                        setupFirst = reason?.needsSetup ?: (bookmark.aiStatus == AiStatus.WAITING_MODEL),
+                        callbacks = callbacks
+                    )
                 }
                 AiStatus.DONE -> Unit
             }

@@ -19,6 +19,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
@@ -149,6 +150,22 @@ class BookmarkRepositoryImplTest {
         repository.reprocess(id)
 
         assertEquals(1, unfinished("process_bookmark_$id").size)
+    }
+
+    @Test
+    fun タグだけの再処理は要約を残し_本文の取得をせずAI処理だけを作り直すものを指定して積む() = runBlocking {
+        val id = db.bookmarkDao().insert(
+            urlBookmark(content = "本文", status = AiStatus.DONE).copy(summary = "要約").toEntity()
+        )
+
+        repository.reprocess(id, AnalysisScope.TAGS)
+
+        val bookmark = repository.getBookmarkById(id)!!
+        assertEquals("要約", bookmark.summary)
+        assertEquals(AiStatus.PENDING, bookmark.aiStatus)
+        val infos = workManager.getWorkInfosForUniqueWork("process_bookmark_$id").get()
+        assertEquals(mapOf("BookmarkAiProcessingWorker" to 1), workerKinds("process_bookmark_$id"))
+        assertTrue(infos.single().tags.contains(BookmarkWorkScheduler.bookmarkTag(id)))
     }
 
     @Test
