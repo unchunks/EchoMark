@@ -20,6 +20,19 @@ class SourceCodeTest {
     }
 
     @Test
+    fun リポジトリの中のディレクトリのページからブランチとパスを取る() {
+        val folder = GitHubUrls.folderOf("https://github.com/unchunks/EchoMark/tree/main/app/src")!!
+
+        assertEquals(GitHubRepoRef("unchunks", "EchoMark"), folder.repo)
+        assertEquals("main", folder.ref)
+        assertEquals("app/src", folder.path)
+        // ブランチの直下はリポジトリのページとして扱う
+        assertNull(GitHubUrls.folderOf("https://github.com/unchunks/EchoMark/tree/main"))
+        assertNull(GitHubUrls.folderOf("https://github.com/unchunks/EchoMark"))
+        assertNull(GitHubUrls.folderOf("https://github.com/unchunks/EchoMark/tree/main/../secret"))
+    }
+
+    @Test
     fun リポジトリではないGitHubのページは対象外() {
         assertNull(GitHubUrls.repoOf("https://github.com/unchunks"))
         assertNull(GitHubUrls.repoOf("https://github.com/settings/profile"))

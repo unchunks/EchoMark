@@ -19,6 +19,9 @@ data class GitHubFileRef(val repo: GitHubRepoRef, val ref: String, val path: Str
     val fileName: String get() = path.substringAfterLast('/')
 }
 
+/** GitHub のリポジトリの中のディレクトリ([ref] はブランチ・タグ・コミット)。 */
+data class GitHubFolderRef(val repo: GitHubRepoRef, val ref: String, val path: String)
+
 object GitHubUrls {
 
     /** リポジトリのページ(`github.com/owner/repo` と、その中のディレクトリ `/tree/...`)なら、そのリポジトリ。 */
@@ -29,6 +32,17 @@ object GitHubUrls {
         val repo = segments[1].removeSuffix(".git")
         if (segments[0].isEmpty() || repo.isEmpty()) return null
         return GitHubRepoRef(segments[0], repo)
+    }
+
+    /**
+     * リポジトリの中のディレクトリのページ(`/tree/ブランチ/パス`)なら返す。ブランチの直下(`/tree/ブランチ`)は null。
+     * ブランチ名に `/` があると区切りを間違えるが、その場合は README が見つからず、通常のページとして扱われる。
+     */
+    fun folderOf(url: String?): GitHubFolderRef? {
+        val repo = repoOf(url) ?: return null
+        val segments = segmentsOf(url) ?: return null
+        if (segments.size < FOLDER_MIN_SEGMENTS || ".." in segments) return null
+        return GitHubFolderRef(repo, ref = segments[3], path = segments.drop(4).joinToString("/"))
     }
 
     /** ソースコードのファイルのページ(`github.com/owner/repo/blob/<ref>/<path>`)なら、そのファイル。 */
@@ -53,6 +67,9 @@ object GitHubUrls {
     }
 
     /** リポジトリではない、GitHub 自身のページの先頭の部分 */
+    /** `owner/repo/tree/ブランチ/パス` */
+    private const val FOLDER_MIN_SEGMENTS = 5
+
     private val RESERVED_OWNERS = setOf(
         "settings", "orgs", "topics", "marketplace", "features", "pricing", "about", "login", "join", "sponsors", "explore",
         "collections", "notifications", "pulls", "issues", "search", "trending", "apps", "enterprise", "security", "customer-stories",

@@ -109,7 +109,6 @@ import coil3.compose.AsyncImage
 import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
-import com.unchunks.echomark.domain.bookmark.model.EvidenceFinder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -827,10 +826,8 @@ private fun AiSection(
                 }
                 if (showEvidence) {
                     val body = listOfNotNull(bookmark.title, bookmark.content).joinToString("\n")
-                    // 本文は最大 5 万文字。開いたときと要約・本文が変わったときだけ突き合わせる
-                    val report = remember(summary, body) { EvidenceFinder.find(summary, body) }
                     Spacer(Modifier.height(8.dp))
-                    EvidenceBlock(report)
+                    EvidenceSection(summary, body)
                 }
                 bookmark.processingDurationMillis()?.let { duration ->
                     Spacer(Modifier.height(10.dp))

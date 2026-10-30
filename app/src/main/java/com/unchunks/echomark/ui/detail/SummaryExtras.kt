@@ -24,18 +24,43 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.unchunks.echomark.domain.bookmark.model.EvidenceFinder
 import com.unchunks.echomark.domain.bookmark.model.EvidenceReport
 import com.unchunks.echomark.domain.model.SummaryLanguage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /*
  * 要約の根拠の表示(#18)と、要約の翻訳のシート(#24)。
  */
+
+/**
+ * [summary] と [body] を突き合わせて根拠を出す。本文は最大 5 万文字あるため、突き合わせは画面のスレッドの外で行い、
+ * 開いたときと要約・本文が変わったときだけやり直す。
+ */
+@Composable
+fun EvidenceSection(summary: String, body: String, modifier: Modifier = Modifier) {
+    val report by produceState<EvidenceReport?>(null, summary, body) {
+        value = withContext(Dispatchers.Default) { EvidenceFinder.find(summary, body) }
+    }
+    report?.let { EvidenceBlock(it, modifier) }
+        ?: Row(
+            modifier = modifier,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            Text("根拠を探しています…", style = MaterialTheme.typography.bodySmall)
+        }
+}
 
 /**
  * 要約の各文と、根拠になる本文の一節。本文に見つからない文は、その旨を出す(言い換えが大きいときも見つからないため、

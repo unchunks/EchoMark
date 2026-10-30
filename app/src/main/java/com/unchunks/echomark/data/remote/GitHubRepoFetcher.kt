@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.echomark.domain.bookmark.model.GitHubFolderRef
 import com.unchunks.echomark.domain.bookmark.model.GitHubRepoRef
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -25,16 +26,28 @@ class GitHubRepoFetcher(
     /** 取得した内容。[title] はブックマークのタイトル、[text] は AI に渡す本文。 */
     data class Content(val title: String, val text: String)
 
-    /** 失敗(上限・見つからない・通信エラー)なら null。 */
-    fun fetch(repo: GitHubRepoRef): Content? {
-        val info = get("repos/${repo.owner}/${repo.repo}", ACCEPT_JSON)?.let { GitHubRepoText.parseInfo(it) } ?: return null
+    /**
+     * 失敗(上限・見つからない・通信エラー)なら null。
+     * [folder] を渡すと、そのディレクトリの README を使う。ディレクトリに README が無ければ null
+     * (リポジトリの README は、そのディレクトリの説明にならないため)。
+     */
+    fun fetch(repo: GitHubRepoRef, folder: GitHubFolderRef? = null): Content? {
+        val repoPath = "repos/${repo.owner}/${repo.repo}"
+        val folderReadme = folder?.let { get("$repoPath/readme/${it.path}", ACCEPT_RAW, ref = it.ref) ?: return null }
+        val info = get(repoPath, ACCEPT_JSON)?.let { GitHubRepoText.parseInfo(it) } ?: return null
+        if (folder != null) {
+            return Content(
+                title = GitHubRepoText.title(info, folder.path),
+                text = GitHubRepoText.build(info, folderReadme, folder = folder.path)
+            )
+        }
         // README が無いリポジトリもある(404)。情報だけで本文を作る
-        val readme = get("repos/${repo.owner}/${repo.repo}/readme", ACCEPT_RAW)
+        val readme = get("$repoPath/readme", ACCEPT_RAW)
         return Content(title = GitHubRepoText.title(info), text = GitHubRepoText.build(info, readme))
     }
 
-    private fun get(path: String, accept: String): String? {
-        var url = apiBase.newBuilder().addEncodedPathSegments(path).build()
+    private fun get(path: String, accept: String, ref: String? = null): String? {
+        var url = apiBase.newBuilder().addEncodedPathSegments(path).apply { ref?.let { addQueryParameter("ref", it) } }.build()
         repeat(MAX_REDIRECTS + 1) {
             val request = Request.Builder()
                 .url(url)

@@ -145,6 +145,31 @@ class GitHubRepoFetcherTest {
     }
 
     @Test
+    fun ディレクトリのページはそのディレクトリのREADMEを使う() {
+        server.enqueue(MockResponse.Builder().addHeader("Content-Type", "text/plain").body("# アプリの本体").build())
+        server.enqueue(json(infoJson))
+
+        val result = urlFetcher().withGitHubRepo("https://github.com/unchunks/EchoMark/tree/main/app/src", page)
+
+        assertEquals("unchunks/EchoMark/app/src", result.title)
+        assertTrue(result.text, result.text.startsWith("リポジトリ: unchunks/EchoMark\nディレクトリ: app/src\n"))
+        assertTrue(result.text, result.text.endsWith("README:\n# アプリの本体"))
+        val readme = server.takeRequest()
+        assertEquals("/repos/unchunks/EchoMark/readme/app/src", readme.url.encodedPath)
+        assertEquals("main", readme.url.queryParameter("ref"))
+    }
+
+    @Test
+    fun READMEの無いディレクトリはリポジトリのREADMEに置き換えずページのままにする() {
+        server.enqueue(json("""{"message":"Not Found"}""", code = 404))
+
+        val result = urlFetcher().withGitHubRepo("https://github.com/unchunks/EchoMark/tree/main/app/src", page)
+
+        assertEquals(page, result)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
     fun リポジトリではないURLには何もしない() {
         assertEquals(page, urlFetcher().withGitHubRepo("https://github.com/unchunks/EchoMark/issues/1", page))
         assertEquals(page, urlFetcher().withGitHubRepo("https://example.com/", page))
