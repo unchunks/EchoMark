@@ -120,6 +120,20 @@ object AiPrompts {
         }.joinToString("\n")
     }
 
+    /**
+     * 出力の形が正しくなかった(JSON でない・項目が無い・要約が空など)ときに、作り直させる指示
+     * ([StructuredOutput.generateWithRepair])。端末内 AI では元の指示の後ろに、クラウド API では次の発言として付ける。
+     * @param problem 正しくなかった理由([StructuredOutput.problemOf])
+     */
+    fun repairInstructions(problem: String, scope: AnalysisScope): String = listOf(
+        "直前の出力は形式が正しくありませんでした($problem)。",
+        "説明やコードブロックを付けず、次の形の JSON だけを出力し直してください。",
+        "{" + listOfNotNull(
+            """"summary": "要約"""".takeIf { scope != AnalysisScope.TAGS },
+            """"tags": ["語", "語"], "category": "分類"""".takeIf { scope != AnalysisScope.SUMMARY }
+        ).joinToString(", ") + "}"
+    ).joinToString("\n")
+
     /** 種類ごとの要約の主役([compactAnalyzeInstructions] 用の短い言い方)。 */
     private fun compactGuidance(kind: ContentKind): String = when (kind) {
         ContentKind.WEB_PAGE -> "記事の主張と要点をまとめる"

@@ -9,6 +9,7 @@ import com.unchunks.components.llm.PreparedBody
 import com.unchunks.components.llm.cloud.ApiAttachment
 import com.unchunks.components.llm.cloud.ApiCredentials
 import com.unchunks.components.llm.cloud.ApiInputBudget
+import com.unchunks.components.llm.cloud.ApiJsonSchema
 import com.unchunks.components.llm.cloud.ApiLlmClient
 import com.unchunks.components.llm.cloud.ApiMessage
 import com.unchunks.components.llm.cloud.ApiPurpose
@@ -20,6 +21,8 @@ import com.unchunks.components.llm.cloud.GeminiApiClient
 import com.unchunks.components.llm.cloud.OpenAiApiClient
 import com.unchunks.components.llm.cloud.completeJson
 import com.unchunks.echomark.data.ai.AiPrompts
+import com.unchunks.echomark.data.ai.AnalysisSchema
+import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.data.ai.local.AnalysisParser
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -36,6 +39,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -144,9 +148,11 @@ class ApiLlmProvider @Inject constructor(
                 val request = ApiRequest(
                     purpose = ApiPurpose.ANALYZE,
                     system = AiPrompts.partInstructions(input.kind, config.noteMaxChars),
-                    messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.partInput(input.title, part)))
+                    messages = listOf(ApiMessage(ChatRole.USER, AiPrompts.partInput(input.title, part))),
+                    jsonSchema = ApiJsonSchema(AnalysisSchema.NOTES_NAME, AnalysisSchema.notes())
                 )
-                AnalysisParser.parseNotes(client.completeJson(request, credentials))
+                // メモは壊れていても緩く読めるため、作り直させない(部分ごとに呼び出しが増えるため)
+                AnalysisParser.parseNotes(completeJson(client, request, credentials))
             }
         }
         val isLong = fileIsPrimary || body is PreparedBody.Digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
@@ -169,10 +175,51 @@ class ApiLlmProvider @Inject constructor(
                     ),
                     attachments = listOfNotNull(attachment)
                 )
-            )
+            ),
+            jsonSchema = ApiJsonSchema(AnalysisSchema.ANALYSIS_NAME, AnalysisSchema.analysis(scope))
         )
-        return AnalysisParser.parse(client.completeJson(request, credentials), input.combinedText())
+        val response = StructuredOutput.generateWithRepair(
+            maxRepairs = MAX_REPAIRS,
+            label = "${client.provider} ${credentials.model}",
+            validate = { StructuredOutput.problemOf(it, scope) }
+        ) { problem, previous ->
+            // 作り直しは、前の出力と直す指示を会話の続きとして渡す(元の指示・本文・添付はそのまま)
+            val repair = if (problem == null || previous == null) {
+                request
+            } else {
+                request.copy(
+                    messages = request.messages +
+                        ApiMessage(ChatRole.ASSISTANT, previous) +
+                        ApiMessage(ChatRole.USER, AiPrompts.repairInstructions(problem, scope))
+                )
+            }
+            completeJson(client, repair, credentials)
+        }
+        return AnalysisParser.parse(response, input.combinedText())
     }
+
+    /**
+     * スキーマで縛った JSON を返させる([completeJson])。スキーマを付けたリクエストが拒否されたら(HTTP 400 など。
+     * モデルが構造化出力に対応していない・スキーマの書き方を受け付けない)、スキーマを外してやり直し、成功したらその提供元とモデルでは
+     * 以後スキーマを付けない。外しても拒否されるなら(本文が長すぎるなど、スキーマのせいではない)その失敗をそのまま投げる。
+     */
+    private suspend fun completeJson(client: ApiLlmClient, request: ApiRequest, credentials: ApiCredentials): String {
+        val key = "${client.provider}:${credentials.model}"
+        if (request.jsonSchema == null || key in schemaRejected) {
+            return client.completeJson(request.copy(jsonSchema = null), credentials)
+        }
+        return try {
+            client.completeJson(request, credentials)
+        } catch (e: LlmException.BadRequest) {
+            val result = client.completeJson(request.copy(jsonSchema = null), credentials)
+            Timber.w(e, "構造化出力を受け付けないため、以後スキーマを付けない: %s", key)
+            schemaRejected += key
+            result
+        }
+    }
+
+    /** 構造化出力のスキーマを拒否した「提供元:モデル」(アプリを起動し直すまで覚える) */
+    private val schemaRejected: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /**
      * 元のファイルを提供元にそのまま渡せるなら読み込む。設定でオフ・提供元が受け付けない種類・大きすぎる・読めないなら null
@@ -238,6 +285,9 @@ class ApiLlmProvider @Inject constructor(
          * ファイルを渡さないときの本文の上限は、モデルごとの [ApiInputBudget]。
          */
         const val MAX_TEXT_WITH_FILE_CHARS = 4_000
+
+        /** 要約の出力の形が正しくなかったときに作り直させる回数の上限(1回の解析で呼び出しは最大 1 + この回数) */
+        const val MAX_REPAIRS = 2
 
         const val MAX_CONTEXT_ITEMS = 5
         const val MAX_HISTORY_ITEMS = 6

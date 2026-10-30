@@ -18,6 +18,8 @@ import com.unchunks.components.llm.ondevice.isInputTooLong
 import com.unchunks.components.llm.ondevice.shouldReleaseEngineOnTrim
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrompts
+import com.unchunks.echomark.data.ai.AnalysisSchema
+import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.model.AnalysisInput
@@ -331,18 +333,21 @@ class LocalLlmProvider @Inject constructor(
      * 所要時間・最初の出力までの時間・出力の速さは `AiPerf` のログに出す。
      * @param label ログ用の名前(部分要約 `part 2/4`、最終 `final`)
      * @param timeoutMillis 使っている演算装置ごとの時間の上限(装置はエンジンの読み込み後に決まる)
+     * @param responseSchema 出力を従わせる JSON スキーマ(LiteRT-LM の制約付きの生成)。null なら縛らない
      * @throws LlmException.Timeout 時間内に生成が終わらなかった、または出力が上限を超えたとき
      */
     private suspend fun generateAnalysis(
         prompt: String,
         label: String,
         maxOutputChars: Int = ANALYZE_MAX_OUTPUT_CHARS,
-        timeoutMillis: (EngineBackend) -> Long = { ANALYZE_TIMEOUT_MS }
+        timeoutMillis: (EngineBackend) -> Long = { ANALYZE_TIMEOUT_MS },
+        responseSchema: String? = null
     ): String {
         // 画面で待っている生成(チャットなど)があれば、それが終わるまで始めない。生成中に割り込まれたら、終わるのを待ってやり直す
         while (true) {
             interactiveCount.first { it == 0 }
-            generateAnalysisOnce(prompt, label, maxOutputChars, timeoutMillis, preemptible = true)?.let { return it }
+            generateAnalysisOnce(prompt, label, maxOutputChars, timeoutMillis, preemptible = true, responseSchema)
+                ?.let { return it }
             Timber.i("画面での生成を先にするため、解析の生成を中断した。後でやり直す: %s", label)
         }
     }
@@ -350,95 +355,131 @@ class LocalLlmProvider @Inject constructor(
     /**
      * [generateAnalysis] の1回分。[preemptible] なら、画面での生成([asInteractive])が始まったときに中断して null を返す
      * (始める前に画面での生成が待っていれば、何もせずに null を返す)。
+     * [responseSchema] を付けた生成が失敗したら(モデルのトークナイザーなどで制約付きの生成が動かない)、スキーマを外してやり直し、
+     * そのモデルでは以後スキーマを付けない。時間切れ・キャンセル・入力が長すぎる失敗は、スキーマのせいではないためそのまま投げる。
      */
     private suspend fun generateAnalysisOnce(
         prompt: String,
         label: String,
         maxOutputChars: Int,
         timeoutMillis: (EngineBackend) -> Long,
-        preemptible: Boolean
+        preemptible: Boolean,
+        responseSchema: String? = null
     ): String? {
         val bookmarkId = AiPerfLog.currentBookmarkId()
         return withContext(dispatcherProvider.default) {
             withEngine { loaded ->
                 if (preemptible && interactiveCount.value > 0) return@withEngine null
-                val timeoutMs = timeoutMillis(loaded.backend)
-                // 画面での生成に割り込まれたか(中断の後は時間切れ・出力の上限の扱いをせず、やり直させる)
-                val preempted = AtomicBoolean(false)
-                // 出力と JSON の検出はエンジンのスレッドで更新し、生成が終わってから読む
-                val output = StringBuilder()
-                val jsonEnd = JsonObjectEndDetector()
-                var runaway = false
-                var firstOutputNanos = 0L
-                // 生成の終わり(失敗・中断を含む)。失敗ならその例外
-                val finished = CompletableDeferred<Throwable?>()
-                // 生成の終わりか、JSON が閉じた・出力が上限を超えたときに完了する
-                val stop = CompletableDeferred<Unit>()
-                val startNanos = System.nanoTime()
-                val generation = loaded.engine.start(
-                    prompt,
-                    GenerationKind.JSON,
-                    onPartial = { partial ->
-                        val done = synchronized(output) {
-                            if (firstOutputNanos == 0L) firstOutputNanos = System.nanoTime()
-                            // 閉じた後・上限を超えた後の出力は捨てる(中断が効くまでに届いた分)
-                            if (jsonEnd.endIndex >= 0 || runaway) {
-                                true
-                            } else {
-                                output.append(partial)
-                                val closed = jsonEnd.feed(partial)
-                                if (!closed && output.length > maxOutputChars) runaway = true
-                                closed || runaway
-                            }
-                        }
-                        if (done) stop.complete(Unit)
-                    },
-                    onDone = { error ->
-                        finished.complete(error)
-                        stop.complete(Unit)
-                    }
-                )
-                if (preemptible) {
-                    preemptBackground = {
-                        preempted.set(true)
-                        generation.cancel()
-                    }
-                    // 中断の処理を置く前に画面での生成が始まっていたら、ここで中断する
-                    if (interactiveCount.value > 0) preemptBackground?.invoke()
+                val schema = responseSchema?.takeIf { loaded.modelKey !in schemaUnsupportedModels }
+                try {
+                    runAnalysisGeneration(loaded, prompt, label, maxOutputChars, timeoutMillis, preemptible, bookmarkId, schema)
+                } catch (e: Exception) {
+                    if (schema == null || e is CancellationException || e is LlmException.Timeout || isInputTooLong(e)) throw e
+                    Timber.w(e, "スキーマ付きの生成に失敗したため、このモデルでは以後スキーマを付けない: %s", loaded.model.displayName)
+                    schemaUnsupportedModels += loaded.modelKey
+                    if (preemptible && interactiveCount.value > 0) return@withEngine null
+                    runAnalysisGeneration(loaded, prompt, label, maxOutputChars, timeoutMillis, preemptible, bookmarkId, null)
                 }
-                val timedOut = try {
-                    withTimeoutOrNull(timeoutMs) { stop.await() } == null
-                } finally {
-                    if (preemptible) preemptBackground = null
-                    // 時間切れ・JSON の完成・キャンセルで止める場合は生成を中断し、終わるのを待つ
-                    if (!finished.isCompleted) generation.cancel()
-                    withContext(NonCancellable) { awaitFinished(finished) }
-                    generation.close()
-                }
-                val endNanos = System.nanoTime()
-                if (preempted.get()) return@withEngine null
-                // 生成を止めた後は、エンジンのスレッドからの更新は無いため、まとめて読む
-                val stats = synchronized(output) {
-                    GenerationStats(
-                        outChars = jsonEnd.endIndex.takeIf { it >= 0 } ?: output.length,
-                        runaway = runaway,
-                        firstOutputNanos = firstOutputNanos
-                    )
-                }
-                logGeneration(label, loaded.backend, prompt.length, stats, startNanos, endNanos, bookmarkId, timedOut)
-                if (timedOut) throw LlmException.Timeout(timeoutMs)
-                if (stats.runaway) throw LlmException.Timeout((endNanos - startNanos) / NANOS_PER_MILLI)
-                // JSON が閉じた時点で打ち切った場合は、そこまでの出力を使う(中断による失敗は無視する)
-                synchronized(output) { jsonEnd.endIndex.takeIf { it >= 0 }?.let { output.substring(0, it) } }
-                    ?: when (val error = if (finished.isCompleted) finished.await() else null) {
-                        null -> synchronized(output) { output.toString() }
-                        // こちらから止めていないのに生成が取り消された。コルーチンのキャンセルと区別するため別の例外にする
-                        is java.util.concurrent.CancellationException -> throw IllegalStateException("端末内 AI の生成が中断されました", error)
-                        else -> throw error
-                    }
             }
         }
     }
+
+    /**
+     * [generateAnalysisOnce] の、エンジンを持った状態での1回の生成。必ず [inferenceMutex] を持った状態で呼ぶ。
+     * 画面での生成に割り込まれたら null。
+     */
+    private suspend fun runAnalysisGeneration(
+        loaded: LoadedEngine,
+        prompt: String,
+        label: String,
+        maxOutputChars: Int,
+        timeoutMillis: (EngineBackend) -> Long,
+        preemptible: Boolean,
+        bookmarkId: Long?,
+        schema: String?
+    ): String? {
+        val timeoutMs = timeoutMillis(loaded.backend)
+        // 画面での生成に割り込まれたか(中断の後は時間切れ・出力の上限の扱いをせず、やり直させる)
+        val preempted = AtomicBoolean(false)
+        // 出力と JSON の検出はエンジンのスレッドで更新し、生成が終わってから読む
+        val output = StringBuilder()
+        val jsonEnd = JsonObjectEndDetector()
+        var runaway = false
+        var firstOutputNanos = 0L
+        // 生成の終わり(失敗・中断を含む)。失敗ならその例外
+        val finished = CompletableDeferred<Throwable?>()
+        // 生成の終わりか、JSON が閉じた・出力が上限を超えたときに完了する
+        val stop = CompletableDeferred<Unit>()
+        val startNanos = System.nanoTime()
+        val onPartial: (String) -> Unit = { partial ->
+            val done = synchronized(output) {
+                if (firstOutputNanos == 0L) firstOutputNanos = System.nanoTime()
+                // 閉じた後・上限を超えた後の出力は捨てる(中断が効くまでに届いた分)
+                if (jsonEnd.endIndex >= 0 || runaway) {
+                    true
+                } else {
+                    output.append(partial)
+                    val closed = jsonEnd.feed(partial)
+                    if (!closed && output.length > maxOutputChars) runaway = true
+                    closed || runaway
+                }
+            }
+            if (done) stop.complete(Unit)
+        }
+        val onDone: (Throwable?) -> Unit = { error ->
+            finished.complete(error)
+            stop.complete(Unit)
+        }
+        val generation = if (schema != null) {
+            loaded.engine.start(prompt, GenerationKind.JSON, schema, onPartial, onDone)
+        } else {
+            loaded.engine.start(prompt, GenerationKind.JSON, onPartial, onDone)
+        }
+        if (preemptible) {
+            preemptBackground = {
+                preempted.set(true)
+                generation.cancel()
+            }
+            // 中断の処理を置く前に画面での生成が始まっていたら、ここで中断する
+            if (interactiveCount.value > 0) preemptBackground?.invoke()
+        }
+        val timedOut = try {
+            withTimeoutOrNull(timeoutMs) { stop.await() } == null
+        } finally {
+            if (preemptible) preemptBackground = null
+            // 時間切れ・JSON の完成・キャンセルで止める場合は生成を中断し、終わるのを待つ
+            if (!finished.isCompleted) generation.cancel()
+            withContext(NonCancellable) { awaitFinished(finished) }
+            generation.close()
+        }
+        val endNanos = System.nanoTime()
+        if (preempted.get()) return null
+        // 生成を止めた後は、エンジンのスレッドからの更新は無いため、まとめて読む
+        val stats = synchronized(output) {
+            GenerationStats(
+                outChars = jsonEnd.endIndex.takeIf { it >= 0 } ?: output.length,
+                runaway = runaway,
+                firstOutputNanos = firstOutputNanos
+            )
+        }
+        logGeneration(
+            if (schema != null) "$label schema" else label,
+            loaded.backend, prompt.length, stats, startNanos, endNanos, bookmarkId, timedOut
+        )
+        if (timedOut) throw LlmException.Timeout(timeoutMs)
+        if (stats.runaway) throw LlmException.Timeout((endNanos - startNanos) / NANOS_PER_MILLI)
+        // JSON が閉じた時点で打ち切った場合は、そこまでの出力を使う(中断による失敗は無視する)
+        return synchronized(output) { jsonEnd.endIndex.takeIf { it >= 0 }?.let { output.substring(0, it) } }
+            ?: when (val error = if (finished.isCompleted) finished.await() else null) {
+                null -> synchronized(output) { output.toString() }
+                // こちらから止めていないのに生成が取り消された。コルーチンのキャンセルと区別するため別の例外にする
+                is java.util.concurrent.CancellationException -> throw IllegalStateException("端末内 AI の生成が中断されました", error)
+                else -> throw error
+            }
+    }
+
+    /** 制約付きの生成(スキーマ)が動かなかったモデル([LoadedEngine.modelKey])。アプリを起動し直すまで覚える */
+    private val schemaUnsupportedModels: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * 中断を頼んだ生成が終わるのを待つ。終わる前に次の生成を始めると、2つの生成が同時に動いてメモリを2倍使い
@@ -493,14 +534,32 @@ class LocalLlmProvider @Inject constructor(
                 "",
                 AiPrompts.partInput(input.title, part)
             ).joinToString("\n")
+            // メモは壊れていても緩く読めるため、作り直させない(部分ごとに数分かかるため)
             val response = generateAnalysis(
-                prompt, "part ${part.number}/${part.total}", PART_MAX_OUTPUT_CHARS, ::partTimeoutMillis
+                prompt, "part ${part.number}/${part.total}", PART_MAX_OUTPUT_CHARS, ::partTimeoutMillis,
+                responseSchema = AnalysisSchema.notes(maxChars = LONG_TEXT.noteMaxChars * SCHEMA_LENGTH_FACTOR)
             )
             AnalysisParser.parseNotes(response)
         }
         val digest = body is PreparedBody.Digest
         val isLong = digest || input.text.length > AiPrompts.LONG_TEXT_CHARS
-        val response = generateAnalysis(buildAnalyzePrompt(input, body.text, isLong, digest, existingTags, scope), "final")
+        val prompt = buildAnalyzePrompt(input, body.text, isLong, digest, existingTags, scope)
+        val schema = AnalysisSchema.analysis(
+            scope,
+            AnalysisSchema.Limits(summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, isLong) * SCHEMA_LENGTH_FACTOR)
+        )
+        // 形の崩れた出力(要約が空など)は、直す指示を付けて作り直させる(端末内は1回に数分かかるため、作り直しは少なく)
+        val response = StructuredOutput.generateWithRepair(
+            maxRepairs = MAX_REPAIRS,
+            label = "端末内 AI",
+            validate = { StructuredOutput.problemOf(it, scope) }
+        ) { problem, _ ->
+            if (problem == null) {
+                generateAnalysis(prompt, "final", responseSchema = schema)
+            } else {
+                generateAnalysis(prompt + "\n\n" + AiPrompts.repairInstructions(problem, scope), "final repair", responseSchema = schema)
+            }
+        }
         // 小さいモデルは指示の例やカテゴリの候補の語をタグに写すため、保存内容に出てくるタグだけを残す
         return AnalysisParser.keepMentionedTags(AnalysisParser.parse(response, input.combinedText()), input.combinedText())
     }
@@ -628,6 +687,15 @@ class LocalLlmProvider @Inject constructor(
         private const val MAX_INPUT_CHARS = 2000
 
         private const val NANOS_PER_MILLI = 1_000_000L
+
+        /** 解析の出力の形が正しくなかったときに作り直させる回数の上限(端末内は1回の生成に数分かかるため1回) */
+        private const val MAX_REPAIRS = 1
+
+        /**
+         * 制約付きの生成で、文字列の長さの上限を指示の文字数の何倍にするか。普通の出力は切らず、
+         * 繰り返しに陥って伸び続ける出力だけを、その長さで閉じさせる
+         */
+        private const val SCHEMA_LENGTH_FACTOR = 3
 
         /**
          * モデルの書式の代わりに使う会話の書式。旧形式の .task の Gemma だけ Gemma の書式を明示し、

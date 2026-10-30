@@ -39,7 +39,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
-import java.util.concurrent.atomic.AtomicInteger
 
 class ApiLlmProviderTest {
 
@@ -231,13 +230,12 @@ class ApiLlmProviderTest {
 
     @Test
     fun 一回で渡した本文が文脈長を超えて拒否されたら従来の単位で分けて要約し直す() = runBlocking {
-        val calls = AtomicInteger()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val body = JSONObject(request.body!!.utf8())
                 return when {
-                    // 最初の1回(本文全体)は文脈長超過
-                    calls.incrementAndGet() == 1 -> MockResponse.Builder().code(400)
+                    // 本文全体は(スキーマの有無に関係なく)文脈長超過
+                    body.userText().length > 50_000 -> MockResponse.Builder().code(400)
                         .body("""{"error":{"message":"input token count exceeds the maximum"}}""").build()
                     body.systemText().contains("全体の一部") -> geminiSse("""{"notes":"要点"}""")
                     else -> geminiSse("""{"summary":"分けて要約","tags":[],"category":"ニュース"}""")
@@ -250,8 +248,77 @@ class ApiLlmProviderTest {
             .analyze(AnalysisInput(title = "", text = text, kind = ContentKind.WEB_PAGE), emptyList())
 
         assertEquals("分けて要約", analysis.summary)
-        // 本文全体 1 回(拒否) + 3 部分 + まとめ 1 回
-        assertEquals(5, server.requestCount)
+        // 本文全体 2 回(スキーマ付きで拒否 → スキーマを外しても拒否) + 3 部分 + まとめ 1 回
+        assertEquals(6, server.requestCount)
+        // スキーマのせいではなかったため、分けた後の呼び出しにもスキーマを付ける
+        val bodies = takeRequestBodies(6)
+        assertTrue(bodies.last().getJSONObject("generationConfig").has("responseJsonSchema"))
+    }
+
+    @Test
+    fun 要約はJSONスキーマで出力を縛る() = runBlocking {
+        server.enqueue(geminiSse("""{"tags":["Kotlin"],"category":"技術"}"""))
+
+        provider(geminiKeys, AiTask.TAGGING)
+            .analyze(AnalysisInput(title = "", text = "Kotlin の本文", kind = ContentKind.WEB_PAGE), emptyList(), AnalysisScope.TAGS)
+
+        val schema = JSONObject(server.takeRequest().body!!.utf8())
+            .getJSONObject("generationConfig").getJSONObject("responseJsonSchema")
+        assertEquals(setOf("tags", "category"), schema.getJSONObject("properties").keys().asSequence().toSet())
+        assertFalse(schema.getBoolean("additionalProperties"))
+    }
+
+    @Test
+    fun 形の崩れた出力は直す指示を付けて作り直させる() = runBlocking {
+        server.enqueue(geminiSse("""{"summary":"","tags":["a"],"category":"技術"}"""))
+        server.enqueue(geminiSse("""{"summary":"直した要約","tags":["a"],"category":"技術"}"""))
+
+        val analysis = provider(geminiKeys)
+            .analyze(AnalysisInput(title = "", text = "本文 a", kind = ContentKind.WEB_PAGE), emptyList())
+
+        assertEquals("直した要約", analysis.summary)
+        val (first, repair) = takeRequestBodies(2)
+        assertEquals(1, first.getJSONArray("contents").length())
+        // 2回目は、前の出力(model)と直す指示(user)を会話の続きとして渡す
+        val contents = repair.getJSONArray("contents")
+        assertEquals(3, contents.length())
+        assertEquals("model", contents.getJSONObject(1).getString("role"))
+        val instruction = contents.getJSONObject(2).getJSONArray("parts").getJSONObject(0).getString("text")
+        assertTrue(instruction, instruction.contains("summary が空です"))
+    }
+
+    @Test
+    fun 作り直しても直らなければ回数の上限で止めて緩く解析する() = runBlocking {
+        repeat(3) { server.enqueue(geminiSse("要約はできませんでした")) }
+
+        val analysis = provider(geminiKeys)
+            .analyze(AnalysisInput(title = "", text = "本文の先頭", kind = ContentKind.WEB_PAGE), emptyList())
+
+        // 最初の 1 回 + 作り直し 2 回で止め、本文の先頭を要約の代わりにする
+        assertEquals(3, server.requestCount)
+        assertEquals("本文の先頭", analysis.summary)
+    }
+
+    @Test
+    fun スキーマを付けたリクエストが拒否されたら外してやり直し以後は付けない() = runBlocking {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val body = JSONObject(request.body!!.utf8())
+                return if (body.getJSONObject("generationConfig").has("responseJsonSchema")) {
+                    MockResponse.Builder().code(400).body("""{"error":{"message":"Invalid JSON schema"}}""").build()
+                } else {
+                    geminiSse("""{"summary":"要約","tags":[],"category":"技術"}""")
+                }
+            }
+        }
+        val provider = provider(geminiKeys)
+        val input = AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE)
+
+        assertEquals("要約", provider.analyze(input, emptyList()).summary)
+        assertEquals("要約", provider.analyze(input, emptyList()).summary)
+
+        // 1回目はスキーマ付き(拒否)とスキーマ無し、2回目は最初からスキーマ無し
+        assertEquals(3, server.requestCount)
     }
 
     @Test
@@ -382,7 +449,7 @@ class ApiLlmProviderTest {
     @Test
     fun 提供元が受け付けない種類のファイルは読み込まない() = runBlocking {
         settings.setApiProvider(AiTask.SUMMARY, ApiProvider.CLAUDE)
-        server.enqueue(claudeSse("""{"summary":"s"}"""))
+        server.enqueue(claudeSse("""{"summary":"s","tags":[],"category":"音声"}"""))
         val audio = AnalysisAttachment(path = "/data/files/voice.m4a", mimeType = "audio/mp4", sizeBytes = 1_000_000)
 
         provider(FakeApiKeyRepository(mapOf(ApiProvider.CLAUDE to "sk-ant-test-key")))

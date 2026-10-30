@@ -8,13 +8,17 @@ import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ResponseFormat
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ThinkingConfig
 import com.unchunks.components.llm.ondevice.LiteRtLmTextEngine
 import com.unchunks.echomark.data.ai.AiPrompts
+import com.unchunks.echomark.data.ai.AnalysisSchema
+import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.data.ai.local.AnalysisParser
 import com.unchunks.echomark.data.ai.local.LocalChatPrompt
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.model.AnalysisScope
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -238,28 +242,49 @@ class LocalChatEvalInstrumentedTest {
             )
         ).use { engine ->
             engine.initialize()
+            // 引数 schema: off(縛らない)・on(アプリと同じ JSON スキーマで制約付きの生成)・both(両方を比べる。既定)
+            val schemaModes = when (args.getString("schema")) {
+                "off" -> listOf(false)
+                "on" -> listOf(true)
+                else -> listOf(false, true)
+            }
             for (input in inputs) {
-                for (variant in variants) {
+                for (variant in variants) for (withSchema in schemaModes) {
                     val prompt = analysisPrompt(variant, input)
                     val start = SystemClock.elapsedRealtime()
                     val output = StringBuilder()
-                    engine.createConversation(
-                        ConversationConfig(
-                            samplerConfig = SamplerConfig(topK = 20, topP = 0.8, temperature = 0.2),
-                            thinkingConfig = ThinkingConfig(enableThinking = false)
+                    val responseFormat = if (withSchema) {
+                        ResponseFormat.json(
+                            AnalysisSchema.analysis(
+                                AnalysisScope.ALL,
+                                AnalysisSchema.Limits(summaryMaxChars = AiPrompts.summaryMaxChars(input.kind, false) * 3)
+                            )
                         )
-                    ).use { conversation ->
-                        runBlocking {
-                            conversation.sendMessageAsync(prompt)
-                                .takeWhile { output.length <= MAX_OUTPUT_CHARS && !output.contains('}') }
-                                .collect { output.append(it.toString()) }
+                    } else {
+                        null
+                    }
+                    val result = runCatching {
+                        engine.createConversation(
+                            ConversationConfig(
+                                samplerConfig = SamplerConfig(topK = 20, topP = 0.8, temperature = 0.2),
+                                thinkingConfig = ThinkingConfig(enableThinking = false),
+                                enableResponseFormat = withSchema
+                            )
+                        ).use { conversation ->
+                            runBlocking {
+                                conversation.sendMessageAsync(prompt, responseFormat = responseFormat)
+                                    .takeWhile { output.length <= MAX_OUTPUT_CHARS && !output.contains('}') }
+                                    .collect { output.append(it.toString()) }
+                            }
                         }
                     }
                     val source = input.title + "\n" + input.body
                     val parsed = AnalysisParser.keepMentionedTags(AnalysisParser.parse(output.toString(), source), source)
-                    val report = "=== analysis $variant / ${input.name} " +
-                        "(prompt=${prompt.length}ch total=${SystemClock.elapsedRealtime() - start} ms)\n" +
-                        "$output\n-> tags=${parsed.tags} category=${parsed.category}\n"
+                    val report = "=== analysis $variant schema=$withSchema / ${input.name} " +
+                        "(prompt=${prompt.length}ch total=${SystemClock.elapsedRealtime() - start} ms" +
+                        (result.exceptionOrNull()?.let { ", 失敗: ${it.javaClass.simpleName}: ${it.message?.take(200)}" } ?: "") +
+                        ")\n$output\n-> problem=${StructuredOutput.problemOf(output.toString(), AnalysisScope.ALL)} " +
+                        "tags=${parsed.tags} category=${parsed.category}\n"
                     Log.i(TAG, report)
                     // Logcat の領域があふれて前の結果が消えることがあるため、アプリのキャッシュにも書く(run-as で読む)
                     File(context.cacheDir, "analysis_eval.txt").appendText(report)
