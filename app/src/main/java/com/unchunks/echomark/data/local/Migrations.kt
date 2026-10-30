@@ -159,6 +159,26 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
 }
 
 /**
+ * v16 → v17: タグの別名(tag_aliases、#26)と、ユーザーが外したタグの記録(removed_tags、#31)を追加する。
+ * どちらも空で始める(既存のタグ・ブックマークの行は変わらない)。
+ */
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // スキーマ JSON(17.json)の createSql と同じ
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `tag_aliases` (`aliasKey` TEXT NOT NULL, `alias` TEXT NOT NULL, `tagId` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`aliasKey`), FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_tag_aliases_tagId` ON `tag_aliases` (`tagId`)")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `removed_tags` (`bookmarkId` INTEGER NOT NULL, `tagKey` TEXT NOT NULL, `tagName` TEXT NOT NULL, " +
+                "`removedAt` INTEGER NOT NULL, PRIMARY KEY(`bookmarkId`, `tagKey`), " +
+                "FOREIGN KEY(`bookmarkId`) REFERENCES `bookmarks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
@@ -166,7 +186,7 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
 val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16
+        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

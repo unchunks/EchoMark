@@ -480,4 +480,43 @@ class MigrationTest {
         assertTrue(parentAfter)
         connection.close()
     }
+
+
+    @Test
+    fun migrate16To17_addsEmptyAliasAndRemovedTagTablesAndKeepsRows() {
+        helper.createDatabase(16).apply {
+            execSQL("INSERT INTO tags (id, name, isUserCreated) VALUES (1, 'kotlin', 1)")
+            insertV16Bookmark()
+            close()
+        }
+
+        // スキーマ v17 と一致するか(テーブル・列・外部キー・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(17, listOf(MIGRATION_16_17))
+
+        fun count(table: String) = connection.prepare("SELECT COUNT(*) FROM $table").use { stmt ->
+            stmt.step()
+            stmt.getLong(0)
+        }
+        assertEquals(0L, count("tag_aliases"))
+        assertEquals(0L, count("removed_tags"))
+        assertEquals(1L, count("tags"))
+        assertEquals(1L, count("bookmarks"))
+
+        // 別名はタグを、外したタグの記録はブックマークを消すと一緒に消える(外部キーの連鎖)
+        connection.execSQL("PRAGMA foreign_keys = ON")
+        connection.execSQL("INSERT INTO tag_aliases (aliasKey, alias, tagId) VALUES ('ねこ', 'ネコ', 1)")
+        connection.execSQL("INSERT INTO removed_tags (bookmarkId, tagKey, tagName, removedAt) VALUES (1, 'kotlin', 'kotlin', 5)")
+        connection.execSQL("DELETE FROM tags WHERE id = 1")
+        connection.execSQL("DELETE FROM bookmarks WHERE id = 1")
+        assertEquals(0L, count("tag_aliases"))
+        assertEquals(0L, count("removed_tags"))
+        connection.close()
+    }
+
+    private fun SQLiteConnection.insertV16Bookmark() {
+        execSQL(
+            "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited) " +
+                "VALUES (1, 'TEXT', 't', 1, 1, 'DONE', 0, 0, 0)"
+        )
+    }
 }

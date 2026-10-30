@@ -60,6 +60,7 @@ class ShareReceiverActivity : ComponentActivity() {
             }
             EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor) {
                 val status by viewModel.status.collectAsState()
+                val suggestedTags by viewModel.suggestedTags.collectAsState()
                 // 保存できたら、シート内で結果を短く見せてから閉じる
                 LaunchedEffect(status) {
                     if (status is ShareSaveStatus.Saved) {
@@ -71,6 +72,8 @@ class ShareReceiverActivity : ComponentActivity() {
                 QuickSaveSheet(
                     shared = shared,
                     status = status,
+                    suggestedTags = suggestedTags,
+                    onInputChange = { title, memo -> viewModel.updateSuggestions(shared, title, memo) },
                     onSave = { title, memo, tags -> viewModel.save(shared, title, memo, tags) },
                     onDismiss = { finish() }
                 )

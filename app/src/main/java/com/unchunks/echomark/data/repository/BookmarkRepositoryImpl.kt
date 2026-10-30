@@ -4,6 +4,7 @@ import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.search.RankFusion
 import com.unchunks.echomark.data.attachment.AttachmentStore
+import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
@@ -32,7 +33,9 @@ import com.unchunks.echomark.domain.model.SummarySource
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
+import com.unchunks.echomark.domain.model.TagSuggestions
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.BookmarkSearchResult
 import com.unchunks.echomark.domain.repository.SaveResult
@@ -43,6 +46,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.text.Normalizer
 import javax.inject.Inject
@@ -208,6 +212,38 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun getTagNamesForAi(): List<String> =
         withContext(dispatcherProvider.io) {
             tagDao.getTagNamesByPriority(MAX_TAG_NAMES_FOR_AI)
+        }
+
+    override suspend fun suggestTags(text: String, limit: Int): List<String> =
+        withContext(dispatcherProvider.io) {
+            val query = text.trim().take(SUGGEST_TEXT_MAX_CHARS)
+            val existing = tagDao.getTagNamesByPriority(MAX_TAG_NAMES_FOR_AI)
+            if (query.isEmpty()) return@withContext TagSuggestions.rank(emptyList(), emptyList(), existing, limit = limit)
+
+            val aliasTargets = tagDao.getAliasTargets()
+            val haystack = TagNames.key(query)
+            val mentioned = AiPrompts.existingTagsMentionedIn(existing, query) +
+                aliasTargets.filter { it.aliasKey.length >= MIN_ALIAS_CHARS_FOR_SUGGESTION && haystack.contains(it.aliasKey) }
+                    .map { it.tagName }
+
+            // 似たブックマークのタグ。埋め込みの読み込みで待たされないよう、時間を区切る
+            val similar = try {
+                withTimeoutOrNull(SUGGEST_EMBED_TIMEOUT_MILLIS) {
+                    val profile = embeddingProvider.profile
+                    val ids = vectorSearch.nearestNeighbors(embedQueryCached(query), SUGGEST_NEIGHBORS, profile.modelVersion)
+                        .filter { it.score <= profile.maxSearchDistance }
+                        .map { it.bookmarkId }
+                    val byId = bookmarkDao.getByIdsWithTags(ids).associateBy { it.bookmark.id }
+                    ids.mapNotNull { byId[it]?.toDomain()?.tags }
+                }.orEmpty()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "似たブックマークのタグを取れないため、タグの提案はそれなしで出す")
+                emptyList()
+            }
+
+            TagSuggestions.rank(mentioned, similar, existing, limit = limit)
         }
 
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String): Unit =
@@ -437,7 +473,7 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun removeTag(bookmarkId: Long, tagName: String) =
         withContext(dispatcherProvider.io) {
-            tagDao.removeTagFromBookmark(bookmarkId, tagName)
+            tagDao.removeTagFromBookmark(bookmarkId, tagName, System.currentTimeMillis())
         }
 
     override suspend fun markAccessed(id: Long) =
@@ -723,5 +759,17 @@ class BookmarkRepositoryImpl @Inject constructor(
 
         /** ベクトル検索で取得する上位件数 */
         const val VECTOR_TOP_K = 20
+
+        /** タグの提案に使う、保存する内容の長さの上限(埋め込みに渡す量) */
+        const val SUGGEST_TEXT_MAX_CHARS = 1_500
+
+        /** タグの提案で見る、似たブックマークの数 */
+        const val SUGGEST_NEIGHBORS = 8
+
+        /** 似たブックマークを探すのに待つ時間。過ぎたら、それなしで提案する */
+        const val SUGGEST_EMBED_TIMEOUT_MILLIS = 4_000L
+
+        /** 別名が内容に出てくるかを見る、別名の最小の文字数(1文字は偶然含まれやすい) */
+        const val MIN_ALIAS_CHARS_FOR_SUGGESTION = 2
     }
 }

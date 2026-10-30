@@ -6,9 +6,12 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
+import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
+import com.unchunks.echomark.domain.model.TagTree
 import kotlinx.coroutines.flow.Flow
 
 /** タグと、そのタグが付いたブックマークの件数(タグ管理画面用)。 */
@@ -19,6 +22,9 @@ data class TagWithCountRow(
     val isUserCreated: Boolean,
     val parentId: Long?
 )
+
+/** 別名とその行き先のタグ名(AI のタグ名を既存のタグにそろえる用)。 */
+data class AliasTargetRow(val aliasKey: String, val tagName: String)
 
 @Dao
 interface TagDao {
@@ -74,9 +80,52 @@ interface TagDao {
     @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE id = :bookmarkId)")
     suspend fun bookmarkExists(bookmarkId: Long): Boolean
 
-    /** 同名のタグの ID を返す(無ければ作る)。 */
+    /**
+     * 同名のタグの ID を返す(無ければ作る)。新しく作ったタグと同じ名前の別名は消す
+     * (そのタグが別名の行き先になっていて、同じ名前のタグが 2 つあるように扱われないように)。
+     */
     suspend fun getOrCreateTagId(name: String): Long? =
-        insertTag(TagEntity(name = name)).takeIf { it != -1L } ?: getTagByName(name)?.id
+        insertTag(TagEntity(name = name)).takeIf { it != -1L }?.also { deleteAliasByKey(TagNames.key(name)) }
+            ?: getTagByName(name)?.id
+
+    // ---- 別名(統合・名前変更した元の名前) ----
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAlias(alias: TagAliasEntity)
+
+    @Query("DELETE FROM tag_aliases WHERE aliasKey = :aliasKey")
+    suspend fun deleteAliasByKey(aliasKey: String)
+
+    /** [fromTagId] の別名を [toTagId] の別名にする(統合で、元のタグの別名を引き継ぐ)。 */
+    @Query("UPDATE tag_aliases SET tagId = :toTagId WHERE tagId = :fromTagId")
+    suspend fun repointAliases(fromTagId: Long, toTagId: Long)
+
+    @Query("SELECT a.aliasKey AS aliasKey, t.name AS tagName FROM tag_aliases AS a INNER JOIN tags AS t ON t.id = a.tagId")
+    suspend fun getAliasTargets(): List<AliasTargetRow>
+
+    // ---- ユーザーが外したタグの記録 ----
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRemoved(removed: RemovedTagEntity)
+
+    @Query("SELECT tagKey FROM removed_tags WHERE bookmarkId = :bookmarkId")
+    suspend fun getRemovedKeys(bookmarkId: Long): List<String>
+
+    @Query("DELETE FROM removed_tags WHERE bookmarkId = :bookmarkId AND tagKey = :tagKey")
+    suspend fun deleteRemoved(bookmarkId: Long, tagKey: String)
+
+    /** 外したタグの記録のキーを [toKey] に付け替える(統合したタグを、統合先の名前で覚え直す)。既にある記録は残す。 */
+    @Query("UPDATE OR IGNORE removed_tags SET tagKey = :toKey, tagName = :toName WHERE tagKey = :fromKey")
+    suspend fun renameRemoved(fromKey: String, toKey: String, toName: String)
+
+    @Query("DELETE FROM removed_tags WHERE tagKey = :tagKey")
+    suspend fun deleteRemovedByKey(tagKey: String)
+
+    @Query("SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId = :tagId")
+    suspend fun getBookmarkIdsByTag(tagId: Long): List<Long>
+
+    @Query("SELECT tagId FROM bookmark_tag_cross_ref WHERE bookmarkId = :bookmarkId")
+    suspend fun getTagIdsOfBookmark(bookmarkId: Long): List<Long>
 
     /**
      * ブックマークにタグを付ける(無いタグは作る)。ブックマークが無ければ何もせず false を返す。
@@ -85,6 +134,7 @@ interface TagDao {
      *
      * [source] が USER のときは、タグをユーザーのタグにし、AI が先に付けていた紐付けもユーザーのものにする。
      * AI のときは既存の紐付けを変えない(ユーザーが付けたものは USER のまま)。
+     * ユーザーが付けたタグは、外したタグの記録から消す(付け直したので、AI がまた付けてよい)。
      */
     @Transaction
     suspend fun addTagsToBookmark(bookmarkId: Long, tagNames: List<String>, source: TagSource): Boolean {
@@ -95,6 +145,7 @@ interface TagDao {
             if (source == TagSource.USER) {
                 markUserCreated(tagId)
                 promoteCrossRefToUser(bookmarkId, tagId)
+                deleteRemoved(bookmarkId, TagNames.key(name))
             }
         }
         return true
@@ -102,7 +153,10 @@ interface TagDao {
 
     /**
      * AI が付けたタグを [tagNames] で置き換える(前回の AI の結果は外し、ユーザーが付けたタグには触れない)。
-     * タグ名は表記ゆれの範囲で既存のタグにそろえる([TagNames.resolve])。
+     * - タグ名は既存のタグにそろえる([TagNames.resolve]。表記ゆれ・別名)
+     * - このブックマークからユーザーが外したタグは付けない(外したタグの記録)
+     * - 親子のどちらも付くときは、親は付けない(親で絞り込むと子のタグのブックマークも出るため)。
+     *   ユーザーが付けた子のタグがあるときの親も同じ
      * 外したことでどこにも付かなくなった AI のタグは削除する。ブックマークが無ければ何もせず false を返す。
      */
     @Transaction
@@ -110,18 +164,45 @@ interface TagDao {
         if (!bookmarkExists(bookmarkId)) return false
         deleteAiCrossRefs(bookmarkId)
         // 外した直後のタグもまだ残っているため、前回と同じ表記を使い回せる
-        val names = TagNames.resolve(tagNames, existing = getTagNamesByPriority(limit = -1))
+        val aliases = getAliasTargets().associate { it.aliasKey to it.tagName }
+        val resolved = TagNames.resolve(tagNames, existing = getTagNamesByPriority(limit = -1), aliases = aliases)
+        val removedKeys = getRemovedKeys(bookmarkId).toSet()
+        val allowed = resolved.filter { TagNames.key(it) !in removedKeys }
+
+        val tags = getAllTagsOnce()
+        val idByName = tags.associate { it.name to it.id }
+        val present = allowed.mapNotNull { idByName[it] }.toSet() + getTagIdsOfBookmark(bookmarkId)
+        val redundant = TagTree.redundantAncestors(tags.associate { it.id to it.parentId }, present)
+        val names = allowed.filter { idByName[it] !in redundant }
+
         addTagsToBookmark(bookmarkId, names, TagSource.AI)
         deleteOrphanAiTags()
         return true
     }
 
-    /** ブックマークからタグを外す。AI だけが付けていたタグで、どこにも付かなくなったら削除する。 */
+    /**
+     * ブックマークからタグを外す。AI だけが付けていたタグで、どこにも付かなくなったら削除する。
+     * 外したことを覚え([removedAt] の時刻)、AI の再処理でそのタグをまた付けないようにする。
+     */
     @Transaction
-    suspend fun removeTagFromBookmark(bookmarkId: Long, tagName: String) {
+    suspend fun removeTagFromBookmark(bookmarkId: Long, tagName: String, removedAt: Long) {
         val tag = getTagByName(tagName) ?: return
         deleteCrossRef(bookmarkId, tag.id)
+        insertRemoved(RemovedTagEntity(bookmarkId, TagNames.key(tag.name), tag.name, removedAt))
         deleteOrphanAiTags()
+    }
+
+    /**
+     * タグを削除し(紐付けと別名も消える)、付いていたブックマークから外したことを覚える([removedAt] の時刻)。
+     * タグ管理でユーザーが消したタグを、AI の再処理でまた付けないため。統合で消えるタグには使わない。
+     */
+    @Transaction
+    suspend fun deleteTagRemembering(tagId: Long, removedAt: Long) {
+        val tag = getTagById(tagId) ?: return
+        getBookmarkIdsByTag(tagId).forEach { bookmarkId ->
+            insertRemoved(RemovedTagEntity(bookmarkId, TagNames.key(tag.name), tag.name, removedAt))
+        }
+        deleteTagWithRefs(tagId)
     }
 
     /** タグごとの件数つき一覧。件数 0 のタグも含める(名前の昇順、大文字小文字は区別しない)。 */
@@ -194,6 +275,15 @@ interface TagDao {
                 updateParent(intoTagId, inherited)
             }
             moveChildren(fromParentId = fromTagId, parentId = intoTagId)
+            // 元の名前は別名として覚える(AI がまた出しても統合先に付ける)。外したことの記録も統合先の名前に付け替える
+            repointAliases(fromTagId, intoTagId)
+            val fromKey = TagNames.key(from.name)
+            val intoKey = TagNames.key(into.name)
+            if (fromKey != intoKey) {
+                insertAlias(TagAliasEntity(aliasKey = fromKey, alias = from.name, tagId = intoTagId))
+                renameRemoved(fromKey, intoKey, into.name)
+                deleteRemovedByKey(fromKey)
+            }
         }
         deleteTagWithRefs(fromTagId)
     }
@@ -255,8 +345,14 @@ interface TagDao {
         val sameName = TagNames.findSame(newName, others.map { it.name })
         val existing = others.firstOrNull { it.name == sameName }
         if (existing == null) {
+            val oldName = getTagById(tagId)?.name
             updateTagName(tagId, newName)
             markUserCreated(tagId)
+            // 新しい名前と同じ別名は消し、元の名前は別名として覚える(大文字小文字だけの変更は別名にしない)
+            deleteAliasByKey(TagNames.key(newName))
+            if (oldName != null && TagNames.key(oldName) != TagNames.key(newName)) {
+                insertAlias(TagAliasEntity(aliasKey = TagNames.key(oldName), alias = oldName, tagId = tagId))
+            }
             return tagId
         }
         absorbTag(fromTagId = tagId, intoTagId = existing.id)

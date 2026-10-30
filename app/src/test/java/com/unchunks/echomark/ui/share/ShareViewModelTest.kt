@@ -138,4 +138,45 @@ class ShareViewModelTest {
         assertEquals(ShareSaveStatus.Failed(AttachmentError.InsufficientStorage.userMessage), viewModel.status.value)
         assertTrue(repository.bookmarks.value.isEmpty())
     }
+
+
+    @Test
+    fun 入力が止まってからタグを提案し_続けて入力すると前の提案は取り消す() = runTest {
+        repository.suggestions = listOf("Android", "Compose")
+        val viewModel = ShareViewModel(repository, attachments)
+
+        viewModel.updateSuggestions(link, title = "Compose", memo = "")
+        viewModel.updateSuggestions(link, title = "Compose の速度", memo = "")
+        assertEquals(emptyList<String>(), viewModel.suggestedTags.value)
+        advanceUntilIdle()
+
+        assertEquals(listOf("Android", "Compose"), viewModel.suggestedTags.value)
+        // 取り消した方は呼ばれない。内容は、入力したタイトル・共有された URL をまとめたもの
+        assertEquals(1, repository.suggestCalls.size)
+        assertTrue("Compose の速度" in repository.suggestCalls.single())
+        assertTrue("https://example.com/a" in repository.suggestCalls.single())
+    }
+
+    @Test
+    fun 提案に失敗しても空にするだけで保存には関係しない() = runTest {
+        val viewModel = ShareViewModel(repository, attachments)
+        repository.suggestFailure = IllegalStateException("埋め込めない")
+
+        viewModel.updateSuggestions(link, title = "", memo = "")
+        advanceUntilIdle()
+
+        assertEquals(emptyList<String>(), viewModel.suggestedTags.value)
+        viewModel.save(link, title = "", memo = "", tagsInput = "")
+        advanceUntilIdle()
+        assertEquals(ShareSaveStatus.Saved(isDuplicate = false), viewModel.status.value)
+    }
+
+    @Test
+    fun 提案のタグを入力欄の末尾に足す() {
+        assertEquals("Android", appendTag("", "Android"))
+        assertEquals("あとで読む, Android", appendTag("あとで読む", "Android"))
+        assertEquals("あとで読む, Android", appendTag("あとで読む,", "Android"))
+        assertEquals("あとで読む、 Android", appendTag("あとで読む、 ", "Android"))
+        assertEquals("a b, Android", appendTag("a b  ", "Android"))
+    }
 }

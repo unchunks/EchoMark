@@ -912,4 +912,43 @@ class BookmarkRepositoryImplTest {
         // 直した印も残る
         assertTrue(repository.getBookmarkById(id)!!.summaryEdited)
     }
+
+
+    @Test
+    fun タグの提案は内容に出てくるタグ_似たブックマークのタグ_よく使うタグの順に出す() = runBlocking {
+        // 似たブックマーク(同じベクトル)に Android・UI、似ていないものに読書が付いている
+        val similar = repository.saveBookmark(textBookmark("似ている")).id
+        val other = repository.saveBookmark(textBookmark("別の話")).id
+        repository.saveAiTags(similar, listOf("Android", "UI"))
+        repository.saveAiTags(other, listOf("読書"))
+        repository.addTag(other, "あとで読む")
+        repository.saveEmbedding(similar, vector, currentVersion)
+        // 似ていない: 検索の距離の上限を超える向き
+        repository.saveEmbedding(other, FloatArray(768) { if (it == 1) 1f else 0f }, currentVersion)
+
+        val suggestions = repository.suggestTags("Kotlin の読書メモ", limit = 5)
+
+        // 内容に出てくる「読書」が先。似たブックマークの Android・UI、足りない分はよく使うタグ(ユーザーのタグ「あとで読む」)
+        assertEquals(listOf("読書", "Android", "UI", "あとで読む"), suggestions)
+    }
+
+    @Test
+    fun タグの提案は別名が内容に出てくれば統合先のタグを出す() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.addTag(id, "猫")
+        repository.addTag(id, "ネコ")
+        db.tagDao().mergeTags(db.tagDao().getTagByName("猫")!!.id, listOf(db.tagDao().getTagByName("ネコ")!!.id))
+
+        assertEquals(listOf("猫"), repository.suggestTags("ネコの写真", limit = 3))
+    }
+
+    @Test
+    fun タグの提案は埋め込みが使えなくても内容に出てくるタグとよく使うタグで出す() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        repository.addTag(id, "Compose")
+        repository.addTag(id, "読書")
+        // 埋め込みが一度も保存されていない(似たブックマークは無い)。内容が空ならよく使うタグだけ
+        assertEquals(listOf("Compose", "読書"), repository.suggestTags("   ", limit = 5))
+        assertEquals(listOf("Compose", "読書"), repository.suggestTags("Compose の勉強", limit = 5))
+    }
 }

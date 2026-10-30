@@ -191,4 +191,33 @@ class TagRepositoryImplTest {
 
         assertEquals(top, db.tagDao().getTagById(leaf)!!.parentId)
     }
+
+
+    @Test
+    fun タグを削除すると付いていたブックマークから外したものとして覚える() = runTest {
+        bookmark(1); bookmark(2)
+        val id = tag("技術", 1, 2)
+        tag("読書", 2)
+
+        repository.deleteTag(id)
+
+        assertEquals(listOf("技術"), db.tagDao().getRemovedKeys(1))
+        assertEquals(listOf("技術"), db.tagDao().getRemovedKeys(2))
+        // 統合で消えるタグは覚えない
+        val from = tag("kotln", 1)
+        val into = tag("Kotlin", 2)
+        repository.mergeTags(into, listOf(from))
+        assertEquals(listOf("技術"), db.tagDao().getRemovedKeys(1))
+        assertEquals(mapOf("kotln" to "Kotlin"), db.tagDao().getAliasTargets().associate { it.aliasKey to it.tagName })
+    }
+
+    @Test
+    fun 名前を変更すると元の名前を別名として覚える() = runTest {
+        bookmark(1)
+        val id = tag("andorid", 1)
+
+        repository.renameTag(id, "Android")
+
+        assertEquals(mapOf("andorid" to "Android"), db.tagDao().getAliasTargets().associate { it.aliasKey to it.tagName })
+    }
 }

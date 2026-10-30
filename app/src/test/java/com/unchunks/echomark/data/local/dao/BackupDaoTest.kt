@@ -11,6 +11,8 @@ import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
@@ -52,8 +54,10 @@ class BackupDaoTest {
         tags: List<TagEntity> = emptyList(),
         bookmarkTags: List<BookmarkTagCrossRef> = emptyList(),
         conversations: List<ConversationEntity> = emptyList(),
-        messages: List<ChatMessageEntity> = emptyList()
-    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages)
+        messages: List<ChatMessageEntity> = emptyList(),
+        tagAliases: List<TagAliasEntity> = emptyList(),
+        removedTags: List<RemovedTagEntity> = emptyList()
+    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags)
 
     @Test
     fun 空のDBに統合すると全件入り_書き出すと同じ内容になる() = runTest {
@@ -301,5 +305,48 @@ class BackupDaoTest {
         dao.merge(snapshot)
 
         assertEquals("親", parentNameOf("子"))
+    }
+
+
+    @Test
+    fun 別名と外したタグの記録を書き出して読み込むと戻る() = runTest {
+        val tagDao = db.tagDao()
+        dao.merge(backup(bookmarks = listOf(urlBookmark(1, "https://a"))))
+        tagDao.replaceAiTags(1, listOf("猫", "android"))
+        tagDao.getOrCreateTagId("ネコ")
+        tagDao.mergeTags(tagDao.getTagByName("猫")!!.id, listOf(tagDao.getTagByName("ネコ")!!.id))
+        tagDao.removeTagFromBookmark(1, "android", removedAt = 42)
+
+        val snapshot = BackupJson.decode(BackupJson.encode(dao.snapshot(exportedAt = 0))).data
+        dao.deleteAll()
+        val result = dao.merge(snapshot)
+
+        assertEquals(1, result.bookmarksAdded)
+        val newBookmarkId = db.bookmarkDao().getAllIds().single()
+        assertEquals(mapOf("ネコ" to "猫"), tagDao.getAliasTargets().associate { it.aliasKey to it.tagName })
+        assertEquals(listOf("android"), tagDao.getRemovedKeys(newBookmarkId))
+        // 復元しても効く: AI が ネコ / android を出しても付けない・猫にする
+        tagDao.replaceAiTags(newBookmarkId, listOf("ネコ", "android"))
+        assertEquals(listOf("猫"), db.bookmarkDao().getByIdsWithTags(listOf(newBookmarkId)).single().tags.map { it.name })
+    }
+
+    @Test
+    fun 使われていないタグへの別名も取り込み_既にある名前とぶつかる別名は取り込まない() = runTest {
+        val tagDao = db.tagDao()
+        tagDao.getOrCreateTagId("既存")
+        val source = backup(
+            tags = listOf(TagEntity(1, "猫", isUserCreated = true), TagEntity(2, "犬", isUserCreated = true)),
+            tagAliases = listOf(
+                TagAliasEntity("ネコ", "ネコ", 1),
+                // 既にあるタグと同じ名前(キー)の別名は、そのタグの方を優先して取り込まない
+                TagAliasEntity("既存", "既存", 2)
+            )
+        )
+
+        dao.merge(source)
+
+        assertEquals(mapOf("ネコ" to "猫"), tagDao.getAliasTargets().associate { it.aliasKey to it.tagName })
+        // 猫はどのブックマークにも付いていないが、別名の行き先として作る
+        assertEquals(true, tagDao.getTagByName("猫")?.isUserCreated)
     }
 }

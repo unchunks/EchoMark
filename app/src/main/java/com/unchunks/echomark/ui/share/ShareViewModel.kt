@@ -10,6 +10,8 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.ui.common.SelectedFile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +46,34 @@ class ShareViewModel @Inject constructor(
 
     private val _status = MutableStateFlow<ShareSaveStatus>(ShareSaveStatus.Editing)
     val status: StateFlow<ShareSaveStatus> = _status.asStateFlow()
+
+    private val _suggestedTags = MutableStateFlow<List<String>>(emptyList())
+
+    /** 保存する内容に合うタグの提案(タップで入力欄に足す)。内容を変えるたびに、少し待ってから出し直す */
+    val suggestedTags: StateFlow<List<String>> = _suggestedTags.asStateFlow()
+
+    private var suggestJob: Job? = null
+
+    /** 入力中のタイトル・メモと共有された内容から、タグを提案し直す。失敗しても保存には関係しないので、提案が空になるだけ */
+    fun updateSuggestions(shared: SharedContent, title: String, memo: String) {
+        val text = listOf(title, shared.tentativeTitle, shared.url.orEmpty(), shared.text, memo)
+            .plus(shared.files.mapNotNull { it.displayName })
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString("\n")
+        suggestJob?.cancel()
+        suggestJob = viewModelScope.launch {
+            delay(SUGGEST_DEBOUNCE_MILLIS)
+            _suggestedTags.value = try {
+                repository.suggestTags(text, SUGGESTED_TAGS_LIMIT)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "タグの提案に失敗")
+                emptyList()
+            }
+        }
+    }
 
     /**
      * 保存する。ファイルがあればファイルごとに1件ずつ、URL があればリンク(同じ URL は重複として既存を使う)、
@@ -126,6 +156,10 @@ class ShareViewModel @Inject constructor(
     }
 
     companion object {
+        /** 入力が止まってから提案を出し直すまでの待ち時間 */
+        private const val SUGGEST_DEBOUNCE_MILLIS = 500L
+        private const val SUGGESTED_TAGS_LIMIT = 6
+
         /** 「#Android, Kotlin 読書」のような入力をタグ名に分ける(カンマ・読点・空白区切り、先頭の # は除く) */
         internal fun parseTags(input: String): List<String> =
             input.split(',', '、', ' ', '　', '\n')
