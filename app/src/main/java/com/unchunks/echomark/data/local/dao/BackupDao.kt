@@ -12,8 +12,11 @@ import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
 
 /** バックアップの読み込みで追加・スキップした件数。 */
@@ -46,6 +49,12 @@ abstract class BackupDao {
     @Query("SELECT * FROM bookmark_tag_cross_ref ORDER BY bookmarkId, tagId")
     abstract suspend fun getAllCrossRefs(): List<BookmarkTagCrossRef>
 
+    @Query("SELECT * FROM tag_aliases ORDER BY aliasKey")
+    abstract suspend fun getAllTagAliases(): List<TagAliasEntity>
+
+    @Query("SELECT * FROM removed_tags ORDER BY bookmarkId, tagKey")
+    abstract suspend fun getAllRemovedTags(): List<RemovedTagEntity>
+
     @Query("SELECT * FROM conversations ORDER BY id")
     abstract suspend fun getAllConversations(): List<ConversationEntity>
 
@@ -60,7 +69,9 @@ abstract class BackupDao {
         tags = getAllTags(),
         bookmarkTags = getAllCrossRefs(),
         conversations = getAllConversations(),
-        messages = getAllMessages()
+        messages = getAllMessages(),
+        tagAliases = getAllTagAliases(),
+        removedTags = getAllRemovedTags()
     )
 
     // ---- 読み込み(統合) ----
@@ -99,6 +110,15 @@ abstract class BackupDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertCrossRef(crossRef: BookmarkTagCrossRef)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertTagAlias(alias: TagAliasEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertRemovedTag(removed: RemovedTagEntity)
+
+    @Query("SELECT name FROM tags")
+    abstract suspend fun getAllTagNames(): List<String>
+
     @Query("SELECT id FROM conversations WHERE createdAt = :createdAt AND title = :title LIMIT 1")
     abstract suspend fun findSameConversationId(title: String, createdAt: Long): Long?
 
@@ -116,6 +136,9 @@ abstract class BackupDao {
      *   バックアップでユーザーのタグだったもの(ユーザーが付けた紐付けがあるものも)は、この DB でもユーザーのタグにする
      * - タグの階層: この読み込みで新しく作ったタグだけ、バックアップの親を引き継ぐ(親が無ければ作る。階層が輪になるものは引き継がない)。
      *   既にあるタグの階層は変えない
+     * - タグの別名: 行き先のタグがあればそのタグへ、無ければ(どのブックマークにも付いていないタグでも)ユーザーのタグとして作って付ける。
+     *   別名と同じ名前のタグが既にあるとき、同じ別名が既にあるときは取り込まない
+     * - 外したタグの記録: 追加したブックマークの分だけ取り込む
      * - 会話・メッセージ: 同じ会話があればスキップ。メッセージの引用と会話の質問の対象(aboutBookmarkId)は
      *   新しいブックマーク ID に付け替える(対象がバックアップに無ければ通常の会話にする)
      */
@@ -205,6 +228,22 @@ abstract class BackupDao {
             conversationIds[conversation.id] = insertConversation(
                 conversation.copy(id = 0, aboutBookmarkId = conversation.aboutBookmarkId?.let { bookmarkIds[it] })
             )
+        }
+
+        // 別名: 今の DB にある名前・別名とぶつからないものだけ
+        val takenKeys = (getAllTagNames().map { TagNames.key(it) } + getAllTagAliases().map { it.aliasKey }).toMutableSet()
+        for (alias in data.tagAliases) {
+            val targetName = tagNames[alias.tagId]?.takeIf { it.isNotEmpty() } ?: continue
+            if (alias.aliasKey in takenKeys || alias.aliasKey == TagNames.key(targetName)) continue
+            val targetId = findTagIdByName(targetName)
+                ?: insertTag(TagEntity(name = targetName, isUserCreated = true)).also { tagsAdded++ }
+            takenKeys += alias.aliasKey
+            insertTagAlias(alias.copy(tagId = targetId))
+        }
+
+        for (removed in data.removedTags) {
+            val bookmarkId = bookmarkIds[removed.bookmarkId]?.takeIf { it in addedBookmarkIds } ?: continue
+            insertRemovedTag(removed.copy(bookmarkId = bookmarkId))
         }
 
         var messagesAdded = 0

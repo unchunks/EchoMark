@@ -6,9 +6,12 @@ import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
 import org.json.JSONArray
 import org.json.JSONException
@@ -26,7 +29,11 @@ data class BackupData(
     val tags: List<TagEntity>,
     val bookmarkTags: List<BookmarkTagCrossRef>,
     val conversations: List<ConversationEntity>,
-    val messages: List<ChatMessageEntity>
+    val messages: List<ChatMessageEntity>,
+    /** タグの別名(統合・名前変更した元の名前)。[TagAliasEntity.tagId] は [tags] の ID */
+    val tagAliases: List<TagAliasEntity> = emptyList(),
+    /** ユーザーが外したタグの記録。[RemovedTagEntity.bookmarkId] は [bookmarks] の ID */
+    val removedTags: List<RemovedTagEntity> = emptyList()
 )
 
 /** 読み込んだバックアップと、壊れていて読み飛ばした要素の数。 */
@@ -38,13 +45,14 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 8):
+ * 形式(version 9):
  * ```
  * { "format": "echomark-backup", "version": 7, "exportedAt": 1700000000000,
  *   "bookmarks": [ {全列。summaryEdited は手で直した要約のときだけ} ], "tags": [ {id, name, isUserCreated, parentId は親があるときだけ} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
  *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil は無ければ省略} ],
- *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ] }
+ *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ],
+ *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -64,10 +72,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   要約の履歴(DB v15 の summary_history)は端末の中の記録のため含めない
  * - 8: タグに parentId(階層の親のタグ。書き出し元の ID)を追加。7 以前は階層が無いものとして読む。
  *   親が無い・自分自身・輪になる parentId は、読み込むときに外す(読み込み側でも確かめる)
+ * - 9: タグの別名(tagAliases。DB v17 の tag_aliases)と、ユーザーが外したタグの記録(removedTags。removed_tags)を追加。
+ *   8 以前は別名も記録も無いものとして読む。別名のキー(aliasKey)は alias から [TagNames.key] で作り直す
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 8
+    const val CURRENT_VERSION = 9
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -87,6 +97,10 @@ object BackupJson {
         writeArray(writer, "conversations", data.conversations) { it.toJson() }
         writer.write(",")
         writeArray(writer, "messages", data.messages) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "tagAliases", data.tagAliases) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "removedTags", data.removedTags) { it.toJson() }
         writer.write("}")
         writer.flush()
     }
@@ -133,7 +147,9 @@ object BackupJson {
             tags = readArray("tags") { it.toTag() },
             bookmarkTags = readArray("bookmarkTags") { it.toCrossRef() },
             conversations = readArray("conversations") { it.toConversation() },
-            messages = readArray("messages") { it.toMessage() }
+            messages = readArray("messages") { it.toMessage() },
+            tagAliases = readArray("tagAliases") { it.toTagAlias() },
+            removedTags = readArray("removedTags") { it.toRemovedTag() }
         )
         return DecodedBackup(data, invalid)
     }
@@ -176,6 +192,14 @@ object BackupJson {
         .put("name", name)
         .put("isUserCreated", isUserCreated)
         .apply { parentId?.let { put("parentId", it) } }
+
+    private fun TagAliasEntity.toJson() = JSONObject().put("alias", alias).put("tagId", tagId)
+
+    private fun RemovedTagEntity.toJson() = JSONObject()
+        .put("bookmarkId", bookmarkId)
+        .put("tagKey", tagKey)
+        .put("tagName", tagName)
+        .put("removedAt", removedAt)
 
     private fun BookmarkTagCrossRef.toJson() = JSONObject()
         .put("bookmarkId", bookmarkId)
@@ -260,6 +284,21 @@ object BackupJson {
         // version 2 以前には無い。未知の値(将来の版で増えた場合など)も、消されないようユーザーのものとして読む
         source = enumOrNull<TagSource>(optString("source")) ?: TagSource.USER
     )
+
+    private fun JSONObject.toTagAlias(): TagAliasEntity? {
+        val alias = stringOrNull("alias")?.let { TagNames.clean(it) }?.takeIf { it.isNotEmpty() } ?: return null
+        return TagAliasEntity(aliasKey = TagNames.key(alias), alias = alias, tagId = longOrNull("tagId") ?: return null)
+    }
+
+    private fun JSONObject.toRemovedTag(): RemovedTagEntity? {
+        val tagName = stringOrNull("tagName")?.let { TagNames.clean(it) }?.takeIf { it.isNotEmpty() } ?: return null
+        return RemovedTagEntity(
+            bookmarkId = longOrNull("bookmarkId") ?: return null,
+            tagKey = TagNames.key(tagName),
+            tagName = tagName,
+            removedAt = longOrNull("removedAt") ?: 0L
+        )
+    }
 
     private fun JSONObject.toConversation(): ConversationEntity? {
         val createdAt = longOrNull("createdAt") ?: return null

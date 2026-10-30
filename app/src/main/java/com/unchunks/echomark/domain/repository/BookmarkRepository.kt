@@ -158,6 +158,13 @@ interface BookmarkRepository {
      */
     suspend fun getTagNamesForAi(): List<String>
 
+    /**
+     * 保存する内容([text]。タイトル・URL・本文・メモ)に合うタグを、最大 [limit] 個提案する(保存時にチップで出す用)。
+     * 内容に名前や別名が出てくる既存のタグ → 似たブックマークのタグ(意味の近さ。埋め込みが使えるときだけ)→ よく使うタグの順。
+     * 使えるものが無い・失敗したときは空(保存には関係しない)。
+     */
+    suspend fun suggestTags(text: String, limit: Int = 6): List<String>
+
     // Observe / Search
     fun observeBookmarks(): Flow<List<Bookmark>>
     fun observeAllTags(): Flow<List<Tag>>

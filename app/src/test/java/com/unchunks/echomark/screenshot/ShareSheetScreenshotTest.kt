@@ -45,6 +45,25 @@ class ShareSheetScreenshotTest {
     }
 
     @Test
+    fun formWithSuggestions() = screenshot.captureLightDark("library_share_sheet_suggestions") {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            ShareSheetContent(
+                shared = shared,
+                status = ShareSaveStatus.Editing,
+                title = "",
+                memo = "",
+                tags = "Android",
+                suggestedTags = listOf("Compose", "パフォーマンス", "Android", "あとで読む"),
+                onTitleChange = {},
+                onMemoChange = {},
+                onTagsChange = {},
+                onSave = {},
+                onCancel = {}
+            )
+        }
+    }
+
+    @Test
     fun saved() = screenshot.captureLightDark("library_share_sheet_saved") {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
             ShareSheetContent(

@@ -1,5 +1,7 @@
 package com.unchunks.echomark.data.backup
 
+import com.unchunks.echomark.data.local.entity.TagAliasEntity
+import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
@@ -351,5 +353,44 @@ class BackupJsonTest {
         val tags = BackupJson.decode(old).data.tags
 
         assertEquals(listOf(TagEntity(1, "kotlin", isUserCreated = true, parentId = null)), tags)
+    }
+
+
+    @Test
+    fun タグの別名と外したタグの記録を書き出して読み込める() {
+        val data = sample.copy(
+            tagAliases = listOf(TagAliasEntity(aliasKey = "ネコ".lowercase(), alias = "ネコ", tagId = 10)),
+            removedTags = listOf(RemovedTagEntity(bookmarkId = 1, tagKey = "android", tagName = "Android", removedAt = 700))
+        )
+
+        val decoded = BackupJson.decode(BackupJson.encode(data)).data
+
+        assertEquals(data.tagAliases, decoded.tagAliases)
+        assertEquals(data.removedTags, decoded.removedTags)
+    }
+
+    @Test
+    fun 別名のキーは別名から作り直し_壊れた要素は読み飛ばす() {
+        val text = """{"format":"echomark-backup","version":9,"exportedAt":1,"bookmarks":[],"tags":[],"bookmarkTags":[],
+            "conversations":[],"messages":[],
+            "tagAliases":[{"alias":"　ＡＮＤＲＯＩＤ ","tagId":3},{"alias":"","tagId":3},{"alias":"x"}],
+            "removedTags":[{"bookmarkId":1,"tagName":"  Ｋｏｔｌｉｎ","removedAt":7},{"bookmarkId":1}]}"""
+
+        val decoded = BackupJson.decode(text)
+
+        assertEquals(listOf(TagAliasEntity("android", "ANDROID", 3)), decoded.data.tagAliases)
+        assertEquals(listOf(RemovedTagEntity(1, "kotlin", "Kotlin", 7)), decoded.data.removedTags)
+        assertEquals(3, decoded.invalidRecords)
+    }
+
+    @Test
+    fun 別名も記録も無い古い版のバックアップは空として読む() {
+        val old = """{"format":"echomark-backup","version":8,"exportedAt":1,"bookmarks":[],
+            "tags":[],"bookmarkTags":[],"conversations":[],"messages":[]}"""
+
+        val data = BackupJson.decode(old).data
+
+        assertTrue(data.tagAliases.isEmpty())
+        assertTrue(data.removedTags.isEmpty())
     }
 }

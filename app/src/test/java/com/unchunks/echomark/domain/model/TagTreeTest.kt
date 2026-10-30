@@ -54,4 +54,17 @@ class TagTreeTest {
         assertEquals(listOf("プログラミング", "Android"), TagTree.ancestorNames(tags, tags[2]))
         assertTrue(TagTree.ancestorNames(tags, tags[0]).isEmpty())
     }
+
+
+    @Test
+    fun 親子のどちらも含まれるときの親を返す() {
+        val parents = mapOf<Long, Long?>(1L to null, 2L to 1L, 3L to 2L, 4L to 1L, 5L to null)
+
+        // 3(孫)があれば 2(親)・1(祖父)は不要。4 は別の枝なので、1 だけが不要
+        assertEquals(setOf(1L, 2L), TagTree.redundantAncestors(parents, setOf(1L, 2L, 3L)))
+        assertEquals(setOf(1L), TagTree.redundantAncestors(parents, setOf(1L, 4L, 5L)))
+        assertTrue(TagTree.redundantAncestors(parents, setOf(2L, 4L, 5L)).isEmpty())
+        // 輪になっていても止まる
+        assertEquals(setOf(1L, 2L), TagTree.redundantAncestors(mapOf<Long, Long?>(1L to 2L, 2L to 1L), setOf(1L, 2L)))
+    }
 }

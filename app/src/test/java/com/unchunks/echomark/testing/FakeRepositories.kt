@@ -257,6 +257,17 @@ class FakeBookmarkRepository : BookmarkRepository {
 
     override suspend fun saveAiTags(bookmarkId: Long, tagNames: List<String>) = TODO("not used")
     override suspend fun getTagNamesForAi(): List<String> = TODO("not used")
+
+    /** suggestTags に渡された内容と、返す提案 */
+    val suggestCalls = mutableListOf<String>()
+    var suggestions: List<String> = emptyList()
+    var suggestFailure: Exception? = null
+
+    override suspend fun suggestTags(text: String, limit: Int): List<String> {
+        suggestFailure?.let { throw it }
+        suggestCalls += text
+        return suggestions.take(limit)
+    }
     override suspend fun saveEmbedding(bookmarkId: Long, vector: FloatArray, modelVersion: String) = TODO("not used")
     override suspend fun updateSummary(id: Long, summary: String) = TODO("not used")
     /** 作った要約の保存(履歴の版は持たず、要約と印だけ) */

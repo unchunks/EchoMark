@@ -55,6 +55,6 @@ class TagRepositoryImpl @Inject constructor(
 
     override suspend fun deleteTag(tagId: Long) =
         withContext(dispatcherProvider.io) {
-            tagDao.deleteTagWithRefs(tagId)
+            tagDao.deleteTagRemembering(tagId, System.currentTimeMillis())
         }
 }

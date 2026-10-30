@@ -59,4 +59,35 @@ class TagNamesTest {
         assertEquals("Kotlin", TagNames.findSame("ＫＯＴＬＩＮ", existing))
         assertEquals(null, TagNames.findSame("Compose", existing))
     }
+
+
+    @Test
+    fun 別名は既存のタグが無いときだけ今のタグ名にそろえる() {
+        val aliases = mapOf("ネコ" to "猫", "kotlin" to "Kotlin言語")
+
+        assertEquals(listOf("猫"), TagNames.resolve(listOf("ネコ"), existing = listOf("猫"), aliases = aliases))
+        // 全角/半角・大文字/小文字を区別しない
+        assertEquals(listOf("Kotlin言語"), TagNames.resolve(listOf("ＫＯＴＬＩＮ"), existing = listOf("Android"), aliases = aliases))
+        // 同じキーの既存のタグがあれば、別名より優先する
+        assertEquals(listOf("kotlin"), TagNames.resolve(listOf("Kotlin"), existing = listOf("kotlin"), aliases = aliases))
+    }
+
+    @Test
+    fun 区切り_かな_語尾の長音の違いも既存のタグにそろえる() {
+        assertEquals(
+            listOf("サーバー", "machine learning", "ねこ"),
+            TagNames.resolve(
+                listOf("サーバ", "machine-learning", "ネコ"),
+                existing = listOf("サーバー", "machine learning", "ねこ")
+            )
+        )
+    }
+
+    @Test
+    fun 別名や表記ゆれで同じタグになったものは重複を除く() {
+        assertEquals(
+            listOf("猫"),
+            TagNames.resolve(listOf("ネコ", "猫", "ねこ"), existing = listOf("猫"), aliases = mapOf("ネコ" to "猫", "ねこ" to "猫"))
+        )
+    }
 }

@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -30,11 +32,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -44,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -53,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.ui.common.SelectedFile
 import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.echomark.ui.common.formatFileSize
@@ -65,13 +71,17 @@ internal fun QuickSaveSheet(
     shared: SharedContent,
     status: ShareSaveStatus,
     onSave: (title: String, memo: String, tags: String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    suggestedTags: List<String> = emptyList(),
+    onInputChange: (title: String, memo: String) -> Unit = { _, _ -> }
 ) {
     // 仮タイトルが URL そのものなら空欄にして、ページのタイトルを自動で使う
     var title by rememberSaveable { mutableStateOf(shared.tentativeTitle.takeIf { it != shared.url }.orEmpty()) }
     // ファイルに添えられた文章(写真の説明など)はメモに入れておく
     var memo by rememberSaveable { mutableStateOf(if (shared.files.isNotEmpty()) shared.text else "") }
     var tags by rememberSaveable { mutableStateOf("") }
+    // タイトルとメモが変わるたびに、保存する内容に合うタグの提案を出し直す(開いた直後も1回)
+    LaunchedEffect(title, memo) { onInputChange(title, memo) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -83,6 +93,7 @@ internal fun QuickSaveSheet(
             title = title,
             memo = memo,
             tags = tags,
+            suggestedTags = suggestedTags,
             onTitleChange = { title = it },
             onMemoChange = { memo = it },
             onTagsChange = { tags = it },
@@ -105,7 +116,8 @@ fun ShareSheetContent(
     onTagsChange: (String) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    suggestedTags: List<String> = emptyList()
 ) {
     AnimatedContent(targetState = status is ShareSaveStatus.Saved, label = "share_sheet", modifier = modifier) { saved ->
         if (saved) {
@@ -121,6 +133,7 @@ fun ShareSheetContent(
                 title = title,
                 memo = memo,
                 tags = tags,
+                suggestedTags = suggestedTags,
                 onTitleChange = onTitleChange,
                 onMemoChange = onMemoChange,
                 onTagsChange = onTagsChange,
@@ -138,6 +151,7 @@ private fun ShareForm(
     title: String,
     memo: String,
     tags: String,
+    suggestedTags: List<String>,
     onTitleChange: (String) -> Unit,
     onMemoChange: (String) -> Unit,
     onTagsChange: (String) -> Unit,
@@ -220,6 +234,12 @@ private fun ShareForm(
             singleLine = true,
             enabled = !saving,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+        )
+        TagSuggestionRow(
+            suggestions = suggestedTags,
+            typed = ShareViewModel.parseTags(tags),
+            enabled = !saving,
+            onPick = { name -> onTagsChange(appendTag(tags, name)) }
         )
 
         (status as? ShareSaveStatus.Failed)?.let { failed ->
@@ -399,5 +419,41 @@ private fun SavedResult(status: ShareSaveStatus.Saved, isLink: Boolean, isFile: 
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+
+/** 保存する内容に合うタグの提案。タップで入力欄に足す(入力済みのタグは出さない)。出すものが無ければ何も描かない */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagSuggestionRow(suggestions: List<String>, typed: List<String>, enabled: Boolean, onPick: (String) -> Unit) {
+    val typedKeys = typed.mapTo(HashSet()) { TagNames.key(it) }
+    val shown = suggestions.filter { TagNames.key(it) !in typedKeys }
+    if (shown.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "おすすめのタグ(タップで追加)",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            shown.forEach { name ->
+                SuggestionChip(
+                    onClick = { onPick(name) },
+                    enabled = enabled,
+                    label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    modifier = Modifier.semantics { contentDescription = "タグ「$name」を追加" }
+                )
+            }
+        }
+    }
+}
+
+/** 入力欄の文字列にタグを1つ足す(区切りのカンマ・空白は入力のままにして、最後に「, 」でつなぐ)。 */
+internal fun appendTag(input: String, name: String): String {
+    val trimmed = input.trimEnd()
+    return when {
+        trimmed.isEmpty() -> name
+        trimmed.endsWith(",") || trimmed.endsWith("、") -> "$trimmed $name"
+        else -> "$trimmed, $name"
     }
 }

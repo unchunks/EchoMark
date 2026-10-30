@@ -24,6 +24,23 @@ object TagTree {
         return result
     }
 
+    /**
+     * [ids] のうち、[ids] の中の別のタグの祖先になっているもの。親子のどちらも付いているとき、親は子で絞り込めば足りるため
+     * 付けなくてよい。[parentById] はタグの ID → 親の ID(輪になっていても止まる)。
+     */
+    fun redundantAncestors(parentById: Map<Long, Long?>, ids: Set<Long>): Set<Long> {
+        val redundant = HashSet<Long>()
+        for (id in ids) {
+            val seen = hashSetOf(id)
+            var current = parentById[id]
+            while (current != null && seen.add(current)) {
+                if (current in ids) redundant += current
+                current = parentById[current]
+            }
+        }
+        return redundant
+    }
+
     /** [tagId] の子孫のタグの ID(自分は含まない)。 */
     fun descendantIds(tags: List<TagWithCount>, tagId: Long): Set<Long> {
         val children = tags.groupBy { it.parentId }

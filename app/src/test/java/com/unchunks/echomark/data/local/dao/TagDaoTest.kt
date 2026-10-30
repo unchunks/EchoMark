@@ -102,8 +102,8 @@ class TagDaoTest {
         dao.addTagsToBookmark(1, listOf("自分"), TagSource.USER)
         dao.replaceAiTags(1, listOf("AI"))
 
-        dao.removeTagFromBookmark(1, "自分")
-        dao.removeTagFromBookmark(1, "AI")
+        dao.removeTagFromBookmark(1, "自分", removedAt = 1)
+        dao.removeTagFromBookmark(1, "AI", removedAt = 1)
 
         assertEquals(setOf("自分"), tagNames())
     }
@@ -412,5 +412,164 @@ class TagDaoTest {
 
         assertEquals(idOf("親"), rows.getValue("子").parentId)
         assertEquals(null, rows.getValue("親").parentId)
+    }
+
+
+    private suspend fun aliasTargets(): Map<String, String> = dao.getAliasTargets().associate { it.aliasKey to it.tagName }
+
+    private suspend fun removedKeys(bookmarkId: Long): Set<String> = dao.getRemovedKeys(bookmarkId).toSet()
+
+    @Test
+    fun 統合すると元の名前が別名になり_AIが同じ名前を出しても統合先に付く() = runTest {
+        insertBookmark(1)
+        tags("猫", "ネコ")
+
+        dao.mergeTags(idOf("猫"), listOf(idOf("ネコ")))
+        assertEquals(mapOf("ネコ" to "猫"), aliasTargets())
+
+        dao.replaceAiTags(1, listOf("ネコ", "ねこ"))
+
+        assertEquals(setOf("猫"), tagNames())
+        assertEquals(mapOf("猫" to TagSource.AI), linksOf(1))
+    }
+
+    @Test
+    fun 元のタグの別名は統合先に引き継ぎ_名前変更でも元の名前を別名にする() = runTest {
+        tags("A", "B", "C")
+        dao.mergeTags(idOf("B"), listOf(idOf("A")))
+        dao.renameOrMerge(idOf("C"), "Cの新名")
+        dao.mergeTags(idOf("Cの新名"), listOf(idOf("B")))
+
+        // A → B → Cの新名 と統合し、C → Cの新名 と名前を変えた。どの元の名前も今のタグを指す
+        assertEquals(mapOf("a" to "Cの新名", "b" to "Cの新名", "c" to "Cの新名"), aliasTargets())
+    }
+
+    @Test
+    fun 大文字小文字だけの違いでは別名を作らない() = runTest {
+        tags("android", "Android")
+        dao.mergeTags(idOf("Android"), listOf(idOf("android")))
+        dao.renameOrMerge(idOf("Android"), "ANDROID")
+
+        assertTrue(aliasTargets().isEmpty())
+    }
+
+    @Test
+    fun 同じ名前のタグを作り直すと別名は消える() = runTest {
+        tags("猫", "ネコ")
+        dao.mergeTags(idOf("猫"), listOf(idOf("ネコ")))
+
+        dao.getOrCreateTagId("ネコ")
+
+        assertTrue(aliasTargets().isEmpty())
+        assertEquals(setOf("猫", "ネコ"), tagNames())
+    }
+
+    @Test
+    fun タグを削除すると別名も消える() = runTest {
+        tags("猫", "ネコ")
+        dao.mergeTags(idOf("猫"), listOf(idOf("ネコ")))
+
+        dao.deleteTagRemembering(idOf("猫"), removedAt = 1)
+
+        assertTrue(aliasTargets().isEmpty())
+    }
+
+    @Test
+    fun 外したタグは覚えておき_AIの再処理でまた付けない() = runTest {
+        insertBookmark(1)
+        insertBookmark(2)
+        dao.replaceAiTags(1, listOf("kotlin", "android"))
+        dao.replaceAiTags(2, listOf("kotlin"))
+
+        dao.removeTagFromBookmark(1, "kotlin", removedAt = 5)
+        assertEquals(setOf("kotlin"), removedKeys(1))
+        assertEquals(emptySet<String>(), removedKeys(2))
+
+        // 再処理: 1 には kotlin を付けず(表記ゆれの違いでも)、2 には付ける
+        dao.replaceAiTags(1, listOf("Kotlin", "android"))
+        dao.replaceAiTags(2, listOf("Kotlin"))
+
+        assertEquals(mapOf("android" to TagSource.AI), linksOf(1))
+        assertEquals(mapOf("kotlin" to TagSource.AI), linksOf(2))
+    }
+
+    @Test
+    fun ユーザーが付け直したタグは覚えから消え_AIも付けられる() = runTest {
+        insertBookmark(1)
+        dao.replaceAiTags(1, listOf("kotlin"))
+        dao.removeTagFromBookmark(1, "kotlin", removedAt = 5)
+
+        dao.addTagsToBookmark(1, listOf("Kotlin"), TagSource.USER)
+
+        assertEquals(emptySet<String>(), removedKeys(1))
+        dao.replaceAiTags(1, listOf("kotlin"))
+        // AI の kotlin は、付け直したタグ Kotlin にそろえられ、ユーザーの紐付けのまま
+        assertEquals(mapOf("Kotlin" to TagSource.USER), linksOf(1))
+    }
+
+    @Test
+    fun タグ管理で削除したタグは付いていたブックマークから外したものとして覚える() = runTest {
+        insertBookmark(1)
+        insertBookmark(2)
+        dao.replaceAiTags(1, listOf("技術"))
+        dao.replaceAiTags(2, listOf("技術", "読書"))
+
+        dao.deleteTagRemembering(idOf("技術"), removedAt = 9)
+        dao.replaceAiTags(1, listOf("技術"))
+        dao.replaceAiTags(2, listOf("技術", "読書"))
+
+        assertEquals(emptyMap<String, TagSource>(), linksOf(1))
+        assertEquals(mapOf("読書" to TagSource.AI), linksOf(2))
+    }
+
+    @Test
+    fun 統合したタグを外した記録は統合先の名前で覚え直す() = runTest {
+        insertBookmark(1)
+        dao.addTagsToBookmark(1, listOf("ネコ"), TagSource.USER)
+        // 件数 0 で消えないよう、猫もユーザーのタグにしておく
+        dao.markUserCreated(dao.getOrCreateTagId("猫")!!)
+        dao.removeTagFromBookmark(1, "ネコ", removedAt = 5)
+        assertEquals(setOf("ネコ"), removedKeys(1))
+
+        dao.mergeTags(idOf("猫"), listOf(idOf("ネコ")))
+
+        assertEquals(setOf("猫"), removedKeys(1))
+        // ネコを外した後で猫に統合した。AI が ネコ・猫 のどちらを出しても、このブックマークには付けない
+        dao.replaceAiTags(1, listOf("ネコ", "猫", "Compose"))
+        assertEquals(mapOf("Compose" to TagSource.AI), linksOf(1))
+    }
+
+    @Test
+    fun 親子のどちらも出てきたら子だけを付ける() = runTest {
+        insertBookmark(1)
+        tags("プログラミング", "Android", "読書")
+        dao.setParent(idOf("Android"), idOf("プログラミング"))
+
+        dao.replaceAiTags(1, listOf("プログラミング", "Android", "読書"))
+
+        assertEquals(mapOf("Android" to TagSource.AI, "読書" to TagSource.AI), linksOf(1))
+    }
+
+    @Test
+    fun ユーザーが付けた子のタグがあれば親はAIが付けない() = runTest {
+        insertBookmark(1)
+        tags("プログラミング", "Android")
+        dao.setParent(idOf("Android"), idOf("プログラミング"))
+        dao.addTagsToBookmark(1, listOf("Android"), TagSource.USER)
+
+        dao.replaceAiTags(1, listOf("プログラミング"))
+
+        assertEquals(mapOf("Android" to TagSource.USER), linksOf(1))
+    }
+
+    @Test
+    fun 親だけが出たときは親を付ける() = runTest {
+        insertBookmark(1)
+        tags("プログラミング", "Android")
+        dao.setParent(idOf("Android"), idOf("プログラミング"))
+
+        dao.replaceAiTags(1, listOf("プログラミング"))
+
+        assertEquals(mapOf("プログラミング" to TagSource.AI), linksOf(1))
     }
 }
