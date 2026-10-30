@@ -447,4 +447,37 @@ class MigrationTest {
     private companion object {
         const val TEST_DB = "migration-test.db"
     }
+
+
+    @Test
+    fun migrate15To16_existingTagsStayTopLevelAndParentCanBeSetAndCleared() {
+        helper.createDatabase(15).apply {
+            execSQL("INSERT INTO tags (id, name, isUserCreated) VALUES (1, 'kotlin', 1), (2, 'android', 0)")
+            close()
+        }
+
+        // スキーマ v16 と一致するか(列・外部キー・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(16, listOf(MIGRATION_15_16))
+
+        // 既存のタグはすべて最上位で、ほかの列は変わらない
+        val rows = connection.prepare("SELECT id, name, isUserCreated, parentId FROM tags ORDER BY id").use { stmt ->
+            buildList {
+                while (stmt.step()) {
+                    add(listOf(stmt.getLong(0).toString(), stmt.getText(1), stmt.getLong(2).toString(), stmt.isNull(3).toString()))
+                }
+            }
+        }
+        assertEquals(listOf(listOf("1", "kotlin", "1", "true"), listOf("2", "android", "0", "true")), rows)
+
+        // 親を設定でき、親を消すと子は最上位に戻る(外部キーの SET NULL)
+        connection.execSQL("PRAGMA foreign_keys = ON")
+        connection.execSQL("UPDATE tags SET parentId = 1 WHERE id = 2")
+        connection.execSQL("DELETE FROM tags WHERE id = 1")
+        val parentAfter = connection.prepare("SELECT parentId FROM tags WHERE id = 2").use { stmt ->
+            stmt.step()
+            stmt.isNull(0)
+        }
+        assertTrue(parentAfter)
+        connection.close()
+    }
 }

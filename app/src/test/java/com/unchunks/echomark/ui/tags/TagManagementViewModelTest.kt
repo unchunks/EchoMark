@@ -151,4 +151,44 @@ class TagManagementViewModelTest {
 
         assertTrue(messages.isEmpty())
     }
+
+
+    @Test
+    fun 親のタグを設定し最上位に戻すと知らせる() = runTest {
+        val parent = TagWithCount(3, "プログラミング", 0)
+        val child = TagWithCount(4, "Android", 2)
+        repository.tags.value = listOf(parent, child)
+        val viewModel = TagManagementViewModel(repository)
+        val messages = start(viewModel)
+
+        viewModel.setParent(child, parent)
+        advanceUntilIdle()
+        assertEquals(parent.id, viewModel.uiState.value.tags.single { it.id == child.id }.parentId)
+
+        viewModel.setParent(child.copy(parentId = parent.id), null)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf<TagManagementMessage>(
+                TagManagementMessage.ParentChanged("Android", "プログラミング"),
+                TagManagementMessage.ParentChanged("Android", null)
+            ),
+            messages
+        )
+    }
+
+    @Test
+    fun 自分の子を親にしようとすると失敗を知らせる() = runTest {
+        val parent = TagWithCount(3, "プログラミング", 0)
+        val child = TagWithCount(4, "Android", 2, parentId = 3)
+        repository.tags.value = listOf(parent, child)
+        val viewModel = TagManagementViewModel(repository)
+        val messages = start(viewModel)
+
+        viewModel.setParent(parent, child)
+        advanceUntilIdle()
+
+        assertEquals(listOf<TagManagementMessage>(TagManagementMessage.Failed("自分の子のタグは親にできません")), messages)
+        assertEquals(null, viewModel.uiState.value.tags.single { it.id == parent.id }.parentId)
+    }
 }

@@ -38,10 +38,10 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 7):
+ * 形式(version 8):
  * ```
  * { "format": "echomark-backup", "version": 7, "exportedAt": 1700000000000,
- *   "bookmarks": [ {全列。summaryEdited は手で直した要約のときだけ} ], "tags": [ {id, name, isUserCreated} ],
+ *   "bookmarks": [ {全列。summaryEdited は手で直した要約のときだけ} ], "tags": [ {id, name, isUserCreated, parentId は親があるときだけ} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
  *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil は無ければ省略} ],
  *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ] }
@@ -62,10 +62,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 6: 会話に summaryCoveredUntil(要約に含めた最後の発言の日時)を追加。5 以前では要約はまだ無いものとして読む
  * - 7: ブックマークに summaryEdited(要約をユーザーが手で直した印。再処理しても要約を置き換えない)を追加。6 以前では手で直していないものとして読む。
  *   要約の履歴(DB v15 の summary_history)は端末の中の記録のため含めない
+ * - 8: タグに parentId(階層の親のタグ。書き出し元の ID)を追加。7 以前は階層が無いものとして読む。
+ *   親が無い・自分自身・輪になる parentId は、読み込むときに外す(読み込み側でも確かめる)
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 7
+    const val CURRENT_VERSION = 8
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -169,7 +171,11 @@ object BackupJson {
         .apply { fileSize?.let { put("fileSize", it) } }
         .apply { contentFetchedAt?.let { put("contentFetchedAt", it) } }
 
-    private fun TagEntity.toJson() = JSONObject().put("id", id).put("name", name).put("isUserCreated", isUserCreated)
+    private fun TagEntity.toJson() = JSONObject()
+        .put("id", id)
+        .put("name", name)
+        .put("isUserCreated", isUserCreated)
+        .apply { parentId?.let { put("parentId", it) } }
 
     private fun BookmarkTagCrossRef.toJson() = JSONObject()
         .put("bookmarkId", bookmarkId)
@@ -242,7 +248,9 @@ object BackupJson {
             id = longOrNull("id") ?: return null,
             name = name,
             // version 2 以前には無い(ユーザーのタグとして読む)
-            isUserCreated = optBoolean("isUserCreated", true)
+            isUserCreated = optBoolean("isUserCreated", true),
+            // version 7 以前には無い(最上位として読む)
+            parentId = longOrNull("parentId")
         )
     }
 

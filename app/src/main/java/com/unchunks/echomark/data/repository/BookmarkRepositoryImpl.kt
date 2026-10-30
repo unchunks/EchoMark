@@ -615,6 +615,8 @@ class BookmarkRepositoryImpl @Inject constructor(
             // キーワード検索(タイトル・要約・本文・URL・タグ名など。語ごとの AND)。createdAt 降順
             val keyword = searchKeywordMatches(q, tagId).map { it.toDomain() }
             if (q.isEmpty()) return@withContext BookmarkSearchResult(keyword, semanticAvailable = false)
+            // 絞り込みのタグは、階層でその下にあるタグも含める(キーワード検索と同じ)
+            val tagIds = tagId?.let { tagDao.getSubtreeIds(it).toSet() }
 
             // ベクトル検索。モデル未取得などで失敗したらキーワードのみにフォールバックする
             val semantic = try {
@@ -625,7 +627,7 @@ class BookmarkRepositoryImpl @Inject constructor(
                     .map { it.bookmarkId }
                 val byId = bookmarkDao.getByIdsWithTags(ids).associateBy { it.bookmark.id }
                 ids.mapNotNull { byId[it] }
-                    .filter { tagId == null || it.tags.any { tag -> tag.id == tagId } }
+                    .filter { tagIds == null || it.tags.any { tag -> tag.id in tagIds } }
                     .map { it.toDomain() }
             } catch (e: CancellationException) {
                 throw e

@@ -231,7 +231,7 @@ interface BookmarkDao {
     /**
      * 一覧用の観測クエリ(絞り込み・並べ替えつき)。
      * :archived はアーカイブ状態で絞る(NULL なら絞らない)、:favoriteOnly が true ならお気に入りだけ、
-     * :tagId が非NULLならそのタグを持つものだけ。:sortOrder は BookmarkSortOrder の name。
+     * :tagId が非NULLならそのタグ(と、階層でその下にあるタグ)を持つものだけ。:sortOrder は BookmarkSortOrder の name。
      * 並べ替えは CASE で切り替え、該当しない CASE は NULL になって順序に影響しない。同順位は新しい順。
      */
     @Transaction
@@ -240,7 +240,14 @@ interface BookmarkDao {
         WHERE (:archived IS NULL OR isArchived = :archived)
         AND (:favoriteOnly = 0 OR isFavorite = 1)
         AND (:tagId IS NULL OR id IN (
-            SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId = :tagId
+            SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId IN (
+                WITH RECURSIVE subtree(id) AS (
+                    SELECT :tagId
+                    UNION
+                    SELECT t.id FROM tags AS t INNER JOIN subtree AS s ON t.parentId = s.id
+                )
+                SELECT id FROM subtree
+            )
         ))
         ORDER BY
             CASE WHEN :sortOrder = 'OLDEST' THEN createdAt END ASC,
@@ -267,7 +274,7 @@ interface BookmarkDao {
     /**
      * キーワード検索(タイトル・要約・本文・ファイル名・URL・サイト名・タグ名の部分一致)。
      * :pattern は呼び出し側で LIKE 用にエスケープ済み(エスケープ文字は '\')の検索語(1語)。
-     * :tagId が非NULLならそのタグを持つものだけに絞る(AND)。
+     * :tagId が非NULLならそのタグ(と、階層でその下にあるタグ)を持つものだけに絞る(AND)。
      */
     @Transaction
     @Query("""
@@ -286,7 +293,14 @@ interface BookmarkDao {
             )
         )
         AND (:tagId IS NULL OR id IN (
-            SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId = :tagId
+            SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId IN (
+                WITH RECURSIVE subtree(id) AS (
+                    SELECT :tagId
+                    UNION
+                    SELECT t.id FROM tags AS t INNER JOIN subtree AS s ON t.parentId = s.id
+                )
+                SELECT id FROM subtree
+            )
         ))
         ORDER BY createdAt DESC
     """)

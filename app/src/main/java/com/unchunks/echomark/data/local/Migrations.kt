@@ -144,6 +144,21 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
 }
 
 /**
+ * v15 → v16: タグの階層(#29)。tags に親のタグ(parentId)とそのインデックスを足す。
+ * 既存のタグはすべて最上位(parentId = NULL)のままで、値は変わらない。親を消すと子は最上位に戻る(ON DELETE SET NULL)。
+ */
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // スキーマ JSON(16.json)の createSql と同じ外部キー
+        db.execSQL(
+            "ALTER TABLE `tags` ADD COLUMN `parentId` INTEGER " +
+                "REFERENCES `tags`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_tags_parentId` ON `tags` (`parentId`)")
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
@@ -151,7 +166,7 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
 val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-        MIGRATION_13_14, MIGRATION_14_15
+        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

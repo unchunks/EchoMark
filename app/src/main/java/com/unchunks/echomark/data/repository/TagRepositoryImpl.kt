@@ -4,6 +4,7 @@ import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagWithCount
+import com.unchunks.echomark.domain.repository.TagParentResult
 import com.unchunks.echomark.domain.repository.TagRenameResult
 import com.unchunks.echomark.domain.repository.TagRepository
 import kotlinx.coroutines.flow.Flow
@@ -19,7 +20,7 @@ class TagRepositoryImpl @Inject constructor(
 
     override fun observeTagsWithCount(): Flow<List<TagWithCount>> =
         tagDao.observeTagsWithCount()
-            .map { rows -> rows.map { TagWithCount(it.id, it.name, it.bookmarkCount, isUserTag = it.isUserCreated) } }
+            .map { rows -> rows.map { TagWithCount(it.id, it.name, it.bookmarkCount, isUserTag = it.isUserCreated, parentId = it.parentId) } }
             .flowOn(dispatcherProvider.io)
 
     override suspend fun renameTag(tagId: Long, newName: String): TagRenameResult =
@@ -33,6 +34,17 @@ class TagRepositoryImpl @Inject constructor(
                     val resultId = tagDao.renameOrMerge(tagId, name)
                     if (resultId == tagId) TagRenameResult.Renamed(tagId) else TagRenameResult.Merged(resultId)
                 }
+            }
+        }
+
+    override suspend fun setParent(tagId: Long, parentId: Long?): TagParentResult =
+        withContext(dispatcherProvider.io) {
+            val tag = tagDao.getTagById(tagId)
+            val parentMissing = parentId != null && tagDao.getTagById(parentId) == null
+            when {
+                tag == null || parentMissing -> TagParentResult.Invalid
+                tagDao.setParent(tagId, parentId) -> TagParentResult.Updated
+                else -> TagParentResult.Cycle
             }
         }
 

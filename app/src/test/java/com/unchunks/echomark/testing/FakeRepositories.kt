@@ -34,6 +34,8 @@ import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.domain.model.TagNames
+import com.unchunks.echomark.domain.model.TagTree
+import com.unchunks.echomark.domain.repository.TagParentResult
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.repository.BookmarkSearchResult
 import com.unchunks.echomark.domain.repository.TagRenameResult
@@ -410,6 +412,19 @@ class FakeTagRepository : TagRepository {
     }
 
     val mergeCalls = mutableListOf<Pair<Long, List<Long>>>()
+    val parentCalls = mutableListOf<Pair<Long, Long?>>()
+
+    override suspend fun setParent(tagId: Long, parentId: Long?): TagParentResult {
+        parentCalls += tagId to parentId
+        if (tags.value.none { it.id == tagId } || (parentId != null && tags.value.none { it.id == parentId })) {
+            return TagParentResult.Invalid
+        }
+        if (parentId != null && (parentId == tagId || parentId in TagTree.descendantIds(tags.value, tagId))) {
+            return TagParentResult.Cycle
+        }
+        tags.value = tags.value.map { if (it.id == tagId) it.copy(parentId = parentId) else it }
+        return TagParentResult.Updated
+    }
 
     override suspend fun mergeTags(intoTagId: Long, fromTagIds: List<Long>): Int {
         mergeCalls += intoTagId to fromTagIds

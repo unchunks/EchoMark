@@ -325,4 +325,31 @@ class BackupJsonTest {
         assertFalse(decoded.data.bookmarks.single().summaryEdited)
         assertEquals("要約", decoded.data.bookmarks.single().summary)
     }
+
+
+    @Test
+    fun タグの親は書き出して読み込め_親が無ければ省略する() {
+        val data = sample.copy(
+            tags = listOf(
+                TagEntity(10, "プログラミング", isUserCreated = true),
+                TagEntity(11, "Android", isUserCreated = true, parentId = 10)
+            )
+        )
+
+        val text = BackupJson.encode(data)
+        val decoded = BackupJson.decode(text).data.tags
+
+        assertEquals(data.tags, decoded)
+        assertEquals(1, Regex("\"parentId\"").findAll(text.substringAfter("\"tags\":").substringBefore("\"bookmarkTags\"")).count())
+    }
+
+    @Test
+    fun 階層を持たない古い版のバックアップではタグは最上位として読む() {
+        val old = """{"format":"echomark-backup","version":7,"exportedAt":1,"bookmarks":[],
+            "tags":[{"id":1,"name":"kotlin","isUserCreated":true}],"bookmarkTags":[],"conversations":[],"messages":[]}"""
+
+        val tags = BackupJson.decode(old).data.tags
+
+        assertEquals(listOf(TagEntity(1, "kotlin", isUserCreated = true, parentId = null)), tags)
+    }
 }

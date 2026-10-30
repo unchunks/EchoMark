@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.local.dao
 
+import com.unchunks.echomark.data.backup.BackupJson
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -230,5 +231,75 @@ class BackupDaoTest {
         assertTrue(exported.bookmarkTags.isEmpty())
         assertTrue(exported.conversations.isEmpty())
         assertTrue(exported.messages.isEmpty())
+    }
+
+
+    private suspend fun parentNameOf(name: String): String? =
+        db.tagDao().getTagByName(name)!!.parentId?.let { db.tagDao().getTagById(it)!!.name }
+
+    @Test
+    fun 新しく作ったタグはバックアップの階層を引き継ぎ_使われていない親も作る() = runTest {
+        // 書き出し元: 上 ← 中 ← Compose。ブックマークに付いているのは Compose だけ
+        val result = dao.merge(
+            backup(
+                bookmarks = listOf(urlBookmark(1, "https://a")),
+                tags = listOf(
+                    TagEntity(1, "上", isUserCreated = true),
+                    TagEntity(2, "中", isUserCreated = true, parentId = 1),
+                    TagEntity(3, "Compose", isUserCreated = true, parentId = 2)
+                ),
+                bookmarkTags = listOf(BookmarkTagCrossRef(1, 3, TagSource.USER))
+            )
+        )
+
+        assertEquals(3, result.tagsAdded)
+        assertEquals("中", parentNameOf("Compose"))
+        assertEquals("上", parentNameOf("中"))
+        assertEquals(null, parentNameOf("上"))
+        // 階層に入れたタグはユーザーのタグ
+        assertTrue(db.tagDao().getTagByName("上")!!.isUserCreated)
+    }
+
+    @Test
+    fun 既にあるタグの階層は変えず_輪になる親は引き継がない() = runTest {
+        val tagDao = db.tagDao()
+        tagDao.getOrCreateTagId("既存")
+        tagDao.getOrCreateTagId("別の親")
+
+        dao.merge(
+            backup(
+                bookmarks = listOf(urlBookmark(1, "https://a")),
+                tags = listOf(
+                    TagEntity(1, "既存", parentId = 2),
+                    TagEntity(2, "別の親"),
+                    // A と B は互いを親にしている(壊れたバックアップ)。C は自分自身を親にしている
+                    TagEntity(3, "A", parentId = 4),
+                    TagEntity(4, "B", parentId = 3),
+                    TagEntity(5, "C", parentId = 5)
+                ),
+                bookmarkTags = listOf(1L, 3L, 4L, 5L).map { BookmarkTagCrossRef(1, it, TagSource.AI) }
+            )
+        )
+
+        assertEquals(null, parentNameOf("既存"))
+        assertEquals(null, parentNameOf("C"))
+        // A と B のどちらかが親になるが、輪にはならない
+        val a = parentNameOf("A")
+        val b = parentNameOf("B")
+        assertTrue(listOf(a, b).count { it != null } == 1)
+    }
+
+    @Test
+    fun 階層つきで書き出して読み込むと階層が戻る() = runTest {
+        val tagDao = db.tagDao()
+        dao.merge(backup(bookmarks = listOf(urlBookmark(1, "https://a"))))
+        tagDao.setParent(tagDao.getOrCreateTagId("子")!!, tagDao.getOrCreateTagId("親")!!)
+        tagDao.insertCrossRef(BookmarkTagCrossRef(1, tagDao.getTagByName("子")!!.id, TagSource.USER))
+
+        val snapshot = BackupJson.decode(BackupJson.encode(dao.snapshot(exportedAt = 0))).data
+        dao.deleteAll()
+        dao.merge(snapshot)
+
+        assertEquals("親", parentNameOf("子"))
     }
 }
