@@ -15,6 +15,7 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.CategoryRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
+import com.unchunks.echomark.ui.common.SearchHighlights
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -52,7 +53,9 @@ data class BookmarkDetailUiState(
     /** 要約の翻訳(#24) */
     val translation: TranslationState = TranslationState.Idle,
     /** カテゴリの変更で選べるカテゴリ(自分のもの → 標準のもの。#33) */
-    val categoryChoices: List<CategoryEntry> = emptyList()
+    val categoryChoices: List<CategoryEntry> = emptyList(),
+    /** 検索結果から開いたときの検索語。タイトル・要約・本文で一致した文字を強調する(#57)。空なら強調しない */
+    val highlightTerms: List<String> = emptyList()
 )
 
 /** 要約の翻訳の状態(#24)。翻訳は保存せず、画面を閉じたら消える。 */
@@ -98,7 +101,8 @@ class BookmarkDetailViewModel @Inject constructor(
     private val recentlyDeleted: RecentlyDeletedBookmarks,
     processingStats: ProcessingStatsRepository,
     private val translator: SummaryTranslator,
-    categoryRepository: CategoryRepository
+    categoryRepository: CategoryRepository,
+    searchHighlights: SearchHighlights
 ) : ViewModel() {
 
     // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
@@ -158,6 +162,8 @@ class BookmarkDetailViewModel @Inject constructor(
         }
         .onStart { emit(emptyList()) }
 
+    private val highlightTermsFlow = searchHighlights.termsFor(bookmarkId)
+
     private val translation = MutableStateFlow<TranslationState>(TranslationState.Idle)
     private var translationJob: Job? = null
 
@@ -172,8 +178,8 @@ class BookmarkDetailViewModel @Inject constructor(
         }
 
     val uiState: StateFlow<BookmarkDetailUiState> =
-        combine(baseState, summaryHistoryFlow, translation, categoryChoicesFlow) { state, history, translation, categories ->
-            state.copy(summaryHistory = history, translation = translation, categoryChoices = categories)
+        combine(baseState, summaryHistoryFlow, translation, categoryChoicesFlow, highlightTermsFlow) { state, history, translation, categories, terms ->
+            state.copy(summaryHistory = history, translation = translation, categoryChoices = categories, highlightTerms = terms)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
     init {

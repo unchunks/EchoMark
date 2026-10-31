@@ -4,6 +4,8 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -98,6 +100,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -110,6 +113,7 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryLanguage
@@ -134,6 +138,7 @@ import com.unchunks.echomark.ui.components.formatElapsed
 import com.unchunks.echomark.ui.components.message
 import com.unchunks.echomark.ui.components.needsSetup
 import com.unchunks.echomark.ui.components.processingBadge
+import com.unchunks.echomark.ui.components.rememberHighlighted
 import com.unchunks.echomark.ui.components.retryingMessage
 import com.unchunks.echomark.ui.components.rememberTickingNow
 import com.unchunks.echomark.ui.components.summaryText
@@ -500,7 +505,7 @@ private fun DetailBody(
             SourceAndDate(bookmark, nowMillis)
             Spacer(Modifier.height(6.dp))
             Text(
-                text = bookmark.title,
+                text = rememberHighlighted(bookmark.title, uiState.highlightTerms),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.semantics { heading() }
@@ -513,7 +518,7 @@ private fun DetailBody(
             Spacer(Modifier.height(16.dp))
             PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
             Spacer(Modifier.height(20.dp))
-            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, uiState.translation, uiState.categoryChoices, callbacks)
+            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, uiState.translation, uiState.categoryChoices, callbacks, uiState.highlightTerms)
             Spacer(Modifier.height(24.dp))
             TagSection(
                 tags = bookmark.tags,
@@ -531,10 +536,15 @@ private fun DetailBody(
                 } else {
                     listOfNotNull(parts.memo?.let { "メモ" to it }) + parts.sections.map { it.source.label to it.text }
                 }
+                // 検索語が出てくる最初の節は、開いて、その場所まで画面を動かす
+                val firstMatching = remember(sections, uiState.highlightTerms) {
+                    if (uiState.highlightTerms.isEmpty()) -1
+                    else sections.indexOfFirst { SearchMatcher.ranges(it.second, uiState.highlightTerms).isNotEmpty() }
+                }
                 sections.forEachIndexed { index, (label, text) ->
                     key(index) {
                         Spacer(Modifier.height(24.dp))
-                        ContentSection(label = label, text = text)
+                        ContentSection(label = label, text = text, highlightTerms = uiState.highlightTerms, scrollToMatch = index == firstMatching)
                     }
                 }
             }
@@ -750,7 +760,8 @@ private fun AiSection(
     summaryHistory: List<SummaryVersion>,
     translation: TranslationState,
     categoryChoices: List<CategoryEntry>,
-    callbacks: BookmarkDetailCallbacks
+    callbacks: BookmarkDetailCallbacks,
+    highlightTerms: List<String> = emptyList()
 ) {
     val summary = bookmark.summary
     if (bookmark.aiStatus == AiStatus.DONE && !summary.isNullOrBlank()) {
@@ -796,7 +807,7 @@ private fun AiSection(
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                Text(summary, style = MaterialTheme.typography.bodyLarge)
+                Text(rememberHighlighted(summary, highlightTerms), style = MaterialTheme.typography.bodyLarge)
                 if (bookmark.summaryEdited) {
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -1095,19 +1106,38 @@ internal fun tagSuggestions(input: String, allTagNames: List<String>, current: L
 
 /** 本文・メモ。長いときは6行で畳み、「もっと見る」で開く */
 @Composable
-private fun ContentSection(label: String, text: String) {
+private fun ContentSection(label: String, text: String, highlightTerms: List<String> = emptyList(), scrollToMatch: Boolean = false) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var overflowing by remember { mutableStateOf(false) }
+    val firstMatch = remember(text, highlightTerms) { SearchMatcher.ranges(text, highlightTerms).firstOrNull()?.first }
+    val requester = remember { BringIntoViewRequester() }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var scrolled by remember { mutableStateOf(false) }
+    // 検索結果から開いたときは、一致した文字が見えるよう全文を開く
+    LaunchedEffect(firstMatch) { if (firstMatch != null) expanded = true }
+    // 全文が組み上がったら、最初に一致した場所まで画面を動かす(1回だけ)
+    LaunchedEffect(layout, expanded) {
+        val result = layout
+        if (scrollToMatch && !scrolled && firstMatch != null && expanded && result != null &&
+            result.layoutInput.maxLines == Int.MAX_VALUE && firstMatch < result.layoutInput.text.length
+        ) {
+            scrolled = true
+            requester.bringIntoView(result.getBoundingBox(firstMatch))
+        }
+    }
     DetailSectionTitle(label)
     Spacer(Modifier.height(8.dp))
     Text(
-        text = text,
+        text = rememberHighlighted(text, highlightTerms),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurface,
         maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_LINES,
         overflow = TextOverflow.Ellipsis,
-        onTextLayout = { if (!expanded) overflowing = it.hasVisualOverflow },
-        modifier = Modifier.animateContentSize()
+        onTextLayout = {
+            layout = it
+            if (!expanded) overflowing = it.hasVisualOverflow
+        },
+        modifier = Modifier.bringIntoViewRequester(requester).animateContentSize()
     )
     if (overflowing || expanded) {
         TextButton(onClick = { expanded = !expanded }, contentPadding = ButtonDefaults.TextButtonWithIconContentPadding) {

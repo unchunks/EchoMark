@@ -19,6 +19,7 @@ import com.unchunks.echomark.testing.FakeProcessingStatsRepository
 import com.unchunks.echomark.testing.FakeSummaryTranslator
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
+import com.unchunks.echomark.ui.common.SearchHighlights
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -46,7 +47,7 @@ class BookmarkDetailViewModelTest {
     private val categories = FakeCategoryRepository()
 
     private fun createViewModel(id: Long = 1L) =
-        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories)
+        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights())
 
     @Test
     fun 処理の進み具合と段ごとの平均の所要時間を出す() = runTest {
