@@ -15,6 +15,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeAttachmentRepository
@@ -26,6 +27,8 @@ import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.bookmark.BookmarkViewModel
 import com.unchunks.echomark.ui.capture.LocalCaptureViewModel
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
+import com.unchunks.echomark.ui.common.SearchHighlights
+import kotlinx.coroutines.Dispatchers
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -66,7 +69,7 @@ class BookmarkListNavigationTest {
             EchoMarkTheme {
                 NavHost(navController = controller, startDestination = BOOKMARKS_ROUTE) {
                     composable(BOOKMARKS_ROUTE) { entry ->
-                        val viewModel = viewModel { BookmarkViewModel(repository, tagRepository, FakeCategoryRepository(), recentlyDeleted, FakeAttachmentRepository(), FakeAppSettingsRepository()) }
+                        val viewModel = viewModel { BookmarkViewModel(repository, tagRepository, FakeCategoryRepository(), recentlyDeleted, FakeAttachmentRepository(), FakeAppSettingsRepository(), TestDispatcherProvider(Dispatchers.Unconfined), SearchHighlights()) }
                         listViewModel = viewModel
                         CompositionLocalProvider(LocalCaptureViewModel provides captureViewModel) {
                             BookmarkListDestination(

@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.bookmark
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
@@ -9,6 +10,9 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.SearchMatch
+import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
+import com.unchunks.echomark.domain.bookmark.model.splitSearchTerms
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
@@ -19,6 +23,7 @@ import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.domain.repository.CategoryRepository
 import com.unchunks.echomark.domain.repository.TagRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
+import com.unchunks.echomark.ui.common.SearchHighlights
 import com.unchunks.echomark.ui.common.SelectedFile
 import com.unchunks.echomark.ui.common.normalizeUrlInput
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,7 +47,9 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -55,7 +62,9 @@ class BookmarkViewModel @Inject constructor(
     private val categoryRepository: CategoryRepository,
     private val recentlyDeleted: RecentlyDeletedBookmarks,
     private val attachmentRepository: AttachmentRepository,
-    private val appSettings: AppSettingsRepository
+    private val appSettings: AppSettingsRepository,
+    private val dispatchers: DispatcherProvider,
+    private val searchHighlights: SearchHighlights
 ) : ViewModel() {
 
     /** 検索語以外の表示条件 */
@@ -74,6 +83,8 @@ class BookmarkViewModel @Inject constructor(
         val semanticMatchIds: Set<Long> = emptySet(),
         /** キーワードの結果だけを出していて、意味検索の準備(検索語の埋め込み)を待っている */
         val semanticPending: Boolean = false,
+        /** キーワードで一致した場所(ブックマークの ID → 一致した場所と本文の一節) */
+        val matches: Map<Long, SearchMatch> = emptyMap(),
         val error: String? = null
     )
 
@@ -117,26 +128,32 @@ class BookmarkViewModel @Inject constructor(
                     // 検索語の埋め込み(意味検索の準備)は、モデルの読み込みや AI 処理との順番待ちで時間がかかることがある。
                     // 待つ間はキーワードの結果を先に出す。準備は検索語ごとに1回だけで、DB の変更で検索し直しても待ち直さない
                     // (null: 準備中、true: 意味検索も使える、false: 埋め込みが使えずキーワードのみ)
+                    // 入力が落ち着くのを少し待ってから始める(1文字ごとに埋め込むと、AI 処理の邪魔になる)
                     val semanticReady = flow {
                         emit(null)
+                        delay(SEMANTIC_SETTLE_MS)
                         emit(repository.prepareSemanticSearch(query))
                     }
                     combine(visible, semanticReady, ::Pair).mapLatest { (list, ready) ->
                         val allowed = list.map { it.id }.toSet()
                         if (ready == true) {
                             val found = repository.searchWithDetails(query)
+                            val shown = found.bookmarks.filter { it.id in allowed }
                             ListResult(
-                                bookmarks = found.bookmarks.filter { it.id in allowed },
+                                bookmarks = shown,
                                 query = query,
                                 semanticAvailable = found.semanticAvailable,
-                                semanticMatchIds = found.semanticOnlyIds
+                                semanticMatchIds = found.semanticOnlyIds,
+                                matches = explain(shown, query)
                             )
                         } else {
+                            val shown = repository.searchKeywordOnly(query).filter { it.id in allowed }
                             ListResult(
-                                bookmarks = repository.searchKeywordOnly(query).filter { it.id in allowed },
+                                bookmarks = shown,
                                 query = query,
                                 semanticAvailable = ready == null,
-                                semanticPending = ready == null
+                                semanticPending = ready == null,
+                                matches = explain(shown, query)
                             )
                         }
                     }
@@ -149,6 +166,14 @@ class BookmarkViewModel @Inject constructor(
                     emit(ListResult(query = query, error = "ブックマークを読み込めませんでした。もう一度お試しください。"))
                 }
             }
+
+    /** 検索結果それぞれが、どこに一致したか(#54)。本文が長いことがあるので、メインスレッドの外で調べる */
+    private suspend fun explain(bookmarks: List<Bookmark>, query: String): Map<Long, SearchMatch> {
+        val terms = splitSearchTerms(query)
+        return withContext(dispatchers.default) {
+            bookmarks.associate { it.id to SearchMatcher.explain(it, terms) }
+        }
+    }
 
     /**
      * 絞り込みチップに出すタグの元(件数つき・全タグ)。読み込めなかったときは null(選択中のタグを整理せず、そのまま出す)
@@ -200,6 +225,8 @@ class BookmarkViewModel @Inject constructor(
             sortOrder = controls.sortOrder,
             isSearchActive = controls.searchActive,
             searchQuery = rawQuery,
+            searchTerms = if (controls.searchActive) splitSearchTerms(list.query) else emptyList(),
+            searchMatches = if (controls.searchActive) list.matches else emptyMap(),
             isSearching = searching,
             semanticSearchAvailable = list.semanticAvailable,
             semanticMatchIds = if (controls.searchActive) list.semanticMatchIds else emptySet(),
@@ -214,6 +241,12 @@ class BookmarkViewModel @Inject constructor(
 
     init {
         loadRediscover()
+        // 詳細画面が本文の検索語を強調できるよう、今の検索語を知らせる(検索を閉じたら空)
+        viewModelScope.launch {
+            combine(debouncedQueryFlow, controlsFlow) { query, controls -> if (controls.searchActive) splitSearchTerms(query) else emptyList() }
+                .distinctUntilChanged()
+                .collect { searchHighlights.setTerms(it) }
+        }
         // 詳細画面で削除されたものを受け取り、「元に戻す」を出す
         viewModelScope.launch {
             recentlyDeleted.pending.filterNotNull().collect {
@@ -259,6 +292,11 @@ class BookmarkViewModel @Inject constructor(
     fun onSearchQueryChange(query: String) {
         if (!controlsFlow.value.searchActive) controlsFlow.update { it.copy(searchActive = true) }
         searchQueryFlow.value = query
+    }
+
+    /** 一覧のブックマークを開く。検索結果から開いたときは、詳細画面で検索語を強調する */
+    fun onOpenBookmark(id: Long) {
+        searchHighlights.open(id)
     }
 
     /** タグを選ぶ・外す(複数選べる。組み合わせ方は [onTagMatchChange]) */
@@ -452,7 +490,11 @@ class BookmarkViewModel @Inject constructor(
     }
 
     companion object {
-        private const val SEARCH_DEBOUNCE_MS = 300L
+        /** 入力が止まってからキーワード検索を始めるまでの待ち。ローカルの検索は軽いので短く、打ちながら結果が変わっていく */
+        private const val SEARCH_DEBOUNCE_MS = 120L
+
+        /** キーワードの結果を出してから、意味検索(検索語の埋め込み)を始めるまで入力が落ち着くのを待つ時間 */
+        private const val SEMANTIC_SETTLE_MS = 300L
         private const val REDISCOVER_CANDIDATES = 30
         private const val DERIVED_TITLE_MAX = 40
 

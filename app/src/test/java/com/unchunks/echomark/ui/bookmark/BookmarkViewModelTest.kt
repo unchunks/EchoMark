@@ -4,6 +4,9 @@ import com.unchunks.echomark.domain.model.CategoryKind
 import com.unchunks.echomark.domain.model.CategoryEntry
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.ui.common.SearchHighlights
+import kotlinx.coroutines.Dispatchers
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
@@ -19,7 +22,10 @@ import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import com.unchunks.echomark.ui.common.SelectedFile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
+import com.unchunks.echomark.domain.bookmark.model.MatchField
+import org.junit.Assert.assertNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -45,7 +51,8 @@ class BookmarkViewModelTest {
     private val recentlyDeleted = RecentlyDeletedBookmarks()
     private val attachments = FakeAttachmentRepository()
     private val settings = FakeAppSettingsRepository()
-    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, categories, recentlyDeleted, attachments, settings)
+    private val highlights = SearchHighlights()
+    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, categories, recentlyDeleted, attachments, settings, TestDispatcherProvider(Dispatchers.Unconfined), highlights)
 
     /**
      * uiState を購読し、届いたメッセージを集める。
@@ -197,7 +204,7 @@ class BookmarkViewModelTest {
     }
 
     @Test
-    fun 検索語の入力は300msデバウンスされてから検索が走る() = runTest {
+    fun 検索語の入力は短くデバウンスされてからキーワード検索が走り意味検索は少し待つ() = runTest {
         repository.bookmarks.value = listOf(testBookmark(1, "apple pie"), testBookmark(2, "banana"))
         val viewModel = createViewModel()
         start(viewModel)
@@ -205,13 +212,21 @@ class BookmarkViewModelTest {
         repository.searchCalls.clear()
 
         viewModel.onSearchQueryChange("app")
-        advanceTimeBy(299)
+        advanceTimeBy(119)
         runCurrent()
-        assertTrue("デバウンス中は検索しない", repository.searchCalls.isEmpty())
+        assertTrue("デバウンス中は検索しない", repository.keywordSearchCalls.isEmpty())
         assertTrue("入力中は検索中の表示", viewModel.uiState.value.isSearching)
 
         advanceTimeBy(1)
         runCurrent()
+        assertEquals("キーワードの結果はすぐ出す", listOf("app"), repository.keywordSearchCalls)
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+        assertTrue("意味検索を待つ間は検索中の表示", viewModel.uiState.value.isSearching)
+        assertTrue("入力が落ち着くまで検索語を埋め込まない", repository.prepareCalls.isEmpty())
+
+        advanceTimeBy(300)
+        runCurrent()
+        assertEquals(listOf("app"), repository.prepareCalls)
         assertEquals(listOf("app"), repository.searchCalls)
         val state = viewModel.uiState.value
         assertEquals(listOf(1L), state.bookmarks.map { it.id })
@@ -235,6 +250,67 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf("app"), repository.searchCalls)
+    }
+
+    @Test
+    fun 打っている間は検索語を埋め込まず止まったときだけ埋め込む() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onSearchQueryChange("a")
+        advanceTimeBy(200)
+        viewModel.onSearchQueryChange("ap")
+        advanceTimeBy(200)
+        viewModel.onSearchQueryChange("app")
+        advanceTimeBy(200)
+        runCurrent()
+        assertTrue("打っている間は埋め込まない", repository.prepareCalls.isEmpty())
+        assertEquals("キーワードは打つたびに更新する", listOf("a", "ap", "app"), repository.keywordSearchCalls.distinct())
+
+        advanceUntilIdle()
+        assertEquals(listOf("app"), repository.prepareCalls)
+    }
+
+    @Test
+    fun 検索結果にはどこに一致したかが付く() = runTest {
+        repository.bookmarks.value = listOf(
+            testBookmark(1, "apple pie").copy(content = "baking notes about apple pie and cream"),
+            testBookmark(2, "fruit").copy(content = "an apple a day")
+        )
+        repository.semanticOnlyIds = setOf(2L)
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf("apple"), state.searchTerms)
+        val first = state.searchMatches.getValue(1L)
+        assertEquals(listOf(MatchField.TITLE, MatchField.CONTENT), first.fields)
+        assertNull("タイトルで見える語は本文の一節を出さない", first.snippet)
+        // 意味だけで見つかったもの(Fake は本文を見ない)でも、本文に語があれば一致として説明できる
+        assertEquals(listOf(MatchField.CONTENT), state.searchMatches.getValue(2L).fields)
+        assertTrue(state.searchMatches.getValue(2L).snippet != null)
+    }
+
+    @Test
+    fun 検索中は検索語を詳細画面に知らせ閉じると消える() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onSearchQueryChange("apple pie")
+        advanceUntilIdle()
+        viewModel.onOpenBookmark(1L)
+        assertEquals(listOf("apple", "pie"), highlights.termsFor(1L).first())
+        assertEquals("ほかのブックマークでは強調しない", emptyList<String>(), highlights.termsFor(2L).first())
+
+        viewModel.onSearchActiveChange(false)
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), highlights.termsFor(1L).first())
     }
 
     @Test

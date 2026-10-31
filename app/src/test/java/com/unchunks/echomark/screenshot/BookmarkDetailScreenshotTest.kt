@@ -38,12 +38,14 @@ class BookmarkDetailScreenshotTest {
         related: List<Bookmark> = emptyList(),
         stageProgress: Float? = null,
         stageAverages: Map<StageDurationKey, Long> = emptyMap(),
-        summaryHistory: List<SummaryVersion> = emptyList()
+        summaryHistory: List<SummaryVersion> = emptyList(),
+        highlightTerms: List<String> = emptyList()
     ): @Composable () -> Unit = {
         BookmarkDetailContent(
             uiState = BookmarkDetailUiState(
                 isLoading = false, bookmark = bookmark, related = related,
-                stageProgress = stageProgress, stageAverages = stageAverages, summaryHistory = summaryHistory
+                stageProgress = stageProgress, stageAverages = stageAverages, summaryHistory = summaryHistory,
+                highlightTerms = highlightTerms
             ),
             snackbarHostState = SnackbarHostState(),
             callbacks = BookmarkDetailCallbacks(),
@@ -64,6 +66,13 @@ class BookmarkDetailScreenshotTest {
         "library_detail_url",
         heightDp = 1400,
         content = content(urlBookmark, related = listOf(PreviewSamples.textBookmark, PreviewSamples.processingBookmark))
+    )
+
+    @Test
+    fun urlFromSearch() = screenshot.captureScreenLightDark(
+        "library_detail_url_search",
+        heightDp = 1400,
+        content = content(urlBookmark, highlightTerms = listOf("compose", "remember"))
     )
 
     @Test
