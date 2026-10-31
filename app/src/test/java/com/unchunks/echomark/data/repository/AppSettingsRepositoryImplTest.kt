@@ -93,6 +93,21 @@ class AppSettingsRepositoryImplTest {
     }
 
     @Test
+    fun 検索の履歴を保存して読み出せ_空にすると消える() = runTest {
+        val repository = createRepository()
+        assertEquals(emptyList<String>(), repository.searchHistory.first())
+
+        repository.updateSearchHistory { listOf("東京 ラーメン", "kotlin") }
+        assertEquals(listOf("東京 ラーメン", "kotlin"), repository.searchHistory.first())
+
+        repository.updateSearchHistory { it + "改行\nを含む" }
+        assertEquals(listOf("東京 ラーメン", "kotlin", "改行 を含む"), repository.searchHistory.first())
+
+        repository.updateSearchHistory { emptyList() }
+        assertEquals(emptyList<String>(), repository.searchHistory.first())
+    }
+
+    @Test
     fun チャットのテンプレートを保存して読み出せる() = runTest {
         val repository = createRepository()
         val template = ChatTemplate("1", "会議", "会議の「議題」を\nまとめて")

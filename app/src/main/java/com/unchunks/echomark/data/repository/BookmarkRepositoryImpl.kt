@@ -632,6 +632,9 @@ class BookmarkRepositoryImpl @Inject constructor(
             matchAll = query.tagMatch == TagMatch.ALL,
             categories = query.categories.toList(),
             categoryCount = query.categories.size,
+            types = query.types.map { it.name },
+            typeCount = query.types.size,
+            createdSince = query.period?.sinceMillis(System.currentTimeMillis()) ?: 0L,
             sortOrder = sortOrder.name
         )
             .map { list -> list.map { it.toDomain() } }

@@ -244,7 +244,9 @@ interface BookmarkDao {
      * :matchAll が 1 なら選んだタグ(存在するもの)のすべて(AND)、0 なら 1 つ以上(OR)を満たすものだけ。
      * 削除済みのタグが :tagIds に残っていても、存在しないものとして無視する。
      * カテゴリ: :categories が空でなければ、そのどれかであるものだけ(大文字小文字は区別しない)。
-     * :tagCount・:categoryCount は :tagIds・:categories の個数(空のときの IN () を避けて、条件を使うかの判定に使う)。
+     * 種類: :types(BookmarkType の name)が空でなければ、そのどれかであるものだけ。
+     * 期間: :createdSince が 0 でなければ、その時刻(ミリ秒)以後に保存したものだけ。
+     * :tagCount・:categoryCount・:typeCount は :tagIds・:categories・:types の個数(空のときの IN () を避けて、条件を使うかの判定に使う)。
      * :sortOrder は BookmarkSortOrder の name。並べ替えは CASE で切り替え、該当しない CASE は NULL になって順序に影響しない。
      * 同順位は新しい順。
      */
@@ -264,6 +266,8 @@ interface BookmarkDao {
             WHERE r.bookmarkId = bookmarks.id
         ) >= CASE WHEN :matchAll = 1 THEN (SELECT COUNT(DISTINCT root) FROM selected) ELSE 1 END)
         AND (:categoryCount = 0 OR category COLLATE NOCASE IN (:categories))
+        AND (:typeCount = 0 OR type IN (:types))
+        AND (:createdSince = 0 OR createdAt >= :createdSince)
         ORDER BY
             CASE WHEN :sortOrder = 'OLDEST' THEN createdAt END ASC,
             CASE WHEN :sortOrder = 'RECENTLY_OPENED' THEN lastAccessedAt END DESC,
@@ -279,6 +283,9 @@ interface BookmarkDao {
         matchAll: Boolean,
         categories: List<String>,
         categoryCount: Int,
+        types: List<String>,
+        typeCount: Int,
+        createdSince: Long,
         sortOrder: String
     ): Flow<List<BookmarkWithTags>>
 

@@ -56,6 +56,7 @@ class FakeAppSettingsRepository(
     val localLlmUseGpuFlow = MutableStateFlow(false)
     val bookmarkSortOrderFlow = MutableStateFlow(BookmarkSortOrder.NEWEST)
     val chatTemplatesFlow = MutableStateFlow<List<ChatTemplate>>(emptyList())
+    val searchHistoryFlow = MutableStateFlow<List<String>>(emptyList())
     var resetCalls = 0
     val processingFlow = MutableStateFlow(ProcessingSettings())
 
@@ -94,6 +95,10 @@ class FakeAppSettingsRepository(
     override suspend fun setSendFilesToCloud(enabled: Boolean) { sendFilesToCloudFlow.value = enabled }
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) { localLlmUseGpuFlow.value = enabled }
     override suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder) { bookmarkSortOrderFlow.value = sortOrder }
+    override val searchHistory: Flow<List<String>> = searchHistoryFlow
+    override suspend fun updateSearchHistory(transform: (List<String>) -> List<String>) {
+        searchHistoryFlow.update(transform)
+    }
     override val chatTemplates: Flow<List<ChatTemplate>> = chatTemplatesFlow
     override suspend fun updateChatTemplates(transform: (List<ChatTemplate>) -> List<ChatTemplate>) {
         chatTemplatesFlow.update(transform)

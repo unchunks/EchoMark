@@ -121,6 +121,11 @@ class FakeBookmarkRepository : BookmarkRepository {
             .filter { bookmark ->
                 query.categories.isEmpty() || query.categories.any { it.equals(bookmark.category, ignoreCase = true) }
             }
+            .filter { query.types.isEmpty() || it.type in query.types }
+            .filter { bookmark ->
+                val since = query.period?.sinceMillis(System.currentTimeMillis())
+                since == null || bookmark.createdAt >= since
+            }
             .sortedWith(
                 when (sortOrder) {
                     BookmarkSortOrder.NEWEST -> compareByDescending<Bookmark> { it.createdAt }
