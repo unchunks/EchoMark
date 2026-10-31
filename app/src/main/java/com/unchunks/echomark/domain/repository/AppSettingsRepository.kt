@@ -2,7 +2,9 @@ package com.unchunks.echomark.domain.repository
 
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.model.SummaryStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -147,6 +149,12 @@ interface AppSettingsRepository {
     /** 一覧の並び順。アプリを開き直しても前回選んだ順で出す。既定は新しい順。 */
     val bookmarkSortOrder: Flow<BookmarkSortOrder>
 
+    /** 一覧の見せ方(カード・コンパクト・グリッド)。アプリを開き直しても前回選んだものにする。既定はカード。 */
+    val bookmarkListDisplay: Flow<BookmarkListDisplay>
+
+    /** 読書モードの見た目(文字の大きさ・背景・書体)。 */
+    val readingStyle: Flow<ReadingStyle>
+
     suspend fun setLlmBackend(task: AiTask, backend: LlmBackend)
     suspend fun setApiProvider(task: AiTask, provider: ApiProvider)
 
@@ -161,6 +169,8 @@ interface AppSettingsRepository {
     suspend fun setSendFilesToCloud(enabled: Boolean)
     suspend fun setLocalLlmUseGpu(enabled: Boolean)
     suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder)
+    suspend fun setBookmarkListDisplay(display: BookmarkListDisplay)
+    suspend fun setReadingStyle(style: ReadingStyle)
 
     /** [transform] で検索の履歴を書き換える */
     suspend fun updateSearchHistory(transform: (List<String>) -> List<String>)

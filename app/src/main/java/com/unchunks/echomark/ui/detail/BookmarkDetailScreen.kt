@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.Sell
 import androidx.compose.material.icons.outlined.TaskAlt
@@ -115,6 +116,8 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ReadingBlocks
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.bookmark.model.ReadingTime
 import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
 import com.unchunks.echomark.domain.bookmark.model.readingMinutes
@@ -142,6 +145,7 @@ import com.unchunks.echomark.ui.components.formatElapsed
 import com.unchunks.echomark.ui.components.message
 import com.unchunks.echomark.ui.components.needsSetup
 import com.unchunks.echomark.ui.components.processingBadge
+import com.unchunks.echomark.ui.components.displaySource
 import com.unchunks.echomark.ui.components.rememberHighlighted
 import com.unchunks.echomark.ui.components.retryingMessage
 import com.unchunks.echomark.ui.components.rememberTickingNow
@@ -226,6 +230,7 @@ fun BookmarkDetailScreen(
             onShare = { shareBookmark(context, it) },
             onToggleFavorite = viewModel::toggleFavorite,
             onToggleRead = viewModel::toggleRead,
+            onReadingStyleChange = viewModel::setReadingStyle,
             onSetArchived = { viewModel.setArchived(it) },
             onReprocess = { viewModel.reprocess() },
             onReprocessPart = viewModel::reprocess,
@@ -257,6 +262,8 @@ class BookmarkDetailCallbacks(
     val onToggleFavorite: () -> Unit = {},
     /** 読んだことにする / 未読に戻す */
     val onToggleRead: () -> Unit = {},
+    /** 読書モードの文字の大きさ・背景・書体を変える */
+    val onReadingStyleChange: (ReadingStyle) -> Unit = {},
     val onSetArchived: (Boolean) -> Unit = {},
     val onReprocess: () -> Unit = {},
     /** 要約だけ・タグだけを作り直す */
@@ -301,38 +308,57 @@ fun BookmarkDetailContent(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var showEditSheet by rememberSaveable { mutableStateOf(false) }
+    var readingMode by rememberSaveable { mutableStateOf(false) }
+    val readingBlocks = remember(bookmark?.content) { ReadingBlocks.from(bookmark?.content) }
+    // 本文が無い(または消えた)なら、読書モードのままにしない
+    val inReadingMode = readingMode && bookmark != null && readingBlocks.isNotEmpty()
 
-    Scaffold(
-        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            DetailTopBar(
-                bookmark = bookmark,
-                scrollBehavior = scrollBehavior,
-                callbacks = callbacks,
-                showBackButton = showBackButton,
-                onEdit = { showEditSheet = true },
-                onDelete = { showDeleteDialog = true }
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { innerPadding ->
-        when {
-            uiState.isLoading -> LoadingState(Modifier.padding(innerPadding), message = "読み込み中…")
-            bookmark == null -> EmptyState(
-                icon = Icons.Outlined.BookmarkRemove,
-                title = "ブックマークが見つかりません",
-                description = "削除された可能性があります。",
-                actionLabel = "戻る",
-                onAction = callbacks.onBack,
-                modifier = Modifier.padding(innerPadding)
-            )
-            else -> DetailBody(
-                bookmark = bookmark,
-                uiState = uiState,
-                callbacks = callbacks,
-                nowMillis = nowMillis,
-                contentPadding = innerPadding
-            )
+    if (inReadingMode && bookmark != null) {
+        ReadingModeContent(
+            title = bookmark.title,
+            source = bookmark.displaySource(),
+            readingMinutes = remember(bookmark.content) { bookmark.readingMinutes() },
+            blocks = readingBlocks,
+            style = uiState.readingStyle,
+            highlightTerms = uiState.highlightTerms,
+            onStyleChange = callbacks.onReadingStyleChange,
+            onClose = { readingMode = false },
+            modifier = modifier
+        )
+    } else {
+        Scaffold(
+            modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+            topBar = {
+                DetailTopBar(
+                    bookmark = bookmark,
+                    scrollBehavior = scrollBehavior,
+                    callbacks = callbacks,
+                    showBackButton = showBackButton,
+                    onEdit = { showEditSheet = true },
+                    onDelete = { showDeleteDialog = true },
+                    onReadingMode = if (readingBlocks.isNotEmpty()) ({ readingMode = true }) else null
+                )
+            },
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { innerPadding ->
+            when {
+                uiState.isLoading -> LoadingState(Modifier.padding(innerPadding), message = "読み込み中…")
+                bookmark == null -> EmptyState(
+                    icon = Icons.Outlined.BookmarkRemove,
+                    title = "ブックマークが見つかりません",
+                    description = "削除された可能性があります。",
+                    actionLabel = "戻る",
+                    onAction = callbacks.onBack,
+                    modifier = Modifier.padding(innerPadding)
+                )
+                else -> DetailBody(
+                    bookmark = bookmark,
+                    uiState = uiState,
+                    callbacks = callbacks,
+                    nowMillis = nowMillis,
+                    contentPadding = innerPadding
+                )
+            }
         }
     }
 
@@ -377,7 +403,9 @@ private fun DetailTopBar(
     callbacks: BookmarkDetailCallbacks,
     showBackButton: Boolean,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    /** 読書モードを開く。本文が無いときは null(ボタンを出さない) */
+    onReadingMode: (() -> Unit)?
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     TopAppBar(
@@ -392,6 +420,11 @@ private fun DetailTopBar(
         scrollBehavior = scrollBehavior,
         actions = {
             if (bookmark == null) return@TopAppBar
+            if (onReadingMode != null) {
+                IconButton(onClick = onReadingMode) {
+                    Icon(Icons.AutoMirrored.Outlined.MenuBook, contentDescription = "読書モード")
+                }
+            }
             IconButton(onClick = callbacks.onToggleFavorite) {
                 Icon(
                     imageVector = if (bookmark.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,

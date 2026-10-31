@@ -4,7 +4,9 @@ import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.securestorage.SecretCipher
 import com.unchunks.components.securestorage.UnrecoverableSecretException
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
@@ -55,6 +57,8 @@ class FakeAppSettingsRepository(
     val sendFilesToCloudFlow = MutableStateFlow(true)
     val localLlmUseGpuFlow = MutableStateFlow(false)
     val bookmarkSortOrderFlow = MutableStateFlow(BookmarkSortOrder.NEWEST)
+    val bookmarkListDisplayFlow = MutableStateFlow(BookmarkListDisplay.CARD)
+    val readingStyleFlow = MutableStateFlow(ReadingStyle())
     val chatTemplatesFlow = MutableStateFlow<List<ChatTemplate>>(emptyList())
     val searchHistoryFlow = MutableStateFlow<List<String>>(emptyList())
     var resetCalls = 0
@@ -79,6 +83,10 @@ class FakeAppSettingsRepository(
     override val sendFilesToCloud: Flow<Boolean> = sendFilesToCloudFlow
     override val localLlmUseGpu: Flow<Boolean> = localLlmUseGpuFlow
     override val bookmarkSortOrder: Flow<BookmarkSortOrder> = bookmarkSortOrderFlow
+    override val bookmarkListDisplay: Flow<BookmarkListDisplay> = bookmarkListDisplayFlow
+    override val readingStyle: Flow<ReadingStyle> = readingStyleFlow
+    override suspend fun setBookmarkListDisplay(display: BookmarkListDisplay) { bookmarkListDisplayFlow.value = display }
+    override suspend fun setReadingStyle(style: ReadingStyle) { readingStyleFlow.value = style }
 
     override suspend fun setLlmBackend(task: AiTask, backend: LlmBackend) = updateTask(task) { copy(backend = backend) }
     override suspend fun setApiProvider(task: AiTask, provider: ApiProvider) = updateTask(task) { copy(apiProvider = provider) }
@@ -118,6 +126,8 @@ class FakeAppSettingsRepository(
         sendFilesToCloudFlow.value = true
         localLlmUseGpuFlow.value = false
         bookmarkSortOrderFlow.value = BookmarkSortOrder.NEWEST
+        bookmarkListDisplayFlow.value = BookmarkListDisplay.CARD
+        readingStyleFlow.value = ReadingStyle()
         processingFlow.value = ProcessingSettings()
         summaryStyleFlow.value = SummaryStyle()
         chatTemplatesFlow.value = emptyList()

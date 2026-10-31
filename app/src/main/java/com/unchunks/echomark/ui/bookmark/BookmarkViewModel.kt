@@ -7,6 +7,7 @@ import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
@@ -81,6 +82,8 @@ class BookmarkViewModel @Inject constructor(
         /** 絞り込み条件(通常/アーカイブ/お気に入り・タグ・カテゴリ) */
         val query: BookmarkQuery = BookmarkQuery(),
         val sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST,
+        /** 一覧の見せ方。並び順と同じく設定に保存したものを使う */
+        val display: BookmarkListDisplay = BookmarkListDisplay.CARD,
         val searchActive: Boolean = false
     )
 
@@ -106,7 +109,9 @@ class BookmarkViewModel @Inject constructor(
      * 保存した並び順を読むまでは一覧を出さない(既定の順で一瞬出してから並べ替わらないように)
      */
     private val shownControlsFlow: Flow<ListControls> =
-        combine(controlsFlow, appSettings.bookmarkSortOrder) { controls, sortOrder -> controls.copy(sortOrder = sortOrder) }
+        combine(controlsFlow, appSettings.bookmarkSortOrder, appSettings.bookmarkListDisplay) { controls, sortOrder, display ->
+            controls.copy(sortOrder = sortOrder, display = display)
+        }
 
     private val retryTrigger = MutableStateFlow(0)
     private val rediscoverFlow = MutableStateFlow<List<Bookmark>>(emptyList())
@@ -268,6 +273,7 @@ class BookmarkViewModel @Inject constructor(
             readState = query.readState,
             filter = query.filter,
             sortOrder = controls.sortOrder,
+            display = controls.display,
             isSearchActive = controls.searchActive,
             searchQuery = rawQuery,
             queryRevision = revision,
@@ -483,6 +489,19 @@ class BookmarkViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Timber.w(e, "並び順を保存できませんでした")
+            }
+        }
+    }
+
+    /** 一覧の見せ方を変えて保存する(一覧は保存した値から読み直す) */
+    fun onDisplayChange(display: BookmarkListDisplay) {
+        viewModelScope.launch {
+            try {
+                appSettings.setBookmarkListDisplay(display)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "一覧の見せ方を保存できませんでした")
             }
         }
     }

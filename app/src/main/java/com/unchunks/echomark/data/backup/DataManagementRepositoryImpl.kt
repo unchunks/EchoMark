@@ -154,8 +154,9 @@ class DataManagementRepositoryImpl @Inject constructor(
         vectorSearch.deleteAll()
         // 添付ファイルは参照が無くなったので、掃除を待たずにすぐ消す
         attachmentStore.deleteAll()
-        // 検索の履歴は利用者のデータ(何を探したか)なので、設定を残す場合でも消す
+        // 検索の履歴(何を探したか)と、自分で作ったチャットのテンプレートは利用者のデータなので、設定を残す場合でも消す
         appSettings.updateSearchHistory { emptyList() }
+        appSettings.updateChatTemplates { emptyList() }
         if (resetSettings) {
             appSettings.resetToDefaults()
             ApiProvider.entries.forEach { apiKeyRepository.clearKey(it) }

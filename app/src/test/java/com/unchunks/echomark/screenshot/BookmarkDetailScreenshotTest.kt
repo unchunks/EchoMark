@@ -17,7 +17,13 @@ import com.unchunks.echomark.domain.model.SummarySource
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.ui.components.PreviewSamples
 import com.unchunks.echomark.ui.detail.BookmarkDetailCallbacks
+import com.unchunks.echomark.domain.bookmark.model.ReadingBlock
+import com.unchunks.echomark.domain.bookmark.model.ReadingFont
+import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.ui.detail.BookmarkDetailContent
+import com.unchunks.echomark.ui.detail.ReadingModeContent
 import com.unchunks.echomark.ui.detail.BookmarkDetailUiState
 import com.unchunks.echomark.ui.detail.EditBookmarkSheetContent
 import org.junit.Rule
@@ -73,6 +79,36 @@ class BookmarkDetailScreenshotTest {
         "library_detail_url_search",
         heightDp = 1400,
         content = content(urlBookmark, highlightTerms = listOf("compose", "remember"))
+    )
+
+    private val readingBlocks = listOf(
+        ReadingBlock.Paragraph("Jetpack Compose は宣言的に UI を組み立てるツールキットです。状態が変わると関係する部分だけが再コンポーズされます。"),
+        ReadingBlock.Paragraph("不安定な型や毎回生成されるラムダがあると、不要な再コンポーズが起きます。この記事では、安定性の考え方と、remember・derivedStateOf の使い分けを紹介します。"),
+        ReadingBlock.Heading("計測する"),
+        ReadingBlock.Paragraph("まずは Layout Inspector で再コンポーズ回数を確認しましょう。")
+    )
+
+    private fun readingMode(style: ReadingStyle): @Composable () -> Unit = {
+        ReadingModeContent(
+            title = "Jetpack Compose のパフォーマンスを改善する 7 つのヒント",
+            source = "Example Tech Blog", readingMinutes = 4, blocks = readingBlocks,
+            style = style, highlightTerms = listOf("remember"), onStyleChange = {}, onClose = {}
+        )
+    }
+
+    @Test
+    fun readingModeSystem() = screenshot.captureScreenLightDark("library_reading_mode", content = readingMode(ReadingStyle()))
+
+    @Test
+    fun readingModePaperSerifLarge() = screenshot.captureScreenLightDark(
+        "library_reading_mode_paper",
+        content = readingMode(ReadingStyle(ReadingFontSize.LARGE, ReadingTheme.PAPER, ReadingFont.SERIF))
+    )
+
+    @Test
+    fun readingModeBlack() = screenshot.captureScreenLightDark(
+        "library_reading_mode_black",
+        content = readingMode(ReadingStyle(ReadingFontSize.MEDIUM, ReadingTheme.DARK, ReadingFont.SANS))
     )
 
     @Test

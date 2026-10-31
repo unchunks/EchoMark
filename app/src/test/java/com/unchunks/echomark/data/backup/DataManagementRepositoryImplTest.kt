@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.testing.FakeApiKeyRepository
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.embeddingBox
@@ -109,6 +110,15 @@ class DataManagementRepositoryImplTest {
         repository.deleteAllData(resetSettings = false)
 
         assertEquals(emptyList<String>(), settings.searchHistoryFlow.value)
+    }
+
+    @Test
+    fun 全データ削除は設定を残す場合でも自分で作ったチャットのテンプレートを消す() = runBlocking {
+        settings.chatTemplatesFlow.value = listOf(ChatTemplate("1", "会議", "会議の議題をまとめて"))
+
+        repository.deleteAllData(resetSettings = false)
+
+        assertEquals(emptyList<ChatTemplate>(), settings.chatTemplatesFlow.value)
     }
 
     @Test

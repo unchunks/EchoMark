@@ -50,6 +50,9 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.ViewAgenda
+import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -114,6 +117,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
@@ -128,6 +132,8 @@ import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.shareBookmark
 import com.unchunks.echomark.ui.common.shortTitle
 import com.unchunks.echomark.ui.components.BookmarkCard
+import com.unchunks.echomark.ui.components.BookmarkGridTile
+import com.unchunks.echomark.ui.components.CompactBookmarkRow
 import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
@@ -250,6 +256,7 @@ fun BookmarkListScreen(
             onClearTypeAndPeriod = viewModel::onClearTypeAndPeriod,
             onFilterChange = viewModel::onFilterChange,
             onSortOrderChange = viewModel::onSortOrderChange,
+            onDisplayChange = viewModel::onDisplayChange,
             onTagToggle = viewModel::onTagToggled,
             onCategoryToggle = viewModel::onCategoryToggled,
             onTagMatchChange = viewModel::onTagMatchChange,
@@ -312,6 +319,8 @@ class BookmarkListCallbacks(
     val onClearTypeAndPeriod: () -> Unit = {},
     val onFilterChange: (BookmarkFilter) -> Unit = {},
     val onSortOrderChange: (BookmarkSortOrder) -> Unit = {},
+    /** 一覧の見せ方(カード・コンパクト・グリッド)を変える */
+    val onDisplayChange: (BookmarkListDisplay) -> Unit = {},
     /** タグを選ぶ・外す(複数選べる) */
     val onTagToggle: (Long) -> Unit = {},
     /** カテゴリを選ぶ・外す(複数選べる) */
@@ -389,9 +398,11 @@ fun BookmarkListContent(
             } else {
                 ListTopBar(
                     sortOrder = uiState.sortOrder,
+                    display = uiState.display,
                     scrollBehavior = scrollBehavior,
                     onSearchClick = { callbacks.onSearchActiveChange(true) },
                     onSortOrderChange = callbacks.onSortOrderChange,
+                    onDisplayChange = callbacks.onDisplayChange,
                     onOpenTagManagement = callbacks.onOpenTagManagement,
                     onOpenDiscover = callbacks.onOpenDiscover
                 )
@@ -467,7 +478,7 @@ private fun BookmarkList(
     selectedBookmarkId: Long?
 ) {
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Adaptive(BOOKMARK_CARD_MIN_WIDTH),
+        columns = StaggeredGridCells.Adaptive(if (uiState.display == BookmarkListDisplay.GRID) BOOKMARK_TILE_MIN_WIDTH else BOOKMARK_CARD_MIN_WIDTH),
         state = listState,
         modifier = Modifier.fillMaxSize(),
         // 下は追加ボタンに最後のカードが隠れないだけ空ける
@@ -506,39 +517,75 @@ private fun BookmarkList(
                 }
             }
         }
-        staggeredItems(uiState.bookmarks, key = { it.id }, contentType = { "bookmark" }) { bookmark ->
+        staggeredItems(uiState.bookmarks, key = { it.id }, contentType = { "bookmark_${uiState.display.name}" }) { bookmark ->
             val onArchiveToggle = { callbacks.onSetArchived(bookmark, !bookmark.isArchived) }
             val onDelete = { callbacks.onDelete(bookmark) }
             val archiveLabel = if (bookmark.isArchived) "アーカイブから戻す" else "アーカイブ"
-            SwipeableBookmarkItem(
-                bookmark = bookmark,
-                onArchiveToggle = onArchiveToggle,
-                onDelete = onDelete,
-                modifier = Modifier.animateItem()
-            ) {
+            val searchTerms = if (uiState.isShowingSearchResults) uiState.searchTerms else emptyList()
+            val searchMatch = if (uiState.isShowingSearchResults) uiState.searchMatches[bookmark.id] else null
+            val selected = bookmark.id == selectedBookmarkId
+            val onClick = { callbacks.onOpenBookmark(bookmark.id) }
+            val onLongClick = { callbacks.onLongPress(bookmark) }
+            // スワイプできない人向けに、同じ操作を TalkBack のカスタムアクションにも出す。
+            // TalkBack がフォーカスするのはカード(クリックできるノード)なので、カードに付ける
+            val accessibility = Modifier.semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(if (bookmark.isRead) "未読に戻す" else "既読にする") { callbacks.onToggleRead(bookmark); true },
+                    CustomAccessibilityAction(archiveLabel) { onArchiveToggle(); true },
+                    CustomAccessibilityAction("削除") { onDelete(); true }
+                )
+            }
+            val item: @Composable () -> Unit = {
                 Column {
                     if (bookmark.id in uiState.semanticMatchIds) SemanticMatchLabel()
-                    BookmarkCard(
-                        bookmark = bookmark,
-                        searchTerms = if (uiState.isShowingSearchResults) uiState.searchTerms else emptyList(),
-                        searchMatch = if (uiState.isShowingSearchResults) uiState.searchMatches[bookmark.id] else null,
-                        selected = bookmark.id == selectedBookmarkId,
-                        onClick = { callbacks.onOpenBookmark(bookmark.id) },
-                        onToggleFavorite = { callbacks.onToggleFavorite(bookmark) },
-                        onLongClick = { callbacks.onLongPress(bookmark) },
-                        onLongClickLabel = "操作メニューを開く",
-                        nowMillis = nowMillis,
-                        // スワイプできない人向けに、同じ操作を TalkBack のカスタムアクションにも出す。
-                        // TalkBack がフォーカスするのはカード(クリックできるノード)なので、カードに付ける
-                        modifier = Modifier.semantics {
-                            customActions = listOf(
-                                CustomAccessibilityAction(if (bookmark.isRead) "未読に戻す" else "既読にする") { callbacks.onToggleRead(bookmark); true },
-                                CustomAccessibilityAction(archiveLabel) { onArchiveToggle(); true },
-                                CustomAccessibilityAction("削除") { onDelete(); true }
-                            )
-                        }
-                    )
+                    when (uiState.display) {
+                        BookmarkListDisplay.CARD -> BookmarkCard(
+                            bookmark = bookmark,
+                            searchTerms = searchTerms,
+                            searchMatch = searchMatch,
+                            selected = selected,
+                            onClick = onClick,
+                            onToggleFavorite = { callbacks.onToggleFavorite(bookmark) },
+                            onLongClick = onLongClick,
+                            onLongClickLabel = "操作メニューを開く",
+                            nowMillis = nowMillis,
+                            modifier = accessibility
+                        )
+                        BookmarkListDisplay.COMPACT -> CompactBookmarkRow(
+                            bookmark = bookmark,
+                            searchTerms = searchTerms,
+                            searchMatch = searchMatch,
+                            selected = selected,
+                            onClick = onClick,
+                            onToggleFavorite = { callbacks.onToggleFavorite(bookmark) },
+                            onLongClick = onLongClick,
+                            onLongClickLabel = "操作メニューを開く",
+                            nowMillis = nowMillis,
+                            modifier = accessibility
+                        )
+                        BookmarkListDisplay.GRID -> BookmarkGridTile(
+                            bookmark = bookmark,
+                            searchTerms = searchTerms,
+                            selected = selected,
+                            onClick = onClick,
+                            onLongClick = onLongClick,
+                            onLongClickLabel = "操作メニューを開く",
+                            nowMillis = nowMillis,
+                            modifier = accessibility
+                        )
+                    }
                 }
+            }
+            if (uiState.display == BookmarkListDisplay.GRID) {
+                // 幅の狭いタイルは、横にスワイプして操作するには向かない。長押しのメニューと TalkBack の操作で同じことができる
+                Box(Modifier.animateItem()) { item() }
+            } else {
+                SwipeableBookmarkItem(
+                    bookmark = bookmark,
+                    onArchiveToggle = onArchiveToggle,
+                    onDelete = onDelete,
+                    modifier = Modifier.animateItem()
+                ) { item() }
             }
         }
     }
@@ -548,13 +595,16 @@ private fun BookmarkList(
 @Composable
 private fun ListTopBar(
     sortOrder: BookmarkSortOrder,
+    display: BookmarkListDisplay,
     scrollBehavior: TopAppBarScrollBehavior,
     onSearchClick: () -> Unit,
     onSortOrderChange: (BookmarkSortOrder) -> Unit,
+    onDisplayChange: (BookmarkListDisplay) -> Unit,
     onOpenTagManagement: () -> Unit,
     onOpenDiscover: () -> Unit
 ) {
     var sortMenuOpen by remember { mutableStateOf(false) }
+    var displayMenuOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
     TopAppBar(
         // 文字が大きいときも単語の途中で折り返さず、1行に収めて省略する
@@ -581,6 +631,29 @@ private fun ListTopBar(
                                     Icon(Icons.Filled.Check, contentDescription = "選択中")
                                 } else {
                                     Spacer(Modifier.size(24.dp))
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+            Box {
+                IconButton(onClick = { displayMenuOpen = true }) {
+                    Icon(display.icon(), contentDescription = "表示の切り替え(${display.label()})")
+                }
+                DropdownMenu(expanded = displayMenuOpen, onDismissRequest = { displayMenuOpen = false }) {
+                    BookmarkListDisplay.entries.forEach { entry ->
+                        DropdownMenuItem(
+                            text = { Text(entry.label()) },
+                            onClick = {
+                                displayMenuOpen = false
+                                onDisplayChange(entry)
+                            },
+                            leadingIcon = {
+                                if (entry == display) {
+                                    Icon(Icons.Filled.Check, contentDescription = "選択中")
+                                } else {
+                                    Icon(entry.icon(), contentDescription = null)
                                 }
                             }
                         )
@@ -1192,6 +1265,20 @@ private fun ListEmptyState(uiState: BookmarkListUiState, callbacks: BookmarkList
     }
 }
 
+/** 一覧の見せ方の表示名 */
+internal fun BookmarkListDisplay.label(): String = when (this) {
+    BookmarkListDisplay.CARD -> "カード"
+    BookmarkListDisplay.COMPACT -> "コンパクト"
+    BookmarkListDisplay.GRID -> "グリッド"
+}
+
+/** 一覧の見せ方のアイコン */
+internal fun BookmarkListDisplay.icon(): ImageVector = when (this) {
+    BookmarkListDisplay.CARD -> Icons.Outlined.ViewAgenda
+    BookmarkListDisplay.COMPACT -> Icons.AutoMirrored.Outlined.ViewList
+    BookmarkListDisplay.GRID -> Icons.Outlined.GridView
+}
+
 internal fun BookmarkSortOrder.label(): String = when (this) {
     BookmarkSortOrder.NEWEST -> "新しい順"
     BookmarkSortOrder.OLDEST -> "古い順"
@@ -1207,6 +1294,9 @@ private val LIST_SIDE_PADDING = 16.dp
  * 小さめのスマートフォン(幅 360dp)のカードより少し狭いくらい
  */
 private val BOOKMARK_CARD_MIN_WIDTH = 300.dp
+
+/** グリッド表示のタイルの最小の幅。スマートフォンで 2 列になる(余白を引いた幅の半分より少し小さい) */
+private val BOOKMARK_TILE_MIN_WIDTH = 150.dp
 
 /**
  * 一覧の左右の余白([LIST_SIDE_PADDING])を打ち消して、端から端まで広げる。
