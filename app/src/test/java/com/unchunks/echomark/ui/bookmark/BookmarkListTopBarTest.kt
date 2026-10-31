@@ -20,6 +20,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.ui.components.PreviewSamples
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
@@ -65,6 +66,57 @@ class BookmarkListTopBarTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("ブックマーク").assertIsDisplayed()
+    }
+
+    @Test
+    fun 表示の切り替えメニューで一覧の見せ方を選べる() {
+        val chosen = mutableListOf<BookmarkListDisplay>()
+        composeRule.setContent {
+            EchoMarkTheme {
+                BookmarkListContent(
+                    uiState = BookmarkListUiState(bookmarks = PreviewSamples.all, totalCount = 4),
+                    snackbarHostState = SnackbarHostState(),
+                    callbacks = BookmarkListCallbacks(onDisplayChange = { chosen += it }),
+                    nowMillis = PreviewSamples.NOW
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("表示の切り替え(カード)").performClick()
+        composeRule.onNodeWithText("コンパクト").assertIsDisplayed()
+        composeRule.onNodeWithText("グリッド").performClick()
+
+        assertEquals(listOf(BookmarkListDisplay.GRID), chosen)
+    }
+
+    @Test
+    fun どの見せ方でも全部のブックマークが出て_タップで開ける() {
+        val display = mutableStateOf(BookmarkListDisplay.CARD)
+        val opened = mutableListOf<Long>()
+        val bookmarks = listOf(
+            PreviewSamples.urlBookmark.copy(id = 1, title = "一件目のタイトル"),
+            PreviewSamples.textBookmark.copy(id = 2, title = "二件目のタイトル")
+        )
+        composeRule.setContent {
+            EchoMarkTheme {
+                BookmarkListContent(
+                    uiState = BookmarkListUiState(bookmarks = bookmarks, display = display.value, totalCount = 2),
+                    snackbarHostState = SnackbarHostState(),
+                    callbacks = BookmarkListCallbacks(onOpenBookmark = { opened += it }),
+                    nowMillis = PreviewSamples.NOW
+                )
+            }
+        }
+
+        BookmarkListDisplay.entries.forEach { entry ->
+            composeRule.runOnIdle { display.value = entry }
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("一件目のタイトル").assertIsDisplayed()
+            composeRule.onNodeWithText("二件目のタイトル").assertIsDisplayed()
+            composeRule.onNodeWithText("二件目のタイトル").performClick()
+        }
+
+        assertEquals(listOf(2L, 2L, 2L), opened)
     }
 
     @Test

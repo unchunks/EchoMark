@@ -7,7 +7,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.ReadingFont
+import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.domain.model.SummaryFormat
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
@@ -90,6 +95,36 @@ class AppSettingsRepositoryImplTest {
         // 知らない並び順(古い版・新しい版で名前が変わったもの)は新しい順として扱う
         dataStore.edit { it[stringPreferencesKey("bookmark_sort_order")] = "UNKNOWN" }
         assertEquals(BookmarkSortOrder.NEWEST, repository.bookmarkSortOrder.first())
+    }
+
+    @Test
+    fun 一覧の見せ方は既定がカードで保存したものを読み出せる() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertEquals(BookmarkListDisplay.CARD, repository.bookmarkListDisplay.first())
+
+        repository.setBookmarkListDisplay(BookmarkListDisplay.GRID)
+        assertEquals(BookmarkListDisplay.GRID, repository.bookmarkListDisplay.first())
+        assertEquals(BookmarkListDisplay.GRID, createRepository(dataStore).bookmarkListDisplay.first())
+
+        // 知らない見せ方(新しい版で増えたもの)はカードとして扱う
+        dataStore.edit { it[stringPreferencesKey("bookmark_list_display")] = "MOSAIC" }
+        assertEquals(BookmarkListDisplay.CARD, repository.bookmarkListDisplay.first())
+    }
+
+    @Test
+    fun 読書モードの見た目は既定があり_保存でき_読めない項目だけ既定に戻る() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertEquals(ReadingStyle(), repository.readingStyle.first())
+
+        val style = ReadingStyle(ReadingFontSize.XLARGE, ReadingTheme.PAPER, ReadingFont.SERIF)
+        repository.setReadingStyle(style)
+        assertEquals(style, repository.readingStyle.first())
+        assertEquals(style, createRepository(dataStore).readingStyle.first())
+
+        dataStore.edit { it[stringPreferencesKey("reading_theme")] = "SEPIA2" }
+        assertEquals(style.copy(theme = ReadingTheme.SYSTEM), repository.readingStyle.first())
     }
 
     @Test

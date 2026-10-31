@@ -8,6 +8,7 @@ import androidx.compose.material3.Surface
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
 import com.unchunks.echomark.domain.bookmark.model.ReadState
@@ -123,6 +124,32 @@ class BookmarkListScreenshotTest {
     fun favoritesEmpty() = screenshot.captureScreenLightDark(
         "library_list_favorites_empty",
         content = content(BookmarkListUiState(filter = BookmarkFilter.FAVORITES, allTags = tags, totalCount = 4))
+    )
+
+    @Test
+    fun compactDisplay() = screenshot.captureScreenLightDark(
+        "library_list_compact",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = PreviewSamples.all.mapIndexed { index, b -> if (index == 2) b.copy(readAt = now - day) else b },
+                allTags = tags,
+                display = BookmarkListDisplay.COMPACT,
+                totalCount = 4
+            )
+        )
+    )
+
+    @Test
+    fun gridDisplay() = screenshot.captureScreenLightDark(
+        "library_list_grid",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = PreviewSamples.all,
+                allTags = tags,
+                display = BookmarkListDisplay.GRID,
+                totalCount = 4
+            )
+        )
     )
 
     @Test

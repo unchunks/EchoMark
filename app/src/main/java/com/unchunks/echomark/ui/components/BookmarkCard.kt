@@ -298,7 +298,7 @@ private fun Bookmark.fileSourceLabel(): String? {
 }
 
 @Composable
-private fun SourceLine(
+internal fun SourceLine(
     source: String,
     relativeTime: String,
     showFavoriteMark: Boolean,
@@ -344,7 +344,7 @@ private fun SourceLine(
 }
 
 @Composable
-private fun FavoriteButton(isFavorite: Boolean, onClick: () -> Unit) {
+internal fun FavoriteButton(isFavorite: Boolean, onClick: () -> Unit) {
     IconButton(onClick = onClick) {
         Icon(
             imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,

@@ -9,7 +9,12 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.ReadingFont
+import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AiTask
@@ -131,6 +136,36 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder) {
         dataStore.edit { it[KEY_BOOKMARK_SORT_ORDER] = sortOrder.name }
+    }
+
+    // 名前の変わった・無くなった見せ方が保存されていたら既定(カード)に戻す
+    override val bookmarkListDisplay: Flow<BookmarkListDisplay> = data.map { prefs ->
+        prefs[KEY_BOOKMARK_LIST_DISPLAY]?.let { name -> BookmarkListDisplay.entries.firstOrNull { it.name == name } }
+            ?: BookmarkListDisplay.CARD
+    }.distinctUntilChanged()
+
+    override suspend fun setBookmarkListDisplay(display: BookmarkListDisplay) {
+        dataStore.edit { it[KEY_BOOKMARK_LIST_DISPLAY] = display.name }
+    }
+
+    // 読めない値(新しい版で増えたもの)は、その項目だけ既定に戻す
+    override val readingStyle: Flow<ReadingStyle> = data.map { prefs ->
+        ReadingStyle(
+            fontSize = prefs[KEY_READING_FONT_SIZE]?.let { name -> ReadingFontSize.entries.firstOrNull { it.name == name } }
+                ?: ReadingFontSize.MEDIUM,
+            theme = prefs[KEY_READING_THEME]?.let { name -> ReadingTheme.entries.firstOrNull { it.name == name } }
+                ?: ReadingTheme.SYSTEM,
+            font = prefs[KEY_READING_FONT]?.let { name -> ReadingFont.entries.firstOrNull { it.name == name } }
+                ?: ReadingFont.SANS
+        )
+    }.distinctUntilChanged()
+
+    override suspend fun setReadingStyle(style: ReadingStyle) {
+        dataStore.edit {
+            it[KEY_READING_FONT_SIZE] = style.fontSize.name
+            it[KEY_READING_THEME] = style.theme.name
+            it[KEY_READING_FONT] = style.font.name
+        }
     }
 
     override suspend fun setThemeMode(mode: ThemeMode) {
@@ -262,6 +297,10 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_CHAT_TEMPLATES = stringPreferencesKey("chat_templates")
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
+        val KEY_BOOKMARK_LIST_DISPLAY = stringPreferencesKey("bookmark_list_display")
+        val KEY_READING_FONT_SIZE = stringPreferencesKey("reading_font_size")
+        val KEY_READING_THEME = stringPreferencesKey("reading_theme")
+        val KEY_READING_FONT = stringPreferencesKey("reading_font")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val KEY_PROCESSING_CHARGING_ONLY = booleanPreferencesKey("processing_charging_only")
         val KEY_PROCESSING_UNMETERED_ONLY = booleanPreferencesKey("processing_unmetered_only")

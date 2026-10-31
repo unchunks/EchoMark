@@ -7,12 +7,17 @@ import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.ReadingFont
+import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummarySource
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeCategoryRepository
 import com.unchunks.echomark.testing.FakeProcessingStatsRepository
@@ -46,8 +51,10 @@ class BookmarkDetailViewModelTest {
     private val translator = FakeSummaryTranslator()
     private val categories = FakeCategoryRepository()
 
+    private val settings = FakeAppSettingsRepository()
+
     private fun createViewModel(id: Long = 1L) =
-        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights())
+        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights(), settings)
 
     @Test
     fun 処理の進み具合と段ごとの平均の所要時間を出す() = runTest {
@@ -85,6 +92,22 @@ class BookmarkDetailViewModelTest {
         assertEquals(1L, state.bookmark?.id)
         assertEquals(listOf(2L), state.related.map { it.id })
         assertEquals(listOf("kotlin"), state.allTagNames)
+    }
+
+    @Test
+    fun 読書モードの見た目を保存して状態に出る() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+        assertEquals(ReadingStyle(), viewModel.uiState.value.readingStyle)
+
+        val style = ReadingStyle(ReadingFontSize.LARGE, ReadingTheme.DARK, ReadingFont.SERIF)
+        viewModel.setReadingStyle(style)
+        advanceUntilIdle()
+
+        assertEquals(style, settings.readingStyleFlow.value)
+        assertEquals(style, viewModel.uiState.value.readingStyle)
     }
 
     @Test

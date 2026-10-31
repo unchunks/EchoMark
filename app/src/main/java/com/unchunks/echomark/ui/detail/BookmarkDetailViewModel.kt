@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryLanguage
@@ -11,6 +12,7 @@ import com.unchunks.echomark.domain.model.CategoryEntry
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.provider.SummaryTranslator
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
+import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.CategoryRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
@@ -55,7 +57,9 @@ data class BookmarkDetailUiState(
     /** カテゴリの変更で選べるカテゴリ(自分のもの → 標準のもの。#33) */
     val categoryChoices: List<CategoryEntry> = emptyList(),
     /** 検索結果から開いたときの検索語。タイトル・要約・本文で一致した文字を強調する(#57)。空なら強調しない */
-    val highlightTerms: List<String> = emptyList()
+    val highlightTerms: List<String> = emptyList(),
+    /** 読書モードの見た目(文字の大きさ・背景・書体。#59) */
+    val readingStyle: ReadingStyle = ReadingStyle()
 )
 
 /** 要約の翻訳の状態(#24)。翻訳は保存せず、画面を閉じたら消える。 */
@@ -102,7 +106,8 @@ class BookmarkDetailViewModel @Inject constructor(
     processingStats: ProcessingStatsRepository,
     private val translator: SummaryTranslator,
     categoryRepository: CategoryRepository,
-    searchHighlights: SearchHighlights
+    searchHighlights: SearchHighlights,
+    private val appSettings: AppSettingsRepository
 ) : ViewModel() {
 
     // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
@@ -164,6 +169,13 @@ class BookmarkDetailViewModel @Inject constructor(
 
     private val highlightTermsFlow = searchHighlights.termsFor(bookmarkId)
 
+    /** 読書モードの見た目。補助的な設定なので、読めなければ既定の見た目にする */
+    private val readingStyleFlow = appSettings.readingStyle
+        .catch { e ->
+            if (e is CancellationException) throw e
+            emit(ReadingStyle())
+        }
+
     private val translation = MutableStateFlow<TranslationState>(TranslationState.Idle)
     private var translationJob: Job? = null
 
@@ -178,8 +190,14 @@ class BookmarkDetailViewModel @Inject constructor(
         }
 
     val uiState: StateFlow<BookmarkDetailUiState> =
-        combine(baseState, summaryHistoryFlow, translation, categoryChoicesFlow, highlightTermsFlow) { state, history, translation, categories, terms ->
-            state.copy(summaryHistory = history, translation = translation, categoryChoices = categories, highlightTerms = terms)
+        combine(
+            baseState, summaryHistoryFlow, translation, categoryChoicesFlow,
+            combine(highlightTermsFlow, readingStyleFlow, ::Pair)
+        ) { state, history, translation, categories, (terms, readingStyle) ->
+            state.copy(
+                summaryHistory = history, translation = translation, categoryChoices = categories,
+                highlightTerms = terms, readingStyle = readingStyle
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
     init {
@@ -214,6 +232,19 @@ class BookmarkDetailViewModel @Inject constructor(
     fun toggleFavorite() {
         val bookmark = uiState.value.bookmark ?: return
         viewModelScope.launch { repository.setFavorite(bookmarkId, !bookmark.isFavorite) }
+    }
+
+    /** 読書モードの文字の大きさ・背景・書体を変えて保存する(#59) */
+    fun setReadingStyle(style: ReadingStyle) {
+        viewModelScope.launch {
+            try {
+                appSettings.setReadingStyle(style)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "読書モードの見た目を保存できませんでした")
+            }
+        }
     }
 
     /** 読んだことにする / 未読に戻す(#60)。開いたときは自動で既読になるので、未読に戻すのに使う */

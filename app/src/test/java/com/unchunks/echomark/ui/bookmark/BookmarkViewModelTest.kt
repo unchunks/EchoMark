@@ -9,6 +9,7 @@ import com.unchunks.echomark.ui.common.SearchHighlights
 import kotlinx.coroutines.Dispatchers
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.TagWithCount
@@ -106,6 +107,26 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf(3L), viewModel.uiState.value.bookmarks.map { it.id })
         assertEquals(BookmarkFilter.FAVORITES, viewModel.uiState.value.filter)
+    }
+
+    @Test
+    fun 一覧の見せ方を変えて保存し_状態に出る() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+        assertEquals(BookmarkListDisplay.CARD, viewModel.uiState.value.display)
+
+        viewModel.onDisplayChange(BookmarkListDisplay.COMPACT)
+        advanceUntilIdle()
+
+        assertEquals(BookmarkListDisplay.COMPACT, settings.bookmarkListDisplayFlow.value)
+        assertEquals(BookmarkListDisplay.COMPACT, viewModel.uiState.value.display)
+        // 絞り込みや検索を変えても、見せ方は変わらない
+        viewModel.onFilterChange(BookmarkFilter.FAVORITES)
+        viewModel.onSearchActiveChange(true)
+        advanceUntilIdle()
+        assertEquals(BookmarkListDisplay.COMPACT, viewModel.uiState.value.display)
     }
 
     @Test

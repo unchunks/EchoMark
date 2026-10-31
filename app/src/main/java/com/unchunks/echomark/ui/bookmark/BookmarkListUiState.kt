@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.bookmark
 
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
@@ -59,6 +60,8 @@ data class BookmarkListUiState(
     val readState: ReadState? = null,
     val filter: BookmarkFilter = BookmarkFilter.ACTIVE,
     val sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST,
+    /** 一覧の見せ方(カード・コンパクト・グリッド) */
+    val display: BookmarkListDisplay = BookmarkListDisplay.CARD,
     /** 検索モード(トップバーが検索欄になっている)か */
     val isSearchActive: Boolean = false,
     val searchQuery: String = "",
