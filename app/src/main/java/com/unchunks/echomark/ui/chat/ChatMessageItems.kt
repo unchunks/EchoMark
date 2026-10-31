@@ -7,7 +7,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -46,7 +44,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -158,8 +159,10 @@ private fun AssistantRow(modifier: Modifier = Modifier, content: @Composable () 
 }
 
 /**
- * アシスタントの回答。Markdown を整形して表示し、下に参照したブックマークとコピーボタンを出す。
+ * アシスタントの回答。Markdown を整形して表示し、下に引用元とコピーボタンを出す。
  * 引用番号 [n] は [ChatMessage.referencedBookmarkIds] の n 番目(保存順)に対応する。削除済みは押せない。
+ * 引用番号を押すと、引用元の一覧のその資料を目立たせる。資料を開くのは引用元のカードから。
+ * @param review 引用元と資料との照らし合わせの結果。確かめ終わるまでは null で、引用元を出さない
  */
 @Composable
 internal fun AssistantMessageItem(
@@ -168,20 +171,30 @@ internal fun AssistantMessageItem(
     onOpenBookmark: (Long) -> Unit,
     onCopy: () -> Unit,
     modifier: Modifier = Modifier,
+    review: AnswerReview? = null,
     onRegenerate: (() -> Unit)? = null
 ) {
     val ids = message.referencedBookmarkIds
+    var highlighted by rememberSaveable(message.id) { mutableStateOf<Int?>(null) }
     AssistantRow(modifier = modifier) {
         MarkdownText(
             markdown = message.content,
             isCitationAvailable = { n -> ids.getOrNull(n - 1)?.let { it in referencedBookmarks } == true },
-            onCitationClick = { n -> ids.getOrNull(n - 1)?.let(onOpenBookmark) },
+            onCitationClick = { n -> highlighted = n.takeIf { it != highlighted } },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 4.dp)
                 .copyOnLongPress(onCopy)
         )
-        ReferenceCards(ids = ids, bookmarks = referencedBookmarks, onOpenBookmark = onOpenBookmark)
+        review?.let {
+            AnswerSources(
+                review = it,
+                ids = ids,
+                bookmarks = referencedBookmarks,
+                highlighted = highlighted,
+                onOpenBookmark = onOpenBookmark
+            )
+        }
         // アイコンの左端を本文にそろえる(IconButton の内側の余白ぶん左へずらす)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-12).dp)) {
             IconButton(onClick = onCopy) {
@@ -203,83 +216,6 @@ internal fun AssistantMessageItem(
                 }
             }
         }
-    }
-}
-
-/**
- * 参照したブックマークの小さなカード(横スクロール)。削除済みは出さないが、番号は回答中の [n] と揃える。
- */
-@Composable
-private fun ReferenceCards(
-    ids: List<Long>,
-    bookmarks: Map<Long, Bookmark>,
-    onOpenBookmark: (Long) -> Unit
-) {
-    val visible = ids.withIndex().mapNotNull { (index, id) -> bookmarks[id]?.let { index + 1 to it } }
-    if (visible.isEmpty()) return
-    Spacer(Modifier.height(12.dp))
-    Text(
-        text = "参照したブックマーク",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.semantics { heading() }
-    )
-    Spacer(Modifier.height(6.dp))
-    Row(
-        modifier = Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        visible.forEach { (number, bookmark) ->
-            ReferenceCard(number = number, bookmark = bookmark, onClick = { onOpenBookmark(bookmark.id) })
-        }
-    }
-}
-
-@Composable
-private fun ReferenceCard(number: Int, bookmark: Bookmark, onClick: () -> Unit) {
-    OutlinedCard(
-        onClick = onClick,
-        modifier = Modifier.width(212.dp),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box {
-                BookmarkThumbnail(bookmark = bookmark, domain = bookmark.chatThumbnailKey(), size = 40.dp)
-                CitationBadge(number = number, modifier = Modifier.align(Alignment.TopStart))
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = bookmark.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = bookmark.chatSourceLabel(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CitationBadge(number: Int, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(18.dp)
-            .background(MaterialTheme.colorScheme.primary, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = number.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimary
-        )
     }
 }
 

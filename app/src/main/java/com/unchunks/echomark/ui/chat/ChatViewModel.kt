@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.chat
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.chat.RagSupport
@@ -37,10 +38,12 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -50,7 +53,8 @@ class ChatViewModel @Inject constructor(
     aiSetupRepository: AiSetupRepository,
     private val savedStateHandle: SavedStateHandle,
     private val attachmentSource: ChatAttachmentSource,
-    private val chatModels: ChatModelRepository
+    private val chatModels: ChatModelRepository,
+    private val dispatchers: DispatcherProvider
 ) : ViewModel() {
 
     // 既存会話は "chat/{conversationId}" の引数で渡る。"chat/new" では未設定(null)で、
@@ -82,6 +86,12 @@ class ChatViewModel @Inject constructor(
 
     /** 今の送信を停止ボタンで止めたか。 */
     private var stopRequested = false
+
+    private val answerReviewsFlow = MutableStateFlow<Map<Long, AnswerReview>>(emptyMap())
+
+    /** 確かめ終わった回答。回答を確かめ直さない(新しい回答が保存されるたびに、会話全体を確かめ直すことになるため) */
+    private val reviewCache = ConcurrentHashMap<ReviewKey, AnswerReview>()
+    private var reviewJob: Job? = null
 
     private val conversationFlow: Flow<Conversation?> = conversationIdFlow.flatMapLatest { id ->
         if (id == null) flowOf(null) else repository.observeConversation(id)
@@ -127,7 +137,8 @@ class ChatViewModel @Inject constructor(
         }.map<List<ChatMessage>, Pair<List<ChatMessage>, Map<Long, Bookmark>>?> { messages ->
             val ids = messages.flatMap { it.referencedBookmarkIds }.distinct()
             messages to repository.getBookmarks(ids)
-        }.onStart { if (conversationIdFlow.value != null) emit(null) }
+        }.onEach { loaded -> loaded?.let { (messages, bookmarks) -> reviewAnswers(messages, bookmarks) } }
+            .onStart { if (conversationIdFlow.value != null) emit(null) }
 
     private val sendingState = combine(
         isSendingFlow,
@@ -152,14 +163,16 @@ class ChatViewModel @Inject constructor(
         messagesWithReferences,
         sendingState,
         contextState,
-        attachmentState
-    ) { messagesAndRefs, sending, context, attachment ->
+        attachmentState,
+        answerReviewsFlow
+    ) { messagesAndRefs, sending, context, attachment, reviews ->
         ChatUiState(
             title = context.conversation?.title,
             hasConversation = context.conversation != null,
             isLoading = messagesAndRefs == null,
             messages = messagesAndRefs?.first.orEmpty(),
             referencedBookmarks = messagesAndRefs?.second.orEmpty(),
+            answerReviews = reviews,
             aboutBookmark = context.aboutBookmark,
             suggestions = context.suggestions,
             isSending = sending.isSending,
@@ -186,6 +199,18 @@ class ChatViewModel @Inject constructor(
     fun retry() {
         val failed = errorFlow.value?.failedMessage ?: return
         send(failed, isRetry = true)
+    }
+
+    /** 回答を資料と照らし合わせる。本文の長い資料では時間がかかるため、画面のスレッドの外で行う。 */
+    private fun reviewAnswers(messages: List<ChatMessage>, bookmarks: Map<Long, Bookmark>) {
+        reviewJob?.cancel()
+        reviewJob = viewModelScope.launch(dispatchers.default) {
+            answerReviewsFlow.value = messages.filter { it.role == ChatRole.ASSISTANT }.associate { message ->
+                val ids = message.referencedBookmarkIds
+                val key = ReviewKey(message.id, ids.filter { it in bookmarks })
+                message.id to reviewCache.getOrPut(key) { AnswerReviewer.review(message.content, ids, bookmarks) }
+            }
+        }
     }
 
     /** 次の質問から [option] の AI を使う。 */
@@ -337,6 +362,9 @@ class ChatViewModel @Inject constructor(
         failedMessage = failedMessage,
         needsAiSettings = needsAiSettings()
     )
+
+    /** 回答の結果を使い回せるか見分ける。資料が削除されたら確かめ直す。 */
+    private data class ReviewKey(val messageId: Long, val availableIds: List<Long>)
 
     private class SendingState(
         val isSending: Boolean,

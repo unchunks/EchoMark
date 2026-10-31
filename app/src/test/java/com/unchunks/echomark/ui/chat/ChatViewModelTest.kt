@@ -5,6 +5,7 @@ import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
 import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatAttachmentException
 import com.unchunks.echomark.domain.model.ChatMessage
@@ -22,6 +23,7 @@ import com.unchunks.echomark.testing.FakeChatRepository
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.navigation.Routes
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
@@ -46,6 +48,7 @@ class ChatViewModelTest {
     private val repository = FakeChatRepository()
     private val aiSetup = FakeAiSetupRepository()
     private val chatModels = FakeChatModelRepository()
+    private val dispatchers = TestDispatcherProvider(Dispatchers.Unconfined)
     private val attachmentSource = object : ChatAttachmentSource {
         override suspend fun load(uri: String): ChatAttachmentContext = ChatAttachmentContext("資料.txt", "添付の本文")
     }
@@ -53,7 +56,7 @@ class ChatViewModelTest {
     private fun createViewModel(
         savedState: SavedStateHandle = SavedStateHandle(),
         repo: FakeChatRepository = repository
-    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels)
+    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels, dispatchers)
 
     @Test
     fun モデル未取得のときは専用メッセージとAI設定への導線を出しisSendingが戻る() = runTest {
@@ -348,6 +351,30 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun 保存済みの回答を資料と照らし合わせて画面の状態に出す() = runTest {
+        repository.bookmarks = listOf(testBookmark(7L).copy(content = "コルーチンは中断と再開ができます。"))
+        repository.messages.value = listOf(
+            ChatMessage(id = 3, conversationId = 1, role = ChatRole.USER, content = "質問", createdAt = 1),
+            ChatMessage(
+                id = 4,
+                conversationId = 1,
+                role = ChatRole.ASSISTANT,
+                content = "コルーチンは中断と再開ができます [1]。",
+                referencedBookmarkIds = listOf(7L),
+                createdAt = 2
+            )
+        )
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val review = viewModel.uiState.value.answerReviews.getValue(4L)
+        assertEquals(listOf(1), review.sources.map { it.number })
+        assertEquals(ClaimStatus.SUPPORTED, review.claims.single().status)
+        assertEquals(setOf(4L), viewModel.uiState.value.answerReviews.keys)
+    }
+
+    @Test
     fun 使えるAIが画面の状態に出て_選ぶと保存先に渡す() = runTest {
         val local = ChatModelOption.Local("gemma", "Gemma.litertlm")
         val other = ChatModelOption.Local("qwen", "Qwen.task")
@@ -626,6 +653,7 @@ class ChatViewModelTest {
             override suspend fun load(uri: String): ChatAttachmentContext =
                 throw ChatAttachmentException("「壊れた.bin」の中身を読み取れませんでした")
         },
-        chatModels
+        chatModels,
+        dispatchers
     )
 }

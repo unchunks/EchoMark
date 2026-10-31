@@ -99,6 +99,25 @@ class ChatMemoryCompressorTest {
     private suspend fun conversation() = db.conversationDao().getById(1)!!
 
     @Test
+    fun 回答の引用番号は要約に渡さない() = runBlocking {
+        db.conversationDao().insert(ConversationEntity(id = 1, title = "会話", createdAt = 0, updatedAt = 0))
+        (1..10).forEach { i ->
+            db.chatMessageDao().insert(
+                ChatMessageEntity(
+                    conversationId = 1,
+                    role = if (i % 2 == 1) ChatRole.USER else ChatRole.ASSISTANT,
+                    content = "発言$i [1]",
+                    createdAt = i * 10L
+                )
+            )
+        }
+
+        compressor().compress(1, tight = false)
+
+        assertEquals(listOf("発言1 [1]", "発言2", "発言3 [1]", "発言4"), llm.requests.single().second)
+    }
+
+    @Test
     fun 発言がたまるまでは要約しない() = runBlocking {
         val id = conversationWith(9)
 

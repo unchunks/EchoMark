@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
@@ -581,6 +582,38 @@ class ApiLlmProviderTest {
             "今の質問",
             contents.getJSONObject(2).getJSONArray("parts").getJSONObject(0).getString("text")
         )
+    }
+
+    @Test
+    fun チャットは会話の記憶をシステム指示に入れ_長い履歴も渡す() = runBlocking {
+        server.enqueue(geminiText("回答"))
+        val history = (1..20).map {
+            ChatMessage(
+                conversationId = 1,
+                role = if (it % 2 == 1) ChatRole.USER else ChatRole.ASSISTANT,
+                content = "発言$it",
+                createdAt = it.toLong()
+            )
+        }
+
+        provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.CHAT)
+            .chatStream("今の質問", emptyList(), history, "旅行の計画を話した") {}
+            .toList()
+
+        val body = JSONObject(server.takeRequest().body!!.utf8())
+        val system = body.getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text")
+        assertTrue(system, system.contains("さらに前の会話の要約:\n旅行の計画を話した"))
+        assertEquals(21, body.getJSONArray("contents").length())
+    }
+
+    @Test
+    fun チャットの量はモデルの文脈長で決まる() = runBlocking {
+        settings.setApiModel(AiTask.CHAT, ApiProvider.GEMINI, "gemini-3.1-pro-preview")
+        val llm = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.CHAT)
+        assertEquals(ChatContextLimits.MAX_CLOUD_HISTORY_MESSAGES, llm.chatContextLimits().historyMessages)
+
+        settings.setApiModel(AiTask.CHAT, ApiProvider.GEMINI, "my-custom-model")
+        assertEquals(8, llm.chatContextLimits().historyMessages)
     }
 
     @Test
