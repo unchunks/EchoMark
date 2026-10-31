@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.chat
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.ChatModelChoices
 
 data class ChatUiState(
     /** 会話のタイトル。まだ会話が作られていなければ null(「新しいチャット」と表示)。 */
@@ -28,6 +29,8 @@ data class ChatUiState(
     val pendingReferenceCount: Int? = null,
     val error: ChatError? = null,
     val aiSetup: AiSetupState = AiSetupState.READY,
+    /** トップバーで選べる AI。 */
+    val modelChoices: ChatModelChoices = ChatModelChoices(),
     /** 次の質問に添付するファイルの名前(添付していなければ null)。送信すると外れる。 */
     val attachmentName: String? = null,
     /** 添付のファイルを読み込んでいる間 true */

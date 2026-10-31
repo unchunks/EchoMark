@@ -13,8 +13,11 @@ import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.ChatModelChoices
+import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.testing.FakeAiSetupRepository
+import com.unchunks.echomark.testing.FakeChatModelRepository
 import com.unchunks.echomark.testing.FakeChatRepository
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.navigation.Routes
@@ -42,6 +45,7 @@ class ChatViewModelTest {
 
     private val repository = FakeChatRepository()
     private val aiSetup = FakeAiSetupRepository()
+    private val chatModels = FakeChatModelRepository()
     private val attachmentSource = object : ChatAttachmentSource {
         override suspend fun load(uri: String): ChatAttachmentContext = ChatAttachmentContext("資料.txt", "添付の本文")
     }
@@ -49,7 +53,7 @@ class ChatViewModelTest {
     private fun createViewModel(
         savedState: SavedStateHandle = SavedStateHandle(),
         repo: FakeChatRepository = repository
-    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource)
+    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels)
 
     @Test
     fun モデル未取得のときは専用メッセージとAI設定への導線を出しisSendingが戻る() = runTest {
@@ -289,6 +293,75 @@ class ChatViewModelTest {
         assertFalse(viewModel.uiState.value.isSending)
         assertNull(viewModel.uiState.value.streamingText)
         assertNull(viewModel.uiState.value.error)
+    }
+
+    /** 回答の文字が届かないまま止まり続ける送信。 */
+    private fun silentRepository() = object : FakeChatRepository() {
+        override fun sendMessageStream(
+            conversationId: Long,
+            userMessage: String,
+            pinnedBookmarkId: Long?,
+            isRetry: Boolean,
+            attachment: ChatAttachmentContext?
+        ): Flow<ChatStreamEvent> = flow {
+            sendCalls += SendCall(conversationId, userMessage, pinnedBookmarkId, isRetry)
+            emit(ChatStreamEvent.Started(emptyList()))
+            awaitCancellation()
+        }
+    }
+
+    @Test
+    fun 最初の文字が届く前に止めると同じ質問を送り直せる() = runTest {
+        val silent = silentRepository()
+        val viewModel = createViewModel(repo = silent)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("質問")
+        runCurrent()
+        viewModel.stopGenerating()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isSending)
+        assertEquals("質問", state.error?.failedMessage)
+        assertFalse(state.error!!.needsAiSettings)
+
+        viewModel.retry()
+        runCurrent()
+        assertEquals(true, silent.sendCalls.last().isRetry)
+        assertNull(viewModel.uiState.value.error)
+        viewModel.stopGenerating()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun 会話を削除して止めたときは送り直しを出さない() = runTest {
+        val viewModel = createViewModel(repo = silentRepository())
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("質問")
+        runCurrent()
+        viewModel.deleteConversation(onDeleted = {})
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun 使えるAIが画面の状態に出て_選ぶと保存先に渡す() = runTest {
+        val local = ChatModelOption.Local("gemma", "Gemma.litertlm")
+        val other = ChatModelOption.Local("qwen", "Qwen.task")
+        chatModels.state.value = ChatModelChoices(listOf(local, other), selected = local)
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertEquals(local, viewModel.uiState.value.modelChoices.selected)
+
+        viewModel.selectModel(other)
+        advanceUntilIdle()
+
+        assertEquals(listOf<ChatModelOption>(other), chatModels.selections)
+        assertEquals(other, viewModel.uiState.value.modelChoices.selected)
     }
 
     @Test
@@ -552,6 +625,7 @@ class ChatViewModelTest {
         object : ChatAttachmentSource {
             override suspend fun load(uri: String): ChatAttachmentContext =
                 throw ChatAttachmentException("「壊れた.bin」の中身を読み取れませんでした")
-        }
+        },
+        chatModels
     )
 }

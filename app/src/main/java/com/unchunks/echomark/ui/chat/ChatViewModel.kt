@@ -16,6 +16,9 @@ import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatAttachmentSource
+import com.unchunks.echomark.domain.repository.ChatModelChoices
+import com.unchunks.echomark.domain.repository.ChatModelOption
+import com.unchunks.echomark.domain.repository.ChatModelRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.ui.navigation.Routes
@@ -46,7 +49,8 @@ class ChatViewModel @Inject constructor(
     private val repository: ChatRepository,
     aiSetupRepository: AiSetupRepository,
     private val savedStateHandle: SavedStateHandle,
-    private val attachmentSource: ChatAttachmentSource
+    private val attachmentSource: ChatAttachmentSource,
+    private val chatModels: ChatModelRepository
 ) : ViewModel() {
 
     // 既存会話は "chat/{conversationId}" の引数で渡る。"chat/new" では未設定(null)で、
@@ -75,6 +79,9 @@ class ChatViewModel @Inject constructor(
 
     /** 生成中の送信処理。停止ボタンでキャンセルする。 */
     private var sendJob: Job? = null
+
+    /** 今の送信を停止ボタンで止めたか。 */
+    private var stopRequested = false
 
     private val conversationFlow: Flow<Conversation?> = conversationIdFlow.flatMapLatest { id ->
         if (id == null) flowOf(null) else repository.observeConversation(id)
@@ -133,8 +140,9 @@ class ChatViewModel @Inject constructor(
         conversationFlow,
         aboutBookmarkFlow,
         suggestionsFlow,
-        aiSetupRepository.setupState
-    ) { conversation, about, suggestions, setup -> ContextState(conversation, about, suggestions, setup) }
+        aiSetupRepository.setupState,
+        chatModels.choices
+    ) { conversation, about, suggestions, setup, models -> ContextState(conversation, about, suggestions, setup, models) }
 
     private val attachmentState = combine(attachmentFlow, isAttachingFlow, attachmentErrorFlow) { attachment, attaching, error ->
         AttachmentState(attachment?.name, attaching, error)
@@ -159,6 +167,7 @@ class ChatViewModel @Inject constructor(
             pendingReferenceCount = sending.pendingReferenceCount,
             error = sending.error,
             aiSetup = context.aiSetup,
+            modelChoices = context.modelChoices,
             attachmentName = attachment.name,
             isAttaching = attachment.isAttaching,
             attachmentError = attachment.error
@@ -177,6 +186,11 @@ class ChatViewModel @Inject constructor(
     fun retry() {
         val failed = errorFlow.value?.failedMessage ?: return
         send(failed, isRetry = true)
+    }
+
+    /** 次の質問から [option] の AI を使う。 */
+    fun selectModel(option: ChatModelOption) {
+        viewModelScope.launch { chatModels.select(option) }
     }
 
     /**
@@ -217,6 +231,7 @@ class ChatViewModel @Inject constructor(
         isSendingFlow.value = true
         errorFlow.value = null
         pendingReferenceCountFlow.value = null
+        stopRequested = false
         sendJob = viewModelScope.launch {
             try {
                 // 会話は最初の送信時に遅延作成する(空の会話を増やさない)。
@@ -242,6 +257,10 @@ class ChatViewModel @Inject constructor(
                     }
                 }
             } catch (e: CancellationException) {
+                // 最初の文字が届く前に止めると回答は残らないため、同じ質問を送り直せるようにする
+                if (stopRequested && streamingTextFlow.value.isNullOrBlank()) {
+                    errorFlow.value = ChatError(STOPPED_BEFORE_ANSWER_MESSAGE, text)
+                }
                 throw e
             } catch (e: Exception) {
                 Timber.e(e, "sendMessage failed")
@@ -293,6 +312,7 @@ class ChatViewModel @Inject constructor(
 
     /** 生成を止める。途中までの回答は「(停止)」付きで保存される。 */
     fun stopGenerating() {
+        stopRequested = true
         sendJob?.cancel()
     }
 
@@ -335,7 +355,8 @@ class ChatViewModel @Inject constructor(
         val conversation: Conversation?,
         val aboutBookmark: Bookmark?,
         val suggestions: List<String>,
-        val aiSetup: AiSetupState
+        val aiSetup: AiSetupState,
+        val modelChoices: ChatModelChoices
     )
 
     companion object {
@@ -343,6 +364,8 @@ class ChatViewModel @Inject constructor(
         const val ARG_CONVERSATION_ID = "conversationId"
 
         private const val SEND_FAILED_PREFIX = "送信に失敗しました"
+
+        private const val STOPPED_BEFORE_ANSWER_MESSAGE = "回答が始まる前に止めました"
 
         /** 質問の例を作るときに見る、最近のブックマークの件数。 */
         private const val SUGGESTION_SOURCE_LIMIT = 50
