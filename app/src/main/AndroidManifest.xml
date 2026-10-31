@@ -94,6 +94,8 @@
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
+                <!-- 複数のテキスト・URL をまとめて共有(1件ずつ別のブックマークにする) -->
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
 
                 <category android:name="android.intent.category.DEFAULT" />
 

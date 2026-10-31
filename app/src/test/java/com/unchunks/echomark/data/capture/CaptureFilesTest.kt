@@ -46,4 +46,12 @@ class CaptureFilesTest {
         assertFalse(isSafeCaptureName("a\u0000b.jpg"))
         assertFalse(isSafeCaptureName("x".repeat(101)))
     }
+
+    @Test
+    fun クリップボードの画像のファイル名は元の形式の拡張子を使う() {
+        assertEquals(
+            "クリップボードの画像 2026-10-31 12-04-05.png",
+            timestampedFileName(CLIPBOARD_IMAGE_LABEL, "png", now, zone)
+        )
+    }
 }

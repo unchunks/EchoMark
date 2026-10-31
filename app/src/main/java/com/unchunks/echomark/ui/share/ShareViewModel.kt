@@ -85,6 +85,10 @@ class ShareViewModel @Inject constructor(
             saveFiles(shared.files, title, memo, tagsInput)
             return
         }
+        if (shared.hasMultipleEntries) {
+            saveEntries(shared.entries, memo, tagsInput)
+            return
+        }
         val url = shared.url
         if (url == null && title.isBlank() && shared.text.isBlank()) return
         _status.value = ShareSaveStatus.Saving()
@@ -113,6 +117,48 @@ class ShareViewModel @Inject constructor(
             } catch (e: Exception) {
                 Timber.w(e, "共有からの保存に失敗")
                 ShareSaveStatus.Failed("保存できませんでした。もう一度お試しください。")
+            }
+        }
+    }
+
+    /**
+     * まとめて共有された URL・テキストを1件ずつ保存する。URL はリンク(同じ URL が保存済みならそれを使う)、
+     * それ以外はメモにして、メモとタグはすべてに付ける。保存できなかったものがあっても残りは続ける。
+     */
+    private fun saveEntries(entries: List<SharedEntry>, memo: String, tagsInput: String) {
+        val tags = parseTags(tagsInput)
+        _status.value = ShareSaveStatus.Saving(0, entries.size)
+        viewModelScope.launch {
+            var saved = 0
+            entries.forEachIndexed { index, entry ->
+                try {
+                    val result = if (entry.url != null) {
+                        repository.saveUrlBookmark(entry.url, null, memo)
+                    } else {
+                        val now = System.currentTimeMillis()
+                        repository.saveBookmark(
+                            Bookmark(
+                                type = BookmarkType.TEXT,
+                                content = if (memo.isBlank()) entry.text else entry.text + "\n\n" + memo.trim(),
+                                title = entry.title,
+                                createdAt = now,
+                                lastAccessedAt = now
+                            )
+                        )
+                    }
+                    tags.forEach { repository.addTag(result.id, it) }
+                    saved++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "共有されたテキストの保存に失敗")
+                }
+                _status.value = ShareSaveStatus.Saving(index + 1, entries.size)
+            }
+            _status.value = if (saved == 0) {
+                ShareSaveStatus.Failed("保存できませんでした。もう一度お試しください。")
+            } else {
+                ShareSaveStatus.Saved(isDuplicate = false, savedCount = saved, failedCount = entries.size - saved)
             }
         }
     }

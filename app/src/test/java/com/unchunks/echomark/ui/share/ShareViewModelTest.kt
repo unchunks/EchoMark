@@ -179,4 +179,52 @@ class ShareViewModelTest {
         assertEquals("あとで読む、 Android", appendTag("あとで読む、 ", "Android"))
         assertEquals("a b, Android", appendTag("a b  ", "Android"))
     }
+
+    private val multiple = SharedContent(
+        url = null,
+        text = "https://example.com/a\nメモの文章",
+        tentativeTitle = "",
+        entries = listOf(
+            SharedEntry(url = "https://example.com/a", text = "https://example.com/a", title = "https://example.com/a"),
+            SharedEntry(url = null, text = "メモの文章", title = "メモの文章")
+        )
+    )
+
+    @Test
+    fun 複数のURLとテキストは1件ずつ保存してメモとタグをすべてに付ける() = runTest {
+        val viewModel = ShareViewModel(repository, attachments)
+
+        viewModel.save(multiple, title = "", memo = "まとめて", tagsInput = "あとで")
+        advanceUntilIdle()
+
+        assertEquals(ShareSaveStatus.Saved(isDuplicate = false, savedCount = 2, failedCount = 0), viewModel.status.value)
+        assertEquals(Triple("https://example.com/a", null, "まとめて"), repository.savedUrls.single())
+        val note = repository.bookmarks.value.single { it.type == BookmarkType.TEXT }
+        assertEquals("メモの文章\n\nまとめて", note.content)
+        assertEquals("メモの文章", note.title)
+        assertTrue(repository.bookmarks.value.all { it.tags == listOf("あとで") })
+    }
+
+    @Test
+    fun 複数のテキストの保存で一部が失敗しても残りは保存して件数を知らせる() = runTest {
+        val viewModel = ShareViewModel(repository, attachments)
+        repository.failSaveUrl = IllegalStateException("保存できない")
+
+        viewModel.save(multiple, title = "", memo = "", tagsInput = "")
+        advanceUntilIdle()
+
+        assertEquals(ShareSaveStatus.Saved(isDuplicate = false, savedCount = 1, failedCount = 1), viewModel.status.value)
+    }
+
+    @Test
+    fun 複数のテキストがすべて失敗したら入力に戻して失敗を知らせる() = runTest {
+        val viewModel = ShareViewModel(repository, attachments)
+        repository.failSaveUrl = IllegalStateException("保存できない")
+        repository.failSaveBookmark = IllegalStateException("保存できない")
+
+        viewModel.save(multiple, title = "", memo = "", tagsInput = "")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.status.value is ShareSaveStatus.Failed)
+    }
 }
