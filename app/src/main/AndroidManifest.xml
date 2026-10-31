@@ -116,6 +116,46 @@
             </intent-filter>
         </activity>
 
+        <!--
+            他のアプリで文字を選んだときのメニュー(ACTION_PROCESS_TEXT)に「引用として EchoMark に保存」を出す。
+            ShareReceiverActivity が、選んだ文章を引用(各行の頭に「> 」)にして保存する。文字を書き換えて返すことはしない
+        -->
+        <activity-alias
+            android:name=".ui.share.QuoteReceiverAlias"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/share_quote_label"
+            android:targetActivity=".ui.share.ShareReceiverActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- クイック設定のタイル「クリップボードを保存」から開く(アプリの中からだけ。タイルを押した前面でクリップボードを読む) -->
+        <activity
+            android:name=".ui.share.ClipboardSaveActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/share_label"
+            android:taskAffinity=""
+            android:theme="@style/Theme.EchoMark.Share"
+            android:windowSoftInputMode="adjustResize" />
+
+        <service
+            android:name=".ui.tile.ClipboardSaveTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notification"
+            android:label="@string/tile_clipboard_save_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- まとめての処理の通知の「やめる」(アプリの中からだけ呼ぶ) -->
         <receiver
             android:name=".worker.BulkProcessingCancelReceiver"

@@ -154,4 +154,45 @@ class SharedContentParseTest {
         assertTrue(urlOnlyLines("https://a.example\n説明").isEmpty())
         assertTrue(urlOnlyLines("").isEmpty())
     }
+
+    @Test
+    fun 選んだ文字のメニューからは引用として受け取る() {
+        val intent = Intent(Intent.ACTION_PROCESS_TEXT).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_PROCESS_TEXT, "  一行目の文章\n\n二行目の文章  ")
+        }
+
+        val shared = parseSharedContent(intent)!!
+
+        assertTrue(shared.isQuote)
+        assertEquals("> 一行目の文章\n>\n> 二行目の文章", shared.text)
+        assertEquals("一行目の文章", shared.tentativeTitle)
+        assertNull(shared.url)
+        assertTrue(shared.files.isEmpty())
+    }
+
+    @Test
+    fun 選んだ文字が空なら引用として受け取らない() {
+        val intent = Intent(Intent.ACTION_PROCESS_TEXT).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_PROCESS_TEXT, "   ")
+        }
+
+        assertNull(parseSharedContent(intent))
+        assertNull(parseSharedContent(Intent(Intent.ACTION_PROCESS_TEXT)))
+    }
+
+    @Test
+    fun 長い引用の仮タイトルは先頭の80文字まで() {
+        val shared = quoteContentOf("あ".repeat(200))!!
+
+        assertEquals(80, shared.tentativeTitle.length)
+    }
+
+    @Test
+    fun 引用の各行の頭に引用の記号を付ける() {
+        assertEquals("> a\n> b", asQuote("a\nb"))
+        assertEquals("> a\n>\n> b", asQuote("a\n  \nb"))
+        assertEquals("> a", asQuote("a   "))
+    }
 }
