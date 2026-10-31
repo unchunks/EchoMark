@@ -10,6 +10,7 @@ import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.normalizeMimeType
 import com.unchunks.echomark.ui.common.findUrlInText
 import com.unchunks.echomark.ui.common.normalizeUrlInput
+import com.unchunks.echomark.ui.share.urlOnlyLines
 
 /*
  * クリップボードから保存する(追加シートの「クリップボードから」)。
@@ -34,7 +35,8 @@ enum class ClipboardHint {
 
 /** クリップボードから読んだ中身 */
 sealed interface ClipboardContent {
-    data class Url(val url: String) : ClipboardContent
+    /** [title] は「題名 + URL」の題名の部分(無ければ null) */
+    data class Url(val url: String, val title: String? = null) : ClipboardContent
 
     data class Text(val text: String) : ClipboardContent
 
@@ -66,7 +68,12 @@ internal fun classifyClipboardText(text: String): ClipboardContent {
     if (trimmed.isEmpty()) return ClipboardContent.Empty
     val url = findUrlInText(trimmed) ?: normalizeUrlInput(trimmed)
     // 文章の中に URL があるだけの長い文章は、URL ではなくテキストとして保存する(URL だけ、または短い「題名 + URL」のとき URL にする)
-    return if (url != null && isMostlyUrl(trimmed, url)) ClipboardContent.Url(url) else ClipboardContent.Text(trimmed)
+    // URL だけが何行も並んでいるものは、1つの URL ではなくリンクの一覧なのでテキストとして扱う(共有では1件ずつのリンクにする)
+    if (urlOnlyLines(trimmed).size > 1) return ClipboardContent.Text(trimmed)
+    if (url == null || !isMostlyUrl(trimmed, url)) return ClipboardContent.Text(trimmed)
+    // 「example.com/a」のようにスキームを補った URL は、文章に現れたままではないので題名は無い
+    val title = if (url in trimmed) trimmed.replace(url, "").trim().lines().firstOrNull { it.isNotBlank() }?.trim() else null
+    return ClipboardContent.Url(url, title)
 }
 
 /** [text] の大半が URL か(URL 以外の部分が [MAX_EXTRA_CHARS_AROUND_URL] 文字以下) */

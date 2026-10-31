@@ -8,6 +8,7 @@ import com.unchunks.echomark.ui.share.ShareSaveStatus
 import com.unchunks.echomark.ui.share.ShareSheetContent
 import com.unchunks.echomark.ui.share.SharedContent
 import com.unchunks.echomark.ui.share.SharedEntry
+import com.unchunks.echomark.ui.share.quoteContentOf
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +46,24 @@ class ShareMultipleScreenshotTest {
     @Test
     fun savedPartially() = screenshot.captureLightDark("share_multiple_entries_saved") {
         Sheet(ShareSaveStatus.Saved(isDuplicate = false, savedCount = 5, failedCount = 1))
+    }
+
+    @Test
+    fun quote() = screenshot.captureLightDark("share_quote") {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            ShareSheetContent(
+                shared = quoteContentOf("プログラムは、人間が読むために書かれるべきであり、機械が実行するのは、ついでに過ぎない。\n二行目の文章")!!,
+                status = ShareSaveStatus.Editing,
+                title = "プログラムは、人間が読むために書かれるべきであり、機械が実行するのは、ついでに過ぎない。",
+                memo = "",
+                tags = "引用",
+                onTitleChange = {},
+                onMemoChange = {},
+                onTagsChange = {},
+                onSave = {},
+                onCancel = {}
+            )
+        }
     }
 
     @Composable

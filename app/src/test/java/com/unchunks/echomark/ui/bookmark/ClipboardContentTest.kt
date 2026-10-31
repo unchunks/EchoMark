@@ -17,7 +17,7 @@ class ClipboardContentTest {
 
     @Test
     fun 短い題名とURLはURLとして扱う() {
-        assertEquals(ClipboardContent.Url("https://example.com/a"), classifyClipboardText("面白い記事 https://example.com/a"))
+        assertEquals(ClipboardContent.Url("https://example.com/a", "面白い記事"), classifyClipboardText("面白い記事 https://example.com/a"))
     }
 
     @Test
@@ -57,5 +57,12 @@ class ClipboardContentTest {
         assertEquals(ClipboardHint.NONE, clipboardHintOf(emptyList(), null))
         assertEquals(ClipboardHint.NONE, clipboardHintOf(listOf("application/x-custom"), null))
         assertEquals(ClipboardHint.NONE, clipboardHintOf(listOf("not-a-mime"), null))
+    }
+
+    @Test
+    fun URLだけが何行も並んだ文字列はリンクの一覧としてテキストで扱う() {
+        val list = "https://example.com/a\nhttps://example.com/b"
+
+        assertEquals(ClipboardContent.Text(list), classifyClipboardText(list))
     }
 }
