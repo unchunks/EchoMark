@@ -6,10 +6,13 @@ import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatAttachmentException
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
@@ -18,6 +21,7 @@ import com.unchunks.echomark.domain.repository.ChatModelChoices
 import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.testing.FakeAiSetupRepository
+import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeChatModelRepository
 import com.unchunks.echomark.testing.FakeChatRepository
 import com.unchunks.echomark.testing.testBookmark
@@ -49,6 +53,7 @@ class ChatViewModelTest {
     private val aiSetup = FakeAiSetupRepository()
     private val chatModels = FakeChatModelRepository()
     private val dispatchers = TestDispatcherProvider(Dispatchers.Unconfined)
+    private val settings = FakeAppSettingsRepository()
     private val attachmentSource = object : ChatAttachmentSource {
         override suspend fun load(uri: String): ChatAttachmentContext = ChatAttachmentContext("資料.txt", "添付の本文")
     }
@@ -56,7 +61,7 @@ class ChatViewModelTest {
     private fun createViewModel(
         savedState: SavedStateHandle = SavedStateHandle(),
         repo: FakeChatRepository = repository
-    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels, dispatchers)
+    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels, dispatchers, settings)
 
     @Test
     fun モデル未取得のときは専用メッセージとAI設定への導線を出しisSendingが戻る() = runTest {
@@ -164,7 +169,8 @@ class ChatViewModelTest {
                 userMessage: String,
                 pinnedBookmarkId: Long?,
                 isRetry: Boolean,
-                attachment: ChatAttachmentContext?
+                attachment: ChatAttachmentContext?,
+                scope: BookmarkQuery?
             ): Flow<ChatStreamEvent> = flow {
                 sent += conversationId to userMessage
                 gate.await()
@@ -238,7 +244,8 @@ class ChatViewModelTest {
                 userMessage: String,
                 pinnedBookmarkId: Long?,
                 isRetry: Boolean,
-                attachment: ChatAttachmentContext?
+                attachment: ChatAttachmentContext?,
+                scope: BookmarkQuery?
             ): Flow<ChatStreamEvent> = flow {
                 emit(ChatStreamEvent.Started(listOf(1L, 2L)))
                 emit(ChatStreamEvent.Delta("こんに"))
@@ -273,7 +280,8 @@ class ChatViewModelTest {
                 userMessage: String,
                 pinnedBookmarkId: Long?,
                 isRetry: Boolean,
-                attachment: ChatAttachmentContext?
+                attachment: ChatAttachmentContext?,
+                scope: BookmarkQuery?
             ): Flow<ChatStreamEvent> = flow {
                 emit(ChatStreamEvent.Delta("途中"))
                 try {
@@ -305,7 +313,8 @@ class ChatViewModelTest {
             userMessage: String,
             pinnedBookmarkId: Long?,
             isRetry: Boolean,
-            attachment: ChatAttachmentContext?
+            attachment: ChatAttachmentContext?,
+            scope: BookmarkQuery?
         ): Flow<ChatStreamEvent> = flow {
             sendCalls += SendCall(conversationId, userMessage, pinnedBookmarkId, isRetry)
             emit(ChatStreamEvent.Started(emptyList()))
@@ -372,6 +381,83 @@ class ChatViewModelTest {
         assertEquals(listOf(1), review.sources.map { it.number })
         assertEquals(ClaimStatus.SUPPORTED, review.claims.single().status)
         assertEquals(setOf(4L), viewModel.uiState.value.answerReviews.keys)
+    }
+
+    @Test
+    fun 選んだ範囲を質問に渡し_範囲の説明を出す() = runTest {
+        repository.scopeChoices.value = ChatScopeChoices(tags = listOf(Tag(3L, "技術")))
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        backgroundScope.launch { viewModel.scopeChoices.collect {} }
+        advanceUntilIdle()
+
+        val narrowed = BookmarkQuery(tagIds = setOf(3L))
+        viewModel.setScope(narrowed)
+        advanceUntilIdle()
+        assertEquals("技術", viewModel.uiState.value.scopeLabel)
+
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+        assertEquals(listOf<BookmarkQuery?>(narrowed), repository.sentScopes)
+
+        viewModel.setScope(ChatScopeChoices.ALL)
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.scopeLabel)
+    }
+
+    @Test
+    fun 範囲を選んでいなければ保存全体から探す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+
+        assertEquals(listOf<BookmarkQuery?>(null), repository.sentScopes)
+    }
+
+    @Test
+    fun 同じブックマークの前の会話を続きから開ける() = runTest {
+        repository.latestAboutConversationId = 12L
+        repository.bookmarks = listOf(testBookmark(7L))
+        val viewModel = createViewModel(SavedStateHandle(mapOf(Routes.ARG_ABOUT_BOOKMARK_ID to 7L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertEquals(12L, viewModel.uiState.value.previousAboutConversationId)
+
+        viewModel.resumeAboutConversation()
+        advanceUntilIdle()
+
+        assertEquals(12L, viewModel.conversationId.value)
+    }
+
+    @Test
+    fun 最後の回答に続く質問の候補を出す() = runTest {
+        repository.messages.value = listOf(
+            ChatMessage(id = 3, conversationId = 1, role = ChatRole.USER, content = "質問", createdAt = 1),
+            ChatMessage(id = 4, conversationId = 1, role = ChatRole.ASSISTANT, content = "回答", createdAt = 2)
+        )
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.followUps.isNotEmpty())
+    }
+
+    @Test
+    fun 入力中の文をテンプレートに保存して消せる() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.saveTemplate("  会議の議題をまとめて  ")
+        advanceUntilIdle()
+
+        val saved = viewModel.uiState.value.userTemplates.single()
+        assertEquals("会議の議題をまとめて", saved.text)
+
+        viewModel.deleteTemplate(saved)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.userTemplates.isEmpty())
     }
 
     @Test
@@ -654,6 +740,7 @@ class ChatViewModelTest {
                 throw ChatAttachmentException("「壊れた.bin」の中身を読み取れませんでした")
         },
         chatModels,
-        dispatchers
+        dispatchers,
+        settings
     )
 }

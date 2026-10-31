@@ -24,6 +24,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.model.EmbeddingProgress
@@ -537,6 +538,14 @@ open class FakeChatRepository : ChatRepository {
     data class SendCall(val conversationId: Long, val text: String, val pinnedBookmarkId: Long?, val isRetry: Boolean)
     val sendCalls = mutableListOf<SendCall>()
 
+    /** sendMessageStream に渡された範囲。 */
+    val sentScopes = mutableListOf<BookmarkQuery?>()
+
+    /** latestConversationAbout が返す会話。 */
+    var latestAboutConversationId: Long? = null
+    val scopeChoices = MutableStateFlow(ChatScopeChoices())
+    val scopeCount = MutableStateFlow(0)
+
     val renamed = mutableListOf<Pair<Long, String>>()
     val deletedIds = mutableListOf<Long>()
     val restored = mutableListOf<Pair<Conversation, List<ChatMessage>>>()
@@ -557,6 +566,10 @@ open class FakeChatRepository : ChatRepository {
 
     override fun observeConversationPreviews(): Flow<List<ConversationPreview>> = previews
 
+    override suspend fun latestConversationAbout(bookmarkId: Long): Long? = latestAboutConversationId
+    override fun observeScopeChoices(): Flow<ChatScopeChoices> = scopeChoices
+    override fun observeScopeCount(scope: BookmarkQuery): Flow<Int> = scopeCount
+
     /** 既定: sendFailure があれば Failed、無ければ Started → Delta → Completed を流す。 */
     /** sendMessageStream に渡された添付(添付なしの送信は null)。 */
     val sentAttachments = mutableListOf<ChatAttachmentContext?>()
@@ -566,8 +579,10 @@ open class FakeChatRepository : ChatRepository {
         userMessage: String,
         pinnedBookmarkId: Long?,
         isRetry: Boolean,
-        attachment: ChatAttachmentContext?
+        attachment: ChatAttachmentContext?,
+        scope: BookmarkQuery?
     ): Flow<ChatStreamEvent> = flow {
+        sentScopes += scope
         sent += conversationId to userMessage
         sendCalls += SendCall(conversationId, userMessage, pinnedBookmarkId, isRetry)
         sentAttachments += attachment

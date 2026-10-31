@@ -30,7 +30,7 @@ data class ChatContextLimits(
             snippetChars = RagSupport.MAX_SNIPPET_CHARS,
             passageItems = 3,
             passageChars = RagSupport.PASSAGE_CHARS,
-            pinnedChars = RagSupport.PINNED_SNIPPET_CHARS,
+            pinnedChars = 1_200,
             attachmentChars = 800
         )
 

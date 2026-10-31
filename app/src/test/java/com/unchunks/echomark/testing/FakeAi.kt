@@ -1,5 +1,6 @@
 package com.unchunks.echomark.testing
 
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.securestorage.SecretCipher
 import com.unchunks.components.securestorage.UnrecoverableSecretException
@@ -54,6 +55,7 @@ class FakeAppSettingsRepository(
     val sendFilesToCloudFlow = MutableStateFlow(true)
     val localLlmUseGpuFlow = MutableStateFlow(false)
     val bookmarkSortOrderFlow = MutableStateFlow(BookmarkSortOrder.NEWEST)
+    val chatTemplatesFlow = MutableStateFlow<List<ChatTemplate>>(emptyList())
     var resetCalls = 0
     val processingFlow = MutableStateFlow(ProcessingSettings())
 
@@ -92,6 +94,10 @@ class FakeAppSettingsRepository(
     override suspend fun setSendFilesToCloud(enabled: Boolean) { sendFilesToCloudFlow.value = enabled }
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) { localLlmUseGpuFlow.value = enabled }
     override suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder) { bookmarkSortOrderFlow.value = sortOrder }
+    override val chatTemplates: Flow<List<ChatTemplate>> = chatTemplatesFlow
+    override suspend fun updateChatTemplates(transform: (List<ChatTemplate>) -> List<ChatTemplate>) {
+        chatTemplatesFlow.update(transform)
+    }
     override suspend fun setRediscoverEnabled(enabled: Boolean) {
         rediscoverFlow.value = rediscoverFlow.value.copy(enabled = enabled)
     }
@@ -109,6 +115,7 @@ class FakeAppSettingsRepository(
         bookmarkSortOrderFlow.value = BookmarkSortOrder.NEWEST
         processingFlow.value = ProcessingSettings()
         summaryStyleFlow.value = SummaryStyle()
+        chatTemplatesFlow.value = emptyList()
     }
     override suspend fun getRediscoverNotified(): Map<Long, Long> = TODO("not used")
     override suspend fun recordRediscoverNotified(ids: List<Long>, notifiedAt: Long) = TODO("not used")

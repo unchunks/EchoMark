@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.chat
 
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatModelChoices
 
@@ -31,6 +32,14 @@ data class ChatUiState(
     val aiSetup: AiSetupState = AiSetupState.READY,
     /** 保存済みの回答の messageId -> 引用元と資料との照らし合わせの結果。確かめ終わった回答から入る。 */
     val answerReviews: Map<Long, AnswerReview> = emptyMap(),
+    /** 最後の回答に続く質問の候補。 */
+    val followUps: List<String> = emptyList(),
+    /** 参照する範囲の短い説明。保存全体を見ているなら null。 */
+    val scopeLabel: String? = null,
+    /** 同じブックマークについて前に質問した会話。新しく始めたときだけ、続きから開けるようにする。 */
+    val previousAboutConversationId: Long? = null,
+    /** ユーザーが保存したテンプレート。 */
+    val userTemplates: List<ChatTemplate> = emptyList(),
     /** トップバーで選べる AI。 */
     val modelChoices: ChatModelChoices = ChatModelChoices(),
     /** 次の質問に添付するファイルの名前(添付していなければ null)。送信すると外れる。 */

@@ -6,16 +6,20 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatAttachmentException
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatScopeChoices
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.repository.ChatModelChoices
 import com.unchunks.echomark.domain.repository.ChatModelOption
@@ -43,6 +47,7 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
@@ -54,7 +59,8 @@ class ChatViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val attachmentSource: ChatAttachmentSource,
     private val chatModels: ChatModelRepository,
-    private val dispatchers: DispatcherProvider
+    private val dispatchers: DispatcherProvider,
+    private val appSettings: AppSettingsRepository
 ) : ViewModel() {
 
     // 既存会話は "chat/{conversationId}" の引数で渡る。"chat/new" では未設定(null)で、
@@ -159,20 +165,61 @@ class ChatViewModel @Inject constructor(
         AttachmentState(attachment?.name, attaching, error)
     }
 
+    /** 参照する範囲。この画面を開いている間だけ使い、会話には保存しない。 */
+    private val scopeFlow = MutableStateFlow(ChatScopeChoices.ALL)
+    private val scopeLabelFlow = MutableStateFlow<String?>(null)
+
+    /** 今の参照する範囲(範囲のシートに出す)。 */
+    val scope: StateFlow<BookmarkQuery> = scopeFlow
+
+    /** 範囲の選択肢。保存全体を読むため、シートを開いている間だけ集める。 */
+    val scopeChoices: StateFlow<ChatScopeChoices> = repository.observeScopeChoices()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatScopeChoices())
+
+    /** 今の範囲に入る保存の数。シートを開いている間だけ集める。 */
+    val scopeCount: StateFlow<Int?> = scopeFlow.flatMapLatest { query ->
+        repository.observeScopeCount(query).map<Int, Int?> { it }.onStart { emit(null) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 同じブックマークについて前に質問した会話。 */
+    private val previousAboutConversationFlow: Flow<Long?> = flow {
+        emit(null)
+        navAboutBookmarkId?.let { emit(repository.latestConversationAbout(it)) }
+    }
+
+    private val composerState = combine(
+        attachmentState,
+        scopeLabelFlow,
+        previousAboutConversationFlow,
+        appSettings.chatTemplates
+    ) { attachment, scopeLabel, previousAbout, templates -> ComposerState(attachment, scopeLabel, previousAbout, templates) }
+
     val uiState: StateFlow<ChatUiState> = combine(
         messagesWithReferences,
         sendingState,
         contextState,
-        attachmentState,
+        composerState,
         answerReviewsFlow
-    ) { messagesAndRefs, sending, context, attachment, reviews ->
+    ) { messagesAndRefs, sending, context, composer, reviews ->
+        val attachment = composer.attachment
+        val messages = messagesAndRefs?.first.orEmpty()
+        val bookmarks = messagesAndRefs?.second.orEmpty()
         ChatUiState(
             title = context.conversation?.title,
             hasConversation = context.conversation != null,
             isLoading = messagesAndRefs == null,
-            messages = messagesAndRefs?.first.orEmpty(),
-            referencedBookmarks = messagesAndRefs?.second.orEmpty(),
+            messages = messages,
+            referencedBookmarks = bookmarks,
             answerReviews = reviews,
+            followUps = ChatSuggestions.forAnswer(
+                messages,
+                messages.lastOrNull()?.let { reviews[it.id] },
+                bookmarks,
+                isAboutBookmark = context.aboutBookmark != null
+            ),
+            scopeLabel = composer.scopeLabel,
+            previousAboutConversationId = composer.previousAboutConversationId,
+            userTemplates = composer.userTemplates,
             aboutBookmark = context.aboutBookmark,
             suggestions = context.suggestions,
             isSending = sending.isSending,
@@ -210,6 +257,31 @@ class ChatViewModel @Inject constructor(
                 val key = ReviewKey(message.id, ids.filter { it in bookmarks })
                 message.id to reviewCache.getOrPut(key) { AnswerReviewer.review(message.content, ids, bookmarks) }
             }
+        }
+    }
+
+    /** 参照する範囲を [query] にする。 */
+    fun setScope(query: BookmarkQuery) {
+        scopeFlow.value = query
+        scopeLabelFlow.value = scopeChoices.value.describe(query)
+    }
+
+    /** 同じブックマークについて前に質問した会話を開く。 */
+    fun resumeAboutConversation() {
+        val id = uiState.value.previousAboutConversationId ?: return
+        if (conversationIdFlow.value == null) savedStateHandle[ARG_CONVERSATION_ID] = id
+    }
+
+    /** 入力中の [text] を自分のテンプレートに保存する。 */
+    fun saveTemplate(text: String) {
+        viewModelScope.launch {
+            appSettings.updateChatTemplates { ChatTemplates.add(it, text, UUID.randomUUID().toString()) }
+        }
+    }
+
+    fun deleteTemplate(template: ChatTemplate) {
+        viewModelScope.launch {
+            appSettings.updateChatTemplates { list -> list.filterNot { it.id == template.id } }
         }
     }
 
@@ -269,7 +341,8 @@ class ChatViewModel @Inject constructor(
                         aboutBookmarkId = about?.id
                     ).also { savedStateHandle[ARG_CONVERSATION_ID] = it }
                 streamingTextFlow.value = ""
-                repository.sendMessageStream(id, text, about?.id, isRetry, attachment).collect { event ->
+                repository.sendMessageStream(id, text, about?.id, isRetry, attachment, scopeFlow.value.takeIf { it != ChatScopeChoices.ALL })
+                    .collect { event ->
                     when (event) {
                         is ChatStreamEvent.Started ->
                             pendingReferenceCountFlow.value = event.referencedBookmarkIds.size
@@ -377,6 +450,13 @@ class ChatViewModel @Inject constructor(
         val name: String?,
         val isAttaching: Boolean,
         val error: String?
+    )
+
+    private class ComposerState(
+        val attachment: AttachmentState,
+        val scopeLabel: String?,
+        val previousAboutConversationId: Long?,
+        val userTemplates: List<ChatTemplate>
     )
 
     private class ContextState(

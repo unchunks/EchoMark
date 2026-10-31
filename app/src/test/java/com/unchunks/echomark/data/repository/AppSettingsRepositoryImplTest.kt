@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.repository
 
+import com.unchunks.echomark.domain.model.ChatTemplate
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -89,6 +90,22 @@ class AppSettingsRepositoryImplTest {
         // 知らない並び順(古い版・新しい版で名前が変わったもの)は新しい順として扱う
         dataStore.edit { it[stringPreferencesKey("bookmark_sort_order")] = "UNKNOWN" }
         assertEquals(BookmarkSortOrder.NEWEST, repository.bookmarkSortOrder.first())
+    }
+
+    @Test
+    fun チャットのテンプレートを保存して読み出せる() = runTest {
+        val repository = createRepository()
+        val template = ChatTemplate("1", "会議", "会議の「議題」を\nまとめて")
+        assertEquals(emptyList<ChatTemplate>(), repository.chatTemplates.first())
+
+        repository.updateChatTemplates { it + template }
+
+        assertEquals(listOf(template), repository.chatTemplates.first())
+    }
+
+    @Test
+    fun 読めないテンプレートは空として扱う() {
+        assertEquals(emptyList<ChatTemplate>(), ChatTemplateCodec.decode("壊れた値"))
     }
 
     @Test

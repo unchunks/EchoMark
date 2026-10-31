@@ -11,9 +11,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatScopeChoices
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
+import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatModelChoices
@@ -23,7 +27,9 @@ import com.unchunks.echomark.ui.chat.AnswerReview
 import com.unchunks.echomark.ui.chat.ChatContent
 import com.unchunks.echomark.ui.chat.ChatError
 import com.unchunks.echomark.ui.chat.ChatModelMenuItems
+import com.unchunks.echomark.ui.chat.ChatScopeSheetContent
 import com.unchunks.echomark.ui.chat.ChatSuggestions
+import com.unchunks.echomark.ui.chat.ChatTemplateSheetContent
 import com.unchunks.echomark.ui.chat.ChatUiState
 import com.unchunks.echomark.ui.chat.CitedSource
 import com.unchunks.echomark.ui.chat.ClaimStatus
@@ -217,6 +223,55 @@ class ChatScreenshotTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun followUpsAndScope() = captureScreen("chat_follow_ups_scope") {
+        Chat(
+            conversationState.copy(
+                followUps = listOf("引用した保存の共通点と違いは？", "「Jetpack Compose のパフォ…」について詳しく", "具体例を挙げて"),
+                scopeLabel = "お気に入り・Compose ほか2件"
+            )
+        )
+    }
+
+    @Test
+    fun resumePreviousConversation() = captureScreen("chat_resume_previous") {
+        Chat(
+            ChatUiState(
+                aboutBookmark = PreviewSamples.urlBookmark,
+                suggestions = ChatSuggestions.forBookmark,
+                previousAboutConversationId = 3L
+            )
+        )
+    }
+
+    @Test
+    fun scopeSheet() = screenshot.captureLightDark("chat_scope_sheet", widthDp = 400) {
+        Surface {
+            ChatScopeSheetContent(
+                query = BookmarkQuery(tagIds = setOf(1L, 2L), categories = setOf("技術")),
+                choices = ChatScopeChoices(
+                    tags = listOf(Tag(1L, "Compose"), Tag(2L, "Kotlin"), Tag(3L, "設計"), Tag(4L, "読書メモ")),
+                    categories = listOf("技術", "旅行", "料理")
+                ),
+                count = 12,
+                onChange = {}
+            )
+        }
+    }
+
+    @Test
+    fun templateSheet() = screenshot.captureLightDark("chat_template_sheet", widthDp = 400) {
+        Surface {
+            ChatTemplateSheetContent(
+                input = "会議の議題をまとめて",
+                userTemplates = listOf(ChatTemplate("1", "週次の振り返り", "今週の進み具合をまとめて")),
+                onPick = {},
+                onSaveInput = {},
+                onDelete = {}
+            )
+        }
     }
 
     @Test
