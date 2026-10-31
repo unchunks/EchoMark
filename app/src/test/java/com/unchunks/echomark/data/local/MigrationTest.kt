@@ -555,6 +555,41 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate21To22_addsEmptySmartFoldersAndKeepsBookmarks() {
+        helper.createDatabase(21).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited) " +
+                    "VALUES (1, 'TEXT', 't', 1, 1, 'DONE', 1, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v22 と一致するか(列・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(22, listOf(MIGRATION_21_22))
+
+        connection.prepare("SELECT COUNT(*) FROM smart_folders").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        connection.prepare("SELECT title, isFavorite FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("t", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+        }
+        // 名前は1つだけ(一意インデックス)
+        connection.execSQL(
+            "INSERT INTO smart_folders (name, filter, tagIds, tagMatch, categories, types, createdAt) VALUES ('未読', 'ACTIVE', '', 'ALL', '', '', 1)"
+        )
+        val duplicate = runCatching {
+            connection.execSQL(
+                "INSERT INTO smart_folders (name, filter, tagIds, tagMatch, categories, types, createdAt) VALUES ('未読', 'ACTIVE', '', 'ALL', '', '', 2)"
+            )
+        }
+        assertTrue(duplicate.isFailure)
+        connection.close()
+    }
+
+    @Test
     fun migrate19To20_marksOnlyOpenedBookmarksAsRead() {
         helper.createDatabase(19).apply {
             execSQL(

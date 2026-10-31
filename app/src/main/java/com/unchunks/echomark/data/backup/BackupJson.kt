@@ -8,6 +8,16 @@ import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.SmartFolderEntity
+import com.unchunks.echomark.data.mapper.SmartFolderCodec
+import com.unchunks.echomark.data.mapper.smartFolderEntity
+import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.ReadState
+import com.unchunks.echomark.domain.bookmark.model.SmartFolderNames
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
@@ -36,7 +46,57 @@ data class BackupData(
     /** ユーザーが外したタグの記録。[RemovedTagEntity.bookmarkId] は [bookmarks] の ID */
     val removedTags: List<RemovedTagEntity> = emptyList(),
     /** ユーザーが作ったカテゴリ(名前と説明)。ID は持たない(読み込み側で振り直す) */
-    val categories: List<CategoryEntity> = emptyList()
+    val categories: List<CategoryEntity> = emptyList(),
+    /** スマートフォルダ(保存した絞り込み条件)。タグは ID が端末ごとに変わるので、名前で持つ */
+    val smartFolders: List<SmartFolderBackup> = emptyList()
+)
+
+/**
+ * バックアップに入れるスマートフォルダ(#34)。DB の行([SmartFolderEntity])と違い、タグを ID ではなく名前で持つ
+ * (タグの ID は読み込む端末ごとに振り直されるため。読み込み側で名前から探し直す)。
+ * 列挙の値は文字列のまま持ち、読み込み側で知っているものだけを使う(新しい版で増えた値で読み込みを失敗させない)。
+ */
+data class SmartFolderBackup(
+    val name: String,
+    val filter: String = BookmarkFilter.ACTIVE.name,
+    val tagNames: List<String> = emptyList(),
+    val tagMatch: String = TagMatch.ALL.name,
+    val categories: List<String> = emptyList(),
+    val types: List<String> = emptyList(),
+    val period: String? = null,
+    val readState: String? = null,
+    val sortOrder: String? = null,
+    val createdAt: Long = 0L
+)
+
+/** DB の行を、タグを名前にしたバックアップ用にする。もう無いタグ(削除済み)の ID は外す。 */
+fun SmartFolderEntity.toBackup(tagNameById: Map<Long, String>): SmartFolderBackup = SmartFolderBackup(
+    name = name,
+    filter = filter,
+    tagNames = SmartFolderCodec.decodeIds(tagIds).mapNotNull { tagNameById[it]?.takeIf { name -> name.isNotBlank() } },
+    tagMatch = tagMatch,
+    categories = SmartFolderCodec.decodeCategories(categories).toList(),
+    types = SmartFolderCodec.decodeTypes(types).map { it.name },
+    period = period,
+    readState = readState,
+    sortOrder = sortOrder,
+    createdAt = createdAt
+)
+
+/** バックアップのスマートフォルダを、この端末のタグの ID([tagIds])を入れた DB の行にする。知らない値は既定に戻す。 */
+fun SmartFolderBackup.toEntity(tagIds: Collection<Long>): SmartFolderEntity = smartFolderEntity(
+    name = name,
+    query = BookmarkQuery(
+        filter = BookmarkFilter.entries.firstOrNull { it.name == filter } ?: BookmarkFilter.ACTIVE,
+        tagIds = tagIds.toSet(),
+        tagMatch = TagMatch.entries.firstOrNull { it.name == tagMatch } ?: TagMatch.ALL,
+        categories = categories.toSet(),
+        types = SmartFolderCodec.decodeTypes(types.joinToString(",")),
+        period = period?.let { value -> CreatedPeriod.entries.firstOrNull { it.name == value } },
+        readState = readState?.let { value -> ReadState.entries.firstOrNull { it.name == value } }
+    ),
+    sortOrder = sortOrder?.let { value -> BookmarkSortOrder.entries.firstOrNull { it.name == value } },
+    createdAt = createdAt
 )
 
 /** 読み込んだバックアップと、壊れていて読み飛ばした要素の数。 */
@@ -56,7 +116,8 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil・branchedFromId・branchedAt は無ければ省略} ],
  *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ],
  *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ],
- *   "categories": [ {name, description, createdAt} ] }
+ *   "categories": [ {name, description, createdAt} ],
+ *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -82,10 +143,13 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   9 以前は、カテゴリは無く、どのブックマークのカテゴリも AI が付けたものとして読む
  * - 11: 会話に isPinned(一覧の先頭に固定)と、branchedFromId・branchedAt(分けた元の会話)を追加。10 以前は固定していない・
  *   分けていない会話として読む。branchedFromId は書き出し元の ID で、読み込むときに付け替える(元が無ければ通常の会話にする)
+ * - 12: ブックマークに readAt(読んだ日時。無ければ未読)を追加。11 以前は、保存したあとに開いたことがあるものだけ既読として読む
+ * - 13: スマートフォルダ(smartFolders。DB v21 の smart_folders)を追加。12 以前は無いものとして読む。
+ *   タグは ID ではなく名前で持ち、読み込むときに名前でこの端末のタグを探す(無ければ作る)。同じ名前のフォルダが既にあれば追加しない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 12
+    const val CURRENT_VERSION = 13
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -111,6 +175,8 @@ object BackupJson {
         writeArray(writer, "removedTags", data.removedTags) { it.toJson() }
         writer.write(",")
         writeArray(writer, "categories", data.categories) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "smartFolders", data.smartFolders) { it.toJson() }
         writer.write("}")
         writer.flush()
     }
@@ -160,7 +226,8 @@ object BackupJson {
             messages = readArray("messages") { it.toMessage() },
             tagAliases = readArray("tagAliases") { it.toTagAlias() },
             removedTags = readArray("removedTags") { it.toRemovedTag() },
-            categories = readArray("categories") { it.toCategory() }
+            categories = readArray("categories") { it.toCategory() },
+            smartFolders = readArray("smartFolders") { it.toSmartFolder() }
         )
         return DecodedBackup(data, invalid)
     }
@@ -313,6 +380,38 @@ object BackupJson {
         // version 2 以前には無い。未知の値(将来の版で増えた場合など)も、消されないようユーザーのものとして読む
         source = enumOrNull<TagSource>(optString("source")) ?: TagSource.USER
     )
+
+    private fun SmartFolderBackup.toJson() = JSONObject()
+        .put("name", name)
+        .put("filter", filter)
+        .put("tagNames", JSONArray(tagNames))
+        .put("tagMatch", tagMatch)
+        .put("categories", JSONArray(categories))
+        .put("types", JSONArray(types))
+        .apply { period?.let { put("period", it) } }
+        .apply { readState?.let { put("readState", it) } }
+        .apply { sortOrder?.let { put("sortOrder", it) } }
+        .put("createdAt", createdAt)
+
+    private fun JSONObject.toSmartFolder(): SmartFolderBackup? {
+        val name = stringOrNull("name")?.let { SmartFolderNames.normalize(it) } ?: return null
+        fun strings(key: String): List<String> {
+            val array = optJSONArray(key) ?: return emptyList()
+            return (0 until array.length()).mapNotNull { array.optString(it, "").trim().takeIf { value -> value.isNotEmpty() } }
+        }
+        return SmartFolderBackup(
+            name = name,
+            filter = stringOrNull("filter") ?: BookmarkFilter.ACTIVE.name,
+            tagNames = strings("tagNames"),
+            tagMatch = stringOrNull("tagMatch") ?: TagMatch.ALL.name,
+            categories = strings("categories"),
+            types = strings("types"),
+            period = stringOrNull("period"),
+            readState = stringOrNull("readState"),
+            sortOrder = stringOrNull("sortOrder"),
+            createdAt = longOrNull("createdAt") ?: 0L
+        )
+    }
 
     private fun JSONObject.toCategory(): CategoryEntity? {
         val name = stringOrNull("name")?.trim()?.takeIf { it.isNotEmpty() } ?: return null

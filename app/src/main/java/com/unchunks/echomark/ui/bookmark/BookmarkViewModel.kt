@@ -16,6 +16,10 @@ import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.ReadingRecommender
 import com.unchunks.echomark.domain.bookmark.model.Recommendation
 import com.unchunks.echomark.domain.bookmark.model.SearchHistory
+import com.unchunks.echomark.domain.bookmark.model.SmartFolder
+import com.unchunks.echomark.domain.bookmark.model.SmartFolderNames
+import com.unchunks.echomark.domain.bookmark.model.SmartFolderResult
+import com.unchunks.echomark.domain.bookmark.model.matches
 import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggester
@@ -29,6 +33,7 @@ import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.AttachmentRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.SaveResult
+import com.unchunks.echomark.domain.repository.SmartFolderRepository
 import com.unchunks.echomark.domain.repository.CategoryRepository
 import com.unchunks.echomark.domain.repository.TagRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
@@ -74,7 +79,8 @@ class BookmarkViewModel @Inject constructor(
     private val attachmentRepository: AttachmentRepository,
     private val appSettings: AppSettingsRepository,
     private val dispatchers: DispatcherProvider,
-    private val searchHighlights: SearchHighlights
+    private val searchHighlights: SearchHighlights,
+    private val smartFolderRepository: SmartFolderRepository
 ) : ViewModel() {
 
     /** 検索語以外の表示条件 */
@@ -84,6 +90,10 @@ class BookmarkViewModel @Inject constructor(
         val sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST,
         /** 一覧の見せ方。並び順と同じく設定に保存したものを使う */
         val display: BookmarkListDisplay = BookmarkListDisplay.CARD,
+        /** スマートフォルダを開いたときの並び順。設定は書き換えず、並び順を選び直すか、フォルダを閉じると外れる */
+        val sortOverride: BookmarkSortOrder? = null,
+        /** 最後に開いたスマートフォルダ。条件を変えたあとに「更新」で上書きできるよう覚えておく */
+        val folderId: Long? = null,
         val searchActive: Boolean = false
     )
 
@@ -110,7 +120,7 @@ class BookmarkViewModel @Inject constructor(
      */
     private val shownControlsFlow: Flow<ListControls> =
         combine(controlsFlow, appSettings.bookmarkSortOrder, appSettings.bookmarkListDisplay) { controls, sortOrder, display ->
-            controls.copy(sortOrder = sortOrder, display = display)
+            controls.copy(sortOrder = controls.sortOverride ?: sortOrder, display = display)
         }
 
     private val retryTrigger = MutableStateFlow(0)
@@ -219,6 +229,14 @@ class BookmarkViewModel @Inject constructor(
             emit(emptyList())
         }
 
+    /** スマートフォルダ(#34)。補助的な表示なので、読めなければ空として扱う */
+    private val smartFoldersFlow: Flow<List<SmartFolder>> = smartFolderRepository.observeFolders()
+        .catch { e ->
+            if (e is CancellationException) throw e
+            Timber.w(e, "スマートフォルダを読み込めませんでした")
+            emit(emptyList())
+        }
+
     /** 検索の履歴。補助的な表示なので、読めなければ空として扱う */
     private val searchHistoryFlow: Flow<List<String>> = appSettings.searchHistory
         .catch { e ->
@@ -241,13 +259,14 @@ class BookmarkViewModel @Inject constructor(
         combine(listFlow, searchQueryFlow, shownControlsFlow, searchHistoryFlow, queryRevisionFlow, ::ListInputs),
         tagCountsFlow,
         categoryNamesFlow,
-        combine(rediscoverFlow, recommendationsFlow, ::Pair),
+        combine(rediscoverFlow, recommendationsFlow, smartFoldersFlow, ::Triple),
         repository.observeBookmarkCount()
-    ) { (list, rawQuery, controls, history, revision), tagCounts, categoryNames, (rediscoverAll, recommendations), total ->
+    ) { (list, rawQuery, controls, history, revision), tagCounts, categoryNames, (rediscoverAll, recommendations, smartFolders), total ->
         // 「次に読む」に出したものは、「今日の再発見」には出さない(同じカードを2回見せない)
         val recommendedIds = recommendations.mapTo(HashSet()) { it.bookmark.id }
         val rediscover = rediscoverAll.filter { it.id !in recommendedIds }
         val query = controls.query
+        val activeFolder = smartFolders.firstOrNull { it.matches(query) }
         // 削除されたタグは選択から外して見せる(DB の絞り込みも、存在しないタグは無視する)
         val knownTagIds = tagCounts?.mapTo(HashSet()) { it.id }
         val selectedTagIds = if (knownTagIds == null) query.tagIds else query.tagIds.filterTo(LinkedHashSet()) { it in knownTagIds }
@@ -292,6 +311,11 @@ class BookmarkViewModel @Inject constructor(
             semanticMatchIds = if (controls.searchActive) list.semanticMatchIds else emptySet(),
             rediscover = rediscover,
             recommendations = recommendations,
+            smartFolders = smartFolders,
+            activeSmartFolderId = activeFolder?.id,
+            // 開いたフォルダの条件を変えた(どのフォルダとも同じ条件でない)ときだけ、そのフォルダを「更新」できる
+            smartFolderToUpdate = smartFolders.firstOrNull { it.id == controls.folderId }
+                ?.takeIf { activeFolder == null && query != BookmarkQuery() },
             totalCount = total
         )
     }.stateIn(
@@ -459,12 +483,14 @@ class BookmarkViewModel @Inject constructor(
 
     /** 選んでいるタグ・カテゴリ・種類・期間をすべて外す(通常/お気に入り/アーカイブと検索は変えない) */
     fun onClearFilters() {
-        controlsFlow.update { it.copy(query = it.query.clearConditions()) }
+        controlsFlow.update { it.copy(query = it.query.clearConditions(), sortOverride = null, folderId = null) }
     }
 
     /** タグ管理画面で選ばれたタグで絞り込む(それまでのタグ・カテゴリの条件は置き換える)。検索モードは閉じて、そのタグの一覧を見せる */
     fun showTag(tagId: Long) {
-        controlsFlow.update { it.copy(query = it.query.clearConditions().copy(tagIds = setOf(tagId)), searchActive = false) }
+        controlsFlow.update {
+            it.copy(query = it.query.clearConditions().copy(tagIds = setOf(tagId)), sortOverride = null, folderId = null, searchActive = false)
+        }
         searchQueryFlow.value = ""
     }
 
@@ -480,8 +506,9 @@ class BookmarkViewModel @Inject constructor(
         controlsFlow.update { it.copy(query = it.query.copy(filter = filter)) }
     }
 
-    /** 並び順を変えて保存する(一覧は保存した値から読み直す) */
+    /** 並び順を変えて保存する(一覧は保存した値から読み直す)。スマートフォルダの並び順で開いていたときは、それを外して選んだ順にする */
     fun onSortOrderChange(sortOrder: BookmarkSortOrder) {
+        controlsFlow.update { it.copy(sortOverride = null) }
         viewModelScope.launch {
             try {
                 appSettings.setBookmarkSortOrder(sortOrder)
@@ -489,6 +516,99 @@ class BookmarkViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Timber.w(e, "並び順を保存できませんでした")
+            }
+        }
+    }
+
+    // ---- スマートフォルダ(#34) ----
+
+    /**
+     * スマートフォルダを開く(その条件で一覧を探し直す)。保存した並び順があればそれで並べる(設定は変えない)。
+     * 今開いているフォルダをもう一度選ぶと閉じて、条件を外した通常の一覧に戻る。
+     */
+    fun onSmartFolderSelected(folder: SmartFolder) {
+        controlsFlow.update { controls ->
+            if (folder.matches(controls.query)) {
+                controls.copy(query = BookmarkQuery(), sortOverride = null, folderId = null)
+            } else {
+                controls.copy(query = folder.query, sortOverride = folder.sortOrder, folderId = folder.id, searchActive = false)
+            }
+        }
+        searchQueryFlow.value = ""
+    }
+
+    /**
+     * 今の条件を [name] のスマートフォルダとして保存する。[includeSort] なら、今の並び順も保存する。
+     * 結果([SmartFolderResult])は [onResult] で返す(名前が空・長すぎる・同じ名前がある、のときは保存しない)。
+     */
+    fun onSaveSmartFolder(name: String, includeSort: Boolean, onResult: (SmartFolderResult) -> Unit = {}) {
+        val query = controlsFlow.value.query
+        val sortOrder = uiState.value.sortOrder.takeIf { includeSort }
+        viewModelScope.launch {
+            val result = try {
+                smartFolderRepository.create(name, query, sortOrder)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "スマートフォルダを保存できませんでした")
+                messageChannel.send(BookmarkListMessage.SmartFolderFailed("保存できませんでした。もう一度お試しください。"))
+                return@launch
+            }
+            onResult(result)
+            if (result is SmartFolderResult.Saved) {
+                messageChannel.send(BookmarkListMessage.SmartFolderSaved(SmartFolderNames.normalize(name).orEmpty()))
+            }
+        }
+    }
+
+    /** スマートフォルダの名前を変える。結果は [onResult] で返す。 */
+    fun onRenameSmartFolder(id: Long, name: String, onResult: (SmartFolderResult) -> Unit = {}) {
+        viewModelScope.launch {
+            val result = try {
+                smartFolderRepository.rename(id, name)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "スマートフォルダの名前を変えられませんでした")
+                messageChannel.send(BookmarkListMessage.SmartFolderFailed("名前を変えられませんでした。もう一度お試しください。"))
+                return@launch
+            }
+            onResult(result)
+        }
+    }
+
+    /** スマートフォルダの条件を、今の一覧の条件で置き換える(名前は変えない)。[includeSort] なら並び順も置き換える。 */
+    fun onOverwriteSmartFolder(folder: SmartFolder, includeSort: Boolean) {
+        val query = controlsFlow.value.query
+        val sortOrder = uiState.value.sortOrder.takeIf { includeSort }
+        viewModelScope.launch {
+            try {
+                smartFolderRepository.updateConditions(folder.id, query, sortOrder)
+                messageChannel.send(BookmarkListMessage.SmartFolderUpdated(folder.name))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "スマートフォルダを更新できませんでした")
+                messageChannel.send(BookmarkListMessage.SmartFolderFailed("更新できませんでした。もう一度お試しください。"))
+            }
+        }
+    }
+
+    /** スマートフォルダを削除する(中のブックマークは消えない)。今開いているフォルダなら、通常の一覧に戻る。 */
+    fun onDeleteSmartFolder(folder: SmartFolder) {
+        viewModelScope.launch {
+            try {
+                smartFolderRepository.delete(folder.id)
+                controlsFlow.update { controls ->
+                    val cleared = if (folder.matches(controls.query)) controls.copy(query = BookmarkQuery(), sortOverride = null) else controls
+                    if (cleared.folderId == folder.id) cleared.copy(folderId = null) else cleared
+                }
+                messageChannel.send(BookmarkListMessage.SmartFolderDeleted(folder.name))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "スマートフォルダを削除できませんでした")
+                messageChannel.send(BookmarkListMessage.SmartFolderFailed("削除できませんでした。もう一度お試しください。"))
             }
         }
     }

@@ -9,6 +9,7 @@ import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
+import com.unchunks.echomark.data.backup.SmartFolderBackup
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
@@ -42,6 +43,14 @@ class BackupJsonTest {
                 createdAt = 310, lastAccessedAt = 310, aiStatus = AiStatus.DONE,
                 filePath = "attachments/0f8e-11.jpg", mimeType = "image/jpeg", fileName = "IMG_0001.jpg", fileSize = 1234L
             )
+        ),
+        smartFolders = listOf(
+            SmartFolderBackup(
+                name = "未読の資料", filter = "FAVORITES", tagNames = listOf("kotlin", "android"), tagMatch = "ANY",
+                categories = listOf("技術"), types = listOf("PDF", "URL"), period = "PAST_MONTH", readState = "UNREAD",
+                sortOrder = "OLDEST", createdAt = 99
+            ),
+            SmartFolderBackup(name = "全部")
         ),
         tags = listOf(TagEntity(10, "kotlin", isUserCreated = true), TagEntity(11, "android")),
         bookmarkTags = listOf(BookmarkTagCrossRef(1, 10, TagSource.USER), BookmarkTagCrossRef(1, 11, TagSource.AI)),
@@ -89,6 +98,44 @@ class BackupJsonTest {
         )
 
         assertEquals(listOf(500L, null, null), decoded.data.bookmarks.map { it.readAt })
+    }
+
+    @Test
+    fun スマートフォルダはタグを名前で書き出し_条件の無い項目は省く() {
+        val json = JSONObject(BackupJson.encode(sample))
+        val folders = json.getJSONArray("smartFolders")
+
+        val first = folders.getJSONObject(0)
+        assertEquals("未読の資料", first.getString("name"))
+        assertEquals(listOf("kotlin", "android"), (0 until first.getJSONArray("tagNames").length()).map { first.getJSONArray("tagNames").getString(it) })
+        assertEquals("PAST_MONTH", first.getString("period"))
+        val second = folders.getJSONObject(1)
+        assertFalse(second.has("period"))
+        assertFalse(second.has("readState"))
+        assertFalse(second.has("sortOrder"))
+    }
+
+    @Test
+    fun スマートフォルダの無い古い版のバックアップは空として読み_壊れたものは読み飛ばす() {
+        val old = BackupJson.decode("""{"format":"echomark-backup","version":12,"exportedAt":1}""")
+        assertEquals(emptyList<SmartFolderBackup>(), old.data.smartFolders)
+
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":13,"exportedAt":1,"smartFolders":[
+              {"name":"  良い  ","tagNames":["a"," ","b"],"filter":"NEW_FILTER","types":["PDF"]},
+              {"name":"   "},
+              {"tagNames":["x"]}
+            ]}
+            """.trimIndent()
+        )
+
+        val folder = decoded.data.smartFolders.single()
+        assertEquals("良い", folder.name)
+        assertEquals(listOf("a", "b"), folder.tagNames)
+        // 知らない値は文字列のまま持ち、読み込む側で既定に戻す
+        assertEquals("NEW_FILTER", folder.filter)
+        assertEquals(2, decoded.invalidRecords)
     }
 
     @Test

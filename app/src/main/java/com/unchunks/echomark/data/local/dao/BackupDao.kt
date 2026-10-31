@@ -6,6 +6,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.unchunks.echomark.data.backup.BackupData
+import com.unchunks.echomark.data.backup.toBackup
+import com.unchunks.echomark.data.backup.toEntity
 import com.unchunks.echomark.data.backup.formatReferencedIds
 import com.unchunks.echomark.data.backup.parseReferencedIds
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
@@ -14,9 +16,11 @@ import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.SmartFolderEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.SmartFolderNames
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
 
@@ -29,7 +33,9 @@ data class BackupMergeResult(
     val conversationsAdded: Int,
     /** 同じ作成日時・タイトルの会話が既にあって追加しなかった件数 */
     val conversationsSkipped: Int,
-    val messagesAdded: Int
+    val messagesAdded: Int,
+    /** 追加したスマートフォルダの数(同じ名前のフォルダが既にあれば追加しない) */
+    val smartFoldersAdded: Int = 0
 )
 
 /**
@@ -59,6 +65,9 @@ abstract class BackupDao {
     @Query("SELECT * FROM categories ORDER BY createdAt, id")
     abstract suspend fun getAllCategories(): List<CategoryEntity>
 
+    @Query("SELECT * FROM smart_folders ORDER BY createdAt, id")
+    abstract suspend fun getAllSmartFolders(): List<SmartFolderEntity>
+
     @Query("SELECT * FROM conversations ORDER BY id")
     abstract suspend fun getAllConversations(): List<ConversationEntity>
 
@@ -67,17 +76,22 @@ abstract class BackupDao {
 
     /** 書き出し用に、全テーブルを同じ時点の内容で読む。 */
     @Transaction
-    open suspend fun snapshot(exportedAt: Long): BackupData = BackupData(
-        exportedAt = exportedAt,
-        bookmarks = getAllBookmarks(),
-        tags = getAllTags(),
-        bookmarkTags = getAllCrossRefs(),
-        conversations = getAllConversations(),
-        messages = getAllMessages(),
-        tagAliases = getAllTagAliases(),
-        removedTags = getAllRemovedTags(),
-        categories = getAllCategories()
-    )
+    open suspend fun snapshot(exportedAt: Long): BackupData {
+        val tags = getAllTags()
+        val tagNameById = tags.associate { it.id to it.name }
+        return BackupData(
+            exportedAt = exportedAt,
+            bookmarks = getAllBookmarks(),
+            tags = tags,
+            bookmarkTags = getAllCrossRefs(),
+            conversations = getAllConversations(),
+            messages = getAllMessages(),
+            tagAliases = getAllTagAliases(),
+            removedTags = getAllRemovedTags(),
+            categories = getAllCategories(),
+            smartFolders = getAllSmartFolders().map { it.toBackup(tagNameById) }
+        )
+    }
 
     // ---- 読み込み(統合) ----
 
@@ -130,6 +144,12 @@ abstract class BackupDao {
     @Query("SELECT name FROM tags")
     abstract suspend fun getAllTagNames(): List<String>
 
+    @Query("SELECT name FROM smart_folders")
+    abstract suspend fun getAllSmartFolderNames(): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertSmartFolder(folder: SmartFolderEntity): Long
+
     @Query("SELECT id FROM conversations WHERE createdAt = :createdAt AND title = :title LIMIT 1")
     abstract suspend fun findSameConversationId(title: String, createdAt: Long): Long?
 
@@ -153,6 +173,7 @@ abstract class BackupDao {
      * - タグの別名: 行き先のタグがあればそのタグへ、無ければ(どのブックマークにも付いていないタグでも)ユーザーのタグとして作って付ける。
      *   別名と同じ名前のタグが既にあるとき、同じ別名が既にあるときは取り込まない
      * - 外したタグの記録: 追加したブックマークの分だけ取り込む
+     * - スマートフォルダ: 名前(大文字小文字・全角半角を区別しない)が今の DB に無いものだけ追加する。条件のタグは名前で今の DB のタグを探す(無ければ作る)
      * - カテゴリ: 名前(大文字小文字・全角半角を区別しない)が今の DB に無いものだけ追加する(既にあるカテゴリの説明は変えない)。
      *   カテゴリを自分で選んだ印(categoryEdited)は、追加するブックマークにそのまま付く
      * - 会話・メッセージ: 同じ会話があればスキップ。メッセージの引用と会話の質問の対象(aboutBookmarkId)は
@@ -283,6 +304,18 @@ abstract class BackupDao {
             if (categoryKeys.add(TagNames.key(category.name))) insertCategory(category.copy(id = 0))
         }
 
+        // スマートフォルダ: 同じ名前(大文字小文字・全角半角を区別しない)が今の DB にあれば追加しない。
+        // タグは名前でこの DB のタグを探し(ID は書き出し元と違う)、無ければユーザーのタグとして作る
+        val folderKeys = getAllSmartFolderNames().mapTo(HashSet()) { SmartFolderNames.key(it) }
+        var smartFoldersAdded = 0
+        for (folder in data.smartFolders) {
+            if (!folderKeys.add(SmartFolderNames.key(folder.name))) continue
+            val folderTagIds = folder.tagNames.map { TagNames.clean(it) }.filter { it.isNotEmpty() }.distinct().map { name ->
+                findTagIdByName(name) ?: insertTag(TagEntity(name = name, isUserCreated = true)).also { tagsAdded++ }
+            }
+            if (insertSmartFolder(folder.toEntity(folderTagIds)) >= 0) smartFoldersAdded++
+        }
+
         var messagesAdded = 0
         for (message in data.messages) {
             val conversationId = conversationIds[message.conversationId] ?: continue
@@ -303,7 +336,8 @@ abstract class BackupDao {
             tagsAdded = tagsAdded,
             conversationsAdded = conversationIds.size,
             conversationsSkipped = conversationsSkipped,
-            messagesAdded = messagesAdded
+            messagesAdded = messagesAdded,
+            smartFoldersAdded = smartFoldersAdded
         )
     }
 
@@ -327,6 +361,9 @@ abstract class BackupDao {
     @Query("DELETE FROM api_usage")
     abstract suspend fun deleteAllApiUsage()
 
+    @Query("DELETE FROM smart_folders")
+    abstract suspend fun deleteAllSmartFolders()
+
     /** ブックマーク・タグ・会話・クラウド API の使用量の記録をすべて削除する(外部キーの子から順に消す)。 */
     @Transaction
     open suspend fun deleteAll() {
@@ -336,5 +373,7 @@ abstract class BackupDao {
         deleteAllTags()
         deleteAllBookmarks()
         deleteAllApiUsage()
+        // スマートフォルダは、消えたタグ・ブックマークを前提にした条件なので、いっしょに消す
+        deleteAllSmartFolders()
     }
 }
