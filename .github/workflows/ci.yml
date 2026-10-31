@@ -41,6 +41,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-android-build
+      # Robolectric は実行環境の jar を実行中に Maven から取るため、取れないと数十のテストクラスがまとめて失敗する。
+      # Gradle のキャッシュには入らないので別に持つ(版が変わったら取り直す)
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: robolectric-
       # Roborazzi のスクリーンショットテストも含む。task を record / verify にしない限り PNG の記録も比較もしないので、
       # 描画エラーなく通るかだけを確認する(docs/screenshot-testing.md)
       - run: ./gradlew :app:testDebugUnitTest --stacktrace
