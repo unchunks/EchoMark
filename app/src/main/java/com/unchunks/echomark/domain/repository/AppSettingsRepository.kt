@@ -2,6 +2,8 @@ package com.unchunks.echomark.domain.repository
 
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
@@ -146,6 +148,15 @@ interface AppSettingsRepository {
     /** 検索の履歴(新しい順)。端末の中だけに残し、バックアップには含めない。 */
     val searchHistory: Flow<List<String>>
 
+    /** 重複・関連の見つけ方の厳しさ(しきい値は [DuplicateSensitivity])。既定は標準。 */
+    val duplicateSensitivity: Flow<DuplicateSensitivity>
+
+    /**
+     * 重複の候補で「両方残す」と答えた組。次から候補に出さない。端末の中だけに残し、バックアップには含めない
+     * (復元でブックマークの ID が変わるので、持ち越しても意味が無い)。「全データを削除」では消す。
+     */
+    val dismissedDuplicates: Flow<Set<DuplicatePair>>
+
     /** 一覧の並び順。アプリを開き直しても前回選んだ順で出す。既定は新しい順。 */
     val bookmarkSortOrder: Flow<BookmarkSortOrder>
 
@@ -171,6 +182,11 @@ interface AppSettingsRepository {
     suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder)
     suspend fun setBookmarkListDisplay(display: BookmarkListDisplay)
     suspend fun setReadingStyle(style: ReadingStyle)
+
+    suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity)
+
+    /** [transform] で「両方残す」と答えた重複の組を書き換える */
+    suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>)
 
     /** [transform] で検索の履歴を書き換える */
     suspend fun updateSearchHistory(transform: (List<String>) -> List<String>)

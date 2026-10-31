@@ -10,6 +10,7 @@ import androidx.room.Update
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
+import com.unchunks.echomark.domain.bookmark.duplicates.UrlEntry
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
@@ -242,6 +243,27 @@ interface BookmarkDao {
     // IDの取得
     @Query("SELECT id FROM bookmarks")
     suspend fun getAllIds(): List<Long>
+
+    /** URL のブックマークの ID と URL(同じ URL の重複を探す用) */
+    @Query("SELECT id, contentUri AS url FROM bookmarks WHERE type = 'URL' AND contentUri IS NOT NULL")
+    suspend fun getUrlEntries(): List<UrlEntry>
+
+    /**
+     * 重複を1件にまとめるとき、残す方に引き継いだ値を書く([com.unchunks.echomark.domain.bookmark.duplicates.BookmarkMerge.Fields])。
+     * 処理の状態・AI の結果には触れない(処理中のワークの書き込みを上書きしないため)。
+     */
+    @Query(
+        """
+        UPDATE bookmarks SET createdAt = :createdAt, lastAccessedAt = :lastAccessedAt, isFavorite = :isFavorite,
+            isArchived = :isArchived, readAt = :readAt, content = :content,
+            snapshotPath = :snapshotPath, snapshotPdfPath = :snapshotPdfPath, snapshotAt = :snapshotAt
+        WHERE id = :id
+        """
+    )
+    suspend fun updateMergedFields(
+        id: Long, createdAt: Long, lastAccessedAt: Long, isFavorite: Boolean, isArchived: Boolean, readAt: Long?,
+        content: String?, snapshotPath: String?, snapshotPdfPath: String?, snapshotAt: Long?
+    )
 
 
     @Query("SELECT id FROM bookmarks WHERE aiStatus = :status")

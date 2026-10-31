@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingFont
@@ -116,6 +118,37 @@ class AppSettingsRepositoryImpl @Inject constructor(
             if (updated.isEmpty()) prefs.remove(KEY_SEARCH_HISTORY) else prefs[KEY_SEARCH_HISTORY] = updated.joinToString("\n")
         }
     }
+
+    // 名前の変わった・無くなった厳しさが保存されていたら既定に戻す
+    override val duplicateSensitivity: Flow<DuplicateSensitivity> = data.map { prefs ->
+        prefs[KEY_DUPLICATE_SENSITIVITY]?.let { name -> DuplicateSensitivity.entries.firstOrNull { it.name == name } }
+            ?: DuplicateSensitivity.DEFAULT
+    }.distinctUntilChanged()
+
+    override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) {
+        dataStore.edit { it[KEY_DUPLICATE_SENSITIVITY] = sensitivity.name }
+    }
+
+    // 組は「小さい ID:大きい ID」を改行で区切って持つ
+    override val dismissedDuplicates: Flow<Set<DuplicatePair>> = data.map { prefs ->
+        decodeDismissedDuplicates(prefs[KEY_DISMISSED_DUPLICATES])
+    }.distinctUntilChanged()
+
+    override suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>) {
+        dataStore.edit { prefs ->
+            val updated = transform(decodeDismissedDuplicates(prefs[KEY_DISMISSED_DUPLICATES]))
+            if (updated.isEmpty()) {
+                prefs.remove(KEY_DISMISSED_DUPLICATES)
+            } else {
+                prefs[KEY_DISMISSED_DUPLICATES] = updated
+                    .sortedWith(compareBy({ it.firstId }, { it.secondId }))
+                    .joinToString("\n") { it.key }
+            }
+        }
+    }
+
+    private fun decodeDismissedDuplicates(text: String?): Set<DuplicatePair> =
+        text?.lines()?.mapNotNull { DuplicatePair.parse(it.trim()) }?.toSet().orEmpty()
 
     override val chatTemplates: Flow<List<ChatTemplate>> = data.map { prefs ->
         prefs[KEY_CHAT_TEMPLATES]?.let(ChatTemplateCodec::decode).orEmpty()
@@ -297,6 +330,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_CHAT_TEMPLATES = stringPreferencesKey("chat_templates")
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
+        val KEY_DUPLICATE_SENSITIVITY = stringPreferencesKey("duplicate_sensitivity")
+        val KEY_DISMISSED_DUPLICATES = stringPreferencesKey("dismissed_duplicates")
         val KEY_BOOKMARK_LIST_DISPLAY = stringPreferencesKey("bookmark_list_display")
         val KEY_READING_FONT_SIZE = stringPreferencesKey("reading_font_size")
         val KEY_READING_THEME = stringPreferencesKey("reading_theme")
