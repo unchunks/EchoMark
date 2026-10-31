@@ -18,6 +18,17 @@ import org.junit.Test
 class AiPromptsTest {
 
     @Test
+    fun チャットは文章で答えさせ_箇条書きは必要なときだけ使わせる() {
+        val full = AiPrompts.chatInstructions(emptyList())
+        val compact = AiPrompts.chatInstructions(emptyList(), compact = true)
+
+        assertTrue(full, full.contains("段落に分けた自然な文章"))
+        assertTrue(full, full.contains("形にした方が読みやすいときだけ Markdown"))
+        assertTrue(compact, compact.contains("短い文章で答えます"))
+        assertTrue(compact, compact.contains("箇条書きは手順や比較だけ"))
+    }
+
+    @Test
     fun 既存のタグを優先順のまま指示に入れて使い回させる() {
         val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, listOf("Android", "読書"))
 

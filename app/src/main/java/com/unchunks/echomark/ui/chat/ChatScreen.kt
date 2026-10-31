@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.ChatMarkdown
 import com.unchunks.components.llm.ChatRole
+import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.navigation.WideContentMaxWidth
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
@@ -142,7 +143,8 @@ fun ChatScreen(
         snackbarHostState = snackbarHostState,
         showBackButton = showBackButton,
         onAttachClick = { pickFile.launch(arrayOf("*/*")) },
-        onRemoveAttachment = viewModel::removeAttachment
+        onRemoveAttachment = viewModel::removeAttachment,
+        onSelectModel = viewModel::selectModel
     )
 }
 
@@ -179,7 +181,8 @@ fun ChatContent(
     onRegenerate: () -> Unit = {},
     onEditLastMessage: (String) -> Unit = {},
     onAttachClick: () -> Unit = {},
-    onRemoveAttachment: () -> Unit = {}
+    onRemoveAttachment: () -> Unit = {},
+    onSelectModel: (ChatModelOption) -> Unit = {}
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -225,7 +228,15 @@ fun ChatContent(
                 canEdit = uiState.hasConversation,
                 onBack = onBack.takeIf { showBackButton },
                 onRename = { showRename = true },
-                onDelete = { showDelete = true }
+                onDelete = { showDelete = true },
+                modelPicker = {
+                    ChatModelPicker(
+                        choices = uiState.modelChoices,
+                        enabled = !uiState.isSending,
+                        onSelect = onSelectModel,
+                        onOpenAiSettings = onOpenAiSettings
+                    )
+                }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -381,7 +392,8 @@ private fun ChatTopBar(
     canEdit: Boolean,
     onBack: (() -> Unit)?,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modelPicker: @Composable () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     TopAppBar(
@@ -401,6 +413,7 @@ private fun ChatTopBar(
             }
         },
         actions = {
+            modelPicker()
             if (canEdit) {
                 Box {
                     IconButton(onClick = { menuExpanded = true }) {

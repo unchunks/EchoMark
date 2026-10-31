@@ -32,6 +32,9 @@ import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.AttachmentRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.ChatModelChoices
+import com.unchunks.echomark.domain.repository.ChatModelOption
+import com.unchunks.echomark.domain.repository.ChatModelRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
@@ -612,6 +615,17 @@ open class FakeChatRepository : ChatRepository {
 class FakeAiSetupRepository(initial: AiSetupState = AiSetupState.READY) : AiSetupRepository {
     val state = MutableStateFlow(initial)
     override val setupState: Flow<AiSetupState> = state
+}
+
+/** チャットの AI の選択肢の Fake。[selections] に選ばれた順に残す。 */
+class FakeChatModelRepository(initial: ChatModelChoices = ChatModelChoices()) : ChatModelRepository {
+    val state = MutableStateFlow(initial)
+    val selections = mutableListOf<ChatModelOption>()
+    override val choices: Flow<ChatModelChoices> = state
+    override suspend fun select(option: ChatModelOption) {
+        selections += option
+        state.value = state.value.copy(selected = option)
+    }
 }
 
 /**

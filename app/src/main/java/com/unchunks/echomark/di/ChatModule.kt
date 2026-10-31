@@ -1,7 +1,9 @@
 package com.unchunks.echomark.di
 
 import com.unchunks.echomark.data.repository.AiSetupRepositoryImpl
+import com.unchunks.echomark.data.repository.ChatModelRepositoryImpl
 import com.unchunks.echomark.domain.repository.AiSetupRepository
+import com.unchunks.echomark.domain.repository.ChatModelRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -16,4 +18,9 @@ abstract class ChatModule {
     abstract fun bindAiSetupRepository(
         impl: AiSetupRepositoryImpl
     ): AiSetupRepository
+
+    @Binds
+    abstract fun bindChatModelRepository(
+        impl: ChatModelRepositoryImpl
+    ): ChatModelRepository
 }

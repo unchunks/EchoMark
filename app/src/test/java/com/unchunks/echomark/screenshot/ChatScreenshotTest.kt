@@ -1,11 +1,14 @@
 package com.unchunks.echomark.screenshot
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
 import com.unchunks.echomark.domain.model.ChatMessage
@@ -13,8 +16,11 @@ import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.ChatModelChoices
+import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.ui.chat.ChatContent
 import com.unchunks.echomark.ui.chat.ChatError
+import com.unchunks.echomark.ui.chat.ChatModelMenuItems
 import com.unchunks.echomark.ui.chat.ChatSuggestions
 import com.unchunks.echomark.ui.chat.ChatUiState
 import com.unchunks.echomark.ui.chat.ConversationListContent
@@ -169,6 +175,40 @@ class ChatScreenshotTest {
                 )
             )
         )
+    }
+
+    private val modelChoices = ChatModelChoices(
+        options = listOf(
+            ChatModelOption.Local("gemma", "gemma-4-e2b-int4-web.litertlm"),
+            ChatModelOption.Local("qwen", "Qwen3-0.6B.task"),
+            ChatModelOption.Cloud(ApiProvider.CLAUDE, "claude-opus-5-5", "Claude Opus 5.5"),
+            ChatModelOption.Cloud(ApiProvider.CLAUDE, "claude-sonnet-5-5", "Claude Sonnet 5.5")
+        ),
+        selected = ChatModelOption.Local("qwen", "Qwen3-0.6B.task")
+    )
+
+    @Test
+    fun modelPicker() = captureScreen("chat_model_picker") {
+        Chat(conversationState.copy(modelChoices = modelChoices))
+    }
+
+    @Test
+    fun modelPickerLongNameDisabledWhileSending() = captureScreen("chat_model_picker_sending") {
+        Chat(
+            conversationState.copy(
+                messages = listOf(question),
+                isSending = true,
+                streamingText = "",
+                modelChoices = modelChoices.copy(selected = modelChoices.options.first())
+            )
+        )
+    }
+
+    @Test
+    fun modelPickerMenu() = screenshot.captureLightDark("chat_model_picker_menu", widthDp = 280) {
+        Surface {
+            Column { ChatModelMenuItems(choices = modelChoices, onSelect = {}, onOpenAiSettings = {}) }
+        }
     }
 
     @Test
