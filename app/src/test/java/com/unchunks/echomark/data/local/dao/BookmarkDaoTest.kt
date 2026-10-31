@@ -322,4 +322,24 @@ class BookmarkDaoTest {
 
         assertEquals(listOf(3L), ids(tagIds = listOf(tag.getValue("programming")), matchAll = false))
     }
+
+    @Test
+    fun オフラインコピーの記録を差し替えて参照しているパスを返す() = runTest {
+        insert(1, "a", createdAt = 1)
+        insert(2, "b", createdAt = 2)
+
+        dao.updateSnapshot(1, path = "attachments/a.mhtml", pdfPath = "attachments/a.pdf", savedAt = 99)
+        dao.updateSnapshot(2, path = "attachments/b.mhtml", pdfPath = null, savedAt = 100)
+
+        assertEquals(setOf("attachments/a.mhtml", "attachments/a.pdf", "attachments/b.mhtml"), dao.getAllSnapshotPaths().toSet())
+        val first = dao.getById(1)!!
+        assertEquals("attachments/a.mhtml", first.snapshotPath)
+        assertEquals("attachments/a.pdf", first.snapshotPdfPath)
+        assertEquals(99L, first.snapshotAt)
+
+        dao.updateSnapshot(1, path = null, pdfPath = null, savedAt = null)
+
+        assertEquals(setOf("attachments/b.mhtml"), dao.getAllSnapshotPaths().toSet())
+        assertEquals(null, dao.getById(1)!!.snapshotAt)
+    }
 }

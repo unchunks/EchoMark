@@ -43,7 +43,8 @@ class UnusedAttachmentCleaner @Inject constructor(
     /** 参照されていないファイルのうち、[now] から [GRACE_MILLIS] より前に更新されたものを消す。消した数を返す。 */
     suspend fun cleanUp(now: Long = System.currentTimeMillis()): Int {
         // 先に参照を読む。この後に保存されたブックマークのファイルは新しいため猶予の内で消えない
-        val referenced = bookmarkDao.get().getAllFilePaths().toSet()
+        val dao = bookmarkDao.get()
+        val referenced = (dao.getAllFilePaths() + dao.getAllSnapshotPaths()).toSet()
         return attachmentStore.get().deleteUnreferenced(referenced, olderThanMillis = now - GRACE_MILLIS)
     }
 

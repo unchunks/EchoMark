@@ -145,6 +145,12 @@
             android:theme="@style/Theme.EchoMark.Share"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- 保存したページのオフラインコピーを開く(アプリの中からだけ。JavaScript・通信を止めた WebView で表示する) -->
+        <activity
+            android:name=".ui.snapshot.SnapshotViewerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.EchoMark" />
+
         <service
             android:name=".ui.tile.ClipboardSaveTileService"
             android:exported="true"

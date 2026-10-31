@@ -209,6 +209,14 @@ interface BookmarkDao {
     @Query("SELECT filePath FROM bookmarks WHERE filePath IS NOT NULL")
     suspend fun getAllFilePaths(): List<String>
 
+    /** ページのオフラインコピー(MHTML・PDF)の相対パス(使われていないファイルの掃除用) */
+    @Query("SELECT snapshotPath FROM bookmarks WHERE snapshotPath IS NOT NULL UNION SELECT snapshotPdfPath FROM bookmarks WHERE snapshotPdfPath IS NOT NULL")
+    suspend fun getAllSnapshotPaths(): List<String>
+
+    /** ページのオフラインコピーの記録を差し替える(null ならコピーなしにする) */
+    @Query("UPDATE bookmarks SET snapshotPath = :path, snapshotPdfPath = :pdfPath, snapshotAt = :savedAt WHERE id = :id")
+    suspend fun updateSnapshot(id: Long, path: String?, pdfPath: String?, savedAt: Long?)
+
     /** AI再処理用: 要約を消して処理待ちにする([markQueued] と同じく、前の処理の段・日時・失敗の理由も消す) */
     @Query(
         "UPDATE bookmarks SET summary = NULL, aiStatus = 'PENDING', processingStage = NULL, queuedAt = :now, " +

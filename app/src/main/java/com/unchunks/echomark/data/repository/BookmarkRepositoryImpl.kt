@@ -567,6 +567,8 @@ class BookmarkRepositoryImpl @Inject constructor(
             vectorSearch.deleteByBookmarkId(bookmark.id)
             // 添付ファイルは「元に戻す」に備えてすぐには消さない。掃除までの猶予を削除の時点から数える
             bookmark.filePath?.let { attachmentStore.touch(it) }
+            bookmark.snapshotPath?.let { attachmentStore.touch(it) }
+            bookmark.snapshotPdfPath?.let { attachmentStore.touch(it) }
             Unit
         }
 

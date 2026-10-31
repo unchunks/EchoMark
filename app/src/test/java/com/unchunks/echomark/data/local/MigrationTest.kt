@@ -580,6 +580,31 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate20To21_addsEmptySnapshotColumnsAndKeepsRows() {
+        helper.createDatabase(20).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, contentUri, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited, readAt) " +
+                    "VALUES (1, 'URL', '記事', 'https://example.com/a', 100, 200, 'DONE', 1, 0, 0, 0, 150)"
+            )
+            close()
+        }
+
+        // スキーマ v21 と一致するか(列・既定値)も検証される
+        val connection = helper.runMigrationsAndValidate(21, listOf(MIGRATION_20_21))
+
+        val row = connection.prepare("SELECT title, contentUri, isFavorite, readAt, snapshotPath, snapshotPdfPath, snapshotAt FROM bookmarks").use { stmt ->
+            check(stmt.step())
+            listOf(
+                stmt.getText(0), stmt.getText(1), stmt.getLong(2), stmt.getLong(3),
+                stmt.isNull(4), stmt.isNull(5), stmt.isNull(6)
+            )
+        }
+        // 既存の行の値は変わらず、オフラインコピーはどれも無い(NULL)
+        assertEquals(listOf("記事", "https://example.com/a", 1L, 150L, true, true, true), row)
+        connection.close()
+    }
+
+    @Test
     fun migrate17To18_addsEmptyCategoriesAndKeepsCategoriesAsAiChosen() {
         helper.createDatabase(17).apply {
             execSQL(

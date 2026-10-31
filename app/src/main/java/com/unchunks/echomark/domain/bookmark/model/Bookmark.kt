@@ -39,8 +39,17 @@ data class Bookmark(
     /** 処理の段・日時・失敗の理由([aiStatus] の詳細) */
     val processing: ProcessingInfo = ProcessingInfo(),
     /** 読んだ日時(詳細画面を開いた・読んだことにした)。null なら未読 */
-    val readAt: Long? = null
+    val readAt: Long? = null,
+    /** ページをオフラインで読めるよう保存した MHTML の、アプリ内の保存先(filesDir からの相対パス)。保存していなければ null */
+    val snapshotPath: String? = null,
+    /** 同じページの PDF の保存先。PDF を作れなかった・保存していなければ null */
+    val snapshotPdfPath: String? = null,
+    /** オフラインコピーを保存した日時。保存していなければ null */
+    val snapshotAt: Long? = null
 ) {
     /** 読んだか(詳細画面を開いたか、読んだことにしたか) */
     val isRead: Boolean get() = readAt != null
+
+    /** ページのオフラインコピー(MHTML)を保存してある */
+    val hasSnapshot: Boolean get() = snapshotPath != null
 }

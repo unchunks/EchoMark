@@ -121,6 +121,20 @@ class BackupJsonTest {
     }
 
     @Test
+    fun ページのオフラインコピーはバックアップに含めない() {
+        val withSnapshot = sample.bookmarks[0].copy(snapshotPath = "attachments/x.mhtml", snapshotPdfPath = "attachments/x.pdf", snapshotAt = 123L)
+
+        val text = BackupJson.encode(sample.copy(bookmarks = listOf(withSnapshot)))
+        val decoded = BackupJson.decode(text).data.bookmarks.single()
+
+        // ファイルは端末の中にしか無く、バックアップには入れない。読み込んだ端末には、オフラインコピーの記録は無い
+        listOf("snapshot", "x.mhtml", "x.pdf").forEach { assertFalse(it, text.contains(it)) }
+        assertEquals(null, decoded.snapshotPath)
+        assertEquals(null, decoded.snapshotPdfPath)
+        assertEquals(null, decoded.snapshotAt)
+    }
+
+    @Test
     fun 形式名とバージョン番号を含む() {
         val json = JSONObject(BackupJson.encode(sample))
         assertEquals("echomark-backup", json.getString("format"))

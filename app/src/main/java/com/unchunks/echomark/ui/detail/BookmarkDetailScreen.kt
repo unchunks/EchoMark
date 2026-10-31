@@ -132,6 +132,15 @@ import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.echomark.ui.common.openAttachment
 import com.unchunks.echomark.ui.common.openUrl
 import com.unchunks.echomark.ui.common.shareBookmark
+import com.unchunks.echomark.ui.snapshot.PageSnapshotCallbacks
+import com.unchunks.echomark.ui.snapshot.PageSnapshotDialog
+import com.unchunks.echomark.ui.snapshot.PageSnapshotSection
+import com.unchunks.echomark.ui.snapshot.PageSnapshotViewModel
+import com.unchunks.echomark.ui.snapshot.SnapshotMessage
+import com.unchunks.echomark.ui.snapshot.SnapshotOperation
+import com.unchunks.echomark.ui.snapshot.SnapshotViewerActivity
+import com.unchunks.echomark.ui.snapshot.canSnapshot
+import com.unchunks.echomark.ui.snapshot.openSnapshotPdf
 import com.unchunks.echomark.ui.components.AiStatusBadge
 import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.CompactBookmarkCard
@@ -167,11 +176,31 @@ fun BookmarkDetailScreen(
     onAskAi: (Long) -> Unit = {},
     onOpenAiSettings: () -> Unit = {},
     showBackButton: Boolean = true,
-    viewModel: BookmarkDetailViewModel = hiltViewModel()
+    viewModel: BookmarkDetailViewModel = hiltViewModel(),
+    snapshotViewModel: PageSnapshotViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val snapshotOperation by snapshotViewModel.operation.collectAsState()
+    var confirmRemoveSnapshot by rememberSaveable { mutableStateOf(false) }
+
+    // オフラインコピーの結果(保存した・消した・失敗)
+    LaunchedEffect(snapshotViewModel, snackbarHostState) {
+        snapshotViewModel.messages.collect { message ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch {
+                snackbarHostState.showSnackbar(
+                    when (message) {
+                        is SnapshotMessage.Saved ->
+                            if (message.hasPdf) "オフラインコピーを保存しました" else "オフラインコピーを保存しました(PDF は作れませんでした)"
+                        SnapshotMessage.Removed -> "オフラインコピーを削除しました"
+                        is SnapshotMessage.Failed -> message.message
+                    }
+                )
+            }
+        }
+    }
 
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.messages.collect { message ->
@@ -238,10 +267,45 @@ fun BookmarkDetailScreen(
             onTranslateSummary = viewModel::translateSummary,
             onClearTranslation = viewModel::clearTranslation,
             onAddTag = viewModel::addTag,
-            onRemoveTag = viewModel::removeTag
+            onRemoveTag = viewModel::removeTag,
+            snapshot = PageSnapshotCallbacks(
+                onSave = { uiState.bookmark?.let(snapshotViewModel::start) },
+                onOpen = { uiState.bookmark?.let { context.startActivity(SnapshotViewerActivity.intent(context, it.id)) } },
+                onOpenPdf = { uiState.bookmark?.let { openSnapshotPdf(context, it) } },
+                onRemove = { confirmRemoveSnapshot = true }
+            ),
+            snapshotBusy = snapshotOperation != SnapshotOperation.Idle
         ),
         showBackButton = showBackButton
     )
+
+    // ページを読み込んでオフラインコピーを作っている間の画面
+    (snapshotOperation as? SnapshotOperation.Capturing)?.let { capturing ->
+        PageSnapshotDialog(
+            url = capturing.url,
+            onCaptured = { snapshotViewModel.onCaptured(it.mhtml, it.pdf) },
+            onFailed = snapshotViewModel::onFailed,
+            onCancel = snapshotViewModel::cancel
+        )
+    }
+
+    if (confirmRemoveSnapshot) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveSnapshot = false },
+            title = { Text("オフラインコピーを削除しますか?") },
+            text = { Text("端末に保存したページと PDF を削除します。ブックマーク自体は残ります。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRemoveSnapshot = false
+                        uiState.bookmark?.let { snapshotViewModel.remove(it.id) }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemoveSnapshot = false }) { Text("キャンセル") } }
+        )
+    }
 }
 
 /** 詳細画面の操作。状態を持たない [BookmarkDetailContent] に渡す */
@@ -276,7 +340,11 @@ class BookmarkDetailCallbacks(
     /** 翻訳を閉じる */
     val onClearTranslation: () -> Unit = {},
     val onAddTag: (String) -> Unit = {},
-    val onRemoveTag: (String) -> Unit = {}
+    val onRemoveTag: (String) -> Unit = {},
+    /** ページのオフラインコピー(#80)の操作 */
+    val snapshot: PageSnapshotCallbacks = PageSnapshotCallbacks(),
+    /** オフラインコピーを作っている(または保存している)最中 */
+    val snapshotBusy: Boolean = false
 )
 
 /**
@@ -534,6 +602,11 @@ private fun DetailBody(
             }
             Spacer(Modifier.height(16.dp))
             PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
+            // http / https のリンクだけに出す(それ以外では何も描かない)
+            if (canSnapshot(bookmark.contentUri)) {
+                Spacer(Modifier.height(16.dp))
+                PageSnapshotSection(bookmark = bookmark, callbacks = callbacks.snapshot, busy = callbacks.snapshotBusy)
+            }
             Spacer(Modifier.height(20.dp))
             AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, uiState.translation, uiState.categoryChoices, callbacks, uiState.highlightTerms)
             Spacer(Modifier.height(24.dp))

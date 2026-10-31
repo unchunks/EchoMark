@@ -178,6 +178,56 @@ class AttachmentStoreTest {
     }
 
     @Test
+    fun 起動時の掃除はオフラインコピーのファイルを残す() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val mhtml = store.adopt(File(context.cacheDir, "a.mhtml").apply { writeText("mhtml") }, "mhtml")
+            val pdf = store.adopt(File(context.cacheDir, "a.pdf").apply { writeText("pdf") }, "pdf")
+            val orphan = store.adopt(File(context.cacheDir, "b.mhtml").apply { writeText("orphan") }, "mhtml")
+            listOf(mhtml, pdf, orphan).forEach { File(context.filesDir, it).setLastModified(1_000L) }
+            db.bookmarkDao().insert(
+                BookmarkEntity(
+                    type = BookmarkType.URL, title = "ページ", createdAt = 1L, lastAccessedAt = 1L,
+                    contentUri = "https://example.com/a", snapshotPath = mhtml, snapshotPdfPath = pdf, snapshotAt = 5L
+                )
+            )
+            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, TestDispatcherProvider(Dispatchers.Unconfined))
+
+            assertEquals(1, cleaner.cleanUp(now = 1_000L + 2 * DAY))
+
+            assertTrue(File(context.filesDir, mhtml).isFile)
+            assertTrue(File(context.filesDir, pdf).isFile)
+            assertFalse(File(context.filesDir, orphan).exists())
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun 作ったファイルを添付ファイルの置き場所へ移して元を消す() = runBlocking {
+        val source = File(context.cacheDir, "page.mhtml").apply { writeText("MIME-Version: 1.0") }
+
+        val path = store.adopt(source, "mhtml")
+
+        assertTrue(path, path.matches(Regex("attachments/[0-9a-f-]{36}\\.mhtml")))
+        assertEquals("MIME-Version: 1.0", File(context.filesDir, path).readText())
+        assertFalse(source.exists())
+        assertTrue(attachmentsDir.listFiles()!!.none { it.name.endsWith(".part") })
+        // 全データ削除で、オフラインコピーも消える
+        store.deleteAll()
+        assertFalse(File(context.filesDir, path).exists())
+    }
+
+    @Test
+    fun 安全でない拡張子のファイルは移さない() = runBlocking {
+        val source = File(context.cacheDir, "x.bin").apply { writeText("x") }
+
+        val error = runCatching { store.adopt(source, "../evil") }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+        assertTrue(source.exists())
+    }
+
     fun 合計サイズと全削除() = runBlocking {
         store.saveStream(ByteArray(100).inputStream(), "image/png", "a.png", 1024)
         store.saveStream(ByteArray(50).inputStream(), "audio/mpeg", "b.mp3", 1024)
