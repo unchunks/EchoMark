@@ -9,6 +9,8 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.importer.ImportResult
+import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.model.CategoryDefinition
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryOrigin
@@ -43,6 +45,18 @@ interface BookmarkRepository {
      * 保存できない形式なら [com.unchunks.echomark.domain.bookmark.model.AttachmentException]。
      */
     suspend fun saveFileBookmark(attachment: StoredAttachment, title: String?, memo: String?): SaveResult
+    /**
+     * 他のサービスの書き出しファイルから読み取ったリンクをまとめて保存する(取り込み)。
+     * 同じ URL が保存済みのものは読み飛ばす。元の保存日時・お気に入り・アーカイブ(読了)・メモ・タグを引き継ぎ、
+     * [folderAsTag] なら元のフォルダ名もタグにする。
+     * 保存したものは、1件ずつ順番に「ページの取得 → AI 処理」をする列に積む(一括の再処理と同じ。数千件を同時には処理しない。
+     * 夜間にまとめて処理する設定のときは、処理待ちのまま夜を待つ)。[onProgress] には処理した件数と全体の件数を知らせる。
+     */
+    suspend fun importLinks(
+        links: List<ImportedLink>,
+        folderAsTag: Boolean,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
+    ): ImportResult
     /**
      * AI が付けたタグとして保存する。前回 AI が付けたタグは外して置き換え、ユーザーが付けたタグには触れない。
      * タグ名は表記ゆれ(大文字小文字・全角半角)の範囲で既存のタグにそろえる。

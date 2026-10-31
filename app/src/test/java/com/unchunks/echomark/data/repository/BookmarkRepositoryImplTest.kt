@@ -20,6 +20,7 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryOrigin
 import com.unchunks.echomark.domain.model.SummarySource
@@ -951,5 +952,125 @@ class BookmarkRepositoryImplTest {
         // 埋め込みが一度も保存されていない(似たブックマークは無い)。内容が空ならよく使うタグだけ
         assertEquals(listOf("Compose", "読書"), repository.suggestTags("   ", limit = 5))
         assertEquals(listOf("Compose", "読書"), repository.suggestTags("Compose の勉強", limit = 5))
+    }
+
+    // ---- 他のサービスからの取り込み(#77) ----
+
+    private fun link(
+        url: String,
+        title: String? = null,
+        tags: List<String> = emptyList(),
+        folder: String? = null,
+        savedAt: Long? = null,
+        favorite: Boolean = false,
+        archived: Boolean = false,
+        note: String? = null
+    ) = ImportedLink(url, title, note, tags, folder, savedAt, favorite, archived)
+
+    @Test
+    fun 取り込んだリンクは元の日時_お気に入り_アーカイブ_メモ_タグを引き継いで保存する() = runBlocking {
+        val result = repository.importLinks(
+            listOf(
+                link("https://example.com/a", "記事 A", tags = listOf("kotlin", "設計"), folder = "読み物", savedAt = 1_600_000_000_000L, favorite = true, note = "メモ"),
+                link("https://example.com/b", null, savedAt = 1_500_000_000_000L, archived = true)
+            ),
+            folderAsTag = true
+        )
+
+        assertEquals(2, result.added)
+        assertEquals(0, result.duplicates)
+        val a = db.bookmarkDao().getByContentUri("https://example.com/a")!!
+        assertEquals("記事 A", a.title)
+        assertEquals(1_600_000_000_000L, a.createdAt)
+        assertEquals("メモ", a.content)
+        assertTrue(a.isFavorite)
+        assertFalse(a.isArchived)
+        assertEquals(setOf("kotlin", "設計", "読み物"), repository.observeBookmark(a.id).first()!!.tags.toSet())
+        val b = db.bookmarkDao().getByContentUri("https://example.com/b")!!
+        // タイトルが無いものは URL を仮のタイトルにする(取得後にページのタイトルへ置き換わる)。アーカイブ済みは読んだものとして扱う
+        assertEquals("https://example.com/b", b.title)
+        assertTrue(b.isArchived)
+        assertEquals(1_500_000_000_000L, b.readAt)
+        assertNull(db.bookmarkDao().getByContentUri("https://example.com/a")!!.readAt)
+    }
+
+    @Test
+    fun フォルダ名をタグにしない選択ではフォルダのタグを付けない() = runBlocking {
+        repository.importLinks(listOf(link("https://example.com/a", tags = listOf("x"), folder = "読み物")), folderAsTag = false)
+
+        val id = db.bookmarkDao().getByContentUri("https://example.com/a")!!.id
+        assertEquals(listOf("x"), repository.observeBookmark(id).first()!!.tags)
+    }
+
+    @Test
+    fun 保存済みのURLは読み飛ばして数える() = runBlocking {
+        repository.saveUrlBookmark("https://example.com/a", "既存", null)
+
+        val result = repository.importLinks(
+            listOf(link("https://example.com/a", "取り込み"), link("https://example.com/new", "新しい")),
+            folderAsTag = false
+        )
+
+        assertEquals(1, result.added)
+        assertEquals(1, result.duplicates)
+        assertEquals("既存", db.bookmarkDao().getByContentUri("https://example.com/a")!!.title)
+    }
+
+    @Test
+    fun 未来の日時や0の保存日時は今にそろえる() = runBlocking {
+        val before = System.currentTimeMillis()
+
+        repository.importLinks(listOf(link("https://example.com/f", savedAt = Long.MAX_VALUE / 4), link("https://example.com/z", savedAt = 0L)), folderAsTag = false)
+
+        val future = db.bookmarkDao().getByContentUri("https://example.com/f")!!
+        assertTrue(future.createdAt in before..System.currentTimeMillis())
+        assertTrue(db.bookmarkDao().getByContentUri("https://example.com/z")!!.createdAt >= 1L)
+    }
+
+    @Test
+    fun 取り込んだものは1本の列に1件ずつ積み_ブックマークごとの処理は積まない() = runBlocking {
+        val result = repository.importLinks(
+            (1..5).map { link("https://example.com/$it") },
+            folderAsTag = false
+        )
+
+        assertTrue(result.processingStarted)
+        // 数が多くても急ぎの処理を大量に積まず、1本の順番の列にする
+        assertSequential(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME), expectedSize = 5 * 3)
+        (1..5).forEach {
+            val id = db.bookmarkDao().getByContentUri("https://example.com/$it")!!.id
+            assertTrue(unfinished("process_bookmark_$id").isEmpty())
+            assertEquals(AiStatus.PENDING, repository.getBookmarkById(id)!!.aiStatus)
+        }
+    }
+
+    @Test
+    fun 夜間にまとめて処理する設定では取り込んでも積まず処理待ちのまま夜を待つ() = runBlocking {
+        settings.updateProcessingSettings { it.copy(nightlyBatch = true) }
+
+        val result = repository.importLinks(listOf(link("https://example.com/a")), folderAsTag = false)
+
+        assertEquals(1, result.added)
+        assertFalse(result.processingStarted)
+        assertTrue(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME).isEmpty())
+    }
+
+    @Test
+    fun 取り込みの進み具合を知らせる() = runBlocking {
+        val progress = mutableListOf<Pair<Int, Int>>()
+
+        repository.importLinks((1..120).map { link("https://example.com/$it") }, folderAsTag = false) { done, total ->
+            progress += done to total
+        }
+
+        assertEquals(listOf(50 to 120, 100 to 120, 120 to 120), progress)
+    }
+
+    @Test
+    fun 取り込むものが無ければ何も積まない() = runBlocking {
+        val result = repository.importLinks(emptyList(), folderAsTag = false)
+
+        assertEquals(0, result.added)
+        assertFalse(result.processingStarted)
     }
 }

@@ -78,6 +78,11 @@ abstract class RepositoryModule {
     ): DataManagementRepository
 
     @Binds
+    abstract fun bindLinkImportSource(
+        impl: com.unchunks.echomark.data.importer.ContentResolverLinkImportSource
+    ): com.unchunks.echomark.domain.importer.LinkImportSource
+
+    @Binds
     abstract fun bindPageSnapshotRepository(
         impl: com.unchunks.echomark.data.snapshot.PageSnapshotRepositoryImpl
     ): com.unchunks.echomark.domain.snapshot.PageSnapshotRepository
