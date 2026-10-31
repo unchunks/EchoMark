@@ -113,6 +113,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.CategoryEntry
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.bookmark.model.processingDurationMillis
 import com.unchunks.echomark.domain.bookmark.model.processingProgress
@@ -221,6 +222,8 @@ fun BookmarkDetailScreen(
             onDelete = { viewModel.delete(onDeleted = onBack) },
             onSaveEdit = viewModel::saveEdit,
             onEditSummary = viewModel::editSummary,
+            onSelectCategory = viewModel::setCategory,
+            onResetCategory = viewModel::resetCategory,
             onRestoreSummary = viewModel::restoreSummary,
             onTranslateSummary = viewModel::translateSummary,
             onClearTranslation = viewModel::clearTranslation,
@@ -250,6 +253,10 @@ class BookmarkDetailCallbacks(
     val onSaveEdit: (title: String, content: String) -> Unit = { _, _ -> },
     /** 要約を手で直す(#19) */
     val onEditSummary: (String) -> Unit = {},
+    /** カテゴリを選ぶ(自分で選んだものになる) */
+    val onSelectCategory: (String) -> Unit = {},
+    /** カテゴリを AI に任せる状態に戻す */
+    val onResetCategory: () -> Unit = {},
     /** 履歴の版(ID)に要約を戻す(#20) */
     val onRestoreSummary: (Long) -> Unit = {},
     /** 要約を [SummaryLanguage] に翻訳する(#24) */
@@ -506,7 +513,7 @@ private fun DetailBody(
             Spacer(Modifier.height(16.dp))
             PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
             Spacer(Modifier.height(20.dp))
-            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, uiState.translation, callbacks)
+            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, uiState.translation, uiState.categoryChoices, callbacks)
             Spacer(Modifier.height(24.dp))
             TagSection(
                 tags = bookmark.tags,
@@ -742,12 +749,14 @@ private fun AiSection(
     stageAverages: Map<StageDurationKey, Long>,
     summaryHistory: List<SummaryVersion>,
     translation: TranslationState,
+    categoryChoices: List<CategoryEntry>,
     callbacks: BookmarkDetailCallbacks
 ) {
     val summary = bookmark.summary
     if (bookmark.aiStatus == AiStatus.DONE && !summary.isNullOrBlank()) {
         var showSummaryEdit by rememberSaveable { mutableStateOf(false) }
         var showSummaryHistory by rememberSaveable { mutableStateOf(false) }
+        var showCategory by rememberSaveable { mutableStateOf(false) }
         var showEvidence by rememberSaveable { mutableStateOf(false) }
         var showTranslate by rememberSaveable { mutableStateOf(false) }
         Card(
@@ -770,9 +779,11 @@ private fun AiSection(
                     )
                     bookmark.category?.takeIf { it.isNotBlank() }?.let { category ->
                         Surface(
+                            onClick = { showCategory = true },
                             shape = MaterialTheme.shapes.small,
                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                            contentColor = MaterialTheme.colorScheme.onSurface
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.semantics { contentDescription = "カテゴリ: ${category}。タップで説明と変更" }
                         ) {
                             Text(
                                 category,
@@ -837,6 +848,24 @@ private fun AiSection(
                         color = LocalContentColor.current.copy(alpha = 0.7f)
                     )
                 }
+            }
+        }
+        if (showCategory) {
+            bookmark.category?.takeIf { it.isNotBlank() }?.let { category ->
+                CategorySheet(
+                    current = category,
+                    isEdited = bookmark.categoryEdited,
+                    choices = categoryChoices,
+                    onSelect = {
+                        showCategory = false
+                        callbacks.onSelectCategory(it)
+                    },
+                    onReset = {
+                        showCategory = false
+                        callbacks.onResetCategory()
+                    },
+                    onDismiss = { showCategory = false }
+                )
             }
         }
         if (showSummaryEdit) {

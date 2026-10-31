@@ -51,5 +51,8 @@ data class BookmarkEntity (
     val failureReason: ProcessingFailureReason? = null,
     // v15 で追加。要約をユーザーが手で直したもの(再処理しても要約は置き換えない。#19)
     @ColumnInfo(defaultValue = "0")
-    val summaryEdited: Boolean = false
+    val summaryEdited: Boolean = false,
+    // v18 で追加。カテゴリをユーザーが選んだもの(再処理しても AI はカテゴリを置き換えない。#33)
+    @ColumnInfo(defaultValue = "0")
+    val categoryEdited: Boolean = false
 )

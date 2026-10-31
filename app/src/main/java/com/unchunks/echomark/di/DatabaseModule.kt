@@ -13,6 +13,7 @@ import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
+import com.unchunks.echomark.data.local.dao.CategoryDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import dagger.Lazy
 import dagger.Module
@@ -53,6 +54,11 @@ object DatabaseModule {
     @Provides
     fun provideTagDao(database: AppDatabase): TagDao {
         return database.tagDao()
+    }
+
+    @Provides
+    fun provideCategoryDao(database: AppDatabase): CategoryDao {
+        return database.categoryDao()
     }
 
     @Provides

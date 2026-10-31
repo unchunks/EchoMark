@@ -5,6 +5,9 @@ object Routes {
     /** 設定タブ内の AI 設定サブ画面。"settings/..." なのでボトムバーは設定タブが選択状態になる。 */
     const val AI_SETTINGS = "settings/ai"
 
+    /** カテゴリの管理(設定の「AI」の欄から開くサブ画面)。"settings/..." なのでボトムバーは設定タブが選択状態になる */
+    const val CATEGORIES = "settings/categories"
+
     /** タグの管理(ブックマーク一覧のメニューから開くサブ画面) */
     const val TAGS = "tags"
 

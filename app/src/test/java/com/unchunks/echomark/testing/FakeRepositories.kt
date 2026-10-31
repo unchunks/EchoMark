@@ -33,8 +33,13 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
+import com.unchunks.echomark.domain.model.CategoryDefinition
+import com.unchunks.echomark.domain.model.CategoryEntry
+import com.unchunks.echomark.domain.model.CategoryKind
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagTree
+import com.unchunks.echomark.domain.repository.CategoryRepository
+import com.unchunks.echomark.domain.repository.CategoryResult
 import com.unchunks.echomark.domain.repository.TagParentResult
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.repository.BookmarkSearchResult
@@ -258,6 +263,22 @@ class FakeBookmarkRepository : BookmarkRepository {
     override suspend fun saveAiTags(bookmarkId: Long, tagNames: List<String>) = TODO("not used")
     override suspend fun getTagNamesForAi(): List<String> = TODO("not used")
 
+    /** AI の分類に渡す、ユーザーが作ったカテゴリ */
+    var categoryDefinitions: List<CategoryDefinition> = emptyList()
+    val categoryCalls = mutableListOf<Pair<Long, String?>>()
+
+    override suspend fun getCategoryDefinitionsForAi(): List<CategoryDefinition> = categoryDefinitions
+
+    override suspend fun setCategory(id: Long, category: String) {
+        categoryCalls += id to category
+        bookmarks.value = bookmarks.value.map { if (it.id == id) it.copy(category = category, categoryEdited = true) else it }
+    }
+
+    override suspend fun resetCategory(id: Long) {
+        categoryCalls += id to null
+        bookmarks.value = bookmarks.value.map { if (it.id == id) it.copy(category = null, categoryEdited = false) else it }
+    }
+
     /** suggestTags に渡された内容と、返す提案 */
     val suggestCalls = mutableListOf<String>()
     var suggestions: List<String> = emptyList()
@@ -398,6 +419,33 @@ class FakeBookmarkRepository : BookmarkRepository {
 }
 
 /** タグ管理のフェイク。統合・削除は tags の中だけで表す。 */
+class FakeCategoryRepository : CategoryRepository {
+    val entries = MutableStateFlow<List<CategoryEntry>>(emptyList())
+    val added = mutableListOf<Pair<String, String>>()
+    val deletedIds = mutableListOf<Long>()
+    var result: CategoryResult? = null
+
+    override fun observeCategories(): Flow<List<CategoryEntry>> = entries
+
+    override suspend fun addCategory(name: String, description: String): CategoryResult {
+        added += name to description
+        result?.let { return it }
+        entries.value = entries.value + CategoryEntry(name, description, CategoryKind.USER, 0, id = entries.value.size + 1L)
+        return CategoryResult.Saved(name)
+    }
+
+    override suspend fun updateCategory(id: Long, name: String, description: String): CategoryResult {
+        result?.let { return it }
+        entries.value = entries.value.map { if (it.id == id) it.copy(name = name, description = description) else it }
+        return CategoryResult.Saved(name)
+    }
+
+    override suspend fun deleteCategory(id: Long) {
+        deletedIds += id
+        entries.value = entries.value.filterNot { it.id == id }
+    }
+}
+
 class FakeTagRepository : TagRepository {
     val tags = MutableStateFlow<List<TagWithCount>>(emptyList())
     val deletedIds = mutableListOf<Long>()

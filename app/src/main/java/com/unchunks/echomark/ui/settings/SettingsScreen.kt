@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BrightnessMedium
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Description
@@ -100,6 +101,8 @@ class SettingsActions(
     val onSummaryStyleChange: ((SummaryStyle) -> SummaryStyle) -> Unit = {},
     /** 処理の状況の画面を開く */
     val onOpenProcessingQueue: () -> Unit = {},
+    /** カテゴリの管理の画面を開く */
+    val onOpenCategories: () -> Unit = {},
     /** 再発見通知のスイッチ。オンにするときの権限要求は呼び出し側で行う */
     val onRediscoverToggle: (Boolean) -> Unit = {},
     val onRediscoverScheduleChange: (DayOfWeek, Int, Int) -> Unit = { _, _, _ -> },
@@ -120,6 +123,7 @@ fun SettingsScreen(
     onOpenAiSettings: () -> Unit,
     onOpenOnboarding: (() -> Unit)? = null,
     onOpenProcessingQueue: () -> Unit = {},
+    onOpenCategories: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -169,6 +173,7 @@ fun SettingsScreen(
             onProcessingSettingsChange = viewModel::updateProcessingSettings,
             onSummaryStyleChange = viewModel::updateSummaryStyle,
             onOpenProcessingQueue = onOpenProcessingQueue,
+            onOpenCategories = onOpenCategories,
             onRediscoverToggle = { enabled ->
                 when {
                     !enabled -> {
@@ -265,6 +270,15 @@ fun SettingsContent(
                             tint = if (ai.isReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                     }
+                )
+            }
+
+            item {
+                SettingsItem(
+                    title = "カテゴリ",
+                    icon = Icons.Outlined.Category,
+                    summary = "AI の分類に使うカテゴリを作る・説明を見る",
+                    onClick = actions.onOpenCategories
                 )
             }
 

@@ -57,6 +57,7 @@ class DataManagementRepositoryImplTest {
         bookmarkRepository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = dispatcherProvider,
             workScheduler = scheduler,

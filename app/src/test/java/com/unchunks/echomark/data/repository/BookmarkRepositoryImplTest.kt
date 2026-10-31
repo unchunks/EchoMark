@@ -74,6 +74,7 @@ class BookmarkRepositoryImplTest {
         repository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
             workScheduler = BookmarkWorkScheduler(workManager, settings),

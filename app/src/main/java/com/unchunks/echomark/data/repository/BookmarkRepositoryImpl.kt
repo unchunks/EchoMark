@@ -6,6 +6,7 @@ import com.unchunks.components.search.RankFusion
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.local.dao.BookmarkDao
+import com.unchunks.echomark.data.local.dao.CategoryDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
@@ -33,6 +34,8 @@ import com.unchunks.echomark.domain.model.SummarySource
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.model.CategoryDefinition
+import com.unchunks.echomark.domain.model.CategoryNames
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
 import com.unchunks.echomark.domain.model.TagSuggestions
@@ -54,6 +57,7 @@ import javax.inject.Inject
 class BookmarkRepositoryImpl @Inject constructor(
     private val bookmarkDao: BookmarkDao,
     private val tagDao: TagDao,
+    private val categoryDao: CategoryDao,
     private val vectorSearch: VectorSearchDataSource,
     private val dispatcherProvider: DispatcherProvider,
     private val workScheduler: BookmarkWorkScheduler,
@@ -207,6 +211,22 @@ class BookmarkRepositoryImpl @Inject constructor(
                 Timber.i("削除済みのブックマークのためタグを保存しない: id=$bookmarkId")
             }
         }
+    }
+
+    override suspend fun getCategoryDefinitionsForAi(): List<CategoryDefinition> =
+        withContext(dispatcherProvider.io) {
+            categoryDao.getAll().map { CategoryDefinition(it.name, it.description) }
+        }
+
+    override suspend fun setCategory(id: Long, category: String) {
+        val name = CategoryNames.clean(category)
+        if (name.isEmpty()) return
+        withContext(dispatcherProvider.io) { bookmarkDao.setCategoryByUser(id, name) }
+    }
+
+    override suspend fun resetCategory(id: Long) {
+        withContext(dispatcherProvider.io) { bookmarkDao.clearCategory(id) }
+        reprocess(id, AnalysisScope.TAGS)
     }
 
     override suspend fun getTagNamesForAi(): List<String> =

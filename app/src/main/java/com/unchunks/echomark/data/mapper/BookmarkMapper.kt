@@ -11,7 +11,7 @@ import com.unchunks.echomark.domain.model.TagSource
 
 fun BookmarkEntity.toDomain(): Bookmark = Bookmark(
     id = id, type = type, content = content, contentUri = contentUri,
-    title = title, summary = summary, summaryEdited = summaryEdited, category = category,
+    title = title, summary = summary, summaryEdited = summaryEdited, category = category, categoryEdited = categoryEdited,
     createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus,
     imageUrl = imageUrl, siteName = siteName, isFavorite = isFavorite, isArchived = isArchived,
     filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize,
@@ -24,7 +24,7 @@ fun BookmarkEntity.toDomain(): Bookmark = Bookmark(
 
 fun Bookmark.toEntity(): BookmarkEntity = BookmarkEntity(
     id = id, type = type, content = content, contentUri = contentUri,
-    title = title, summary = summary, summaryEdited = summaryEdited, category = category,
+    title = title, summary = summary, summaryEdited = summaryEdited, category = category, categoryEdited = categoryEdited,
     createdAt = createdAt, lastAccessedAt = lastAccessedAt, aiStatus = aiStatus,
     imageUrl = imageUrl, siteName = siteName, isFavorite = isFavorite, isArchived = isArchived,
     filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize,

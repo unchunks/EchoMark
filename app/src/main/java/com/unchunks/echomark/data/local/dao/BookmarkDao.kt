@@ -67,8 +67,17 @@ interface BookmarkDao {
     )
     suspend fun trimSummaryHistory(bookmarkId: Long, keep: Int)
 
-    @Query("UPDATE bookmarks SET category = :category WHERE id = :id")
+    /** AI が決めたカテゴリを保存する。ユーザーが選んだカテゴリ([setCategoryByUser])は置き換えない。 */
+    @Query("UPDATE bookmarks SET category = :category WHERE id = :id AND categoryEdited = 0")
     suspend fun updateCategory(id: Long, category: String)
+
+    /** ユーザーが選んだカテゴリにする(再処理しても AI は置き換えない)。 */
+    @Query("UPDATE bookmarks SET category = :category, categoryEdited = 1 WHERE id = :id")
+    suspend fun setCategoryByUser(id: Long, category: String)
+
+    /** カテゴリを AI に任せる状態に戻す(カテゴリは空になり、次の処理で AI が決める)。 */
+    @Query("UPDATE bookmarks SET category = NULL, categoryEdited = 0 WHERE id = :id")
+    suspend fun clearCategory(id: Long)
 
     @Query("UPDATE bookmarks SET aiStatus = :status WHERE id = :id")
     suspend fun updateAiStatus(id: Long, status: AiStatus)

@@ -8,6 +8,7 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
+import com.unchunks.echomark.domain.model.CategoryDefinition
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryOrigin
 import com.unchunks.echomark.domain.model.SummaryVersion
@@ -157,6 +158,15 @@ interface BookmarkRepository {
      * プロンプトに入れる量は各 LlmProvider がさらに絞る。
      */
     suspend fun getTagNamesForAi(): List<String>
+
+    /** AI の分類に渡す、ユーザーが作ったカテゴリ(名前と説明。作った順)。 */
+    suspend fun getCategoryDefinitionsForAi(): List<CategoryDefinition>
+
+    /** ブックマークのカテゴリを [category] にする。自分で選んだものとして、AI の再処理では置き換わらない。 */
+    suspend fun setCategory(id: Long, category: String)
+
+    /** カテゴリを AI に任せる状態に戻し、タグとカテゴリの処理をやり直す(自分で選んだ印を外す)。 */
+    suspend fun resetCategory(id: Long)
 
     /**
      * 保存する内容([text]。タイトル・URL・本文・メモ)に合うタグを、最大 [limit] 個提案する(保存時にチップで出す用)。

@@ -21,7 +21,9 @@ data class AnalysisInput(
     val attachment: AnalysisAttachment? = null,
     val profile: SummaryProfile = SummaryProfile.GENERAL,
     val style: SummaryStyle = SummaryStyle(),
-    val feedback: String? = null
+    val feedback: String? = null,
+    /** ユーザーが作ったカテゴリ。あれば、AI はこの中から内容に合うものを選ぶ(説明を参考にする) */
+    val categories: List<CategoryDefinition> = emptyList()
 ) {
     /** タイトルと本文を1つのテキストにしたもの(空の部分は除く) */
     fun combinedText(): String = listOf(title, text).filter { it.isNotBlank() }.joinToString("\n")

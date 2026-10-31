@@ -519,4 +519,45 @@ class MigrationTest {
                 "VALUES (1, 'TEXT', 't', 1, 1, 'DONE', 0, 0, 0)"
         )
     }
+
+
+    @Test
+    fun migrate17To18_addsEmptyCategoriesAndKeepsCategoriesAsAiChosen() {
+        helper.createDatabase(17).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, category, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited) " +
+                    "VALUES (1, 'TEXT', 't', '技術', 1, 1, 'DONE', 0, 0, 0), (2, 'TEXT', 'u', NULL, 2, 2, 'DONE', 0, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v18 と一致するか(列・既定値・テーブル・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(18, listOf(MIGRATION_17_18))
+
+        // カテゴリの値は変わらず、どれも自分で選んだものではない(AI が付けたもの)
+        val rows = connection.prepare("SELECT id, category, categoryEdited FROM bookmarks ORDER BY id").use { stmt ->
+            buildList {
+                while (stmt.step()) {
+                    add(Triple(stmt.getLong(0), if (stmt.isNull(1)) null else stmt.getText(1), stmt.getLong(2)))
+                }
+            }
+        }
+        assertEquals(listOf(Triple(1L, "技術", 0L), Triple(2L, null, 0L)), rows)
+        val categories = connection.prepare("SELECT COUNT(*) FROM categories").use { stmt ->
+            stmt.step()
+            stmt.getLong(0)
+        }
+        assertEquals(0L, categories)
+
+        // 名前は1つだけ(一意インデックス)。説明の既定は空
+        connection.execSQL("INSERT INTO categories (name, createdAt) VALUES ('旅行', 1)")
+        val description = connection.prepare("SELECT description FROM categories").use { stmt ->
+            stmt.step()
+            stmt.getText(0)
+        }
+        assertEquals("", description)
+        val duplicate = runCatching { connection.execSQL("INSERT INTO categories (name, createdAt) VALUES ('旅行', 2)") }
+        assertTrue(duplicate.isFailure)
+        connection.close()
+    }
 }

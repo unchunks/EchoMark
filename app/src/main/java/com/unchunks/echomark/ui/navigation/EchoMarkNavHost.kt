@@ -57,6 +57,7 @@ import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.unchunks.echomark.ui.bookmark.ListLaunchAction
 import com.unchunks.echomark.ui.discover.ResourceFinderScreen
+import com.unchunks.echomark.ui.categories.CategoryManagementScreen
 import com.unchunks.echomark.ui.tags.TagManagementScreen
 import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
@@ -302,8 +303,17 @@ fun EchoMarkNavHost(
                 SettingsScreen(
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                     onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) },
-                    onOpenProcessingQueue = { navController.navigate(Routes.PROCESSING_QUEUE) }
+                    onOpenProcessingQueue = { navController.navigate(Routes.PROCESSING_QUEUE) },
+                    onOpenCategories = { navController.navigate(Routes.CATEGORIES) }
                 )
+            }
+            // カテゴリの管理(設定の「AI」の欄から開く)
+            composable(
+                route = Routes.CATEGORIES,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                CategoryManagementScreen(onBack = navController.popBackAction())
             }
             // 処理の状況(設定の「処理」の欄・まとめての処理の通知から開く)
             composable(

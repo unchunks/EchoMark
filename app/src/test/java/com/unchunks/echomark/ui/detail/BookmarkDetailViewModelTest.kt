@@ -1,5 +1,7 @@
 package com.unchunks.echomark.ui.detail
 
+import com.unchunks.echomark.domain.model.CategoryKind
+import com.unchunks.echomark.domain.model.CategoryEntry
 import androidx.lifecycle.SavedStateHandle
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
@@ -12,6 +14,7 @@ import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.testing.FakeCategoryRepository
 import com.unchunks.echomark.testing.FakeProcessingStatsRepository
 import com.unchunks.echomark.testing.FakeSummaryTranslator
 import com.unchunks.echomark.testing.testBookmark
@@ -40,9 +43,10 @@ class BookmarkDetailViewModelTest {
     private val recentlyDeleted = RecentlyDeletedBookmarks()
     private val stats = FakeProcessingStatsRepository()
     private val translator = FakeSummaryTranslator()
+    private val categories = FakeCategoryRepository()
 
     private fun createViewModel(id: Long = 1L) =
-        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator)
+        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories)
 
     @Test
     fun 処理の進み具合と段ごとの平均の所要時間を出す() = runTest {
@@ -322,5 +326,31 @@ class BookmarkDetailViewModelTest {
 
         assertTrue(translator.calls.isEmpty())
         assertEquals(TranslationState.Idle, viewModel.uiState.value.translation)
+    }
+
+
+    @Test
+    fun 選べるカテゴリを出し_カテゴリを選ぶと自分で選んだものになり_AIに任せ直せる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1).copy(category = "技術"))
+        val choices = listOf(
+            CategoryEntry("旅行", "行き先や宿", CategoryKind.USER, 0, id = 1),
+            CategoryEntry("技術", "技術の話題", CategoryKind.BUILT_IN, 4)
+        )
+        categories.entries.value = choices
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(choices, viewModel.uiState.value.categoryChoices)
+
+        viewModel.setCategory("旅行")
+        advanceUntilIdle()
+        assertEquals("旅行", viewModel.uiState.value.bookmark!!.category)
+        assertTrue(viewModel.uiState.value.bookmark!!.categoryEdited)
+
+        viewModel.resetCategory()
+        advanceUntilIdle()
+        assertEquals(null, viewModel.uiState.value.bookmark!!.category)
+        assertEquals(listOf(1L to "旅行", 1L to null), repository.categoryCalls)
     }
 }

@@ -67,6 +67,7 @@ class BookmarkSearchTest {
         repository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            categoryDao = db.categoryDao(),
             vectorSearch = VectorSearchDataSource(boxStore.embeddingBox()),
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
             workScheduler = BookmarkWorkScheduler(workManager, FakeAppSettingsRepository()),

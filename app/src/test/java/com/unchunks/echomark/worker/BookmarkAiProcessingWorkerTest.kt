@@ -1,5 +1,7 @@
 package com.unchunks.echomark.worker
 
+import com.unchunks.echomark.domain.model.CategoryDefinition
+import com.unchunks.echomark.data.local.entity.CategoryEntity
 import android.app.Notification
 import android.content.Context
 import android.content.pm.ServiceInfo
@@ -108,6 +110,7 @@ class BookmarkAiProcessingWorkerTest {
         repository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            categoryDao = db.categoryDao(),
             vectorSearch = VectorSearchDataSource(boxStore.embeddingBox()),
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
             workScheduler = BookmarkWorkScheduler(workManager, settings),
@@ -240,6 +243,48 @@ class BookmarkAiProcessingWorkerTest {
         assertEquals("技術", bookmark.category)
         // 要約は変わらないので、埋め込みは作り直さない
         assertEquals(1, embedding.documents.size)
+    }
+
+    @Test
+    fun 自分のカテゴリをAIに渡し_答えは自分のカテゴリの名前にそろえる() = runBlocking {
+        db.categoryDao().insert(CategoryEntity(name = "Tech", description = "技術の話題", createdAt = 1))
+        val id = insertBookmark()
+        llm.category = "ＴＥＣＨ"
+
+        runWorker(id, runAttemptCount = 0)
+
+        assertEquals(listOf(CategoryDefinition("Tech", "技術の話題")), llm.lastInput!!.categories)
+        assertEquals("Tech", repository.observeBookmark(id).first()!!.category)
+    }
+
+    @Test
+    fun 自分で選んだカテゴリはAIの再処理でも変わらない() = runBlocking {
+        val id = insertBookmark()
+        runWorker(id, runAttemptCount = 0)
+        repository.setCategory(id, "旅行")
+        llm.category = "技術"
+
+        runWorker(id, runAttemptCount = 0, scope = AnalysisScope.TAGS)
+
+        val bookmark = repository.observeBookmark(id).first()!!
+        assertEquals("旅行", bookmark.category)
+        assertTrue(bookmark.categoryEdited)
+    }
+
+    @Test
+    fun カテゴリをAIに任せ直すと空になり_タグとカテゴリの処理をやり直して新しい答えが入る() = runBlocking {
+        val id = insertBookmark()
+        runWorker(id, runAttemptCount = 0)
+        repository.setCategory(id, "旅行")
+
+        repository.resetCategory(id)
+        assertEquals(null, repository.getBookmarkById(id)!!.category)
+        llm.category = "技術"
+        runWorker(id, runAttemptCount = 0, scope = AnalysisScope.TAGS)
+
+        val bookmark = repository.observeBookmark(id).first()!!
+        assertEquals("技術", bookmark.category)
+        assertFalse(bookmark.categoryEdited)
     }
 
     private suspend fun insertBookmark2(): Long = db.bookmarkDao().insert(
@@ -738,4 +783,5 @@ private class RecordingEmbeddingProvider : EmbeddingProvider {
     override fun prewarm() {
         prewarmCalls++
     }
+
 }
