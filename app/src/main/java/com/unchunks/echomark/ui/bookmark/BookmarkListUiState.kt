@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.bookmark
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.common.SelectedFile
 
@@ -23,8 +24,8 @@ enum class ListEmptyKind {
     /** アーカイブが無い */
     NO_ARCHIVED,
 
-    /** 選んだタグ(と絞り込み)に当てはまるものが無い */
-    NO_TAG_MATCH,
+    /** 選んだタグ・カテゴリ(と絞り込み)に当てはまるものが無い */
+    NO_FILTER_MATCH,
 
     /** 検索で1件も見つからない */
     NO_SEARCH_RESULT
@@ -35,9 +36,15 @@ data class BookmarkListUiState(
     val isLoading: Boolean = false,
     /** 読み込みに失敗したときのメッセージ(null なら正常) */
     val errorMessage: String? = null,
-    /** 絞り込み用のタグ(ブックマークが付いているものだけ。選択中のタグを先頭にする) */
+    /** 絞り込み用のタグ(ブックマークが付いているものと、選択中のもの。選択中のタグを先頭にする) */
     val allTags: List<Tag> = emptyList(),
-    val selectedTagId: Long? = null,
+    /** 選んでいるタグ。複数のときは [tagMatch] で組み合わせる */
+    val selectedTagIds: Set<Long> = emptySet(),
+    val tagMatch: TagMatch = TagMatch.ALL,
+    /** 絞り込み用のカテゴリ(ブックマークがあるものと、選択中のもの。選択中のカテゴリを先頭にする) */
+    val allCategories: List<String> = emptyList(),
+    /** 選んでいるカテゴリ(どれかであればよい) */
+    val selectedCategories: Set<String> = emptySet(),
     val filter: BookmarkFilter = BookmarkFilter.ACTIVE,
     val sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST,
     /** 検索モード(トップバーが検索欄になっている)か */
@@ -57,16 +64,20 @@ data class BookmarkListUiState(
     /** 検索語が入っていて、検索結果を表示している状態か */
     val isShowingSearchResults: Boolean get() = isSearchActive && searchQuery.isNotBlank()
 
-    val selectedTag: Tag? get() = allTags.firstOrNull { it.id == selectedTagId }
+    /** 選んでいるタグ(絞り込み用のタグに無いものは含まない) */
+    val selectedTags: List<Tag> get() = allTags.filter { it.id in selectedTagIds }
+
+    /** タグかカテゴリで絞り込んでいる(「すべて解除」で外せる条件がある) */
+    val hasTagOrCategoryFilter: Boolean get() = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty()
 
     val showRediscover: Boolean
-        get() = !isSearchActive && filter == BookmarkFilter.ACTIVE && selectedTagId == null && rediscover.isNotEmpty()
+        get() = !isSearchActive && filter == BookmarkFilter.ACTIVE && !hasTagOrCategoryFilter && rediscover.isNotEmpty()
 
     val emptyKind: ListEmptyKind
         get() = when {
             isLoading || errorMessage != null || bookmarks.isNotEmpty() || isSearching -> ListEmptyKind.NONE
             isShowingSearchResults -> ListEmptyKind.NO_SEARCH_RESULT
-            selectedTagId != null -> ListEmptyKind.NO_TAG_MATCH
+            hasTagOrCategoryFilter -> ListEmptyKind.NO_FILTER_MATCH
             filter == BookmarkFilter.FAVORITES -> ListEmptyKind.NO_FAVORITES
             filter == BookmarkFilter.ARCHIVED -> ListEmptyKind.NO_ARCHIVED
             totalCount == 0 -> ListEmptyKind.FIRST_RUN

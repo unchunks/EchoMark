@@ -18,7 +18,9 @@ import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
@@ -619,31 +621,34 @@ class BookmarkRepositoryImpl @Inject constructor(
             .flowOn(dispatcherProvider.io)
 
     override fun observeBookmarks(
-        filter: BookmarkFilter,
-        sortOrder: BookmarkSortOrder,
-        tagId: Long?
+        query: BookmarkQuery,
+        sortOrder: BookmarkSortOrder
     ): Flow<List<Bookmark>> =
         bookmarkDao.observeFiltered(
-            archived = filter == BookmarkFilter.ARCHIVED,
-            favoriteOnly = filter == BookmarkFilter.FAVORITES,
-            tagId = tagId,
+            archived = query.filter == BookmarkFilter.ARCHIVED,
+            favoriteOnly = query.filter == BookmarkFilter.FAVORITES,
+            tagIds = query.tagIds.toList(),
+            tagCount = query.tagIds.size,
+            matchAll = query.tagMatch == TagMatch.ALL,
+            categories = query.categories.toList(),
+            categoryCount = query.categories.size,
             sortOrder = sortOrder.name
         )
             .map { list -> list.map { it.toDomain() } }
             .flowOn(dispatcherProvider.io)
 
-    override suspend fun search(query: String, tagId: Long?): List<Bookmark> =
-        searchWithDetails(query, tagId).bookmarks
+    override suspend fun search(query: String): List<Bookmark> =
+        searchWithDetails(query).bookmarks
 
     override suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> =
         withContext(dispatcherProvider.io) {
             if (query.isBlank()) return@withContext emptyList()
-            searchKeywordMatches(query, tagId = null).take(limit).map { it.toDomain() }
+            searchKeywordMatches(query).take(limit).map { it.toDomain() }
         }
 
-    override suspend fun searchKeywordOnly(query: String, tagId: Long?): List<Bookmark> =
+    override suspend fun searchKeywordOnly(query: String): List<Bookmark> =
         withContext(dispatcherProvider.io) {
-            searchKeywordMatches(query, tagId).map { it.toDomain() }
+            searchKeywordMatches(query).map { it.toDomain() }
         }
 
     override suspend fun prepareSemanticSearch(query: String): Boolean =
@@ -664,15 +669,13 @@ class BookmarkRepositoryImpl @Inject constructor(
     override fun observeBookmarkCount(): Flow<Int> =
         bookmarkDao.observeCount().flowOn(dispatcherProvider.io)
 
-    override suspend fun searchWithDetails(query: String, tagId: Long?): BookmarkSearchResult =
+    override suspend fun searchWithDetails(query: String): BookmarkSearchResult =
         withContext(dispatcherProvider.io) {
             val q = query.trim()
 
             // キーワード検索(タイトル・要約・本文・URL・タグ名など。語ごとの AND)。createdAt 降順
-            val keyword = searchKeywordMatches(q, tagId).map { it.toDomain() }
+            val keyword = searchKeywordMatches(q).map { it.toDomain() }
             if (q.isEmpty()) return@withContext BookmarkSearchResult(keyword, semanticAvailable = false)
-            // 絞り込みのタグは、階層でその下にあるタグも含める(キーワード検索と同じ)
-            val tagIds = tagId?.let { tagDao.getSubtreeIds(it).toSet() }
 
             // ベクトル検索。モデル未取得などで失敗したらキーワードのみにフォールバックする
             val semantic = try {
@@ -683,7 +686,6 @@ class BookmarkRepositoryImpl @Inject constructor(
                     .map { it.bookmarkId }
                 val byId = bookmarkDao.getByIdsWithTags(ids).associateBy { it.bookmark.id }
                 ids.mapNotNull { byId[it] }
-                    .filter { tagIds == null || it.tags.any { tag -> tag.id in tagIds } }
                     .map { it.toDomain() }
             } catch (e: CancellationException) {
                 throw e
@@ -707,14 +709,14 @@ class BookmarkRepositoryImpl @Inject constructor(
      * キーワード検索。[query] を空白(全角の空白を含む)で区切り、すべての語を含むもの(AND)を createdAt 降順で返す。
      * 語ごとに離れた場所にあってよい(「東京 ラーメン」で「東京の美味しいラーメン」が見つかる)。語が無ければ全件。
      */
-    private suspend fun searchKeywordMatches(query: String, tagId: Long?): List<BookmarkWithTags> {
+    private suspend fun searchKeywordMatches(query: String): List<BookmarkWithTags> {
         val terms = splitSearchTerms(query)
-        if (terms.isEmpty()) return bookmarkDao.searchByKeyword("", tagId)
+        if (terms.isEmpty()) return bookmarkDao.searchByKeyword("")
         // 1語目の結果(新しい順)を、残りの語の結果にも入っているものに絞る
-        var matches = searchTerm(terms.first(), tagId)
+        var matches = searchTerm(terms.first())
         for (term in terms.drop(1)) {
             if (matches.isEmpty()) break
-            val ids = searchTerm(term, tagId).mapTo(HashSet()) { it.bookmark.id }
+            val ids = searchTerm(term).mapTo(HashSet()) { it.bookmark.id }
             matches = matches.filter { it.bookmark.id in ids }
         }
         return matches
@@ -724,11 +726,11 @@ class BookmarkRepositoryImpl @Inject constructor(
      * 1語の検索。日本語入力の全角英数字(「ＲＥＡＣＴ」)でも半角で保存したものが見つかるよう、
      * NFKC で正規化した語でも探して合わせる(新しい順)。
      */
-    private suspend fun searchTerm(term: String, tagId: Long?): List<BookmarkWithTags> {
-        val found = bookmarkDao.searchByKeyword(escapeLike(term), tagId)
+    private suspend fun searchTerm(term: String): List<BookmarkWithTags> {
+        val found = bookmarkDao.searchByKeyword(escapeLike(term))
         val normalized = Normalizer.normalize(term, Normalizer.Form.NFKC)
         if (normalized == term) return found
-        return (found + bookmarkDao.searchByKeyword(escapeLike(normalized), tagId))
+        return (found + bookmarkDao.searchByKeyword(escapeLike(normalized)))
             .distinctBy { it.bookmark.id }
             .sortedByDescending { it.bookmark.createdAt }
     }

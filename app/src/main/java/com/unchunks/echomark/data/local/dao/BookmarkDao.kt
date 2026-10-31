@@ -239,25 +239,31 @@ interface BookmarkDao {
 
     /**
      * 一覧用の観測クエリ(絞り込み・並べ替えつき)。
-     * :archived はアーカイブ状態で絞る(NULL なら絞らない)、:favoriteOnly が true ならお気に入りだけ、
-     * :tagId が非NULLならそのタグ(と、階層でその下にあるタグ)を持つものだけ。:sortOrder は BookmarkSortOrder の name。
-     * 並べ替えは CASE で切り替え、該当しない CASE は NULL になって順序に影響しない。同順位は新しい順。
+     * :archived はアーカイブ状態で絞る(NULL なら絞らない)、:favoriteOnly が true ならお気に入りだけ。
+     * タグ: :tagIds が空でなければ、選んだタグそれぞれについて「そのタグか、階層でその下にあるタグ」が付いているかを数え、
+     * :matchAll が 1 なら選んだタグ(存在するもの)のすべて(AND)、0 なら 1 つ以上(OR)を満たすものだけ。
+     * 削除済みのタグが :tagIds に残っていても、存在しないものとして無視する。
+     * カテゴリ: :categories が空でなければ、そのどれかであるものだけ(大文字小文字は区別しない)。
+     * :tagCount・:categoryCount は :tagIds・:categories の個数(空のときの IN () を避けて、条件を使うかの判定に使う)。
+     * :sortOrder は BookmarkSortOrder の name。並べ替えは CASE で切り替え、該当しない CASE は NULL になって順序に影響しない。
+     * 同順位は新しい順。
      */
     @Transaction
     @Query("""
+        WITH RECURSIVE selected(root, id) AS (
+            SELECT id, id FROM tags WHERE id IN (:tagIds)
+            UNION
+            SELECT s.root, t.id FROM tags AS t INNER JOIN selected AS s ON t.parentId = s.id
+        )
         SELECT * FROM bookmarks
         WHERE (:archived IS NULL OR isArchived = :archived)
         AND (:favoriteOnly = 0 OR isFavorite = 1)
-        AND (:tagId IS NULL OR id IN (
-            SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId IN (
-                WITH RECURSIVE subtree(id) AS (
-                    SELECT :tagId
-                    UNION
-                    SELECT t.id FROM tags AS t INNER JOIN subtree AS s ON t.parentId = s.id
-                )
-                SELECT id FROM subtree
-            )
-        ))
+        AND (:tagCount = 0 OR NOT EXISTS (SELECT 1 FROM selected) OR (
+            SELECT COUNT(DISTINCT s.root) FROM bookmark_tag_cross_ref AS r
+            INNER JOIN selected AS s ON s.id = r.tagId
+            WHERE r.bookmarkId = bookmarks.id
+        ) >= CASE WHEN :matchAll = 1 THEN (SELECT COUNT(DISTINCT root) FROM selected) ELSE 1 END)
+        AND (:categoryCount = 0 OR category COLLATE NOCASE IN (:categories))
         ORDER BY
             CASE WHEN :sortOrder = 'OLDEST' THEN createdAt END ASC,
             CASE WHEN :sortOrder = 'RECENTLY_OPENED' THEN lastAccessedAt END DESC,
@@ -268,7 +274,11 @@ interface BookmarkDao {
     fun observeFiltered(
         archived: Boolean?,
         favoriteOnly: Boolean,
-        tagId: Long?,
+        tagIds: List<Long>,
+        tagCount: Int,
+        matchAll: Boolean,
+        categories: List<String>,
+        categoryCount: Int,
         sortOrder: String
     ): Flow<List<BookmarkWithTags>>
 
@@ -283,7 +293,6 @@ interface BookmarkDao {
     /**
      * キーワード検索(タイトル・要約・本文・ファイル名・URL・サイト名・タグ名の部分一致)。
      * :pattern は呼び出し側で LIKE 用にエスケープ済み(エスケープ文字は '\')の検索語(1語)。
-     * :tagId が非NULLならそのタグ(と、階層でその下にあるタグ)を持つものだけに絞る(AND)。
      */
     @Transaction
     @Query("""
@@ -301,17 +310,7 @@ interface BookmarkDao {
                 WHERE t.name LIKE '%' || :pattern || '%' ESCAPE '\'
             )
         )
-        AND (:tagId IS NULL OR id IN (
-            SELECT bookmarkId FROM bookmark_tag_cross_ref WHERE tagId IN (
-                WITH RECURSIVE subtree(id) AS (
-                    SELECT :tagId
-                    UNION
-                    SELECT t.id FROM tags AS t INNER JOIN subtree AS s ON t.parentId = s.id
-                )
-                SELECT id FROM subtree
-            )
-        ))
         ORDER BY createdAt DESC
     """)
-    suspend fun searchByKeyword(pattern: String, tagId: Long?): List<BookmarkWithTags>
+    suspend fun searchByKeyword(pattern: String): List<BookmarkWithTags>
 }

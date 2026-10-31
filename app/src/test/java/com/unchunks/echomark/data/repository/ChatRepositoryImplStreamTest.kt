@@ -67,10 +67,10 @@ class ChatRepositoryImplStreamTest {
         override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> =
             fakeBookmarks.bookmarks.value.filter { it.id in ids }
 
-        override suspend fun search(query: String, tagId: Long?): List<Bookmark> =
-            if (searchReturnsAll) fakeBookmarks.bookmarks.value else fakeBookmarks.search(query, tagId)
+        override suspend fun search(query: String): List<Bookmark> =
+            if (searchReturnsAll) fakeBookmarks.bookmarks.value else fakeBookmarks.search(query)
 
-        override suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> = search(query, null).take(limit)
+        override suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> = search(query).take(limit)
     }
 
     /** 埋め込みモデルが無い環境(assets 未同梱)を再現する。 */
@@ -150,7 +150,7 @@ class ChatRepositoryImplStreamTest {
     @Test
     fun 文脈の検索そのものが失敗しても最近保存したものを渡して答える() = runBlocking {
         val brokenSearch = object : BookmarkRepository by bookmarkRepository {
-            override suspend fun search(query: String, tagId: Long?): List<Bookmark> = throw IllegalStateException("db error")
+            override suspend fun search(query: String): List<Bookmark> = throw IllegalStateException("db error")
         }
         val repository = ChatRepositoryImpl(
             conversationDao = conversationDao,

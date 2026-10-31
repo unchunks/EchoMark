@@ -3,6 +3,7 @@ package com.unchunks.echomark.domain.repository
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
@@ -181,35 +182,33 @@ interface BookmarkRepository {
     fun observeBookmark(id: Long): Flow<Bookmark?>
 
     /**
-     * 一覧用の観測。[filter] で通常/アーカイブ/お気に入りを切り替え、[sortOrder] で並べ替える。
-     * [tagId] が非NULLならそのタグ(と、階層でその下にあるタグ)を持つものに絞る。
+     * 一覧用の観測。[query] の絞り込み(通常/アーカイブ/お気に入り・タグの AND/OR・カテゴリ)に合うものを、[sortOrder] で並べ替えて返す。
+     * タグは、階層でその下にあるタグが付いているものも含む。
      * (既存の [observeBookmarks] はアーカイブも含めた全件を新しい順で返す)
      */
     fun observeBookmarks(
-        filter: BookmarkFilter,
-        sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST,
-        tagId: Long? = null
+        query: BookmarkQuery,
+        sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST
     ): Flow<List<Bookmark>>
 
     /**
      * ハイブリッド検索。キーワード(LIKE)とベクトル類似の結果を RRF で統合して返す。
      * キーワードは空白(全角を含む)で区切った語をすべて含むもの(AND)。
-     * tagId が非NULLならそのタグを持つものに絞る(AND)。埋め込みが使えない場合はキーワードのみ。
+     * 埋め込みが使えない場合はキーワードのみ。一覧の絞り込み([BookmarkQuery])との積は、呼び出し側で取る。
      */
-    suspend fun search(query: String, tagId: Long?): List<Bookmark>
+    suspend fun search(query: String): List<Bookmark>
 
     /**
      * キーワード(LIKE)だけの検索。タイトル・要約・本文・URL・タグ名などに [query] の語をすべて含むものを
      * 新しい順に最大 [limit] 件返す。
      * 意味検索(埋め込み)はしない(チャットの文脈の検索で、語ごとに何度も呼ぶため)。
      */
-    suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> = search(query, null).take(limit)
+    suspend fun searchByKeyword(query: String, limit: Int): List<Bookmark> = search(query).take(limit)
 
     /**
      * [search] のキーワードの部分だけ。一覧の検索で、意味検索の準備(検索語の埋め込み)を待たずに先に出す結果。
-     * [tagId] が非NULLならそのタグを持つものに絞る。
      */
-    suspend fun searchKeywordOnly(query: String, tagId: Long?): List<Bookmark> = search(query, tagId)
+    suspend fun searchKeywordOnly(query: String): List<Bookmark> = search(query)
 
     /**
      * 意味検索の準備として [query] を埋め込み、結果を覚えておく(続く [searchWithDetails] では埋め込み直さない)。
@@ -219,7 +218,7 @@ interface BookmarkRepository {
     suspend fun prepareSemanticSearch(query: String): Boolean = true
 
     /** [search] と同じ検索をして、意味検索が使えたか・意味だけで見つかったものも返す。 */
-    suspend fun searchWithDetails(query: String, tagId: Long?): BookmarkSearchResult
+    suspend fun searchWithDetails(query: String): BookmarkSearchResult
 
     /** 保存済みブックマークの総数(アーカイブも含む)。 */
     fun observeBookmarkCount(): Flow<Int>

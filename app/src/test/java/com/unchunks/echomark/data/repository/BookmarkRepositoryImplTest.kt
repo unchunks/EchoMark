@@ -541,7 +541,7 @@ class BookmarkRepositoryImplTest {
         repository.saveEmbedding(current, vector, currentVersion)
         repository.saveEmbedding(old, vector, "old-model")
 
-        val result = repository.searchWithDetails("キーワードに一致しない質問", null)
+        val result = repository.searchWithDetails("キーワードに一致しない質問")
 
         assertEquals(setOf(current), result.bookmarks.map { it.id }.toSet())
     }

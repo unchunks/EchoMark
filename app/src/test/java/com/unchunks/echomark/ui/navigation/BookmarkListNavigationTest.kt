@@ -17,6 +17,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeAttachmentRepository
+import com.unchunks.echomark.testing.FakeCategoryRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeTagRepository
 import com.unchunks.echomark.testing.testBookmark
@@ -61,7 +62,7 @@ class BookmarkListNavigationTest {
             EchoMarkTheme {
                 NavHost(navController = controller, startDestination = BOOKMARKS_ROUTE) {
                     composable(BOOKMARKS_ROUTE) { entry ->
-                        val viewModel = viewModel { BookmarkViewModel(repository, tagRepository, recentlyDeleted, FakeAttachmentRepository(), FakeAppSettingsRepository()) }
+                        val viewModel = viewModel { BookmarkViewModel(repository, tagRepository, FakeCategoryRepository(), recentlyDeleted, FakeAttachmentRepository(), FakeAppSettingsRepository()) }
                         listViewModel = viewModel
                         BookmarkListDestination(
                             entry = entry,
@@ -107,7 +108,7 @@ class BookmarkListNavigationTest {
         // 一覧に戻っても同じ ViewModel(エントリに紐づく)で、絞り込みが届いている
         assertSame(viewModel, listViewModel)
         val state = viewModel.uiState.value
-        assertEquals(10L, state.selectedTagId)
+        assertEquals(setOf(10L), state.selectedTagIds)
         assertFalse("検索モードは閉じる", state.isSearchActive)
         assertEquals(listOf(1L), state.bookmarks.map { it.id })
         // 依頼は取り出したら消える(戻ってきたときに繰り返さない)

@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -109,6 +112,7 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.common.shareBookmark
 import com.unchunks.echomark.ui.common.shortTitle
@@ -223,7 +227,10 @@ fun BookmarkListScreen(
             onSearchQueryChange = viewModel::onSearchQueryChange,
             onFilterChange = viewModel::onFilterChange,
             onSortOrderChange = viewModel::onSortOrderChange,
-            onTagSelected = viewModel::onTagSelected,
+            onTagToggle = viewModel::onTagToggled,
+            onCategoryToggle = viewModel::onCategoryToggled,
+            onTagMatchChange = viewModel::onTagMatchChange,
+            onClearFilters = viewModel::onClearFilters,
             onToggleFavorite = viewModel::toggleFavorite,
             onSetArchived = setArchived,
             onDelete = delete,
@@ -265,7 +272,14 @@ class BookmarkListCallbacks(
     val onSearchQueryChange: (String) -> Unit = {},
     val onFilterChange: (BookmarkFilter) -> Unit = {},
     val onSortOrderChange: (BookmarkSortOrder) -> Unit = {},
-    val onTagSelected: (Long?) -> Unit = {},
+    /** タグを選ぶ・外す(複数選べる) */
+    val onTagToggle: (Long) -> Unit = {},
+    /** カテゴリを選ぶ・外す(複数選べる) */
+    val onCategoryToggle: (String) -> Unit = {},
+    /** 複数のタグの組み合わせ方(すべて含む / どれかを含む) */
+    val onTagMatchChange: (TagMatch) -> Unit = {},
+    /** 選んでいるタグとカテゴリをすべて外す */
+    val onClearFilters: () -> Unit = {},
     val onToggleFavorite: (Bookmark) -> Unit = {},
     val onSetArchived: (Bookmark, Boolean) -> Unit = { _, _ -> },
     val onDelete: (Bookmark) -> Unit = {},
@@ -304,7 +318,7 @@ fun BookmarkListContent(
     // 絞り込み・検索の切り替えや空状態への切り替えで、スクロールで隠れたトップバーを戻す
     // (空状態はスクロールできないことが多く、そのままだとトップバーが隠れたままになる)
     val showingList = !uiState.isLoading && uiState.errorMessage == null && uiState.emptyKind == ListEmptyKind.NONE
-    LaunchedEffect(uiState.filter, uiState.selectedTagId, uiState.isSearchActive, showingList) {
+    LaunchedEffect(uiState.filter, uiState.selectedTagIds, uiState.selectedCategories, uiState.isSearchActive, showingList) {
         scrollBehavior.state.heightOffset = 0f
     }
 
@@ -348,9 +362,15 @@ fun BookmarkListContent(
             FilterBar(
                 filter = uiState.filter,
                 tags = uiState.allTags,
-                selectedTagId = uiState.selectedTagId,
+                selectedTagIds = uiState.selectedTagIds,
+                tagMatch = uiState.tagMatch,
+                categories = uiState.allCategories,
+                selectedCategories = uiState.selectedCategories,
                 onFilterChange = callbacks.onFilterChange,
-                onTagSelected = callbacks.onTagSelected
+                onTagToggle = callbacks.onTagToggle,
+                onCategoryToggle = callbacks.onCategoryToggle,
+                onTagMatchChange = callbacks.onTagMatchChange,
+                onClearFilters = callbacks.onClearFilters
             )
             when {
                 uiState.isLoading -> LoadingState(message = "読み込み中…")
@@ -575,43 +595,89 @@ private fun SearchTopBar(
 }
 
 /**
- * 絞り込み(すべて/お気に入り/アーカイブ)とタグのチップを横スクロールで並べる。
- * タグで絞り込んでいる間は、右端に「すべて解除」を固定して出す(選んだタグのチップは先頭へ移るため、
- * 右へスクロールしてタグを選んだあとは見えなくなる。スクロールし直さずに一度で絞り込みを外せるように)
+ * 絞り込み(すべて/お気に入り/アーカイブ)・カテゴリ・タグのチップを横スクロールで並べる。
+ * カテゴリ・タグは複数選べる(タグは、2つ以上選ぶと下に「すべて含む / どれかを含む」の切り替えを出す)。
+ * タグかカテゴリで絞り込んでいる間は、右端に「すべて解除」を固定して出す(選んだチップは先頭へ移るため、
+ * 右へスクロールして選んだあとは見えなくなる。スクロールし直さずに一度で絞り込みを外せるように)。押すと、選んでいるタグとカテゴリをすべて外す
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FilterBar(
     filter: BookmarkFilter,
     tags: List<Tag>,
-    selectedTagId: Long?,
+    selectedTagIds: Set<Long>,
+    tagMatch: TagMatch,
+    categories: List<String>,
+    selectedCategories: Set<String>,
     onFilterChange: (BookmarkFilter) -> Unit,
-    onTagSelected: (Long?) -> Unit
+    onTagToggle: (Long) -> Unit,
+    onCategoryToggle: (String) -> Unit,
+    onTagMatchChange: (TagMatch) -> Unit,
+    onClearFilters: () -> Unit
 ) {
-    val tagFiltered = selectedTagId != null
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        FilterChipRow(
-            filter = filter,
-            tags = tags,
-            selectedTagId = selectedTagId,
-            onFilterChange = onFilterChange,
-            onTagSelected = onTagSelected,
-            // 「すべて解除」を出す間は、右の余白を詰めてそちらに譲る
-            endPadding = if (tagFiltered) 8.dp else 16.dp,
-            modifier = Modifier.weight(1f)
-        )
-        if (tagFiltered) {
-            AssistChip(
-                onClick = { onTagSelected(null) },
-                label = { Text("すべて解除") },
-                leadingIcon = {
-                    Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize))
-                },
-                modifier = Modifier
-                    .padding(end = 16.dp)
-                    .semantics { contentDescription = "タグの絞り込みをすべて解除" }
+    val narrowed = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty()
+    Column {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            FilterChipRow(
+                filter = filter,
+                tags = tags,
+                selectedTagIds = selectedTagIds,
+                categories = categories,
+                selectedCategories = selectedCategories,
+                onFilterChange = onFilterChange,
+                onTagToggle = onTagToggle,
+                onCategoryToggle = onCategoryToggle,
+                // 「すべて解除」を出す間は、右の余白を詰めてそちらに譲る
+                endPadding = if (narrowed) 8.dp else 16.dp,
+                modifier = Modifier.weight(1f)
             )
+            if (narrowed) {
+                AssistChip(
+                    onClick = onClearFilters,
+                    label = { Text("すべて解除") },
+                    leadingIcon = {
+                        Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize))
+                    },
+                    modifier = Modifier
+                        .padding(end = 16.dp)
+                        .semantics { contentDescription = "タグとカテゴリの絞り込みをすべて解除" }
+                )
+            }
         }
+        if (selectedTagIds.size >= 2) {
+            TagMatchRow(count = selectedTagIds.size, tagMatch = tagMatch, onChange = onTagMatchChange)
+        }
+    }
+}
+
+/** 複数のタグを選んだときの組み合わせ方(すべて含む=AND / どれかを含む=OR)の切り替え。 */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun TagMatchRow(count: Int, tagMatch: TagMatch, onChange: (TagMatch) -> Unit) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .semantics { contentDescription = "選んだタグの組み合わせ方" },
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            "選んだ${count}個のタグを",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.CenterVertically)
+        )
+        FilterChip(
+            selected = tagMatch == TagMatch.ALL,
+            onClick = { onChange(TagMatch.ALL) },
+            label = { Text("すべて含む") }
+        )
+        FilterChip(
+            selected = tagMatch == TagMatch.ANY,
+            onClick = { onChange(TagMatch.ANY) },
+            label = { Text("どれかを含む") }
+        )
     }
 }
 
@@ -620,9 +686,12 @@ private fun FilterBar(
 private fun FilterChipRow(
     filter: BookmarkFilter,
     tags: List<Tag>,
-    selectedTagId: Long?,
+    selectedTagIds: Set<Long>,
+    categories: List<String>,
+    selectedCategories: Set<String>,
     onFilterChange: (BookmarkFilter) -> Unit,
-    onTagSelected: (Long?) -> Unit,
+    onTagToggle: (Long) -> Unit,
+    onCategoryToggle: (String) -> Unit,
     endPadding: Dp,
     modifier: Modifier = Modifier
 ) {
@@ -643,16 +712,39 @@ private fun FilterChipRow(
                 }
             )
         }
+        if (categories.isNotEmpty()) {
+            item(key = "divider_categories") {
+                VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
+            }
+            items(categories, key = { "category_${it}" }) { name ->
+                val selected = selectedCategories.any { it.equals(name, ignoreCase = true) }
+                FilterChip(
+                    selected = selected,
+                    onClick = { onCategoryToggle(name) },
+                    label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = {
+                        Icon(
+                            if (selected) Icons.Filled.Check else Icons.Outlined.Category,
+                            contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                        )
+                    },
+                    modifier = Modifier
+                        .animateItem()
+                        .semantics { contentDescription = "カテゴリ「${name}」" + if (selected) "(選択中。タップで外す)" else "" }
+                )
+            }
+        }
         if (tags.isNotEmpty()) {
             item(key = "divider") {
                 VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
             }
         }
         items(tags, key = { "tag_${it.id}" }) { tag ->
-            val selected = tag.id == selectedTagId
+            val selected = tag.id in selectedTagIds
             FilterChip(
                 selected = selected,
-                onClick = { onTagSelected(if (selected) null else tag.id) },
+                onClick = { onTagToggle(tag.id) },
                 label = { Text("#${tag.name}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 trailingIcon = if (selected) {
                     { Icon(Icons.Outlined.Close, contentDescription = "絞り込みを解除", modifier = Modifier.size(FilterChipDefaults.IconSize)) }
@@ -663,6 +755,18 @@ private fun FilterChipRow(
             )
         }
     }
+}
+
+/** 選んでいるタグ・カテゴリを、空状態の説明に出す形("#A と #B / 技術" など)にする。何も選んでいなければ null。 */
+private fun filterSummary(uiState: BookmarkListUiState): String? {
+    val tags = uiState.selectedTags
+    val tagText = when {
+        tags.isEmpty() -> null
+        tags.size == 1 -> "#${tags.single().name}"
+        else -> tags.joinToString(if (uiState.tagMatch == TagMatch.ALL) " かつ " else " または ") { "#${it.name}" }
+    }
+    val categoryText = uiState.selectedCategories.takeIf { it.isNotEmpty() }?.joinToString(" または ")?.let { "カテゴリ: ${it}" }
+    return listOfNotNull(tagText, categoryText).takeIf { it.isNotEmpty() }?.joinToString("、")
 }
 
 @Composable
@@ -882,12 +986,12 @@ private fun ListEmptyState(uiState: BookmarkListUiState, callbacks: BookmarkList
             title = "アーカイブは空です",
             description = "一覧でカードを右へスワイプすると、ここへ移せます。"
         )
-        ListEmptyKind.NO_TAG_MATCH -> EmptyState(
+        ListEmptyKind.NO_FILTER_MATCH -> EmptyState(
             icon = Icons.AutoMirrored.Outlined.Label,
             title = "当てはまるブックマークがありません",
-            description = uiState.selectedTag?.let { "「#${it.name}」のブックマークは、この絞り込みにはありません。" },
-            actionLabel = "タグの絞り込みを解除",
-            onAction = { callbacks.onTagSelected(null) }
+            description = filterSummary(uiState)?.let { "「${it}」に当てはまるブックマークは、この絞り込みにはありません。" },
+            actionLabel = "タグとカテゴリの絞り込みを解除",
+            onAction = callbacks.onClearFilters
         )
         ListEmptyKind.NO_SEARCH_RESULT -> EmptyState(
             icon = Icons.Outlined.SearchOff,

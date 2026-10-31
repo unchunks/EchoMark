@@ -56,9 +56,13 @@ class BookmarkDaoTest {
     private suspend fun ids(
         archived: Boolean? = false,
         favoriteOnly: Boolean = false,
-        tagId: Long? = null,
+        tagIds: List<Long> = emptyList(),
+        matchAll: Boolean = true,
+        categories: List<String> = emptyList(),
         sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST
-    ): List<Long> = dao.observeFiltered(archived, favoriteOnly, tagId, sortOrder.name)
+    ): List<Long> = dao.observeFiltered(
+        archived, favoriteOnly, tagIds, tagIds.size, matchAll, categories, categories.size, sortOrder.name
+    )
         .first()
         .map { it.bookmark.id }
 
@@ -91,7 +95,7 @@ class BookmarkDaoTest {
         assertEquals(listOf(2L), ids(archived = true))
         // お気に入り(アーカイブ済みは除く)
         assertEquals(listOf(3L), ids(archived = false, favoriteOnly = true))
-        assertEquals(listOf(1L), ids(archived = false, tagId = tagId))
+        assertEquals(listOf(1L), ids(archived = false, tagIds = listOf(tagId)))
         // 絞り込みなし
         assertEquals(listOf(3L, 2L, 1L), ids(archived = null))
     }
@@ -125,15 +129,13 @@ class BookmarkDaoTest {
             tagDao.insertCrossRef(BookmarkTagCrossRef(bookmarkId, tagId))
         }
 
-        assertEquals(listOf(3L, 2L, 1L), ids(tagId = parent))
-        assertEquals(listOf(3L, 2L), ids(tagId = child))
-        assertEquals(listOf(3L), ids(tagId = grandchild))
-        assertEquals(listOf(4L), ids(tagId = other))
-        // 検索の絞り込みも同じ
-        assertEquals(listOf(3L, 2L), dao.searchByKeyword("", child).map { it.bookmark.id })
+        assertEquals(listOf(3L, 2L, 1L), ids(tagIds = listOf(parent)))
+        assertEquals(listOf(3L, 2L), ids(tagIds = listOf(child)))
+        assertEquals(listOf(3L), ids(tagIds = listOf(grandchild)))
+        assertEquals(listOf(4L), ids(tagIds = listOf(other)))
         // 階層を変えると、絞り込みの結果も変わる(観測しているクエリが更新される)
         tagDao.setParent(child, null)
-        assertEquals(listOf(1L), ids(tagId = parent))
+        assertEquals(listOf(1L), ids(tagIds = listOf(parent)))
     }
 
 
@@ -155,5 +157,97 @@ class BookmarkDaoTest {
         assertEquals(null to false, categoryOf(1))
         dao.updateCategory(1, "ニュース")
         assertEquals("ニュース" to false, categoryOf(1))
+    }
+
+
+    /** タグの階層(プログラミング ← Android ← Compose、別に 読書)と、ブックマーク 1〜5 にタグ・カテゴリを付けた状態を作る。 */
+    private suspend fun setUpTagsAndCategories(): Map<String, Long> {
+        val tagDao = db.tagDao()
+        val programming = tagDao.insertTag(TagEntity(name = "プログラミング"))
+        val android = tagDao.insertTag(TagEntity(name = "Android"))
+        val compose = tagDao.insertTag(TagEntity(name = "Compose"))
+        val reading = tagDao.insertTag(TagEntity(name = "読書"))
+        tagDao.setParent(android, programming)
+        tagDao.setParent(compose, android)
+        // 1: Compose(技術)  2: Android・読書(技術)  3: プログラミング(Tech)  4: 読書(旅行)  5: タグなし(技術)
+        listOf(
+            Triple(1L, "技術", listOf(compose)),
+            Triple(2L, "技術", listOf(android, reading)),
+            Triple(3L, "Tech", listOf(programming)),
+            Triple(4L, "旅行", listOf(reading)),
+            Triple(5L, "技術", emptyList())
+        ).forEach { (id, category, tagIds) ->
+            insert(id, title = "b$id", createdAt = id)
+            dao.updateCategory(id, category)
+            tagIds.forEach { tagDao.insertCrossRef(BookmarkTagCrossRef(id, it)) }
+        }
+        return mapOf("programming" to programming, "android" to android, "compose" to compose, "reading" to reading)
+    }
+
+    @Test
+    fun タグを複数選ぶと_すべて含むは両方を満たすもの_どれかを含むはどちらかを満たすもの_どちらも階層の下のタグを含む() = runTest {
+        val tag = setUpTagsAndCategories()
+
+        // Android(Compose も含む) と 読書: 両方を持つのは 2 だけ
+        assertEquals(listOf(2L), ids(tagIds = listOf(tag.getValue("android"), tag.getValue("reading")), matchAll = true))
+        // どちらか: Android の下(1・2)と 読書(2・4)
+        assertEquals(listOf(4L, 2L, 1L), ids(tagIds = listOf(tag.getValue("android"), tag.getValue("reading")), matchAll = false))
+        // プログラミングを選ぶと、Android・Compose の付いたものも含めて 1・2・3
+        assertEquals(listOf(3L, 2L, 1L), ids(tagIds = listOf(tag.getValue("programming"))))
+        // 親と子を一緒に選んでも、AND は両方満たす(子を満たせば親も満たす)ので子と同じ
+        assertEquals(
+            listOf(2L, 1L),
+            ids(tagIds = listOf(tag.getValue("programming"), tag.getValue("android")), matchAll = true)
+        )
+        // 1 つだけなら AND と OR は同じ
+        assertEquals(ids(tagIds = listOf(tag.getValue("reading")), matchAll = true), ids(tagIds = listOf(tag.getValue("reading")), matchAll = false))
+    }
+
+    @Test
+    fun カテゴリは選んだもののどれか_大文字小文字を区別せず_タグとの条件はANDで組み合わさる() = runTest {
+        val tag = setUpTagsAndCategories()
+
+        assertEquals(listOf(5L, 3L, 2L, 1L), ids(categories = listOf("技術", "tech")))
+        assertEquals(listOf(4L), ids(categories = listOf("旅行")))
+        // タグ(どれか: 読書・プログラミング。Compose の 1 も含む)と、カテゴリ(技術)の両方を満たす: 1 と 2(3 は Tech、4 は旅行)
+        assertEquals(
+            listOf(2L, 1L),
+            ids(tagIds = listOf(tag.getValue("reading"), tag.getValue("programming")), matchAll = false, categories = listOf("技術"))
+        )
+        // 当てはまるものが無い組み合わせは空
+        assertEquals(emptyList<Long>(), ids(tagIds = listOf(tag.getValue("reading")), categories = listOf("Tech")))
+    }
+
+    @Test
+    fun 絞り込みは通常_お気に入り_アーカイブと組み合わさる() = runTest {
+        val tag = setUpTagsAndCategories()
+        dao.updateArchived(2, true)
+        dao.updateFavorite(1, true)
+
+        assertEquals(listOf(1L), ids(tagIds = listOf(tag.getValue("android")), categories = listOf("技術")))
+        assertEquals(listOf(2L), ids(archived = true, tagIds = listOf(tag.getValue("android"))))
+        assertEquals(listOf(1L), ids(favoriteOnly = true, tagIds = listOf(tag.getValue("programming"))))
+    }
+
+    @Test
+    fun 削除されたタグが選択に残っていても無視する() = runTest {
+        val tag = setUpTagsAndCategories()
+        val missing = 9_999L
+
+        // 存在しないタグは条件に数えない(AND でも、残りのタグだけで絞る)
+        assertEquals(listOf(4L, 2L), ids(tagIds = listOf(tag.getValue("reading"), missing), matchAll = true))
+        // 選んだタグがすべて存在しないときは、タグでは絞らない
+        assertEquals(ids(), ids(tagIds = listOf(missing), matchAll = true))
+        assertEquals(ids(), ids(tagIds = listOf(missing), matchAll = false))
+    }
+
+    @Test
+    fun 階層を変えると絞り込みの結果も変わる() = runTest {
+        val tag = setUpTagsAndCategories()
+        assertEquals(listOf(3L, 2L, 1L), ids(tagIds = listOf(tag.getValue("programming")), matchAll = false))
+
+        db.tagDao().setParent(tag.getValue("android"), null)
+
+        assertEquals(listOf(3L), ids(tagIds = listOf(tag.getValue("programming")), matchAll = false))
     }
 }
