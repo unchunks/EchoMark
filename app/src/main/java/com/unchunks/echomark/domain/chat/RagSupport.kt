@@ -238,6 +238,41 @@ object RagSupport {
         return if (passage == null) base else "$base 関連する部分: 「$passage」"
     }
 
+    /** 対象のブックマークの外の保存を聞いている言葉 */
+    private val ASKS_FOR_RELATED = Regex("""関連|他の保存|ほかの保存|他に保存|似た|同じ話題|同じテーマ|比べ|比較""")
+
+    /**
+     * 「このブックマークについて質問」で、対象の外の保存も探す質問か。それ以外の質問は対象だけを根拠に答える
+     * (文脈が短い端末内 AI では、関係の薄い保存が対象の本文の分を奪うため)。
+     */
+    fun asksForRelated(message: String): Boolean = ASKS_FOR_RELATED.containsMatchIn(message)
+
+    /** 長い本文から取り出す部分の数 */
+    private const val PINNED_PASSAGES = 3
+
+    /** 取り出した部分の間の区切り */
+    private const val PASSAGE_SEPARATOR = " … "
+
+    /**
+     * 対象のブックマークの本文を [maxChars] に収める。長ければ、[keywords] が多く出てくる部分を本文の順に並べる。
+     * 語が無い・出てこない質問(「要約して」)には、冒頭だけでなく全体が分かるよう、最初・中ほど・最後を渡す。
+     */
+    fun pinnedPassages(content: String?, keywords: List<String>, maxChars: Int): String? {
+        val text = content?.trim()?.replace(WHITESPACE, " ") ?: return null
+        if (text.length <= maxChars) return text
+        val size = (maxChars - PASSAGE_SEPARATOR.length * (PINNED_PASSAGES - 1)) / PINNED_PASSAGES
+        val keys = keywords.map { it.lowercase() }
+        val lower = text.lowercase()
+        val matches = (0..(text.length - size) step size)
+            .map { start -> start to keys.count { lower.substring(start, start + size).contains(it) } }
+            .filter { it.second > 0 }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .take(PINNED_PASSAGES)
+        val starts = matches.ifEmpty { listOf(0, (text.length - size) / 2, text.length - size) }
+        return starts.sorted().joinToString(PASSAGE_SEPARATOR) { text.substring(it, it + size).trim() }
+    }
+
     /** 「このブックマークについて質問」で作る会話の既定タイトル。 */
     fun aboutBookmarkTitle(bookmarkTitle: String, maxChars: Int = TITLE_MAX_CHARS): String =
         titleFrom(bookmarkTitle, maxChars - ABOUT_SUFFIX.length) + ABOUT_SUFFIX

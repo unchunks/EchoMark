@@ -4,6 +4,7 @@ import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.Tag
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -75,6 +76,40 @@ class RagSupportTest {
         assertEquals(RagSupport.PINNED_SNIPPET_CHARS, entry.substringAfter(": ").length)
         // 要約も本文も無ければタイトルだけ
         assertEquals("[2] ${RagSupport.PINNED_MARK} 記事", RagSupport.formatPinnedContextEntry(2, "記事", null, " "))
+    }
+
+    @Test
+    fun asksForRelated_detectsQuestionsAboutOtherSaves() {
+        assertTrue(RagSupport.asksForRelated("関連する保存は？"))
+        assertTrue(RagSupport.asksForRelated("似た記事と比較して"))
+        assertFalse(RagSupport.asksForRelated("要約して"))
+    }
+
+    @Test
+    fun pinnedPassages_keepsShortBodyAsIs() {
+        assertEquals("短い本文", RagSupport.pinnedPassages(" 短い本文 ", listOf("本文"), 100))
+        assertNull(RagSupport.pinnedPassages(null, emptyList(), 100))
+    }
+
+    @Test
+    fun pinnedPassages_picksPartsWithKeywordsInBodyOrder() {
+        val body = "あ".repeat(1_000) + "決算の数字" + "い".repeat(1_000) + "来期の見通し" + "う".repeat(1_000)
+
+        val result = RagSupport.pinnedPassages(body, listOf("決算", "来期"), 300)!!
+
+        assertTrue(result, result.indexOf("決算") in 0 until result.indexOf("来期"))
+        assertTrue(result.length <= 300)
+    }
+
+    @Test
+    fun pinnedPassages_withoutKeywordsCoversStartMiddleAndEnd() {
+        val body = "最初" + "あ".repeat(1_000) + "中ほど" + "い".repeat(1_000) + "最後"
+
+        val result = RagSupport.pinnedPassages(body, emptyList(), 300)!!
+
+        assertTrue(result, result.startsWith("最初"))
+        assertTrue(result, result.contains("中ほど"))
+        assertTrue(result, result.endsWith("最後"))
     }
 
     @Test

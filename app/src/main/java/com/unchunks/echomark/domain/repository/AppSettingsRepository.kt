@@ -1,5 +1,6 @@
 package com.unchunks.echomark.domain.repository
 
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.model.SummaryStyle
@@ -137,6 +138,9 @@ interface AppSettingsRepository {
      */
     val localLlmUseGpu: Flow<Boolean>
 
+    /** ユーザーが保存したチャットのテンプレート(新しい順)。 */
+    val chatTemplates: Flow<List<ChatTemplate>>
+
     /** 一覧の並び順。アプリを開き直しても前回選んだ順で出す。既定は新しい順。 */
     val bookmarkSortOrder: Flow<BookmarkSortOrder>
 
@@ -154,6 +158,9 @@ interface AppSettingsRepository {
     suspend fun setSendFilesToCloud(enabled: Boolean)
     suspend fun setLocalLlmUseGpu(enabled: Boolean)
     suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder)
+
+    /** [transform] でチャットのテンプレートを書き換える */
+    suspend fun updateChatTemplates(transform: (List<ChatTemplate>) -> List<ChatTemplate>)
     suspend fun setRediscoverEnabled(enabled: Boolean)
     suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int)
 

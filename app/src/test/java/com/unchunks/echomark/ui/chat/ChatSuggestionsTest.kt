@@ -1,10 +1,64 @@
 package com.unchunks.echomark.ui.chat
 
+import com.unchunks.components.llm.ChatRole
+import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.testing.testBookmark
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ChatSuggestionsTest {
+
+    private fun user(content: String) = ChatMessage(conversationId = 1, role = ChatRole.USER, content = content, createdAt = 0)
+    private fun assistant(content: String = "回答") =
+        ChatMessage(conversationId = 1, role = ChatRole.ASSISTANT, content = content, createdAt = 1)
+
+    private val first = testBookmark(1, title = "Kotlin のコルーチンを基礎から学ぶ長いタイトル").copy(tags = listOf("Kotlin"))
+    private val second = testBookmark(2, title = "Compose").copy(tags = listOf("Android"))
+    private val bookmarks = listOf(first, second).associateBy { it.id }
+    private val review = AnswerReview(sources = listOf(CitedSource(1, 1L, null), CitedSource(2, 2L, null)))
+
+    @Test
+    fun 複数を引用した回答には比べる質問と掘り下げる質問を出す() {
+        val result = ChatSuggestions.forAnswer(listOf(user("質問"), assistant()), review, bookmarks, isAboutBookmark = false)
+
+        assertEquals(
+            listOf("引用した保存の共通点と違いは？", "「Kotlin のコルーチンを…」について詳しく", "「Kotlin」の他の保存は？"),
+            result
+        )
+    }
+
+    @Test
+    fun 引用が無ければ汎用の質問を出す() {
+        val result = ChatSuggestions.forAnswer(listOf(user("こんにちは"), assistant()), null, emptyMap(), isAboutBookmark = false)
+
+        assertEquals(listOf("具体例を挙げて", "もっと詳しく教えて", "次にやるとよいことは？"), result)
+    }
+
+    @Test
+    fun もう聞いた質問は出さない() {
+        val result = ChatSuggestions.forAnswer(
+            listOf(user("具体例を挙げて"), assistant()),
+            null,
+            emptyMap(),
+            isAboutBookmark = false
+        )
+
+        assertEquals(listOf("もっと詳しく教えて", "次にやるとよいことは？"), result)
+    }
+
+    @Test
+    fun ブックマークについての会話では対象についての質問を出す() {
+        val result = ChatSuggestions.forAnswer(listOf(user("要約して"), assistant()), review, bookmarks, isAboutBookmark = true)
+
+        assertEquals(listOf("重要なポイントは？", "関連する保存は？", "具体例を挙げて"), result)
+    }
+
+    @Test
+    fun 最後が回答でなければ出さない() {
+        assertEquals(emptyList<String>(), ChatSuggestions.forAnswer(listOf(user("質問")), null, emptyMap(), false))
+        assertEquals(emptyList<String>(), ChatSuggestions.forAnswer(emptyList(), null, emptyMap(), false))
+    }
 
     @Test
     fun ブックマークが無ければ汎用の例だけ() {

@@ -36,10 +36,13 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -116,6 +119,8 @@ fun ChatScreen(
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.attachFile(it.toString()) }
     }
+    var showScope by rememberSaveable { mutableStateOf(false) }
+    var showTemplates by rememberSaveable { mutableStateOf(false) }
 
     ChatContent(
         uiState = uiState,
@@ -144,8 +149,37 @@ fun ChatScreen(
         showBackButton = showBackButton,
         onAttachClick = { pickFile.launch(arrayOf("*/*")) },
         onRemoveAttachment = viewModel::removeAttachment,
-        onSelectModel = viewModel::selectModel
+        onSelectModel = viewModel::selectModel,
+        onScopeClick = { showScope = true },
+        onTemplateClick = { showTemplates = true },
+        onResumePrevious = viewModel::resumeAboutConversation
     )
+
+    if (showScope) {
+        val scope by viewModel.scope.collectAsState()
+        val choices by viewModel.scopeChoices.collectAsState()
+        val count by viewModel.scopeCount.collectAsState()
+        ChatScopeSheet(
+            query = scope,
+            choices = choices,
+            count = count,
+            onChange = viewModel::setScope,
+            onDismiss = { showScope = false }
+        )
+    }
+    if (showTemplates) {
+        ChatTemplateSheet(
+            input = input,
+            userTemplates = uiState.userTemplates,
+            onPick = { template ->
+                input = template.text
+                showTemplates = false
+            },
+            onSaveInput = { viewModel.saveTemplate(input) },
+            onDelete = viewModel::deleteTemplate,
+            onDismiss = { showTemplates = false }
+        )
+    }
 }
 
 /**
@@ -182,7 +216,10 @@ fun ChatContent(
     onEditLastMessage: (String) -> Unit = {},
     onAttachClick: () -> Unit = {},
     onRemoveAttachment: () -> Unit = {},
-    onSelectModel: (ChatModelOption) -> Unit = {}
+    onSelectModel: (ChatModelOption) -> Unit = {},
+    onScopeClick: () -> Unit = {},
+    onTemplateClick: () -> Unit = {},
+    onResumePrevious: () -> Unit = {}
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -216,7 +253,14 @@ fun ChatContent(
     LaunchedEffect(listState) {
         snapshotFlow { isAtBottom }.collect { if (it) autoFollow = true }
     }
-    LaunchedEffect(uiState.messages.size, uiState.streamingText?.length, uiState.error, uiState.isSending, uiState.answerReviews.size) {
+    LaunchedEffect(
+        uiState.messages.size,
+        uiState.streamingText?.length,
+        uiState.error,
+        uiState.isSending,
+        uiState.answerReviews.size,
+        uiState.followUps
+    ) {
         if (autoFollow) listState.scrollToBottom()
     }
 
@@ -271,6 +315,7 @@ fun ChatContent(
                             autoFollow = true
                             onSend(suggestion)
                         },
+                        onResumePrevious = onResumePrevious.takeIf { uiState.previousAboutConversationId != null },
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
@@ -292,6 +337,10 @@ fun ChatContent(
                             onRegenerate()
                         },
                         onEditLast = { editingText = it },
+                        onFollowUp = { question ->
+                            autoFollow = true
+                            onSend(question)
+                        },
                         modifier = Modifier.nestedScroll(userScrollConnection)
                     )
                 }
@@ -314,6 +363,9 @@ fun ChatContent(
                 error = uiState.attachmentError,
                 onRemove = onRemoveAttachment
             )
+            uiState.scopeLabel?.takeIf { uiState.aboutBookmark == null }?.let { label ->
+                ChatScopeStatus(label = label, onClick = onScopeClick)
+            }
             ChatInputBar(
                 value = input,
                 onValueChange = onInputChange,
@@ -323,7 +375,10 @@ fun ChatContent(
                     onSend(input)
                 },
                 onStop = onStop,
-                onAttachClick = onAttachClick
+                onAttachClick = onAttachClick,
+                onTemplateClick = onTemplateClick,
+                // 質問の対象のブックマークがあるときは、対象を根拠にするため範囲は選ばない
+                onScopeClick = onScopeClick.takeIf { uiState.aboutBookmark == null }
             )
         }
     }
@@ -447,6 +502,7 @@ private fun ChatMessageList(
     onCopy: (String) -> Unit,
     onRegenerate: () -> Unit,
     onEditLast: (String) -> Unit,
+    onFollowUp: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // 生成中でなければ、最後の質問は編集でき、最後が回答なら作り直せる(失敗の表示中は再試行のボタンを使う)
@@ -501,14 +557,15 @@ private fun ChatMessageList(
                     )
                 }
             }
+            if (uiState.followUps.isNotEmpty() && !uiState.isSending && uiState.error == null) {
+                item(key = "followUps", contentType = "followUps") {
+                    FollowUpSuggestions(suggestions = uiState.followUps, onClick = onFollowUp)
+                }
+            }
         }
     }
 }
 
-/**
- * 入力欄。複数行の丸い入力欄と、送信ボタン(空なら無効)。生成中は送信ボタンが停止ボタンに変わる。
- * 生成中も次の質問を打ち始められるよう、入力欄自体は無効にしない。
- */
 /**
  * 次の質問に添付したファイルの名前(外せる)と、添付の読み込み中・失敗の表示。入力欄の上に出す。
  * 添付していない・読み込みも失敗もないときは何も出さない。
@@ -544,6 +601,25 @@ internal fun ChatAttachmentStatus(
     }
 }
 
+/** 保存全体ではなく絞った範囲を参照しているときに、入力欄の上に出す表示。押すと範囲を選び直せる。 */
+@Composable
+internal fun ChatScopeStatus(label: String, onClick: () -> Unit) {
+    Column(modifier = Modifier.centeredMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp)) {
+        InputChip(
+            selected = true,
+            onClick = onClick,
+            label = { Text("範囲: $label", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null) }
+        )
+    }
+}
+
+/**
+ * 入力欄。複数行の丸い入力欄と、送信ボタン(空なら無効)。生成中は送信ボタンが停止ボタンに変わる。
+ * 生成中も次の質問を打ち始められるよう、入力欄自体は無効にしない。
+ * 左の追加のボタンから、添付・テンプレート・参照する範囲を開く。
+ * @param onScopeClick null なら参照する範囲を選べない
+ */
 @Composable
 internal fun ChatInputBar(
     value: String,
@@ -552,8 +628,11 @@ internal fun ChatInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
-    onAttachClick: () -> Unit = {}
+    onAttachClick: () -> Unit = {},
+    onTemplateClick: () -> Unit = {},
+    onScopeClick: (() -> Unit)? = null
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxWidth()) {
         Row(
             // 広い画面では、メッセージと同じ中央の幅にそろえる
@@ -562,13 +641,30 @@ internal fun ChatInputBar(
                 .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.Bottom
         ) {
-            // 添付はこの質問の根拠にだけ使う(会話には保存しない)
-            IconButton(
-                onClick = onAttachClick,
-                enabled = !isSending,
-                modifier = Modifier.padding(bottom = 4.dp)
-            ) {
-                Icon(Icons.Outlined.AttachFile, contentDescription = "ファイルを添付")
+            Box(modifier = Modifier.padding(bottom = 4.dp)) {
+                IconButton(onClick = { menuExpanded = true }, enabled = !isSending) {
+                    Icon(Icons.Outlined.Add, contentDescription = "追加の操作")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    // 添付はこの質問の根拠にだけ使う(会話には保存しない)
+                    DropdownMenuItem(
+                        text = { Text("ファイルを添付") },
+                        leadingIcon = { Icon(Icons.Outlined.AttachFile, contentDescription = null) },
+                        onClick = { menuExpanded = false; onAttachClick() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("テンプレート") },
+                        leadingIcon = { Icon(Icons.Outlined.Description, contentDescription = null) },
+                        onClick = { menuExpanded = false; onTemplateClick() }
+                    )
+                    if (onScopeClick != null) {
+                        DropdownMenuItem(
+                            text = { Text("参照する範囲") },
+                            leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null) },
+                            onClick = { menuExpanded = false; onScopeClick() }
+                        )
+                    }
+                }
             }
             TextField(
                 value = value,

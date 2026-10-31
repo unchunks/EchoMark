@@ -18,6 +18,8 @@ import com.unchunks.echomark.data.local.entity.ConversationWithLastMessage
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
+import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.AnalysisInput
@@ -25,7 +27,6 @@ import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.provider.ChatContextUsage
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.AiTask
@@ -44,6 +45,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -426,7 +428,7 @@ class ChatRepositoryImplStreamTest {
     }
 
     @Test
-    fun 固定したブックマークは検索結果より先頭に入り_重複しない() = runBlocking {
+    fun 固定したブックマークがあれば_そのブックマークだけを根拠にする() = runBlocking {
         fakeBookmarks.bookmarks.value = listOf(
             testBookmark(id = 5, title = "Kotlin 入門"),
             testBookmark(id = 7, title = "Compose メモ").copy(summary = "Compose の要約", content = "本文です")
@@ -436,13 +438,100 @@ class ChatRepositoryImplStreamTest {
 
         val events = repository(llm).sendMessageStream(1L, "要約して", pinnedBookmarkId = 7L).toList()
 
-        assertEquals(ChatStreamEvent.Started(listOf(7L, 5L)), events.first())
-        assertEquals(2, llm.lastContext.size)
+        assertEquals(ChatStreamEvent.Started(listOf(7L)), events.first())
+        assertEquals(1, llm.lastContext.size)
         assertTrue(llm.lastContext[0].startsWith("[1] ${RagSupport.PINNED_MARK} Compose メモ("))
         assertTrue(llm.lastContext[0].contains("Compose の要約"))
         assertTrue(llm.lastContext[0].contains("本文です"))
-        assertTrue(llm.lastContext[1].startsWith("[2] Kotlin 入門("))
-        assertEquals("7,5", messageDao.all.value.last().referencedBookmarkIds)
+        assertEquals("7", messageDao.all.value.last().referencedBookmarkIds)
+    }
+
+    @Test
+    fun 固定したブックマークの質問でも_関連する保存を聞かれたら検索結果を足す() = runBlocking {
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 5, title = "Kotlin 入門"),
+            testBookmark(id = 7, title = "Compose メモ")
+        )
+        searchReturnsAll = true
+
+        val events = repository(RecordingLlm()).sendMessageStream(1L, "関連する保存は？", pinnedBookmarkId = 7L).toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(7L, 5L)), events.first())
+    }
+
+    @Test
+    fun 範囲を選ぶと_その範囲の保存だけを資料にする() = runBlocking {
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 5, title = "Kotlin 入門").copy(category = "技術"),
+            testBookmark(id = 6, title = "旅行メモ").copy(category = "旅行")
+        )
+        searchReturnsAll = true
+        val llm = RecordingLlm()
+
+        val events = repository(llm)
+            .sendMessageStream(1L, "保存を教えて", scope = BookmarkQuery(categories = setOf("旅行")))
+            .toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(6L)), events.first())
+    }
+
+    @Test
+    fun 範囲の中で見つからなければ_範囲の中の最近の保存を渡す() = runBlocking {
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 5, title = "Kotlin 入門").copy(category = "技術"),
+            testBookmark(id = 6, title = "旅行メモ").copy(category = "旅行")
+        )
+
+        val events = repository(RecordingLlm())
+            .sendMessageStream(1L, "Kotlin", scope = BookmarkQuery(categories = setOf("旅行")))
+            .toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(6L)), events.first())
+    }
+
+    @Test
+    fun 範囲に保存が無ければ資料なしで答える() = runBlocking {
+        val events = repository(RecordingLlm())
+            .sendMessageStream(1L, "Kotlin", scope = BookmarkQuery(categories = setOf("無いカテゴリ")))
+            .toList()
+
+        assertEquals(ChatStreamEvent.Started(emptyList()), events.first())
+    }
+
+    @Test
+    fun 固定したブックマークがあれば範囲は使わない() = runBlocking {
+        fakeBookmarks.bookmarks.value = listOf(testBookmark(id = 7, title = "Compose メモ").copy(category = "技術"))
+
+        val events = repository(RecordingLlm())
+            .sendMessageStream(1L, "要約して", pinnedBookmarkId = 7L, scope = BookmarkQuery(categories = setOf("旅行")))
+            .toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(7L)), events.first())
+    }
+
+    @Test
+    fun 範囲の選択肢は保存の多い順で_数は範囲に入る保存の数() = runBlocking {
+        fakeBookmarks.tags.value = listOf(Tag(1L, "少ない"), Tag(2L, "多い"))
+        fakeBookmarks.bookmarks.value = listOf(
+            testBookmark(id = 5).copy(tags = listOf("多い"), category = "技術"),
+            testBookmark(id = 6).copy(tags = listOf("多い", "少ない"), category = "技術"),
+            testBookmark(id = 8).copy(category = "旅行")
+        )
+        val repository = repository(FakeLlmProvider())
+
+        val choices = repository.observeScopeChoices().first()
+
+        assertEquals(listOf("多い", "少ない"), choices.tags.map { it.name })
+        assertEquals(listOf("技術", "旅行"), choices.categories)
+        assertEquals(2, repository.observeScopeCount(BookmarkQuery(categories = setOf("技術"))).first())
+    }
+
+    @Test
+    fun ブックマークについて質問した最後の会話を返す() = runBlocking {
+        val repository = repository(FakeLlmProvider())
+
+        assertEquals(21L, repository.latestConversationAbout(7L))
+        assertEquals(null, repository.latestConversationAbout(8L))
     }
 
     @Test
@@ -629,6 +718,7 @@ private class FakeConversationDao : ConversationDao {
         summaryClearedFrom += id to createdAt
     }
     override fun observeById(id: Long): Flow<ConversationEntity?> = MutableStateFlow(null)
+    override suspend fun latestIdAbout(bookmarkId: Long): Long? = 21L.takeIf { bookmarkId == 7L }
     override fun observeAllWithLastMessage(): Flow<List<ConversationWithLastMessage>> =
         MutableStateFlow(emptyList())
     override suspend fun touch(id: Long, updatedAt: Long) = Unit

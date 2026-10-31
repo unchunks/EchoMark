@@ -1,8 +1,10 @@
 package com.unchunks.echomark.domain.repository
 
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationPreview
 import kotlinx.coroutines.flow.Flow
@@ -50,13 +52,15 @@ interface ChatRepository {
      * @param pinnedBookmarkId 必ず文脈に含めるブックマーク(「このブックマークについて質問」)。検索結果より先頭に置き、重複は除く
      * @param isRetry 失敗した質問の再試行。会話の最後が同じ内容のユーザー発言なら、それを使い回して二重に保存しない
      * @param attachment 質問に添付したファイルの内容。この回答の根拠にだけ使い、会話には保存しない(ユーザー発言は本文だけ保存する)
+     * @param scope 資料を探す範囲。null なら保存全体。[pinnedBookmarkId] があるときは使わない
      */
     fun sendMessageStream(
         conversationId: Long,
         userMessage: String,
         pinnedBookmarkId: Long? = null,
         isRetry: Boolean = false,
-        attachment: ChatAttachmentContext? = null
+        attachment: ChatAttachmentContext? = null,
+        scope: BookmarkQuery? = null
     ): Flow<ChatStreamEvent>
 
     /**
@@ -79,6 +83,15 @@ interface ChatRepository {
      * 存在しない(削除済み)IDは含まれない。
      */
     suspend fun getBookmarks(ids: List<Long>): Map<Long, Bookmark>
+
+    /** [bookmarkId] について質問した会話のうち、最後に使ったもの。無ければ null。 */
+    suspend fun latestConversationAbout(bookmarkId: Long): Long?
+
+    /** 参照する範囲の選択肢。 */
+    fun observeScopeChoices(): Flow<ChatScopeChoices>
+
+    /** [scope] に入る保存の数。 */
+    fun observeScopeCount(scope: BookmarkQuery): Flow<Int>
 
     /** 質問の例を作るための、最近保存したブックマーク(アーカイブ済みを除く、新しい順)。 */
     suspend fun getRecentBookmarks(limit: Int): List<Bookmark>

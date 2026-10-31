@@ -10,6 +10,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,6 +42,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -331,7 +334,8 @@ internal fun ChatWelcome(
     isAboutBookmark: Boolean,
     suggestions: List<String>,
     onSuggestionClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onResumePrevious: (() -> Unit)? = null
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -370,6 +374,10 @@ internal fun ChatWelcome(
             textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(max = 360.dp)
         )
+        if (onResumePrevious != null) {
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onResumePrevious) { Text("前の会話の続きを開く") }
+        }
         if (suggestions.isNotEmpty()) {
             Spacer(Modifier.height(28.dp))
             Text(
@@ -412,6 +420,28 @@ private fun SuggestionItem(text: String, onClick: () -> Unit) {
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/** 回答の下に出す、次の質問の候補。押すとそのまま送る。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun FollowUpSuggestions(
+    suggestions: List<String>,
+    onClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // 回答の本文の左端にそろえる(アイコン 32dp + 間 12dp)
+    FlowRow(
+        modifier = modifier.padding(start = 44.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        suggestions.forEach { suggestion ->
+            SuggestionChip(
+                onClick = { onClick(suggestion) },
+                label = { Text(suggestion, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             )
         }
     }
