@@ -8,6 +8,8 @@ import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryFormat
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
+import com.unchunks.echomark.domain.model.CategoryDefinition
+import com.unchunks.echomark.domain.model.CategoryNames
 import com.unchunks.echomark.domain.model.TagNames
 
 /**
@@ -34,11 +36,13 @@ object AiPrompts {
         scope: AnalysisScope = AnalysisScope.ALL,
         profile: SummaryProfile = SummaryProfile.GENERAL,
         style: SummaryStyle = SummaryStyle(),
-        feedback: String? = null
+        feedback: String? = null,
+        categories: List<CategoryDefinition> = emptyList()
     ): String {
         val withSummary = scope != AnalysisScope.TAGS
         val withTags = scope != AnalysisScope.SUMMARY
         val tags = if (withTags) existingTagsForPrompt(existingTags, maxExistingTags, maxExistingTagChars) else emptyList()
+        val userCategories = if (withTags) categoriesForPrompt(categories, API_MAX_CATEGORIES, API_MAX_CATEGORY_DESCRIPTION_CHARS) else emptyList()
         val summaryField = """"summary": "${summaryFieldText(style, summaryMaxChars)}""""
         val tagFields = """"tags": ["タグ1", "タグ2"], "category": "カテゴリ名1つ""""
         return buildList {
@@ -73,12 +77,22 @@ object AiPrompts {
                     add("- tags は、下の「既存のタグ」に内容に合うものがあれば、表記を変えずにそのまま使ってください。")
                     add("- 既存のタグに合うものが無いときだけ、新しいタグを作ってください(同じ意味の言い換えや表記ゆれは作らない)。")
                 }
-                add("- category は${categoryExamples(kind, profile).joinToString("") { "「$it」" }}のように短い1語。")
+                if (userCategories.isEmpty()) {
+                    add("- category は${categoryExamples(kind, profile).joinToString("") { "「$it」" }}のように短い1語。")
+                } else {
+                    add("- category は、下の「選べるカテゴリ」から内容に最も合うものを1つ選び、名前をそのまま書く(説明を参考にする)。")
+                    add("- どれにも当てはまらないときだけ、${categoryExamples(kind, profile).joinToString("") { "「$it」" }}のように短い1語にする。")
+                }
             }
             if (tags.isNotEmpty()) {
                 add("")
                 add("既存のタグ:")
                 add(tags.joinToString(prefix = "[", postfix = "]", separator = ", ") { quote(it) })
+            }
+            if (userCategories.isNotEmpty()) {
+                add("")
+                add("選べるカテゴリ:")
+                userCategories.forEach { add("- ${quote(it.name)}" + if (it.description.isNotEmpty()) ": ${it.description}" else "") }
             }
         }.joinToString("\n")
     }
@@ -101,7 +115,8 @@ object AiPrompts {
         digest: Boolean = false,
         profile: SummaryProfile = SummaryProfile.GENERAL,
         style: SummaryStyle = SummaryStyle(),
-        feedback: String? = null
+        feedback: String? = null,
+        categories: List<CategoryDefinition> = emptyList()
     ): String {
         val withSummary = scope != AnalysisScope.TAGS
         val withTags = scope != AnalysisScope.SUMMARY
@@ -110,6 +125,7 @@ object AiPrompts {
         } else {
             emptyList()
         }
+        val userCategories = if (withTags) categoriesForPrompt(categories, LOCAL_MAX_CATEGORIES, LOCAL_MAX_CATEGORY_DESCRIPTION_CHARS) else emptyList()
         fun output(summary: String, tagValues: String, category: String) = "{" + listOfNotNull(
             """"summary": "$summary"""".takeIf { withSummary },
             """"tags": [$tagValues], "category": "$category"""".takeIf { withTags }
@@ -130,7 +146,15 @@ object AiPrompts {
                     add("- tags は、次の既存のタグに合うものがあれば表記を変えずに使う: " +
                         tags.joinToString(prefix = "[", postfix = "]", separator = ", ") { quote(it) })
                 }
-                add("- category: ${categoryExamples(kind, profile).joinToString("") { "「$it」" }}から1つ選ぶ。")
+                if (userCategories.isEmpty()) {
+                    add("- category: ${categoryExamples(kind, profile).joinToString("") { "「$it」" }}から1つ選ぶ。")
+                } else {
+                    // 自分のカテゴリを先に見せ、説明で選ばせる。合うものが無いときだけ例から
+                    add("- category: 次から内容に合うものを1つ選ぶ: " + userCategories.joinToString("、") {
+                        "「${it.name}」" + if (it.description.isNotEmpty()) "(${it.description})" else ""
+                    })
+                    add("- どれにも合わないときだけ、${categoryExamples(kind, profile).take(LOCAL_FALLBACK_CATEGORIES).joinToString("") { "「$it」" }}から選ぶ。")
+                }
             }
             add("")
             add("例:")
@@ -394,6 +418,15 @@ object AiPrompts {
 
     /** ローカル LLM に渡す既存タグの上限。文脈長(入力と出力の合計)が小さいため少なめにする */
     const val LOCAL_MAX_EXISTING_TAGS = 20
+
+    /** プロンプトに入れるユーザーのカテゴリの数と説明の長さ(クラウド API は余裕があり、端末内は文脈長が小さいため少なめ) */
+    const val API_MAX_CATEGORIES = 30
+    const val API_MAX_CATEGORY_DESCRIPTION_CHARS = 80
+    const val LOCAL_MAX_CATEGORIES = 8
+    const val LOCAL_MAX_CATEGORY_DESCRIPTION_CHARS = 24
+
+    /** 端末内 AI で、自分のカテゴリに合わないときの候補として見せる例の数 */
+    private const val LOCAL_FALLBACK_CATEGORIES = 3
     const val LOCAL_MAX_EXISTING_TAG_CHARS = 300
 
     /** これより長いタグ名はプロンプトに入れない(予算を食うだけで、使い回されることもまず無い) */
@@ -414,6 +447,19 @@ object AiPrompts {
             key.length >= MIN_MENTIONED_TAG_CHARS && haystack.contains(key)
         }
     }
+
+    /**
+     * プロンプトに入れるユーザーのカテゴリ。先頭から [maxCount] 個まで、説明は [maxDescriptionChars] 文字までに切り詰める。
+     * 名前が空・長すぎる(AI が返せない長さの)ものは入れない。
+     */
+    internal fun categoriesForPrompt(
+        categories: List<CategoryDefinition>,
+        maxCount: Int,
+        maxDescriptionChars: Int
+    ): List<CategoryDefinition> = categories
+        .map { CategoryDefinition(it.name.trim(), it.description.trim().take(maxDescriptionChars)) }
+        .filter { it.name.isNotEmpty() && it.name.length <= CategoryNames.MAX_NAME_CHARS }
+        .take(maxCount)
 
     /** プロンプトに入れる既存タグを、先頭から個数と合計文字数の予算に収まる分だけ選ぶ。 */
     internal fun existingTagsForPrompt(existingTags: List<String>, maxCount: Int, maxChars: Int): List<String> {

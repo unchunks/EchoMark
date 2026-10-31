@@ -1,5 +1,7 @@
 package com.unchunks.echomark.data.ai
 
+import com.unchunks.echomark.domain.model.CategoryNames
+import com.unchunks.echomark.domain.model.CategoryDefinition
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
 import com.unchunks.echomark.domain.bookmark.model.SummaryProfile
@@ -466,5 +468,66 @@ class AiPromptsTest {
         assertTrue(prompt, prompt.startsWith("次の文章を中国語(簡体字)に翻訳し、JSONのみを出力してください。"))
         assertTrue(prompt, prompt.contains("""{"translation": "翻訳した文章"}"""))
         assertTrue(prompt, prompt.endsWith("翻訳する文章:\n・要点 A\n・要点 B"))
+    }
+
+
+    private val myCategories = listOf(
+        CategoryDefinition("旅行", "行き先や宿の情報"),
+        CategoryDefinition("読書メモ", "")
+    )
+
+    @Test
+    fun 自分のカテゴリがあれば説明つきで見せ_その中から選ばせる() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList(), categories = myCategories)
+
+        assertTrue(prompt, prompt.contains("選べるカテゴリ:\n- \"旅行\": 行き先や宿の情報\n- \"読書メモ\""))
+        assertTrue(prompt, prompt.contains("下の「選べるカテゴリ」から内容に最も合うものを1つ選び"))
+        assertTrue(prompt, prompt.contains("どれにも当てはまらないときだけ"))
+    }
+
+    @Test
+    fun 自分のカテゴリが無ければ今までのカテゴリの指示のまま() {
+        val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, emptyList())
+
+        assertFalse(prompt, prompt.contains("選べるカテゴリ"))
+        assertTrue(prompt, prompt.contains("のように短い1語。"))
+    }
+
+    @Test
+    fun 要約だけのときはカテゴリを入れない() {
+        val prompt = AiPrompts.analyzeInstructions(
+            ContentKind.WEB_PAGE, emptyList(), scope = AnalysisScope.SUMMARY, categories = myCategories
+        )
+
+        assertFalse(prompt, prompt.contains("選べるカテゴリ"))
+    }
+
+    @Test
+    fun 端末内AIには自分のカテゴリを短い説明で見せ_合わないときだけ例から選ばせる() {
+        val prompt = AiPrompts.compactAnalyzeInstructions(ContentKind.WEB_PAGE, emptyList(), categories = myCategories)
+
+        assertTrue(prompt, prompt.contains("- category: 次から内容に合うものを1つ選ぶ: 「旅行」(行き先や宿の情報)、「読書メモ」"))
+        assertTrue(prompt, prompt.contains("どれにも合わないときだけ、"))
+    }
+
+    @Test
+    fun プロンプトに入れるカテゴリは数と説明の長さを絞り_名前が長すぎるものは入れない() {
+        val many = (1..40).map { CategoryDefinition("カテゴリ$it", "あ".repeat(100)) } +
+            CategoryDefinition("あ".repeat(CategoryNames.MAX_NAME_CHARS + 1), "x") +
+            CategoryDefinition("  ", "x")
+
+        val api = AiPrompts.categoriesForPrompt(many, AiPrompts.API_MAX_CATEGORIES, AiPrompts.API_MAX_CATEGORY_DESCRIPTION_CHARS)
+        val local = AiPrompts.categoriesForPrompt(many, AiPrompts.LOCAL_MAX_CATEGORIES, AiPrompts.LOCAL_MAX_CATEGORY_DESCRIPTION_CHARS)
+
+        assertEquals(AiPrompts.API_MAX_CATEGORIES, api.size)
+        assertEquals(AiPrompts.LOCAL_MAX_CATEGORIES, local.size)
+        assertTrue(api.all { it.description.length == AiPrompts.API_MAX_CATEGORY_DESCRIPTION_CHARS })
+        assertTrue(local.all { it.description.length == AiPrompts.LOCAL_MAX_CATEGORY_DESCRIPTION_CHARS })
+        assertEquals(
+            listOf("旅行"),
+            AiPrompts.categoriesForPrompt(
+                listOf(CategoryDefinition("あ".repeat(CategoryNames.MAX_NAME_CHARS + 1)), CategoryDefinition(" 旅行 ")), 5, 10
+            ).map { it.name }
+        )
     }
 }

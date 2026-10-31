@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.backup
 
+import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.components.llm.ChatRole
@@ -392,5 +393,49 @@ class BackupJsonTest {
 
         assertTrue(data.tagAliases.isEmpty())
         assertTrue(data.removedTags.isEmpty())
+    }
+
+
+    @Test
+    fun ユーザーのカテゴリとカテゴリを選んだ印を書き出して読み込める() {
+        val data = sample.copy(
+            bookmarks = sample.bookmarks.map { if (it.id == 1L) it.copy(categoryEdited = true) else it },
+            categories = listOf(
+                CategoryEntity(name = "旅行", description = "行き先や宿の情報", createdAt = 10),
+                CategoryEntity(name = "読書メモ", description = "", createdAt = 20)
+            )
+        )
+
+        val text = BackupJson.encode(data)
+        val decoded = BackupJson.decode(text).data
+
+        assertEquals(data.categories, decoded.categories)
+        assertEquals(setOf(1L), decoded.bookmarks.filter { it.categoryEdited }.map { it.id }.toSet())
+        // 選んでいないブックマークには印を書かない
+        assertEquals(1, Regex("\"categoryEdited\"").findAll(text).count())
+    }
+
+    @Test
+    fun カテゴリの無い古い版のバックアップは_カテゴリ無しで_AIが付けたものとして読む() {
+        val old = """{"format":"echomark-backup","version":9,"exportedAt":1,"bookmarks":[
+            {"id":1,"type":"TEXT","title":"t","category":"技術","createdAt":1,"aiStatus":"DONE"}],
+            "tags":[],"bookmarkTags":[],"conversations":[],"messages":[]}"""
+
+        val data = BackupJson.decode(old).data
+
+        assertTrue(data.categories.isEmpty())
+        assertEquals("技術", data.bookmarks.single().category)
+        assertFalse(data.bookmarks.single().categoryEdited)
+    }
+
+    @Test
+    fun 名前の無いカテゴリは読み飛ばし_名前と説明の前後の空白は除く() {
+        val text = """{"format":"echomark-backup","version":10,"exportedAt":1,"bookmarks":[],"tags":[],"bookmarkTags":[],
+            "conversations":[],"messages":[],"categories":[{"name":"  旅行 ","description":" 説明 ","createdAt":5},{"name":" "},{"description":"x"}]}"""
+
+        val decoded = BackupJson.decode(text)
+
+        assertEquals(listOf(CategoryEntity(name = "旅行", description = "説明", createdAt = 5)), decoded.data.categories)
+        assertEquals(2, decoded.invalidRecords)
     }
 }

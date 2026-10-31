@@ -11,6 +11,8 @@ data class Bookmark(
     /** 要約をユーザーが手で直したもの。再処理しても要約は置き換えない(要約だけを作り直すときは、確かめてから置き換える) */
     val summaryEdited: Boolean = false,
     val category: String? = null,
+    /** カテゴリをユーザーが選んだもの。再処理しても AI はカテゴリを置き換えない */
+    val categoryEdited: Boolean = false,
     val createdAt: Long,
     val lastAccessedAt: Long,
     val aiStatus: AiStatus = AiStatus.PENDING,

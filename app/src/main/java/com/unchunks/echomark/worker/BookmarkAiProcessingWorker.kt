@@ -23,6 +23,7 @@ import com.unchunks.echomark.domain.bookmark.model.contentKind
 import com.unchunks.echomark.domain.bookmark.model.summaryProfile
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.CategoryNames
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
@@ -132,12 +133,15 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     // (渡すかどうかは設定と提供元の対応で LlmProvider が決める)
                     // タグ付けと要約に別の AI を選んでいれば、それぞれの AI で作る
                     val attachment = analysisAttachmentOf(bookmark, applicationContext.filesDir)
+                    // ユーザーが作ったカテゴリがあれば、AI はその中から(説明を参考に)選ぶ。自分で選んだカテゴリは置き換えない
+                    val categories = repository.getCategoryDefinitionsForAi()
                     val input = AnalysisInput(
                         title = bookmark.title,
                         text = bookmark.content.orEmpty(),
                         kind = bookmark.contentKind(),
                         attachment = attachment,
-                        profile = bookmark.summaryProfile()
+                        profile = bookmark.summaryProfile(),
+                        categories = categories
                     )
                     promoteToForegroundIfLong(bookmark, input, scope)
                     val analysis = AiPerfLog.measure("analysis", "textChars=${input.text.length}") {
@@ -156,7 +160,7 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                     // 前回 AI が付けたタグは置き換える(ユーザーが付けたタグはそのまま)
                     if (scope != AnalysisScope.SUMMARY) {
                         repository.saveAiTags(bookmarkId, analysis.tags)
-                        repository.updateCategory(bookmarkId, analysis.category)
+                        repository.updateCategory(bookmarkId, CategoryNames.resolve(analysis.category, categories.map { it.name }))
                     }
                 } catch (e: CancellationException) {
                     throw e

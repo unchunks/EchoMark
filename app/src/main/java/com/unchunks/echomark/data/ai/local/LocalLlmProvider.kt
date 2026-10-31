@@ -900,7 +900,8 @@ class LocalLlmProvider @Inject constructor(
             digest = digest,
             profile = input.profile,
             style = input.style,
-            feedback = input.feedback
+            feedback = input.feedback,
+            categories = input.categories
         ),
         "",
         AiPrompts.analyzeInput(input.title, body, MAX_INPUT_CHARS)

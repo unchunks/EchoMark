@@ -135,4 +135,25 @@ class BookmarkDaoTest {
         tagDao.setParent(child, null)
         assertEquals(listOf(1L), ids(tagId = parent))
     }
+
+
+    private suspend fun categoryOf(id: Long) = dao.getByIds(listOf(id)).single().let { it.category to it.categoryEdited }
+
+    @Test
+    fun AIのカテゴリは自分で選んだカテゴリを置き換えない() = runTest {
+        insert(1, title = "a", createdAt = 1)
+
+        dao.updateCategory(1, "技術")
+        assertEquals("技術" to false, categoryOf(1))
+
+        dao.setCategoryByUser(1, "旅行")
+        dao.updateCategory(1, "ニュース")
+        assertEquals("旅行" to true, categoryOf(1))
+
+        // AI に任せる状態に戻すと、カテゴリは空になり、次の AI の答えが入る
+        dao.clearCategory(1)
+        assertEquals(null to false, categoryOf(1))
+        dao.updateCategory(1, "ニュース")
+        assertEquals("ニュース" to false, categoryOf(1))
+    }
 }

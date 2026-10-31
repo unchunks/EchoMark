@@ -7,10 +7,12 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.CategoryEntry
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.provider.SummaryTranslator
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.CategoryRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,7 +50,9 @@ data class BookmarkDetailUiState(
     /** 要約の履歴(新しい版から先に。#21) */
     val summaryHistory: List<SummaryVersion> = emptyList(),
     /** 要約の翻訳(#24) */
-    val translation: TranslationState = TranslationState.Idle
+    val translation: TranslationState = TranslationState.Idle,
+    /** カテゴリの変更で選べるカテゴリ(自分のもの → 標準のもの。#33) */
+    val categoryChoices: List<CategoryEntry> = emptyList()
 )
 
 /** 要約の翻訳の状態(#24)。翻訳は保存せず、画面を閉じたら消える。 */
@@ -93,7 +97,8 @@ class BookmarkDetailViewModel @Inject constructor(
     private val repository: BookmarkRepository,
     private val recentlyDeleted: RecentlyDeletedBookmarks,
     processingStats: ProcessingStatsRepository,
-    private val translator: SummaryTranslator
+    private val translator: SummaryTranslator,
+    categoryRepository: CategoryRepository
 ) : ViewModel() {
 
     // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
@@ -145,6 +150,14 @@ class BookmarkDetailViewModel @Inject constructor(
         }
         .onStart { emit(emptyList()) }
 
+    /** 選べるカテゴリ。補助的な表示なので、取れなくても詳細は出す */
+    private val categoryChoicesFlow = categoryRepository.observeCategories()
+        .catch { e ->
+            if (e is CancellationException) throw e
+            emit(emptyList())
+        }
+        .onStart { emit(emptyList()) }
+
     private val translation = MutableStateFlow<TranslationState>(TranslationState.Idle)
     private var translationJob: Job? = null
 
@@ -159,13 +172,23 @@ class BookmarkDetailViewModel @Inject constructor(
         }
 
     val uiState: StateFlow<BookmarkDetailUiState> =
-        combine(baseState, summaryHistoryFlow, translation) { state, history, translation ->
-            state.copy(summaryHistory = history, translation = translation)
+        combine(baseState, summaryHistoryFlow, translation, categoryChoicesFlow) { state, history, translation, categories ->
+            state.copy(summaryHistory = history, translation = translation, categoryChoices = categories)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
     init {
         // 開いたことを記録する(再発見の判定などに使う)
         viewModelScope.launch { repository.markAccessed(bookmarkId) }
+    }
+
+    /** カテゴリを選ぶ(自分で選んだものとして、AI の再処理では置き換わらない) */
+    fun setCategory(name: String) {
+        viewModelScope.launch { repository.setCategory(bookmarkId, name) }
+    }
+
+    /** カテゴリを AI に任せる状態に戻し、タグとカテゴリを付け直してもらう */
+    fun resetCategory() {
+        viewModelScope.launch { repository.resetCategory(bookmarkId) }
     }
 
     fun addTag(name: String) {

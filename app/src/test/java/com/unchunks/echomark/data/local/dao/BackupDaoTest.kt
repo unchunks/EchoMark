@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.local.dao
 
+import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.backup.BackupJson
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -56,8 +57,9 @@ class BackupDaoTest {
         conversations: List<ConversationEntity> = emptyList(),
         messages: List<ChatMessageEntity> = emptyList(),
         tagAliases: List<TagAliasEntity> = emptyList(),
-        removedTags: List<RemovedTagEntity> = emptyList()
-    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags)
+        removedTags: List<RemovedTagEntity> = emptyList(),
+        categories: List<CategoryEntity> = emptyList()
+    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories)
 
     @Test
     fun 空のDBに統合すると全件入り_書き出すと同じ内容になる() = runTest {
@@ -348,5 +350,41 @@ class BackupDaoTest {
         assertEquals(mapOf("ネコ" to "猫"), tagDao.getAliasTargets().associate { it.aliasKey to it.tagName })
         // 猫はどのブックマークにも付いていないが、別名の行き先として作る
         assertEquals(true, tagDao.getTagByName("猫")?.isUserCreated)
+    }
+
+
+    @Test
+    fun カテゴリは名前が無いものだけ追加し_既にあるカテゴリの説明は変えない() = runTest {
+        val categoryDao = db.categoryDao()
+        categoryDao.insert(CategoryEntity(name = "Tech", description = "今の説明", createdAt = 1))
+
+        dao.merge(
+            backup(
+                categories = listOf(
+                    CategoryEntity(name = "ＴＥＣＨ", description = "バックアップの説明", createdAt = 5),
+                    CategoryEntity(name = "旅行", description = "行き先や宿", createdAt = 6)
+                )
+            )
+        )
+
+        val all = categoryDao.getAll()
+        assertEquals(listOf("Tech", "旅行"), all.map { it.name })
+        assertEquals(listOf("今の説明", "行き先や宿"), all.map { it.description })
+    }
+
+    @Test
+    fun カテゴリを自分で選んだ印は追加するブックマークに付いて戻り_カテゴリも書き出して読み込むと戻る() = runTest {
+        val categoryDao = db.categoryDao()
+        categoryDao.insert(CategoryEntity(name = "旅行", description = "行き先や宿", createdAt = 1))
+        dao.merge(backup(bookmarks = listOf(urlBookmark(1, "https://a").copy(category = "旅行", categoryEdited = true))))
+
+        val snapshot = BackupJson.decode(BackupJson.encode(dao.snapshot(exportedAt = 0))).data
+        dao.deleteAll()
+        dao.merge(snapshot)
+
+        val restored = db.bookmarkDao().getByIds(db.bookmarkDao().getAllIds()).single()
+        assertEquals("旅行", restored.category)
+        assertTrue(restored.categoryEdited)
+        assertEquals(listOf("旅行" to "行き先や宿"), categoryDao.getAll().map { it.name to it.description })
     }
 }

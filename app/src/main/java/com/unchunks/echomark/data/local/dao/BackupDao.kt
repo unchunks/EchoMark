@@ -10,6 +10,7 @@ import com.unchunks.echomark.data.backup.formatReferencedIds
 import com.unchunks.echomark.data.backup.parseReferencedIds
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
+import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
@@ -55,6 +56,9 @@ abstract class BackupDao {
     @Query("SELECT * FROM removed_tags ORDER BY bookmarkId, tagKey")
     abstract suspend fun getAllRemovedTags(): List<RemovedTagEntity>
 
+    @Query("SELECT * FROM categories ORDER BY createdAt, id")
+    abstract suspend fun getAllCategories(): List<CategoryEntity>
+
     @Query("SELECT * FROM conversations ORDER BY id")
     abstract suspend fun getAllConversations(): List<ConversationEntity>
 
@@ -71,7 +75,8 @@ abstract class BackupDao {
         conversations = getAllConversations(),
         messages = getAllMessages(),
         tagAliases = getAllTagAliases(),
-        removedTags = getAllRemovedTags()
+        removedTags = getAllRemovedTags(),
+        categories = getAllCategories()
     )
 
     // ---- 読み込み(統合) ----
@@ -116,6 +121,12 @@ abstract class BackupDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertRemovedTag(removed: RemovedTagEntity)
 
+    @Query("SELECT name FROM categories")
+    abstract suspend fun getAllCategoryNames(): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertCategory(category: CategoryEntity)
+
     @Query("SELECT name FROM tags")
     abstract suspend fun getAllTagNames(): List<String>
 
@@ -139,6 +150,8 @@ abstract class BackupDao {
      * - タグの別名: 行き先のタグがあればそのタグへ、無ければ(どのブックマークにも付いていないタグでも)ユーザーのタグとして作って付ける。
      *   別名と同じ名前のタグが既にあるとき、同じ別名が既にあるときは取り込まない
      * - 外したタグの記録: 追加したブックマークの分だけ取り込む
+     * - カテゴリ: 名前(大文字小文字・全角半角を区別しない)が今の DB に無いものだけ追加する(既にあるカテゴリの説明は変えない)。
+     *   カテゴリを自分で選んだ印(categoryEdited)は、追加するブックマークにそのまま付く
      * - 会話・メッセージ: 同じ会話があればスキップ。メッセージの引用と会話の質問の対象(aboutBookmarkId)は
      *   新しいブックマーク ID に付け替える(対象がバックアップに無ければ通常の会話にする)
      */
@@ -244,6 +257,11 @@ abstract class BackupDao {
         for (removed in data.removedTags) {
             val bookmarkId = bookmarkIds[removed.bookmarkId]?.takeIf { it in addedBookmarkIds } ?: continue
             insertRemovedTag(removed.copy(bookmarkId = bookmarkId))
+        }
+
+        val categoryKeys = getAllCategoryNames().mapTo(HashSet()) { TagNames.key(it) }
+        for (category in data.categories) {
+            if (categoryKeys.add(TagNames.key(category.name))) insertCategory(category.copy(id = 0))
         }
 
         var messagesAdded = 0

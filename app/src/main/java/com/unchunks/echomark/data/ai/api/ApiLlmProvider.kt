@@ -173,7 +173,8 @@ class ApiLlmProvider @Inject constructor(
                 scope = scope,
                 profile = input.profile,
                 style = input.style,
-                feedback = input.feedback
+                feedback = input.feedback,
+                categories = input.categories
             ),
             messages = listOf(
                 ApiMessage(
