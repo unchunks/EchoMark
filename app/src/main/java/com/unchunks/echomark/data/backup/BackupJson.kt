@@ -48,12 +48,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
 /**
  * バックアップ(JSON)とエンティティの相互変換。Android に依存しない純粋な処理で、単体テストできる。
  *
- * 形式(version 10):
+ * 形式(version 11):
  * ```
  * { "format": "echomark-backup", "version": 7, "exportedAt": 1700000000000,
  *   "bookmarks": [ {全列。summaryEdited・categoryEdited は手で直した・選んだときだけ} ], "tags": [ {id, name, isUserCreated, parentId は親があるときだけ} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
- *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil は無ければ省略} ],
+ *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil・branchedFromId・branchedAt は無ければ省略} ],
  *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ],
  *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ],
  *   "categories": [ {name, description, createdAt} ] }
@@ -80,10 +80,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   8 以前は別名も記録も無いものとして読む。別名のキー(aliasKey)は alias から [TagNames.key] で作り直す
  * - 10: ユーザーが作ったカテゴリ(categories。DB v18 の categories)と、ブックマークの categoryEdited(カテゴリを自分で選んだ印)を追加。
  *   9 以前は、カテゴリは無く、どのブックマークのカテゴリも AI が付けたものとして読む
+ * - 11: 会話に isPinned(一覧の先頭に固定)と、branchedFromId・branchedAt(分けた元の会話)を追加。10 以前は固定していない・
+ *   分けていない会話として読む。branchedFromId は書き出し元の ID で、読み込むときに付け替える(元が無ければ通常の会話にする)
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 10
+    const val CURRENT_VERSION = 11
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -230,6 +232,9 @@ object BackupJson {
         .put("updatedAt", updatedAt)
         .apply { aboutBookmarkId?.let { put("aboutBookmarkId", it) } }
         .apply { summaryCoveredUntil?.let { put("summaryCoveredUntil", it) } }
+        .put("isPinned", isPinned)
+        .apply { branchedFromId?.let { put("branchedFromId", it) } }
+        .apply { branchedAt?.let { put("branchedAt", it) } }
 
     private fun ChatMessageEntity.toJson() = JSONObject()
         .put("id", id)
@@ -338,7 +343,11 @@ object BackupJson {
             // version 1 には無い(通常の会話として読む)
             aboutBookmarkId = longOrNull("aboutBookmarkId"),
             // version 5 以前には無い(要約はまだ無いものとして読む)
-            summaryCoveredUntil = longOrNull("summaryCoveredUntil")
+            summaryCoveredUntil = longOrNull("summaryCoveredUntil"),
+            // version 10 以前には無い(固定していない・分けていない会話として読む)
+            isPinned = optBoolean("isPinned", false),
+            branchedFromId = longOrNull("branchedFromId"),
+            branchedAt = longOrNull("branchedAt")
         )
     }
 

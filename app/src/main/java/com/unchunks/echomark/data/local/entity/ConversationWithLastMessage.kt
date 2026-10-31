@@ -11,3 +11,9 @@ data class ConversationWithLastMessage(
     /** 「このブックマークについて質問」の対象のタイトル。通常の会話・対象が削除済みなら null。 */
     val aboutBookmarkTitle: String?
 )
+
+/** 会話の検索の1行。 */
+data class ConversationMatchRow(
+    val conversationId: Long,
+    val matchedMessage: String?
+)

@@ -18,6 +18,8 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.splitSearchTerms
 import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.chat.ChatMemoryPolicy
 import com.unchunks.echomark.domain.chat.RagSupport
@@ -25,6 +27,8 @@ import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationBranch
+import com.unchunks.echomark.domain.model.ConversationMatch
 import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -365,6 +369,66 @@ class ChatRepositoryImpl @Inject constructor(
             chatMessageDao.deleteFrom(message.conversationId, message.createdAt, message.id)
             conversationDao.clearSummaryFrom(message.conversationId, message.createdAt)
         }
+
+    override suspend fun branchConversation(message: ChatMessage): Long? =
+        withContext(dispatcherProvider.io) {
+            val source = conversationDao.getById(message.conversationId) ?: return@withContext null
+            val upToMessage = chatMessageDao.getMessagesUpTo(message.conversationId, message.createdAt, message.id)
+            val shared = if (message.role == ChatRole.USER) upToMessage.dropLast(1) else upToMessage
+            val lastShared = shared.lastOrNull()?.createdAt ?: return@withContext null
+            // 共通の発言より後まで含む要約は持ち越さない
+            val keepSummary = source.summaryCoveredUntil?.let { it <= lastShared } == true
+            val now = System.currentTimeMillis()
+            conversationDao.insertBranch(
+                ConversationEntity(
+                    title = RagSupport.branchTitle(source.title),
+                    isTitleManuallySet = true,
+                    summary = source.summary.takeIf { keepSummary },
+                    createdAt = now,
+                    updatedAt = now,
+                    aboutBookmarkId = source.aboutBookmarkId,
+                    summaryCoveredUntil = source.summaryCoveredUntil.takeIf { keepSummary },
+                    branchedFromId = source.id,
+                    branchedAt = lastShared
+                ),
+                shared
+            )
+        }
+
+    override fun observeBranches(conversationId: Long): Flow<List<ConversationBranch>> =
+        conversationDao.observeBranches(conversationId).map { list ->
+            list.mapNotNull { branch -> branch.branchedAt?.let { ConversationBranch(branch.id, branch.title, it) } }
+        }
+
+    override suspend fun saveNote(title: String, content: String): Long {
+        val now = System.currentTimeMillis()
+        return bookmarkRepository.saveBookmark(
+            Bookmark(
+                type = BookmarkType.TEXT,
+                title = title,
+                content = content,
+                createdAt = now,
+                lastAccessedAt = now
+            )
+        ).id
+    }
+
+    override suspend fun setPinned(conversationId: Long, pinned: Boolean): Unit =
+        withContext(dispatcherProvider.io) { conversationDao.setPinned(conversationId, pinned) }
+
+    override suspend fun searchConversations(query: String): List<ConversationMatch> =
+        withContext(dispatcherProvider.io) {
+            val terms = splitSearchTerms(query)
+            if (terms.isEmpty()) return@withContext emptyList()
+            // 語ごとに探して、すべての語に当たった会話を残す(発言は最初の語に当たったものを見せる)
+            val matches = conversationDao.search(likePattern(terms.first()))
+            val rest = terms.drop(1).map { term -> conversationDao.search(likePattern(term)).mapTo(HashSet()) { it.conversationId } }
+            matches.filter { match -> rest.all { match.conversationId in it } }
+                .map { ConversationMatch(it.conversationId, it.matchedMessage) }
+        }
+
+    private fun likePattern(term: String): String =
+        "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
     override suspend fun renameConversation(conversationId: Long, title: String): Unit =
         withContext(dispatcherProvider.io) {

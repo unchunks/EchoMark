@@ -279,6 +279,12 @@ object RagSupport {
 
     private const val ABOUT_SUFFIX = "について"
 
+    /** 分けた会話の既定タイトル。 */
+    fun branchTitle(title: String, maxChars: Int = TITLE_MAX_CHARS): String =
+        titleFrom(title, maxChars - BRANCH_SUFFIX.length) + BRANCH_SUFFIX
+
+    private const val BRANCH_SUFFIX = "(分岐)"
+
     /** 最初のユーザー発言から自動タイトルを作る(改行は空白化し、超過分は省略記号)。 */
     fun titleFrom(firstUserMessage: String, maxChars: Int = TITLE_MAX_CHARS): String {
         val oneLine = firstUserMessage.trim().replace(WHITESPACE, " ")

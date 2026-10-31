@@ -270,6 +270,31 @@ class BackupJsonTest {
     }
 
     @Test
+    fun 会話の固定と分けた元を書き出して読める() {
+        val branched = ConversationEntity(
+            id = 8, title = "分岐", createdAt = 1, updatedAt = 2, isPinned = true, branchedFromId = 5, branchedAt = 401
+        )
+
+        val decoded = BackupJson.decode(BackupJson.encode(sample.copy(conversations = listOf(branched))))
+
+        assertEquals(branched, decoded.data.conversations.single())
+    }
+
+    @Test
+    fun version10以前の会話は固定していない_分けていない会話として読む() {
+        val json = """
+            {"format":"echomark-backup","version":10,"exportedAt":1,
+             "conversations":[{"id":3,"title":"会話","isTitleManuallySet":false,"createdAt":20,"updatedAt":30}]}
+        """.trimIndent()
+
+        val conversation = BackupJson.decode(json).data.conversations.single()
+
+        assertFalse(conversation.isPinned)
+        assertEquals(null, conversation.branchedFromId)
+        assertEquals(null, conversation.branchedAt)
+    }
+
+    @Test
     fun 通常の会話はaboutBookmarkIdを書き出さない() {
         val conversations = JSONObject(BackupJson.encode(sample)).getJSONArray("conversations")
         assertFalse(conversations.getJSONObject(0).has("aboutBookmarkId"))

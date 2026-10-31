@@ -522,6 +522,39 @@ class MigrationTest {
 
 
     @Test
+    fun migrate18To19_keepsConversationsAsUnpinnedAndNotBranched() {
+        helper.createDatabase(18).apply {
+            execSQL(
+                "INSERT INTO conversations (id, title, isTitleManuallySet, summary, createdAt, updatedAt, aboutBookmarkId, summaryCoveredUntil) " +
+                    "VALUES (1, '会話', 1, '要約', 10, 20, 5, 15)"
+            )
+            execSQL("INSERT INTO chat_messages (id, conversationId, role, content, createdAt) VALUES (1, 1, 'USER', '質問', 11)")
+            close()
+        }
+
+        // スキーマ v19 と一致するか(列・既定値)も検証される
+        val connection = helper.runMigrationsAndValidate(19, listOf(MIGRATION_18_19))
+
+        connection.prepare(
+            "SELECT title, summary, aboutBookmarkId, summaryCoveredUntil, isPinned, branchedFromId, branchedAt FROM conversations"
+        ).use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("会話", stmt.getText(0))
+            assertEquals("要約", stmt.getText(1))
+            assertEquals(5L, stmt.getLong(2))
+            assertEquals(15L, stmt.getLong(3))
+            assertEquals(0L, stmt.getLong(4))
+            assertTrue(stmt.isNull(5))
+            assertTrue(stmt.isNull(6))
+        }
+        connection.prepare("SELECT COUNT(*) FROM chat_messages").use { stmt ->
+            stmt.step()
+            assertEquals(1L, stmt.getLong(0))
+        }
+        connection.close()
+    }
+
+    @Test
     fun migrate17To18_addsEmptyCategoriesAndKeepsCategoriesAsAiChosen() {
         helper.createDatabase(17).apply {
             execSQL(
