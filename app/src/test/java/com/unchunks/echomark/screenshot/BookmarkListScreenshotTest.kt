@@ -9,6 +9,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.bookmark.AddBookmarkForm
 import com.unchunks.echomark.ui.bookmark.AddBookmarkSheetContent
@@ -131,6 +133,46 @@ class BookmarkListScreenshotTest {
                 searchQuery = "動作を軽くする方法",
                 semanticSearchAvailable = true,
                 semanticMatchIds = setOf(PreviewSamples.textBookmark.id),
+                totalCount = 4
+            )
+        )
+    )
+
+    @Test
+    fun searchSuggestionsWithConditions() = screenshot.captureScreenLightDark(
+        "library_list_search_suggestions",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = listOf(PreviewSamples.urlBookmark),
+                allTags = tags,
+                isSearchActive = true,
+                searchQuery = "compo",
+                searchTerms = listOf("compo"),
+                suggestions = listOf(
+                    SearchSuggestion.History("compose 入門"),
+                    SearchSuggestion.Tag(2, "Compose"),
+                    SearchSuggestion.Category("技術記事")
+                ),
+                selectedTypes = setOf(BookmarkType.URL),
+                period = CreatedPeriod.PAST_MONTH,
+                totalCount = 4
+            )
+        )
+    )
+
+    @Test
+    fun searchRecentHistory() = screenshot.captureScreenLightDark(
+        "library_list_search_history",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = listOf(PreviewSamples.urlBookmark, PreviewSamples.textBookmark),
+                allTags = tags,
+                isSearchActive = true,
+                suggestions = listOf(
+                    SearchSuggestion.History("compose パフォーマンス"),
+                    SearchSuggestion.History("読書メモ"),
+                    SearchSuggestion.History("kotlin flow")
+                ),
                 totalCount = 4
             )
         )

@@ -24,7 +24,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
+import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
 import com.unchunks.echomark.domain.bookmark.model.MatchField
+import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import org.junit.Assert.assertNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -311,6 +313,142 @@ class BookmarkViewModelTest {
         viewModel.onSearchActiveChange(false)
         advanceUntilIdle()
         assertEquals(emptyList<String>(), highlights.termsFor(1L).first())
+    }
+
+    @Test
+    fun 検索の操作をすると検索語を履歴に残し_空なら残さない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"))
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("  ")
+        viewModel.onSearchSubmitted()
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), settings.searchHistoryFlow.value)
+
+        viewModel.onSearchQueryChange("apple　pie")
+        viewModel.onSearchSubmitted()
+        advanceUntilIdle()
+        assertEquals(listOf("apple pie"), settings.searchHistoryFlow.value)
+    }
+
+    @Test
+    fun 検索結果を開いたら履歴に残し_検索していなければ残さない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+        viewModel.onOpenBookmark(1L)
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), settings.searchHistoryFlow.value)
+
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+        viewModel.onOpenBookmark(1L)
+        advanceUntilIdle()
+        assertEquals(listOf("apple"), settings.searchHistoryFlow.value)
+    }
+
+    @Test
+    fun 検索欄が空なら最近の検索を候補に出し_選ぶとその語で検索する() = runTest {
+        settings.searchHistoryFlow.value = listOf("apple", "banana")
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"), testBookmark(2, "banana"))
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchActiveChange(true)
+        advanceUntilIdle()
+
+        var state = viewModel.uiState.value
+        assertEquals(listOf(SearchSuggestion.History("apple"), SearchSuggestion.History("banana")), state.suggestions)
+        val revision = state.queryRevision
+
+        viewModel.onSuggestionSelected(SearchSuggestion.History("banana"))
+        advanceUntilIdle()
+
+        state = viewModel.uiState.value
+        assertEquals("banana", state.searchQuery)
+        assertEquals(listOf(2L), state.bookmarks.map { it.id })
+        assertTrue("検索欄が入力中の文字を取り込み直せるよう、書き換えた回数を進める", state.queryRevision > revision)
+        // 選んだ語は履歴の先頭に来る
+        assertEquals(listOf("banana", "apple"), settings.searchHistoryFlow.value)
+    }
+
+    @Test
+    fun 入力中の語に合うタグの候補を選ぶとその語を絞り込みに置き換える() = runTest {
+        tagRepository.tags.value = listOf(TagWithCount(10, "kotlin", 2), TagWithCount(11, "swift", 1))
+        repository.bookmarks.value = listOf(
+            testBookmark(1, "memo a").copy(tags = listOf("10")),
+            testBookmark(2, "memo b").copy(tags = listOf("11"))
+        )
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("memo kot")
+        advanceUntilIdle()
+
+        val suggestion = viewModel.uiState.value.suggestions.single()
+        assertEquals(SearchSuggestion.Tag(10, "kotlin"), suggestion)
+
+        viewModel.onSuggestionSelected(suggestion)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals("memo ", state.searchQuery)
+        assertEquals(setOf(10L), state.selectedTagIds)
+        assertEquals(listOf(1L), state.bookmarks.map { it.id })
+        // 選んだタグは、もう候補に出さない
+        assertTrue(state.suggestions.none { it is SearchSuggestion.Tag })
+    }
+
+    @Test
+    fun 履歴を1件消す_すべて消す() = runTest {
+        settings.searchHistoryFlow.value = listOf("a", "b", "c")
+        val viewModel = createViewModel()
+        start(viewModel)
+
+        viewModel.onHistoryRemoved("b")
+        advanceUntilIdle()
+        assertEquals(listOf("a", "c"), settings.searchHistoryFlow.value)
+
+        viewModel.onHistoryCleared()
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), settings.searchHistoryFlow.value)
+    }
+
+    @Test
+    fun 種類と期間の条件は検索結果にも効く() = runTest {
+        val now = System.currentTimeMillis()
+        val day = 24L * 60 * 60 * 1000
+        repository.bookmarks.value = listOf(
+            testBookmark(1, "apple link").copy(type = BookmarkType.URL, createdAt = now - day),
+            testBookmark(2, "apple note").copy(type = BookmarkType.TEXT, createdAt = now - day),
+            testBookmark(3, "apple old link").copy(type = BookmarkType.URL, createdAt = now - 60 * day)
+        )
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+        assertEquals(setOf(1L, 2L, 3L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
+
+        viewModel.onTypeToggled(BookmarkType.URL)
+        advanceUntilIdle()
+        assertEquals(setOf(1L, 3L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
+        assertEquals(setOf(BookmarkType.URL), viewModel.uiState.value.selectedTypes)
+
+        viewModel.onPeriodToggled(CreatedPeriod.PAST_MONTH)
+        advanceUntilIdle()
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+        assertTrue(viewModel.uiState.value.isNarrowed)
+
+        viewModel.onClearTypeAndPeriod()
+        advanceUntilIdle()
+        assertEquals(setOf(1L, 2L, 3L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
+        assertFalse(viewModel.uiState.value.isNarrowed)
+
+        // すべて解除でも種類と期間が外れる
+        viewModel.onTypeToggled(BookmarkType.TEXT)
+        viewModel.onPeriodToggled(CreatedPeriod.PAST_WEEK)
+        viewModel.onClearFilters()
+        advanceUntilIdle()
+        assertEquals(setOf(1L, 2L, 3L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
     }
 
     @Test
@@ -739,7 +877,7 @@ class BookmarkViewModelTest {
         viewModel.onCategoryToggled("技術")
         advanceUntilIdle()
         assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
-        assertTrue(viewModel.uiState.value.hasTagOrCategoryFilter)
+        assertTrue(viewModel.uiState.value.isNarrowed)
 
         viewModel.onClearFilters()
         advanceUntilIdle()
@@ -748,7 +886,7 @@ class BookmarkViewModelTest {
         assertEquals(emptySet<Long>(), state.selectedTagIds)
         assertEquals(emptySet<String>(), state.selectedCategories)
         assertEquals(TagMatch.ALL, state.tagMatch)
-        assertFalse(state.hasTagOrCategoryFilter)
+        assertFalse(state.isNarrowed)
         // お気に入りと検索語はそのまま: お気に入りで「apple」を含む 1 と 2
         assertEquals(BookmarkFilter.FAVORITES, state.filter)
         assertTrue(state.isSearchActive)
@@ -786,7 +924,7 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
 
         assertEquals(emptySet<Long>(), viewModel.uiState.value.selectedTagIds)
-        assertFalse(viewModel.uiState.value.hasTagOrCategoryFilter)
+        assertFalse(viewModel.uiState.value.isNarrowed)
     }
 
     @Test

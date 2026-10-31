@@ -141,6 +141,9 @@ interface AppSettingsRepository {
     /** ユーザーが保存したチャットのテンプレート(新しい順)。 */
     val chatTemplates: Flow<List<ChatTemplate>>
 
+    /** 検索の履歴(新しい順)。端末の中だけに残し、バックアップには含めない。 */
+    val searchHistory: Flow<List<String>>
+
     /** 一覧の並び順。アプリを開き直しても前回選んだ順で出す。既定は新しい順。 */
     val bookmarkSortOrder: Flow<BookmarkSortOrder>
 
@@ -158,6 +161,9 @@ interface AppSettingsRepository {
     suspend fun setSendFilesToCloud(enabled: Boolean)
     suspend fun setLocalLlmUseGpu(enabled: Boolean)
     suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder)
+
+    /** [transform] で検索の履歴を書き換える */
+    suspend fun updateSearchHistory(transform: (List<String>) -> List<String>)
 
     /** [transform] でチャットのテンプレートを書き換える */
     suspend fun updateChatTemplates(transform: (List<ChatTemplate>) -> List<ChatTemplate>)

@@ -99,6 +99,19 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { it[KEY_LOCAL_LLM_USE_GPU] = enabled }
     }
 
+    // 検索語は1行で入力するので、改行で区切って持つ
+    override val searchHistory: Flow<List<String>> = data.map { prefs ->
+        prefs[KEY_SEARCH_HISTORY]?.lines()?.filter { it.isNotBlank() }.orEmpty()
+    }.distinctUntilChanged()
+
+    override suspend fun updateSearchHistory(transform: (List<String>) -> List<String>) {
+        dataStore.edit { prefs ->
+            val current = prefs[KEY_SEARCH_HISTORY]?.lines()?.filter { it.isNotBlank() }.orEmpty()
+            val updated = transform(current).map { it.replace('\n', ' ') }.filter { it.isNotBlank() }
+            if (updated.isEmpty()) prefs.remove(KEY_SEARCH_HISTORY) else prefs[KEY_SEARCH_HISTORY] = updated.joinToString("\n")
+        }
+    }
+
     override val chatTemplates: Flow<List<ChatTemplate>> = data.map { prefs ->
         prefs[KEY_CHAT_TEMPLATES]?.let(ChatTemplateCodec::decode).orEmpty()
     }.distinctUntilChanged()
@@ -248,6 +261,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_CHAT_TEMPLATES = stringPreferencesKey("chat_templates")
+        val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
         val KEY_ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val KEY_PROCESSING_CHARGING_ONLY = booleanPreferencesKey("processing_charging_only")
         val KEY_PROCESSING_UNMETERED_ONLY = booleanPreferencesKey("processing_unmetered_only")

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TravelExplore
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
@@ -82,6 +83,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -112,8 +114,12 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.shareBookmark
 import com.unchunks.echomark.ui.common.shortTitle
 import com.unchunks.echomark.ui.components.BookmarkCard
@@ -228,6 +234,13 @@ fun BookmarkListScreen(
             },
             onSearchActiveChange = viewModel::onSearchActiveChange,
             onSearchQueryChange = viewModel::onSearchQueryChange,
+            onSearchSubmit = viewModel::onSearchSubmitted,
+            onSuggestionSelect = viewModel::onSuggestionSelected,
+            onHistoryRemove = viewModel::onHistoryRemoved,
+            onHistoryClear = viewModel::onHistoryCleared,
+            onTypeToggle = viewModel::onTypeToggled,
+            onPeriodToggle = viewModel::onPeriodToggled,
+            onClearTypeAndPeriod = viewModel::onClearTypeAndPeriod,
             onFilterChange = viewModel::onFilterChange,
             onSortOrderChange = viewModel::onSortOrderChange,
             onTagToggle = viewModel::onTagToggled,
@@ -273,6 +286,18 @@ class BookmarkListCallbacks(
     val onOpenBookmark: (Long) -> Unit = {},
     val onSearchActiveChange: (Boolean) -> Unit = {},
     val onSearchQueryChange: (String) -> Unit = {},
+    /** 検索欄で検索の操作(キーボードの検索ボタン)をした */
+    val onSearchSubmit: () -> Unit = {},
+    /** 検索欄の下の候補を選ぶ */
+    val onSuggestionSelect: (SearchSuggestion) -> Unit = {},
+    val onHistoryRemove: (String) -> Unit = {},
+    val onHistoryClear: () -> Unit = {},
+    /** 種類(リンク・メモ・画像など)を選ぶ・外す */
+    val onTypeToggle: (BookmarkType) -> Unit = {},
+    /** 保存した日からの期間を選ぶ・外す */
+    val onPeriodToggle: (CreatedPeriod) -> Unit = {},
+    /** 種類と期間を外す */
+    val onClearTypeAndPeriod: () -> Unit = {},
     val onFilterChange: (BookmarkFilter) -> Unit = {},
     val onSortOrderChange: (BookmarkSortOrder) -> Unit = {},
     /** タグを選ぶ・外す(複数選べる) */
@@ -281,7 +306,7 @@ class BookmarkListCallbacks(
     val onCategoryToggle: (String) -> Unit = {},
     /** 複数のタグの組み合わせ方(すべて含む / どれかを含む) */
     val onTagMatchChange: (TagMatch) -> Unit = {},
-    /** 選んでいるタグとカテゴリをすべて外す */
+    /** 選んでいるタグ・カテゴリ・種類・期間をすべて外す */
     val onClearFilters: () -> Unit = {},
     val onToggleFavorite: (Bookmark) -> Unit = {},
     val onSetArchived: (Bookmark, Boolean) -> Unit = { _, _ -> },
@@ -317,6 +342,17 @@ fun BookmarkListContent(
     val fabExpanded by remember { derivedStateOf { !listState.canScrollBackward || listState.lastScrolledBackward } }
 
     BackHandler(enabled = uiState.isSearchActive) { callbacks.onSearchActiveChange(false) }
+    var showConditionSheet by rememberSaveable { mutableStateOf(false) }
+    if (showConditionSheet) {
+        ConditionSheet(
+            selectedTypes = uiState.selectedTypes,
+            period = uiState.period,
+            onTypeToggle = callbacks.onTypeToggle,
+            onPeriodToggle = callbacks.onPeriodToggle,
+            onClear = callbacks.onClearTypeAndPeriod,
+            onDismiss = { showConditionSheet = false }
+        )
+    }
 
     // 絞り込み・検索の切り替えや空状態への切り替えで、スクロールで隠れたトップバーを戻す
     // (空状態はスクロールできないことが多く、そのままだとトップバーが隠れたままになる)
@@ -331,7 +367,9 @@ fun BookmarkListContent(
             if (uiState.isSearchActive) {
                 SearchTopBar(
                     query = uiState.searchQuery,
+                    queryRevision = uiState.queryRevision,
                     onQueryChange = callbacks.onSearchQueryChange,
+                    onSubmit = callbacks.onSearchSubmit,
                     onClose = { callbacks.onSearchActiveChange(false) }
                 )
             } else {
@@ -362,6 +400,16 @@ fun BookmarkListContent(
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
+            if (uiState.isSearchActive) {
+                SearchSuggestionRow(
+                    suggestions = uiState.suggestions,
+                    canRemoveHistory = uiState.searchQuery.isBlank(),
+                    onSelect = callbacks.onSuggestionSelect,
+                    onRemoveHistory = callbacks.onHistoryRemove,
+                    onClearHistory = callbacks.onHistoryClear,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
             FilterBar(
                 filter = uiState.filter,
                 tags = uiState.allTags,
@@ -369,9 +417,14 @@ fun BookmarkListContent(
                 tagMatch = uiState.tagMatch,
                 categories = uiState.allCategories,
                 selectedCategories = uiState.selectedCategories,
+                selectedTypes = uiState.selectedTypes,
+                period = uiState.period,
                 onFilterChange = callbacks.onFilterChange,
                 onTagToggle = callbacks.onTagToggle,
                 onCategoryToggle = callbacks.onCategoryToggle,
+                onTypeToggle = callbacks.onTypeToggle,
+                onPeriodToggle = callbacks.onPeriodToggle,
+                onOpenConditions = { showConditionSheet = true },
                 onTagMatchChange = callbacks.onTagMatchChange,
                 onClearFilters = callbacks.onClearFilters
             )
@@ -542,7 +595,9 @@ private fun ListTopBar(
 @Composable
 private fun SearchTopBar(
     query: String,
+    queryRevision: Int,
     onQueryChange: (String) -> Unit,
+    onSubmit: () -> Unit,
     onClose: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -552,6 +607,14 @@ private fun SearchTopBar(
     // 表示し直すと反映が1テンポ遅れ、その間に古い文字列で上書きされて、日本語入力の変換中の文字が消える・確定されるなど
     // 入力できなくなるため。[query] は検索欄を開いたときの初期値にだけ使う
     var text by rememberSaveable { mutableStateOf(query) }
+    // ViewModel の側で検索語を書き換えたとき(候補を選んだとき)だけ、入力中の文字を取り込み直す
+    var seenRevision by rememberSaveable { mutableIntStateOf(queryRevision) }
+    LaunchedEffect(queryRevision) {
+        if (queryRevision != seenRevision) {
+            seenRevision = queryRevision
+            text = query
+        }
+    }
     val onTextChange = { value: String ->
         text = value
         onQueryChange(value)
@@ -593,7 +656,10 @@ private fun SearchTopBar(
                     unfocusedIndicatorColor = Color.Transparent
                 ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() })
+                keyboardActions = KeyboardActions(onSearch = {
+                    keyboard?.hide()
+                    onSubmit()
+                })
             )
         }
     }
@@ -614,13 +680,18 @@ private fun FilterBar(
     tagMatch: TagMatch,
     categories: List<String>,
     selectedCategories: Set<String>,
+    selectedTypes: Set<BookmarkType>,
+    period: CreatedPeriod?,
     onFilterChange: (BookmarkFilter) -> Unit,
     onTagToggle: (Long) -> Unit,
     onCategoryToggle: (String) -> Unit,
+    onTypeToggle: (BookmarkType) -> Unit,
+    onPeriodToggle: (CreatedPeriod) -> Unit,
+    onOpenConditions: () -> Unit,
     onTagMatchChange: (TagMatch) -> Unit,
     onClearFilters: () -> Unit
 ) {
-    val narrowed = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty()
+    val narrowed = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty() || selectedTypes.isNotEmpty() || period != null
     Column {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             FilterChipRow(
@@ -629,9 +700,14 @@ private fun FilterBar(
                 selectedTagIds = selectedTagIds,
                 categories = categories,
                 selectedCategories = selectedCategories,
+                selectedTypes = selectedTypes,
+                period = period,
                 onFilterChange = onFilterChange,
                 onTagToggle = onTagToggle,
                 onCategoryToggle = onCategoryToggle,
+                onTypeToggle = onTypeToggle,
+                onPeriodToggle = onPeriodToggle,
+                onOpenConditions = onOpenConditions,
                 // 「すべて解除」を出す間は、右の余白を詰めてそちらに譲る
                 endPadding = if (narrowed) 8.dp else 16.dp,
                 modifier = Modifier.weight(1f)
@@ -645,7 +721,7 @@ private fun FilterBar(
                     },
                     modifier = Modifier
                         .padding(end = 16.dp)
-                        .semantics { contentDescription = "タグとカテゴリの絞り込みをすべて解除" }
+                        .semantics { contentDescription = "タグ・カテゴリ・種類・期間の絞り込みをすべて解除" }
                 )
             }
         }
@@ -694,9 +770,14 @@ private fun FilterChipRow(
     selectedTagIds: Set<Long>,
     categories: List<String>,
     selectedCategories: Set<String>,
+    selectedTypes: Set<BookmarkType>,
+    period: CreatedPeriod?,
     onFilterChange: (BookmarkFilter) -> Unit,
     onTagToggle: (Long) -> Unit,
     onCategoryToggle: (String) -> Unit,
+    onTypeToggle: (BookmarkType) -> Unit,
+    onPeriodToggle: (CreatedPeriod) -> Unit,
+    onOpenConditions: () -> Unit,
     endPadding: Dp,
     modifier: Modifier = Modifier
 ) {
@@ -717,6 +798,18 @@ private fun FilterChipRow(
                 }
             )
         }
+        item(key = "conditions") {
+            val count = selectedTypes.size + if (period != null) 1 else 0
+            AssistChip(
+                onClick = onOpenConditions,
+                label = { Text(if (count == 0) "種類・時期" else "種類・時期(${count})") },
+                leadingIcon = { Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
+                modifier = Modifier.semantics {
+                    contentDescription = if (count == 0) "種類と保存した時期で絞り込む" else "種類と保存した時期で絞り込む(${count}件を選択中)"
+                }
+            )
+        }
+        conditionChips(selectedTypes, period, onTypeToggle, onPeriodToggle)
         if (categories.isNotEmpty()) {
             item(key = "divider_categories") {
                 VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
@@ -771,7 +864,9 @@ private fun filterSummary(uiState: BookmarkListUiState): String? {
         else -> tags.joinToString(if (uiState.tagMatch == TagMatch.ALL) " かつ " else " または ") { "#${it.name}" }
     }
     val categoryText = uiState.selectedCategories.takeIf { it.isNotEmpty() }?.joinToString(" または ")?.let { "カテゴリ: ${it}" }
-    return listOfNotNull(tagText, categoryText).takeIf { it.isNotEmpty() }?.joinToString("、")
+    val typeText = uiState.selectedTypes.takeIf { it.isNotEmpty() }?.joinToString(" または ") { it.displayName() }?.let { "種類: ${it}" }
+    val periodText = uiState.period?.let { "保存した時期: ${it.label()}" }
+    return listOfNotNull(tagText, categoryText, typeText, periodText).takeIf { it.isNotEmpty() }?.joinToString("、")
 }
 
 @Composable

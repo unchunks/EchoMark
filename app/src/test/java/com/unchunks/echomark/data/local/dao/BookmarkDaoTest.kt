@@ -59,12 +59,35 @@ class BookmarkDaoTest {
         tagIds: List<Long> = emptyList(),
         matchAll: Boolean = true,
         categories: List<String> = emptyList(),
+        types: List<BookmarkType> = emptyList(),
+        createdSince: Long = 0L,
         sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST
     ): List<Long> = dao.observeFiltered(
-        archived, favoriteOnly, tagIds, tagIds.size, matchAll, categories, categories.size, sortOrder.name
+        archived, favoriteOnly, tagIds, tagIds.size, matchAll, categories, categories.size,
+        types.map { it.name }, types.size, createdSince, sortOrder.name
     )
         .first()
         .map { it.bookmark.id }
+
+    @Test
+    fun filtersByTypeAndCreatedPeriod() = runTest {
+        suspend fun insertTyped(id: Long, type: BookmarkType, createdAt: Long) {
+            dao.insert(BookmarkEntity(id = id, type = type, title = "t$id", createdAt = createdAt, lastAccessedAt = createdAt))
+        }
+        insertTyped(1, BookmarkType.URL, createdAt = 100)
+        insertTyped(2, BookmarkType.PDF, createdAt = 200)
+        insertTyped(3, BookmarkType.IMAGE, createdAt = 300)
+        insertTyped(4, BookmarkType.URL, createdAt = 400)
+
+        // 種類: どれかであればよい
+        assertEquals(listOf(4L, 1L), ids(types = listOf(BookmarkType.URL)))
+        assertEquals(listOf(3L, 2L), ids(types = listOf(BookmarkType.PDF, BookmarkType.IMAGE)))
+        // 期間: その時刻以後(ちょうどの時刻も含む)。0 なら絞らない
+        assertEquals(listOf(4L, 3L, 2L), ids(createdSince = 200))
+        assertEquals(listOf(4L, 3L, 2L, 1L), ids(createdSince = 0))
+        // 組み合わせは AND
+        assertEquals(listOf(4L), ids(types = listOf(BookmarkType.URL), createdSince = 200))
+    }
 
     @Test
     fun sortOrders() = runTest {

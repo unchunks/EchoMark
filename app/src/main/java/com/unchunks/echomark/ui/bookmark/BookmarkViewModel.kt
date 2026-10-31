@@ -8,10 +8,15 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.SearchHistory
 import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
+import com.unchunks.echomark.domain.bookmark.model.SearchSuggester
+import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
+import com.unchunks.echomark.domain.bookmark.model.TagCandidate
 import com.unchunks.echomark.domain.bookmark.model.splitSearchTerms
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.TagWithCount
@@ -193,13 +198,31 @@ class BookmarkViewModel @Inject constructor(
             emit(emptyList())
         }
 
+    /** 検索の履歴。補助的な表示なので、読めなければ空として扱う */
+    private val searchHistoryFlow: Flow<List<String>> = appSettings.searchHistory
+        .catch { e ->
+            if (e is CancellationException) throw e
+            emit(emptyList())
+        }
+
+    /** 検索語を ViewModel の側から書き換えた回数(候補を選んだとき)。検索欄は、この数が変わったら入力中の文字を取り込み直す */
+    private val queryRevisionFlow = MutableStateFlow(0)
+
+    private data class ListInputs(
+        val list: ListResult,
+        val rawQuery: String,
+        val controls: ListControls,
+        val history: List<String>,
+        val queryRevision: Int
+    )
+
     val uiState: StateFlow<BookmarkListUiState> = combine(
-        combine(listFlow, searchQueryFlow, shownControlsFlow, ::Triple),
+        combine(listFlow, searchQueryFlow, shownControlsFlow, searchHistoryFlow, queryRevisionFlow, ::ListInputs),
         tagCountsFlow,
         categoryNamesFlow,
         rediscoverFlow,
         repository.observeBookmarkCount()
-    ) { (list, rawQuery, controls), tagCounts, categoryNames, rediscover, total ->
+    ) { (list, rawQuery, controls, history, revision), tagCounts, categoryNames, rediscover, total ->
         val query = controls.query
         // 削除されたタグは選択から外して見せる(DB の絞り込みも、存在しないタグは無視する)
         val knownTagIds = tagCounts?.mapTo(HashSet()) { it.id }
@@ -221,10 +244,21 @@ class BookmarkViewModel @Inject constructor(
             tagMatch = query.tagMatch,
             allCategories = categories,
             selectedCategories = query.categories,
+            selectedTypes = query.types,
+            period = query.period,
             filter = query.filter,
             sortOrder = controls.sortOrder,
             isSearchActive = controls.searchActive,
             searchQuery = rawQuery,
+            queryRevision = revision,
+            suggestions = if (!controls.searchActive) emptyList() else SearchSuggester.suggest(
+                input = rawQuery,
+                history = history,
+                tags = tagCounts.orEmpty().map { TagCandidate(it.id, it.name, it.bookmarkCount) },
+                categories = categoryNames,
+                selectedTagIds = selectedTagIds,
+                selectedCategories = query.categories
+            ),
             searchTerms = if (controls.searchActive) splitSearchTerms(list.query) else emptyList(),
             searchMatches = if (controls.searchActive) list.matches else emptyMap(),
             isSearching = searching,
@@ -297,6 +331,68 @@ class BookmarkViewModel @Inject constructor(
     /** 一覧のブックマークを開く。検索結果から開いたときは、詳細画面で検索語を強調する */
     fun onOpenBookmark(id: Long) {
         searchHighlights.open(id)
+        // 結果を開いたなら、その検索語は探せていた。履歴に残す
+        if (controlsFlow.value.searchActive) recordSearch(searchQueryFlow.value)
+    }
+
+    /** 検索欄で検索の操作(キーボードの検索ボタン)をした。その検索語を履歴に残す */
+    fun onSearchSubmitted() {
+        recordSearch(searchQueryFlow.value)
+    }
+
+    /** 候補を選んだ(#55)。履歴なら、その検索語で検索する。タグ・カテゴリなら、入力中の語をその絞り込みに置き換える */
+    fun onSuggestionSelected(suggestion: SearchSuggestion) {
+        when (suggestion) {
+            is SearchSuggestion.History -> {
+                setSearchQuery(suggestion.query)
+                recordSearch(suggestion.query)
+            }
+            is SearchSuggestion.Tag -> {
+                setSearchQuery(searchQueryWithoutLastTerm())
+                if (suggestion.id !in controlsFlow.value.query.tagIds) onTagToggled(suggestion.id)
+            }
+            is SearchSuggestion.Category -> {
+                setSearchQuery(searchQueryWithoutLastTerm())
+                if (controlsFlow.value.query.categories.none { it.equals(suggestion.name, ignoreCase = true) }) {
+                    onCategoryToggled(suggestion.name)
+                }
+            }
+        }
+    }
+
+    /** 履歴の1件を消す */
+    fun onHistoryRemoved(query: String) {
+        updateSearchHistory { SearchHistory.remove(it, query) }
+    }
+
+    /** 履歴をすべて消す */
+    fun onHistoryCleared() {
+        updateSearchHistory { emptyList() }
+    }
+
+    private fun searchQueryWithoutLastTerm(): String =
+        SearchSuggester.withoutLastTerm(searchQueryFlow.value).let { if (it.isEmpty()) it else "$it " }
+
+    private fun setSearchQuery(query: String) {
+        searchQueryFlow.value = query
+        queryRevisionFlow.update { it + 1 }
+    }
+
+    private fun recordSearch(query: String) {
+        updateSearchHistory { SearchHistory.add(it, query) }
+    }
+
+    private fun updateSearchHistory(transform: (List<String>) -> List<String>) {
+        viewModelScope.launch {
+            try {
+                appSettings.updateSearchHistory(transform)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 履歴は補助的なものなので、残せなくても検索は続ける
+                Timber.w(e, "検索の履歴を更新できませんでした")
+            }
+        }
     }
 
     /** タグを選ぶ・外す(複数選べる。組み合わせ方は [onTagMatchChange]) */
@@ -309,19 +405,34 @@ class BookmarkViewModel @Inject constructor(
         controlsFlow.update { it.copy(query = it.query.toggleCategory(name)) }
     }
 
+    /** 種類(リンク・メモ・画像など)を選ぶ・外す(複数選べて、どれかであればよい) */
+    fun onTypeToggled(type: BookmarkType) {
+        controlsFlow.update { it.copy(query = it.query.toggleType(type)) }
+    }
+
+    /** 保存した日からの期間を選ぶ(選んでいる期間をもう一度選ぶと外れる) */
+    fun onPeriodToggled(period: CreatedPeriod) {
+        controlsFlow.update { it.copy(query = it.query.togglePeriod(period)) }
+    }
+
+    /** 選んでいる種類と期間を外す(タグ・カテゴリは変えない) */
+    fun onClearTypeAndPeriod() {
+        controlsFlow.update { it.copy(query = it.query.copy(types = emptySet(), period = null)) }
+    }
+
     /** 複数のタグを選んだときの組み合わせ方(すべて含む / どれかを含む)を変える */
     fun onTagMatchChange(match: TagMatch) {
         controlsFlow.update { it.copy(query = it.query.copy(tagMatch = match)) }
     }
 
-    /** 選んでいるタグとカテゴリをすべて外す(通常/お気に入り/アーカイブと検索は変えない) */
+    /** 選んでいるタグ・カテゴリ・種類・期間をすべて外す(通常/お気に入り/アーカイブと検索は変えない) */
     fun onClearFilters() {
-        controlsFlow.update { it.copy(query = it.query.clearTagsAndCategories()) }
+        controlsFlow.update { it.copy(query = it.query.clearConditions()) }
     }
 
     /** タグ管理画面で選ばれたタグで絞り込む(それまでのタグ・カテゴリの条件は置き換える)。検索モードは閉じて、そのタグの一覧を見せる */
     fun showTag(tagId: Long) {
-        controlsFlow.update { it.copy(query = it.query.clearTagsAndCategories().copy(tagIds = setOf(tagId)), searchActive = false) }
+        controlsFlow.update { it.copy(query = it.query.clearConditions().copy(tagIds = setOf(tagId)), searchActive = false) }
         searchQueryFlow.value = ""
     }
 
