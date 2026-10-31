@@ -4,25 +4,25 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.unchunks.echomark.domain.model.ChatRole
+import com.unchunks.components.llm.ChatRole
 
 @Entity(
     tableName = "chat_messages",
     foreignKeys = [
         ForeignKey(
-            entity = LearningItemEntity::class,
+            entity = ConversationEntity::class,
             parentColumns = ["id"],
-            childColumns = ["learningItemId"],
+            childColumns = ["conversationId"],
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("learningItemId")]
+    indices = [Index("conversationId")]
 )
 data class ChatMessageEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
 
-    val learningItemId: Long,
+    val conversationId: Long,
     val role: ChatRole,
     val content: String,
     // カンマ区切りでIDを保存

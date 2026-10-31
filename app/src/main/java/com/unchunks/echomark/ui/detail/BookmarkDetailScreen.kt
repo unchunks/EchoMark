@@ -1,0 +1,1294 @@
+package com.unchunks.echomark.ui.detail
+
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.BookmarkRemove
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FactCheck
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.QuestionAnswer
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.MarkEmailUnread
+import androidx.compose.material.icons.outlined.Sell
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.Unarchive
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import coil3.compose.AsyncImage
+import com.unchunks.components.composeui.formatRelativeTime
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ReadingBlocks
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.bookmark.model.ReadingTime
+import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
+import com.unchunks.echomark.domain.bookmark.model.readingMinutes
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
+import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.CategoryEntry
+import com.unchunks.echomark.domain.model.SummaryVersion
+import com.unchunks.echomark.domain.bookmark.model.processingDurationMillis
+import com.unchunks.echomark.domain.bookmark.model.processingProgress
+import com.unchunks.echomark.domain.extract.ExtractedBody
+import com.unchunks.echomark.ui.attachment.rememberAttachmentFile
+import com.unchunks.echomark.ui.common.displayName
+import com.unchunks.echomark.ui.common.extractDomain
+import com.unchunks.echomark.ui.common.openAttachment
+import com.unchunks.echomark.ui.common.openUrl
+import com.unchunks.echomark.ui.common.shareBookmark
+import com.unchunks.echomark.ui.snapshot.PageSnapshotCallbacks
+import com.unchunks.echomark.ui.snapshot.PageSnapshotDialog
+import com.unchunks.echomark.ui.snapshot.PageSnapshotSection
+import com.unchunks.echomark.ui.snapshot.PageSnapshotViewModel
+import com.unchunks.echomark.ui.snapshot.SnapshotMessage
+import com.unchunks.echomark.ui.snapshot.SnapshotOperation
+import com.unchunks.echomark.ui.snapshot.SnapshotViewerActivity
+import com.unchunks.echomark.ui.snapshot.canSnapshot
+import com.unchunks.echomark.ui.snapshot.openSnapshotPdf
+import com.unchunks.echomark.ui.components.AiStatusBadge
+import com.unchunks.echomark.ui.components.AiTagIcon
+import com.unchunks.echomark.ui.components.CompactBookmarkCard
+import com.unchunks.echomark.ui.components.EmptyState
+import com.unchunks.echomark.ui.components.LoadingState
+import com.unchunks.echomark.ui.components.description
+import com.unchunks.echomark.ui.components.formatElapsed
+import com.unchunks.echomark.ui.components.message
+import com.unchunks.echomark.ui.components.needsSetup
+import com.unchunks.echomark.ui.components.processingBadge
+import com.unchunks.echomark.ui.components.displaySource
+import com.unchunks.echomark.ui.components.rememberHighlighted
+import com.unchunks.echomark.ui.components.retryingMessage
+import com.unchunks.echomark.ui.components.rememberTickingNow
+import com.unchunks.echomark.ui.components.summaryText
+import com.unchunks.echomark.ui.navigation.centeredMaxWidth
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/**
+ * ブックマークの詳細。ViewModel をつなぐだけの薄いラッパーで、描画は [BookmarkDetailContent] が行う。
+ *
+ * @param onAskAi このブックマークについて AI に質問する(チャットの新規会話を開く)
+ * @param onOpenAiSettings AI の準備ができていないときに、AI 設定を開く
+ * @param showBackButton トップバーに戻るボタンを出すか。2 画面表示の右側では出さない
+ *   ([onBack] は削除後や「見つかりません」の「戻る」で、右側を空にするのに使われる)
+ */
+@Composable
+fun BookmarkDetailScreen(
+    onBack: () -> Unit,
+    onOpenBookmark: (Long) -> Unit,
+    onAskAi: (Long) -> Unit = {},
+    onOpenAiSettings: () -> Unit = {},
+    showBackButton: Boolean = true,
+    viewModel: BookmarkDetailViewModel = hiltViewModel(),
+    snapshotViewModel: PageSnapshotViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snapshotOperation by snapshotViewModel.operation.collectAsState()
+    var confirmRemoveSnapshot by rememberSaveable { mutableStateOf(false) }
+
+    // オフラインコピーの結果(保存した・消した・失敗)
+    LaunchedEffect(snapshotViewModel, snackbarHostState) {
+        snapshotViewModel.messages.collect { message ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch {
+                snackbarHostState.showSnackbar(
+                    when (message) {
+                        is SnapshotMessage.Saved ->
+                            if (message.hasPdf) "オフラインコピーを保存しました" else "オフラインコピーを保存しました(PDF は作れませんでした)"
+                        SnapshotMessage.Removed -> "オフラインコピーを削除しました"
+                        is SnapshotMessage.Failed -> message.message
+                    }
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(viewModel, snackbarHostState) {
+        viewModel.messages.collect { message ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch {
+                when (message) {
+                    is BookmarkDetailMessage.ArchiveChanged -> {
+                        val result = snackbarHostState.showSnackbar(
+                            message = if (message.archived) "アーカイブしました" else "アーカイブから戻しました",
+                            actionLabel = "元に戻す",
+                            duration = SnackbarDuration.Long
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            viewModel.setArchived(!message.archived, notify = false)
+                        }
+                    }
+                    BookmarkDetailMessage.Edited -> {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "保存しました",
+                            actionLabel = "AIで要約し直す",
+                            duration = SnackbarDuration.Long
+                        )
+                        if (result == SnackbarResult.ActionPerformed) viewModel.reprocessAfterEdit()
+                    }
+                    BookmarkDetailMessage.SummaryEdited -> snackbarHostState.showSnackbar("要約を保存しました。前の要約は履歴に残っています")
+                    BookmarkDetailMessage.SummaryRestored -> snackbarHostState.showSnackbar("要約を戻しました")
+                    is BookmarkDetailMessage.TagRemoved -> {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "タグ「${message.name}」を外しました",
+                            actionLabel = "元に戻す",
+                            duration = SnackbarDuration.Long
+                        )
+                        if (result == SnackbarResult.ActionPerformed) viewModel.addTag(message.name)
+                    }
+                    BookmarkDetailMessage.ReprocessStarted -> snackbarHostState.showSnackbar("AI で処理し直しています…")
+                    is BookmarkDetailMessage.Failed -> snackbarHostState.showSnackbar(message.message)
+                }
+            }
+        }
+    }
+
+    BookmarkDetailContent(
+        uiState = uiState,
+        snackbarHostState = snackbarHostState,
+        callbacks = BookmarkDetailCallbacks(
+            onBack = onBack,
+            onOpenBookmark = onOpenBookmark,
+            onOpenInBrowser = { url -> openUrl(context, url) },
+            onOpenFile = { openAttachment(context, it) },
+            onAskAi = onAskAi,
+            onOpenAiSettings = onOpenAiSettings,
+            onShare = { shareBookmark(context, it) },
+            onToggleFavorite = viewModel::toggleFavorite,
+            onToggleRead = viewModel::toggleRead,
+            onReadingStyleChange = viewModel::setReadingStyle,
+            onSetArchived = { viewModel.setArchived(it) },
+            onReprocess = { viewModel.reprocess() },
+            onReprocessPart = viewModel::reprocess,
+            onDelete = { viewModel.delete(onDeleted = onBack) },
+            onSaveEdit = viewModel::saveEdit,
+            onEditSummary = viewModel::editSummary,
+            onSelectCategory = viewModel::setCategory,
+            onResetCategory = viewModel::resetCategory,
+            onRestoreSummary = viewModel::restoreSummary,
+            onTranslateSummary = viewModel::translateSummary,
+            onClearTranslation = viewModel::clearTranslation,
+            onAddTag = viewModel::addTag,
+            onRemoveTag = viewModel::removeTag,
+            snapshot = PageSnapshotCallbacks(
+                onSave = { uiState.bookmark?.let(snapshotViewModel::start) },
+                onOpen = { uiState.bookmark?.let { context.startActivity(SnapshotViewerActivity.intent(context, it.id)) } },
+                onOpenPdf = { uiState.bookmark?.let { openSnapshotPdf(context, it) } },
+                onRemove = { confirmRemoveSnapshot = true }
+            ),
+            snapshotBusy = snapshotOperation != SnapshotOperation.Idle
+        ),
+        showBackButton = showBackButton
+    )
+
+    // ページを読み込んでオフラインコピーを作っている間の画面
+    (snapshotOperation as? SnapshotOperation.Capturing)?.let { capturing ->
+        PageSnapshotDialog(
+            url = capturing.url,
+            onCaptured = { snapshotViewModel.onCaptured(it.mhtml, it.pdf) },
+            onFailed = snapshotViewModel::onFailed,
+            onCancel = snapshotViewModel::cancel
+        )
+    }
+
+    if (confirmRemoveSnapshot) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveSnapshot = false },
+            title = { Text("オフラインコピーを削除しますか?") },
+            text = { Text("端末に保存したページと PDF を削除します。ブックマーク自体は残ります。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRemoveSnapshot = false
+                        uiState.bookmark?.let { snapshotViewModel.remove(it.id) }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemoveSnapshot = false }) { Text("キャンセル") } }
+        )
+    }
+}
+
+/** 詳細画面の操作。状態を持たない [BookmarkDetailContent] に渡す */
+class BookmarkDetailCallbacks(
+    val onBack: () -> Unit = {},
+    val onOpenBookmark: (Long) -> Unit = {},
+    val onOpenInBrowser: (String) -> Unit = {},
+    /** 保存したファイルをほかのアプリで開く */
+    val onOpenFile: (Bookmark) -> Unit = {},
+    val onAskAi: (Long) -> Unit = {},
+    val onOpenAiSettings: () -> Unit = {},
+    val onShare: (Bookmark) -> Unit = {},
+    val onToggleFavorite: () -> Unit = {},
+    /** 読んだことにする / 未読に戻す */
+    val onToggleRead: () -> Unit = {},
+    /** 読書モードの文字の大きさ・背景・書体を変える */
+    val onReadingStyleChange: (ReadingStyle) -> Unit = {},
+    val onSetArchived: (Boolean) -> Unit = {},
+    val onReprocess: () -> Unit = {},
+    /** 要約だけ・タグだけを作り直す */
+    val onReprocessPart: (AnalysisScope) -> Unit = {},
+    val onDelete: () -> Unit = {},
+    val onSaveEdit: (title: String, content: String) -> Unit = { _, _ -> },
+    /** 要約を手で直す(#19) */
+    val onEditSummary: (String) -> Unit = {},
+    /** カテゴリを選ぶ(自分で選んだものになる) */
+    val onSelectCategory: (String) -> Unit = {},
+    /** カテゴリを AI に任せる状態に戻す */
+    val onResetCategory: () -> Unit = {},
+    /** 履歴の版(ID)に要約を戻す(#20) */
+    val onRestoreSummary: (Long) -> Unit = {},
+    /** 要約を [SummaryLanguage] に翻訳する(#24) */
+    val onTranslateSummary: (SummaryLanguage) -> Unit = {},
+    /** 翻訳を閉じる */
+    val onClearTranslation: () -> Unit = {},
+    val onAddTag: (String) -> Unit = {},
+    val onRemoveTag: (String) -> Unit = {},
+    /** ページのオフラインコピー(#80)の操作 */
+    val snapshot: PageSnapshotCallbacks = PageSnapshotCallbacks(),
+    /** オフラインコピーを作っている(または保存している)最中 */
+    val snapshotBusy: Boolean = false
+)
+
+/**
+ * 詳細画面の本体(状態を受け取って描くだけ)。
+ * 上から: ファイルのプレビュー(または OG 画像) → 出どころと保存日時 → タイトル → ファイルの情報 → 開く/質問ボタン →
+ * AI 要約(または AI の状態) → タグ → 本文/メモ(ファイルから読み取った文字を含む) → 関連。
+ * 広い画面では、本文が横に間延びしないよう中央の読みやすい幅に収める(スクロールは画面の幅全体で受ける)。
+ *
+ * @param showBackButton トップバーに戻るボタンを出すか(2 画面表示の右側では出さない)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BookmarkDetailContent(
+    uiState: BookmarkDetailUiState,
+    snackbarHostState: SnackbarHostState,
+    callbacks: BookmarkDetailCallbacks,
+    modifier: Modifier = Modifier,
+    nowMillis: Long = System.currentTimeMillis(),
+    showBackButton: Boolean = true
+) {
+    val bookmark = uiState.bookmark
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    var showEditSheet by rememberSaveable { mutableStateOf(false) }
+    var readingMode by rememberSaveable { mutableStateOf(false) }
+    val readingBlocks = remember(bookmark?.content) { ReadingBlocks.from(bookmark?.content) }
+    // 本文が無い(または消えた)なら、読書モードのままにしない
+    val inReadingMode = readingMode && bookmark != null && readingBlocks.isNotEmpty()
+
+    if (inReadingMode && bookmark != null) {
+        ReadingModeContent(
+            title = bookmark.title,
+            source = bookmark.displaySource(),
+            readingMinutes = remember(bookmark.content) { bookmark.readingMinutes() },
+            blocks = readingBlocks,
+            style = uiState.readingStyle,
+            highlightTerms = uiState.highlightTerms,
+            onStyleChange = callbacks.onReadingStyleChange,
+            onClose = { readingMode = false },
+            modifier = modifier
+        )
+    } else {
+        Scaffold(
+            modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+            topBar = {
+                DetailTopBar(
+                    bookmark = bookmark,
+                    scrollBehavior = scrollBehavior,
+                    callbacks = callbacks,
+                    showBackButton = showBackButton,
+                    onEdit = { showEditSheet = true },
+                    onDelete = { showDeleteDialog = true },
+                    onReadingMode = if (readingBlocks.isNotEmpty()) ({ readingMode = true }) else null
+                )
+            },
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { innerPadding ->
+            when {
+                uiState.isLoading -> LoadingState(Modifier.padding(innerPadding), message = "読み込み中…")
+                bookmark == null -> EmptyState(
+                    icon = Icons.Outlined.BookmarkRemove,
+                    title = "ブックマークが見つかりません",
+                    description = "削除された可能性があります。",
+                    actionLabel = "戻る",
+                    onAction = callbacks.onBack,
+                    modifier = Modifier.padding(innerPadding)
+                )
+                else -> DetailBody(
+                    bookmark = bookmark,
+                    uiState = uiState,
+                    callbacks = callbacks,
+                    nowMillis = nowMillis,
+                    contentPadding = innerPadding
+                )
+            }
+        }
+    }
+
+    if (showDeleteDialog && bookmark != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            icon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+            title = { Text("削除しますか?") },
+            text = { Text("「${bookmark.title}」を削除します。一覧に戻ったあと、しばらくは元に戻せます。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        callbacks.onDelete()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("キャンセル") }
+            }
+        )
+    }
+
+    if (showEditSheet && bookmark != null) {
+        EditBookmarkSheet(
+            bookmark = bookmark,
+            onDismiss = { showEditSheet = false },
+            onSave = { title, content ->
+                showEditSheet = false
+                callbacks.onSaveEdit(title, content)
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DetailTopBar(
+    bookmark: Bookmark?,
+    scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior,
+    callbacks: BookmarkDetailCallbacks,
+    showBackButton: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    /** 読書モードを開く。本文が無いときは null(ボタンを出さない) */
+    onReadingMode: (() -> Unit)?
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    TopAppBar(
+        title = {},
+        navigationIcon = {
+            if (showBackButton) {
+                IconButton(onClick = callbacks.onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                }
+            }
+        },
+        scrollBehavior = scrollBehavior,
+        actions = {
+            if (bookmark == null) return@TopAppBar
+            if (onReadingMode != null) {
+                IconButton(onClick = onReadingMode) {
+                    Icon(Icons.AutoMirrored.Outlined.MenuBook, contentDescription = "読書モード")
+                }
+            }
+            IconButton(onClick = callbacks.onToggleFavorite) {
+                Icon(
+                    imageVector = if (bookmark.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                    contentDescription = if (bookmark.isFavorite) "お気に入りから外す" else "お気に入りに追加",
+                    tint = if (bookmark.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = { callbacks.onShare(bookmark) }) {
+                Icon(Icons.Outlined.Share, contentDescription = "共有")
+            }
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(Icons.Outlined.MoreVert, contentDescription = "その他のメニュー")
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("編集") },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        onEdit()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(if (bookmark.isRead) "未読に戻す" else "既読にする") },
+                    leadingIcon = {
+                        Icon(if (bookmark.isRead) Icons.Outlined.MarkEmailUnread else Icons.Outlined.TaskAlt, contentDescription = null)
+                    },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.onToggleRead()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(if (bookmark.isArchived) "アーカイブから戻す" else "アーカイブ") },
+                    leadingIcon = {
+                        Icon(
+                            if (bookmark.isArchived) Icons.Outlined.Unarchive else Icons.Outlined.Archive,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.onSetArchived(!bookmark.isArchived)
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("AIで処理し直す") },
+                    leadingIcon = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.onReprocess()
+                    }
+                )
+                // 要約が済んでいれば、要約だけ・タグだけを作り直せる(もう片方はそのまま)
+                if (bookmark.aiStatus == AiStatus.DONE && !bookmark.summary.isNullOrBlank()) {
+                    DropdownMenuItem(
+                        text = { Text("要約だけ作り直す") },
+                        leadingIcon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            callbacks.onReprocessPart(AnalysisScope.SUMMARY)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("タグだけ付け直す") },
+                        leadingIcon = { Icon(Icons.Outlined.Sell, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            callbacks.onReprocessPart(AnalysisScope.TAGS)
+                        }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("削除", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        menuOpen = false
+                        onDelete()
+                    }
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun DetailBody(
+    bookmark: Bookmark,
+    uiState: BookmarkDetailUiState,
+    callbacks: BookmarkDetailCallbacks,
+    nowMillis: Long,
+    contentPadding: PaddingValues
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            // キーボードの分だけ表示範囲を縮め、タグの入力欄がキーボードに隠れないようにする
+            // (スクロールより前に付ける。入力中の欄は表示範囲に収まるよう自動でスクロールされる)
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(contentPadding)
+            .padding(bottom = 24.dp)
+            // 広い画面では中央の読みやすい幅に収める(スクロールより後に付けるので、スクロールは幅全体で受ける)
+            .centeredMaxWidth()
+    ) {
+        val file = rememberAttachmentFile(bookmark)
+        val fileType = bookmark.attachmentType()
+        val imageUrl = bookmark.imageUrl
+        if (file != null && fileType != null && fileType != BookmarkType.TEXT) {
+            AttachmentPreview(file, fileType, onOpenFile = { callbacks.onOpenFile(bookmark) })
+            Spacer(Modifier.height(16.dp))
+        } else if (!imageUrl.isNullOrBlank()) {
+            // 装飾扱い(内容はタイトルで伝わる)。OG 画像の標準比率 1.91:1 で切り出す
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .aspectRatio(1.91f)
+                    .clip(MaterialTheme.shapes.large)
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            SourceAndDate(bookmark, nowMillis)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = rememberHighlighted(bookmark.title, uiState.highlightTerms),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() }
+            )
+            // ファイルの種類のブックマークは、ファイルが無くても(バックアップから読み込んだときなど)その旨を出す
+            if (bookmark.filePath != null || bookmark.type in FILE_TYPES) {
+                Spacer(Modifier.height(12.dp))
+                FileInfoCard(bookmark, file, onOpenFile = { callbacks.onOpenFile(bookmark) })
+            }
+            Spacer(Modifier.height(16.dp))
+            PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
+            // http / https のリンクだけに出す(それ以外では何も描かない)
+            if (canSnapshot(bookmark.contentUri)) {
+                Spacer(Modifier.height(16.dp))
+                PageSnapshotSection(bookmark = bookmark, callbacks = callbacks.snapshot, busy = callbacks.snapshotBusy)
+            }
+            Spacer(Modifier.height(20.dp))
+            AiSection(bookmark, uiState.stageProgress, uiState.stageAverages, uiState.summaryHistory, uiState.translation, uiState.categoryChoices, callbacks, uiState.highlightTerms)
+            Spacer(Modifier.height(24.dp))
+            TagSection(
+                tags = bookmark.tags,
+                aiTags = bookmark.aiTags,
+                allTagNames = uiState.allTagNames,
+                onAddTag = callbacks.onAddTag,
+                onRemoveTag = callbacks.onRemoveTag
+            )
+            val content = bookmark.content
+            if (!content.isNullOrBlank()) {
+                // ファイルから取り出した文字(OCR・文字起こしなど)は区切り行で本文に入っているので、メモと分けて見出しを付ける
+                val parts = ExtractedBody.parse(content)
+                val sections = if (parts.sections.isEmpty()) {
+                    listOf(contentLabel(bookmark) to content)
+                } else {
+                    listOfNotNull(parts.memo?.let { "メモ" to it }) + parts.sections.map { it.source.label to it.text }
+                }
+                // 検索語が出てくる最初の節は、開いて、その場所まで画面を動かす
+                val firstMatching = remember(sections, uiState.highlightTerms) {
+                    if (uiState.highlightTerms.isEmpty()) -1
+                    else sections.indexOfFirst { SearchMatcher.ranges(it.second, uiState.highlightTerms).isNotEmpty() }
+                }
+                sections.forEachIndexed { index, (label, text) ->
+                    key(index) {
+                        Spacer(Modifier.height(24.dp))
+                        ContentSection(label = label, text = text, highlightTerms = uiState.highlightTerms, scrollToMatch = index == firstMatching)
+                    }
+                }
+            }
+        }
+
+        if (uiState.related.isNotEmpty()) {
+            Spacer(Modifier.height(24.dp))
+            DetailSectionTitle("関連するブックマーク", Modifier.padding(horizontal = 20.dp))
+            Spacer(Modifier.height(8.dp))
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(uiState.related, key = { it.id }) { related ->
+                    CompactBookmarkCard(bookmark = related, onClick = { callbacks.onOpenBookmark(related.id) })
+                }
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = "保存: ${formatDateTime(bookmark.createdAt)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+    }
+}
+
+@Composable
+private fun SourceAndDate(bookmark: Bookmark, nowMillis: Long) {
+    val domain = bookmark.contentUri?.let { extractDomain(it) }
+    val source = listOfNotNull(bookmark.siteName?.takeIf { it.isNotBlank() }, domain)
+        .distinct()
+        .joinToString(" · ")
+        .ifEmpty { bookmark.attachmentType()?.displayName() ?: bookmark.type.displayName() }
+    Text(
+        text = source,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+    Spacer(Modifier.height(2.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        val readingMinutes = remember(bookmark.content) { bookmark.readingMinutes() }
+        Text(
+            text = "${formatRelativeTime(bookmark.createdAt, nowMillis)}に保存" +
+                (readingMinutes?.let { " · ${ReadingTime.label(it)}で読めます" } ?: ""),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (bookmark.isArchived) {
+            Spacer(Modifier.width(8.dp))
+            Surface(
+                shape = MaterialTheme.shapes.extraSmall,
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
+                Text(
+                    "アーカイブ済み",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrimaryActions(bookmark: Bookmark, hasFile: Boolean, callbacks: BookmarkDetailCallbacks) {
+    val url = bookmark.contentUri
+    AdaptiveButtonRow(modifier = Modifier.fillMaxWidth()) {
+        if (url != null) {
+            Button(onClick = { callbacks.onOpenInBrowser(url) }) {
+                Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("ブラウザで開く", textAlign = TextAlign.Center)
+            }
+        } else if (hasFile) {
+            Button(onClick = { callbacks.onOpenFile(bookmark) }) {
+                Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("ファイルを開く", textAlign = TextAlign.Center)
+            }
+        }
+        FilledTonalButton(onClick = { callbacks.onAskAi(bookmark.id) }) {
+            Icon(Icons.Outlined.QuestionAnswer, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            Text("AIに質問", textAlign = TextAlign.Center)
+        }
+    }
+}
+
+/**
+ * ボタンを同じ幅で横に並べる。文字サイズを大きくしているなどで、どれかの文字が等分の幅に収まらないときは、
+ * 文字を切らずに幅いっぱいのボタンを縦に積む。
+ */
+@Composable
+private fun AdaptiveButtonRow(
+    modifier: Modifier = Modifier,
+    spacing: Dp = 8.dp,
+    content: @Composable () -> Unit
+) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        if (measurables.isEmpty()) return@Layout layout(0, 0) {}
+        val spacingPx = spacing.roundToPx()
+        val width = constraints.maxWidth
+        val count = measurables.size
+        val cellWidth = (width - spacingPx * (count - 1)) / count
+        val fitsInRow = measurables.all { it.maxIntrinsicWidth(Constraints.Infinity) <= cellWidth }
+        if (fitsInRow) {
+            val placeables = measurables.map { it.measure(Constraints.fixedWidth(cellWidth)) }
+            val height = placeables.maxOf { it.height }
+            layout(width, height) {
+                placeables.forEachIndexed { index, placeable ->
+                    placeable.placeRelative(index * (cellWidth + spacingPx), (height - placeable.height) / 2)
+                }
+            }
+        } else {
+            val placeables = measurables.map { it.measure(Constraints.fixedWidth(width)) }
+            val height = placeables.sumOf { it.height } + spacingPx * (count - 1)
+            layout(width, height) {
+                var y = 0
+                placeables.forEach { placeable ->
+                    placeable.placeRelative(0, y)
+                    y += placeable.height + spacingPx
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 処理待ち・処理中の進み具合。段が進み具合を報告していれば(ダウンロード・文字起こし)その割合のバーを、
+ * していなければ動き続けるバーを出し、何段目か・経過時間・残り時間の目安を添える。
+ */
+@Composable
+private fun ProcessingProgressSection(
+    bookmark: Bookmark,
+    stageProgress: Float?,
+    stageAverages: Map<StageDurationKey, Long>
+) {
+    // 経過時間を出すときだけ、1 秒ごとに更新する
+    val now by rememberTickingNow(enabled = bookmark.processing.startedAt != null)
+    val progress = bookmark.processingProgress(now, stageProgress, stageAverages) ?: return
+    val fraction = progress.stageFraction
+    if (fraction != null) {
+        LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+    } else {
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+    }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        progress.summaryText(),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+/** 失敗の理由の一文(情報のアイコン付き) */
+@Composable
+private fun FailureReasonLine(text: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(
+            Icons.Outlined.Info,
+            contentDescription = null,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * 失敗・準備待ちのときの次の行動。ワンタップで再試行するか、AI 設定を開く。
+ * [setupFirst] なら「AI設定を開く」を先に(塗りのボタンで)出す。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RetryActions(setupFirst: Boolean, callbacks: BookmarkDetailCallbacks) {
+    // 文字が大きいときは折り返して次の行に並べる(ボタンの文字を切らない)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (setupFirst) {
+            Button(onClick = callbacks.onOpenAiSettings) {
+                Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("AI設定を開く")
+            }
+            OutlinedButton(onClick = callbacks.onReprocess) { Text("再試行") }
+        } else {
+            Button(onClick = callbacks.onReprocess) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("再試行")
+            }
+            OutlinedButton(onClick = callbacks.onOpenAiSettings) { Text("AI設定を開く") }
+        }
+    }
+}
+
+/** AI 要約(完了時)か、AI の状態と次の行動(処理中・失敗・準備待ち) */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AiSection(
+    bookmark: Bookmark,
+    stageProgress: Float?,
+    stageAverages: Map<StageDurationKey, Long>,
+    summaryHistory: List<SummaryVersion>,
+    translation: TranslationState,
+    categoryChoices: List<CategoryEntry>,
+    callbacks: BookmarkDetailCallbacks,
+    highlightTerms: List<String> = emptyList()
+) {
+    val summary = bookmark.summary
+    if (bookmark.aiStatus == AiStatus.DONE && !summary.isNullOrBlank()) {
+        var showSummaryEdit by rememberSaveable { mutableStateOf(false) }
+        var showSummaryHistory by rememberSaveable { mutableStateOf(false) }
+        var showCategory by rememberSaveable { mutableStateOf(false) }
+        var showEvidence by rememberSaveable { mutableStateOf(false) }
+        var showTranslate by rememberSaveable { mutableStateOf(false) }
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (bookmark.summaryEdited) "要約(手で編集)" else "AI要約",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { heading() }
+                    )
+                    bookmark.category?.takeIf { it.isNotBlank() }?.let { category ->
+                        Surface(
+                            onClick = { showCategory = true },
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.semantics { contentDescription = "カテゴリ: ${category}。タップで説明と変更" }
+                        ) {
+                            Text(
+                                category,
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(rememberHighlighted(summary, highlightTerms), style = MaterialTheme.typography.bodyLarge)
+                if (bookmark.summaryEdited) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "手で直した要約です。「AIで処理し直す」では置き換わりません",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LocalContentColor.current.copy(alpha = 0.7f)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    TextButton(onClick = { showSummaryEdit = true }) {
+                        Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                        Text("要約を直す")
+                    }
+                    // 作り直し・手直しで版が2つ以上になったら、見比べたり戻したりできる
+                    if (summaryHistory.size >= 2) {
+                        TextButton(onClick = { showSummaryHistory = true }) {
+                            Icon(Icons.Outlined.History, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                            Text("履歴(${summaryHistory.size})")
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // 本文のあるものは、要約の各文の根拠になる一節を見られる
+                    if (!bookmark.content.isNullOrBlank()) {
+                        TextButton(onClick = { showEvidence = !showEvidence }) {
+                            Icon(Icons.Outlined.FactCheck, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                            Text(if (showEvidence) "根拠を閉じる" else "根拠を見る")
+                        }
+                    }
+                    TextButton(onClick = { showTranslate = true }) {
+                        Icon(Icons.Outlined.Translate, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                        Text("翻訳")
+                    }
+                }
+                if (showEvidence) {
+                    val body = listOfNotNull(bookmark.title, bookmark.content).joinToString("\n")
+                    Spacer(Modifier.height(8.dp))
+                    EvidenceSection(summary, body)
+                }
+                bookmark.processingDurationMillis()?.let { duration ->
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "処理時間 ${formatElapsed(duration)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LocalContentColor.current.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        }
+        if (showCategory) {
+            bookmark.category?.takeIf { it.isNotBlank() }?.let { category ->
+                CategorySheet(
+                    current = category,
+                    isEdited = bookmark.categoryEdited,
+                    choices = categoryChoices,
+                    onSelect = {
+                        showCategory = false
+                        callbacks.onSelectCategory(it)
+                    },
+                    onReset = {
+                        showCategory = false
+                        callbacks.onResetCategory()
+                    },
+                    onDismiss = { showCategory = false }
+                )
+            }
+        }
+        if (showSummaryEdit) {
+            SummaryEditSheet(
+                initial = summary,
+                onDismiss = { showSummaryEdit = false },
+                onSave = {
+                    showSummaryEdit = false
+                    callbacks.onEditSummary(it)
+                }
+            )
+        }
+        if (showTranslate) {
+            SummaryTranslateSheet(
+                state = translation,
+                onTranslate = callbacks.onTranslateSummary,
+                onDismiss = {
+                    showTranslate = false
+                    callbacks.onClearTranslation()
+                }
+            )
+        }
+        if (showSummaryHistory) {
+            SummaryHistorySheet(
+                current = summary,
+                versions = summaryHistory,
+                onDismiss = { showSummaryHistory = false },
+                onRestore = callbacks.onRestoreSummary
+            )
+        }
+        return
+    }
+    if (bookmark.aiStatus == AiStatus.DONE) return
+
+    val isFailed = bookmark.aiStatus == AiStatus.FAILED
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (isFailed) {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            }
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            val badge = bookmark.processingBadge()
+            AiStatusBadge(badge)
+            // 失敗・準備待ちで理由が分かっているときは、一般的な説明の代わりに理由を出す
+            val hasSpecificReason = bookmark.processing.failureReason != null &&
+                (bookmark.aiStatus == AiStatus.FAILED || bookmark.aiStatus == AiStatus.WAITING_MODEL)
+            badge.description()?.takeUnless { hasSpecificReason }?.let { description ->
+                Spacer(Modifier.height(10.dp))
+                Text(description, style = MaterialTheme.typography.bodyMedium)
+            }
+            val reason = bookmark.processing.failureReason
+            when (bookmark.aiStatus) {
+                AiStatus.PENDING, AiStatus.PROCESSING -> {
+                    // 再試行を待っているときは、直前の失敗の理由と自動でやり直すことを伝える
+                    if (bookmark.aiStatus == AiStatus.PENDING && reason != null) {
+                        Spacer(Modifier.height(8.dp))
+                        FailureReasonLine(reason.retryingMessage())
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    ProcessingProgressSection(bookmark, stageProgress, stageAverages)
+                }
+                AiStatus.FAILED, AiStatus.WAITING_MODEL -> {
+                    reason?.let {
+                        Spacer(Modifier.height(10.dp))
+                        Text(it.message(), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    // 設定を変えないと直らない理由なら「AI設定を開く」、一時的な失敗なら「再試行」を先に(目立つ形で)出す。
+                    // 理由が分からない(以前の版で失敗した)ときは、準備待ちなら設定、失敗なら再試行を先にする
+                    RetryActions(
+                        setupFirst = reason?.needsSetup ?: (bookmark.aiStatus == AiStatus.WAITING_MODEL),
+                        callbacks = callbacks
+                    )
+                }
+                AiStatus.DONE -> Unit
+            }
+        }
+    }
+}
+
+/**
+ * タグ: × で外し(取り消せる)、入力欄で追加(既存タグを候補に出す)。
+ * AI が付けたタグ([aiTags])には印を付ける。AI のタグは再処理で付け直されるが、自分で付けたタグはそのまま残る
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagSection(
+    tags: List<String>,
+    aiTags: Set<String>,
+    allTagNames: List<String>,
+    onAddTag: (String) -> Unit,
+    onRemoveTag: (String) -> Unit
+) {
+    var input by rememberSaveable { mutableStateOf("") }
+    val suggestions = remember(input, allTagNames, tags) { tagSuggestions(input, allTagNames, tags) }
+    val submit = {
+        if (input.isNotBlank()) {
+            onAddTag(input)
+            input = ""
+        }
+    }
+
+    DetailSectionTitle("タグ")
+    Spacer(Modifier.height(8.dp))
+    if (tags.isEmpty()) {
+        Text(
+            "タグはまだありません。下の欄から追加できます。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    } else {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            tags.forEach { tag ->
+                RemovableTagChip(name = tag, isAi = tag in aiTags, onRemove = { onRemoveTag(tag) })
+            }
+        }
+        if (tags.any { it in aiTags }) {
+            Row(
+                modifier = Modifier.padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AiTagIcon(size = 14.dp)
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "AIが付けたタグ(再処理で付け直されます)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = input,
+        onValueChange = { input = it },
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text("タグを追加") },
+        singleLine = true,
+        trailingIcon = {
+            IconButton(onClick = submit, enabled = input.isNotBlank()) {
+                Icon(Icons.Outlined.Add, contentDescription = "タグを追加")
+            }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { submit() })
+    )
+    if (suggestions.isNotEmpty()) {
+        Row(
+            modifier = Modifier.padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            suggestions.forEach { name ->
+                SuggestionChip(
+                    onClick = {
+                        onAddTag(name)
+                        input = ""
+                    },
+                    label = { Text("#$name", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 付いているタグ。外せるのは × だけにする(チップ本体を押しても外れない。誤って触れて消えるのを防ぐ)。
+ * × は見た目 32dp だが、タッチは周囲を含めて 48dp まで受け付ける(Compose の最小タッチ領域)。
+ * [isAi] なら AI が付けたタグとして先頭に ✨ を付ける。
+ */
+@Composable
+private fun RemovableTagChip(name: String, isAi: Boolean, onRemove: () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 32.dp)
+                .padding(start = if (isAi) 8.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isAi) {
+                AiTagIcon(size = 16.dp, modifier = Modifier.padding(end = 4.dp), describe = true)
+            }
+            Text(
+                "#$name",
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                // 長いタグ名は省略して、× が画面の外に出ないようにする
+                modifier = Modifier.widthIn(max = TAG_CHIP_LABEL_MAX_WIDTH)
+            )
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = onRemove)
+                    .semantics { contentDescription = "タグ「$name」を外す" },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Outlined.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+/** 入力に部分一致する既存タグ(付いていないもの)を、前方一致を優先して最大3件 */
+internal fun tagSuggestions(input: String, allTagNames: List<String>, current: List<String>): List<String> {
+    val query = input.trim().removePrefix("#").trim()
+    if (query.isEmpty()) return emptyList()
+    return allTagNames
+        .filter { it !in current && it.contains(query, ignoreCase = true) && it != query }
+        .sortedWith(compareByDescending<String> { it.startsWith(query, ignoreCase = true) }.thenBy { it.length })
+        .take(3)
+}
+
+/** 本文・メモ。長いときは6行で畳み、「もっと見る」で開く */
+@Composable
+private fun ContentSection(label: String, text: String, highlightTerms: List<String> = emptyList(), scrollToMatch: Boolean = false) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var overflowing by remember { mutableStateOf(false) }
+    val firstMatch = remember(text, highlightTerms) { SearchMatcher.ranges(text, highlightTerms).firstOrNull()?.first }
+    val requester = remember { BringIntoViewRequester() }
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var scrolled by remember { mutableStateOf(false) }
+    // 検索結果から開いたときは、一致した文字が見えるよう全文を開く
+    LaunchedEffect(firstMatch) { if (firstMatch != null) expanded = true }
+    // 全文が組み上がったら、最初に一致した場所まで画面を動かす(1回だけ)
+    LaunchedEffect(layout, expanded) {
+        val result = layout
+        if (scrollToMatch && !scrolled && firstMatch != null && expanded && result != null &&
+            result.layoutInput.maxLines == Int.MAX_VALUE && firstMatch < result.layoutInput.text.length
+        ) {
+            scrolled = true
+            requester.bringIntoView(result.getBoundingBox(firstMatch))
+        }
+    }
+    DetailSectionTitle(label)
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = rememberHighlighted(text, highlightTerms),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_LINES,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = {
+            layout = it
+            if (!expanded) overflowing = it.hasVisualOverflow
+        },
+        modifier = Modifier.bringIntoViewRequester(requester).animateContentSize()
+    )
+    if (overflowing || expanded) {
+        TextButton(onClick = { expanded = !expanded }, contentPadding = ButtonDefaults.TextButtonWithIconContentPadding) {
+            Text(if (expanded) "折りたたむ" else "もっと見る")
+        }
+    }
+}
+
+@Composable
+private fun DetailSectionTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = modifier.semantics { heading() }
+    )
+}
+
+private const val COLLAPSED_LINES = 6
+
+/** ファイルを保存する種類 */
+private val FILE_TYPES = setOf(BookmarkType.IMAGE, BookmarkType.PDF, BookmarkType.AUDIO, BookmarkType.VIDEO)
+
+private val TAG_CHIP_LABEL_MAX_WIDTH = 220.dp
+
+private val DATE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/M/d H:mm")
+
+private fun formatDateTime(millis: Long): String =
+    DATE_TIME_FORMAT.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))

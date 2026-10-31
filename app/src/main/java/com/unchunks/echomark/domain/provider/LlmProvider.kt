@@ -1,8 +1,111 @@
 package com.unchunks.echomark.domain.provider
 
+import com.unchunks.components.llm.LlmException
+import com.unchunks.echomark.domain.chat.ChatContextLimits
+import com.unchunks.echomark.domain.model.AnalysisInput
+import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.BookmarkAnalysis
+import com.unchunks.echomark.domain.model.ChatMessage
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+
 interface LlmProvider {
-    suspend fun summarize(text: String): String
-    suspend fun generateTags(text: String): List<String>
-    suspend fun categorize(text: String): String
-    suspend fun chat(userMessage: String, context: List<String>): String
+    /**
+     * 保存内容([input])から要約・タグ・カテゴリを1回の推論でまとめて生成する。
+     * 中身の種類([AnalysisInput.kind])に合わせて、要約の主役(記事の要点・動画で話している内容・画像に写っているものなど)を変える。
+     * @param existingTags 既存のタグ名(優先する順)。合うものがあれば新しく作らずに使わせる。
+     *   プロンプトに入れる量は実装ごとの予算で切り詰める
+     * @param scope 作る項目。[AnalysisScope.ALL] 以外では、作らない項目に代替の値が入る(呼び出し側で使わない)
+     * 本文が上限より長ければ、部分ごとに要約してからまとめる。
+     * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
+     * @throws NothingToAnalyzeException ファイルのブックマークで、本文が空でファイルも AI に渡せないとき
+     * @throws LlmException クラウド API の呼び出しに失敗したとき(キー未設定・拒否など)
+     */
+    suspend fun analyze(
+        input: AnalysisInput,
+        existingTags: List<String>,
+        scope: AnalysisScope = AnalysisScope.ALL
+    ): BookmarkAnalysis
+
+    /**
+     * 保存済みブックマークの内容([context])を根拠にユーザーの質問へ回答する(RAG)。
+     * @param context "[n] タイトル: 要約" 形式に整形済みの文脈(番号で引用できる)
+     * @param history 直近の会話履歴(古い順。今回の [userMessage] は含まない)
+     * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
+     * @throws LlmException クラウド API の呼び出しに失敗したとき
+     */
+    suspend fun chat(userMessage: String, context: List<String>, history: List<ChatMessage>): String
+
+    /**
+     * [chat] のストリーミング版。生成されたテキストを増分(前回 emit からの差分)で流す。
+     * 収集側のキャンセルで生成も止まる。失敗は [chat] と同じ例外で Flow が終了する。
+     * 既定実装は [chat] の結果を1回だけ emit する。
+     */
+    fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> =
+        flow { emit(chat(userMessage, context, history)) }
+
+    /**
+     * [chatStream] の、会話の記憶を渡す版。文脈に上限のある端末内 AI で使う。既定実装は記憶を使わない。
+     * @param memory 会話の古い発言の要約。[history] より前の発言をまとめたもの。無ければ null
+     * @param onContextUsage 生成が終わったときに、文脈をどれだけ使ったかを知らせる(知らせない実装もある)
+     */
+    fun chatStream(
+        userMessage: String,
+        context: List<String>,
+        history: List<ChatMessage>,
+        memory: String?,
+        onContextUsage: (ChatContextUsage) -> Unit
+    ): Flow<String> = chatStream(userMessage, context, history)
+
+    /** チャットの1回の質問に、会話履歴と資料をどれだけ入れられるか。既定は文脈の短い端末内 AI の量。 */
+    suspend fun chatContextLimits(): ChatContextLimits = ChatContextLimits.COMPACT
+
+    /**
+     * 会話の古い発言([messages]、古い順)を、これまでの要約([previousSummary])とまとめて短い要約にする。
+     * 画面で待っている生成より先に動かさない。
+     * @return 要約。作らない実装(クラウド API)・画面での生成に譲って作らなかったときは null
+     * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
+     */
+    suspend fun summarizeConversation(previousSummary: String?, messages: List<ChatMessage>): String? = null
+
+    /**
+     * [prompt] の指示だけで JSON を1つ返させる(資料の選択など、チャットの文脈を付けない呼び出し)。
+     * 応答は JSON オブジェクトの文字列。解析は呼び出し側で行う。
+     * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
+     * @throws LlmException クラウド API の呼び出しに失敗したとき
+     */
+    suspend fun complete(prompt: String): String = throw UnsupportedOperationException("complete は未対応")
+
+    /**
+     * 推論の準備(端末内モデルの読み込みなど)を先に始める。完了は待たずに戻り、失敗しても何も起きない
+     * (本番の推論で改めて失敗する)。準備の要らない実装(クラウド API)は何もしない。
+     */
+    fun prewarm() {}
 }
+
+/**
+ * 1回のチャットの生成で、文脈(入力と出力の合計の上限)をどれだけ使ったか。
+ * @property usedTokens 使ったトークン数。数えられなければ null
+ * @property maxTokens 文脈の上限のトークン数
+ * @property promptShrunk 入力が文脈に入らず、文脈と履歴を減らして組み立て直したか
+ */
+data class ChatContextUsage(val usedTokens: Int?, val maxTokens: Int, val promptShrunk: Boolean) {
+    /** 文脈に余裕が無いか。古い発言を早めに要約して、次の入力を小さくする */
+    val isTight: Boolean
+        get() = promptShrunk || (usedTokens != null && usedTokens * 100 >= maxTokens * TIGHT_PERCENT)
+
+    private companion object {
+        /** 文脈のこの割合を超えたら余裕が無いとみなす(次の回答の分を残す) */
+        const val TIGHT_PERCENT = 75
+    }
+}
+
+/** LLM のモデルファイルが端末に存在せず、推論できないことを表す。 */
+class ModelNotAvailableException(message: String = "LLM モデルが未取り込みです") : Exception(message)
+
+/**
+ * ファイル(画像・音声など)のブックマークで、取り出したテキストが無く、ファイルそのものも AI に渡せない
+ * (端末内 AI・ファイルの送信がオフ・提供元が受け付けない種類など)ため、要約の材料が無いことを表す。
+ * ファイル名だけの要約を作らず、設定を変えた後の再処理を待つ。
+ */
+class NothingToAnalyzeException(message: String = "要約に使える中身がありません") : Exception(message)
