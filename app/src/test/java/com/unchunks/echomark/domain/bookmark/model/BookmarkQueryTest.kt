@@ -64,6 +64,17 @@ class BookmarkQueryTest {
     }
 
     @Test
+    fun 読んだかを選ぶ_もう一度選ぶと外れ_別のものを選ぶと置き換わる() {
+        val query = BookmarkQuery().toggleReadState(ReadState.UNREAD)
+
+        assertEquals(ReadState.UNREAD, query.readState)
+        assertTrue(query.isNarrowed)
+        assertEquals(null, query.toggleReadState(ReadState.UNREAD).readState)
+        assertEquals(ReadState.READ, query.toggleReadState(ReadState.READ).readState)
+        assertEquals(BookmarkQuery(), query.clearConditions())
+    }
+
+    @Test
     fun すべて解除は種類と期間も外す() {
         val query = BookmarkQuery(
             filter = BookmarkFilter.ARCHIVED, tagIds = setOf(1), types = setOf(BookmarkType.URL), period = CreatedPeriod.PAST_YEAR

@@ -5,6 +5,8 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.ReadState
+import com.unchunks.echomark.domain.bookmark.model.Recommendation
 import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
@@ -53,6 +55,8 @@ data class BookmarkListUiState(
     val selectedTypes: Set<BookmarkType> = emptySet(),
     /** 保存した日からの期間(null なら絞らない) */
     val period: CreatedPeriod? = null,
+    /** 読んだかどうか(null なら絞らない) */
+    val readState: ReadState? = null,
     val filter: BookmarkFilter = BookmarkFilter.ACTIVE,
     val sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST,
     /** 検索モード(トップバーが検索欄になっている)か */
@@ -72,6 +76,8 @@ data class BookmarkListUiState(
     val semanticSearchAvailable: Boolean = true,
     /** キーワードには一致せず、意味が近いことで見つかったもの */
     val semanticMatchIds: Set<Long> = emptySet(),
+    /** 「次に読む」(まだ読んでいないものから選んだおすすめ)。空なら出さない */
+    val recommendations: List<Recommendation> = emptyList(),
     /** 「今日の再発見」(しばらく開いていないもの)。空なら出さない */
     val rediscover: List<Bookmark> = emptyList(),
     /** 保存済みの総数(アーカイブも含む) */
@@ -85,10 +91,14 @@ data class BookmarkListUiState(
 
     /** タグ・カテゴリ・種類・期間のどれかで絞り込んでいる(「すべて解除」で外せる条件がある) */
     val isNarrowed: Boolean
-        get() = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty() || selectedTypes.isNotEmpty() || period != null
+        get() = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty() || selectedTypes.isNotEmpty() || period != null || readState != null
 
     val showRediscover: Boolean
         get() = !isSearchActive && filter == BookmarkFilter.ACTIVE && !isNarrowed && rediscover.isNotEmpty()
+
+    /** 「次に読む」を出すか(通常の一覧で、絞り込み・検索をしていないとき) */
+    val showRecommendations: Boolean
+        get() = !isSearchActive && filter == BookmarkFilter.ACTIVE && !isNarrowed && recommendations.isNotEmpty()
 
     val emptyKind: ListEmptyKind
         get() = when {

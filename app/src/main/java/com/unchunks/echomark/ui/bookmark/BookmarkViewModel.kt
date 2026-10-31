@@ -11,6 +11,9 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ReadState
+import com.unchunks.echomark.domain.bookmark.model.ReadingRecommender
+import com.unchunks.echomark.domain.bookmark.model.Recommendation
 import com.unchunks.echomark.domain.bookmark.model.SearchHistory
 import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
@@ -46,6 +49,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -106,6 +110,18 @@ class BookmarkViewModel @Inject constructor(
 
     private val retryTrigger = MutableStateFlow(0)
     private val rediscoverFlow = MutableStateFlow<List<Bookmark>>(emptyList())
+
+    /** 「次に読む」(#61)。未読と最近読んだものが変わるたびに選び直す。補助的な表示なので、取れなくても一覧は出す */
+    private val recommendationsFlow: Flow<List<Recommendation>> = combine(
+        repository.observeUnreadCandidates(RECOMMEND_CANDIDATES),
+        repository.observeRecentlyRead(RECOMMEND_HISTORY)
+    ) { unread, read -> ReadingRecommender.pick(unread, read, System.currentTimeMillis()) }
+        .flowOn(dispatchers.default)
+        .catch { e ->
+            if (e is CancellationException) throw e
+            Timber.w(e, "次に読むものを選べませんでした")
+            emit(emptyList())
+        }
 
     private val messageChannel = Channel<BookmarkListMessage>(Channel.BUFFERED)
     private val addSheetRequestChannel = Channel<Unit>(Channel.CONFLATED)
@@ -220,9 +236,12 @@ class BookmarkViewModel @Inject constructor(
         combine(listFlow, searchQueryFlow, shownControlsFlow, searchHistoryFlow, queryRevisionFlow, ::ListInputs),
         tagCountsFlow,
         categoryNamesFlow,
-        rediscoverFlow,
+        combine(rediscoverFlow, recommendationsFlow, ::Pair),
         repository.observeBookmarkCount()
-    ) { (list, rawQuery, controls, history, revision), tagCounts, categoryNames, rediscover, total ->
+    ) { (list, rawQuery, controls, history, revision), tagCounts, categoryNames, (rediscoverAll, recommendations), total ->
+        // 「次に読む」に出したものは、「今日の再発見」には出さない(同じカードを2回見せない)
+        val recommendedIds = recommendations.mapTo(HashSet()) { it.bookmark.id }
+        val rediscover = rediscoverAll.filter { it.id !in recommendedIds }
         val query = controls.query
         // 削除されたタグは選択から外して見せる(DB の絞り込みも、存在しないタグは無視する)
         val knownTagIds = tagCounts?.mapTo(HashSet()) { it.id }
@@ -246,6 +265,7 @@ class BookmarkViewModel @Inject constructor(
             selectedCategories = query.categories,
             selectedTypes = query.types,
             period = query.period,
+            readState = query.readState,
             filter = query.filter,
             sortOrder = controls.sortOrder,
             isSearchActive = controls.searchActive,
@@ -265,6 +285,7 @@ class BookmarkViewModel @Inject constructor(
             semanticSearchAvailable = list.semanticAvailable,
             semanticMatchIds = if (controls.searchActive) list.semanticMatchIds else emptySet(),
             rediscover = rediscover,
+            recommendations = recommendations,
             totalCount = total
         )
     }.stateIn(
@@ -415,9 +436,14 @@ class BookmarkViewModel @Inject constructor(
         controlsFlow.update { it.copy(query = it.query.togglePeriod(period)) }
     }
 
-    /** 選んでいる種類と期間を外す(タグ・カテゴリは変えない) */
+    /** 読んだかどうかで絞る(選んでいるものをもう一度選ぶと外れる) */
+    fun onReadStateToggled(state: ReadState) {
+        controlsFlow.update { it.copy(query = it.query.toggleReadState(state)) }
+    }
+
+    /** 選んでいる種類・期間・読んだかを外す(タグ・カテゴリは変えない) */
     fun onClearTypeAndPeriod() {
-        controlsFlow.update { it.copy(query = it.query.copy(types = emptySet(), period = null)) }
+        controlsFlow.update { it.copy(query = it.query.copy(types = emptySet(), period = null, readState = null)) }
     }
 
     /** 複数のタグを選んだときの組み合わせ方(すべて含む / どれかを含む)を変える */
@@ -469,6 +495,11 @@ class BookmarkViewModel @Inject constructor(
 
     fun toggleFavorite(bookmark: Bookmark) {
         viewModelScope.launch { repository.setFavorite(bookmark.id, !bookmark.isFavorite) }
+    }
+
+    /** 読んだことにする / 未読に戻す(#60) */
+    fun toggleRead(bookmark: Bookmark) {
+        viewModelScope.launch { repository.setRead(bookmark.id, !bookmark.isRead) }
     }
 
     /** アーカイブする/戻す。Snackbar で取り消せるよう知らせる */
@@ -571,7 +602,9 @@ class BookmarkViewModel @Inject constructor(
                         content = content?.takeIf { it.isNotBlank() },
                         title = title.trim(),
                         createdAt = now,
-                        lastAccessedAt = now
+                        lastAccessedAt = now,
+                        // 自分で書いたメモは、読んだものとして始める(未読の一覧に出さない)
+                        readAt = now
                     )
                 )
             }
@@ -607,6 +640,10 @@ class BookmarkViewModel @Inject constructor(
         /** キーワードの結果を出してから、意味検索(検索語の埋め込み)を始めるまで入力が落ち着くのを待つ時間 */
         private const val SEMANTIC_SETTLE_MS = 300L
         private const val REDISCOVER_CANDIDATES = 30
+
+        /** 「次に読む」を選ぶ元にする未読の数と、興味の手がかりにする最近読んだものの数 */
+        private const val RECOMMEND_CANDIDATES = 60
+        private const val RECOMMEND_HISTORY = 20
         private const val DERIVED_TITLE_MAX = 40
 
         /** 本文の1行目からタイトルを作る(長すぎれば切って「…」) */

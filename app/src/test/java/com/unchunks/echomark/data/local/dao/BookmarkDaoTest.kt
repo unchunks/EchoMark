@@ -61,10 +61,11 @@ class BookmarkDaoTest {
         categories: List<String> = emptyList(),
         types: List<BookmarkType> = emptyList(),
         createdSince: Long = 0L,
+        readFilter: Int = 0,
         sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST
     ): List<Long> = dao.observeFiltered(
         archived, favoriteOnly, tagIds, tagIds.size, matchAll, categories, categories.size,
-        types.map { it.name }, types.size, createdSince, sortOrder.name
+        types.map { it.name }, types.size, createdSince, readFilter, sortOrder.name
     )
         .first()
         .map { it.bookmark.id }
@@ -87,6 +88,54 @@ class BookmarkDaoTest {
         assertEquals(listOf(4L, 3L, 2L, 1L), ids(createdSince = 0))
         // 組み合わせは AND
         assertEquals(listOf(4L), ids(types = listOf(BookmarkType.URL), createdSince = 200))
+    }
+
+    @Test
+    fun readStateFilterAndMarks() = runTest {
+        insert(1, title = "a", createdAt = 100)
+        insert(2, title = "b", createdAt = 200)
+        insert(3, title = "c", createdAt = 300)
+
+        // 新しく保存したものは未読
+        assertEquals(listOf(3L, 2L, 1L), ids(readFilter = 1))
+        assertEquals(emptyList<Long>(), ids(readFilter = 2))
+
+        // 開くと既読になり、読んだ日時は最初に読んだときのまま
+        dao.markOpened(2, now = 1_000)
+        dao.markOpened(2, now = 2_000)
+        assertEquals(1_000L, dao.getById(2)!!.readAt)
+        assertEquals(2_000L, dao.getById(2)!!.lastAccessedAt)
+        assertEquals(listOf(3L, 1L), ids(readFilter = 1))
+        assertEquals(listOf(2L), ids(readFilter = 2))
+
+        // 読んだことにする・未読に戻す
+        dao.markRead(1, now = 3_000)
+        dao.markRead(1, now = 4_000)
+        assertEquals(3_000L, dao.getById(1)!!.readAt)
+        dao.markUnread(1)
+        assertEquals(null, dao.getById(1)!!.readAt)
+        assertEquals(listOf(3L, 1L), ids(readFilter = 1))
+        // 絞らなければ全部
+        assertEquals(listOf(3L, 2L, 1L), ids(readFilter = 0))
+    }
+
+    @Test
+    fun unreadCandidatesAndRecentlyRead() = runTest {
+        insert(1, title = "a", createdAt = 100)
+        insert(2, title = "b", createdAt = 200)
+        insert(3, title = "c", createdAt = 300)
+        insert(4, title = "d", createdAt = 400)
+        dao.updateArchived(4, true)
+        dao.markOpened(1, now = 5_000)
+        dao.markOpened(2, now = 6_000)
+
+        // 未読(アーカイブ以外)は新しい順
+        assertEquals(listOf(3L), dao.observeUnread(10).first().map { it.bookmark.id })
+        dao.markUnread(1)
+        assertEquals(listOf(3L, 1L), dao.observeUnread(10).first().map { it.bookmark.id })
+        assertEquals(listOf(3L), dao.observeUnread(1).first().map { it.bookmark.id })
+        // 最近読んだもの(最後に開いた順)
+        assertEquals(listOf(2L), dao.observeRecentlyRead(10).first().map { it.bookmark.id })
     }
 
     @Test

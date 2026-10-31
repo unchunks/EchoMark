@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -56,7 +57,9 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ReadingTime
 import com.unchunks.echomark.domain.bookmark.model.SearchMatch
+import com.unchunks.echomark.domain.bookmark.model.readingMinutes
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.ui.attachment.rememberAttachmentFile
 import com.unchunks.echomark.ui.attachment.rememberMediaDuration
@@ -151,10 +154,14 @@ private fun BookmarkCardBody(
             BookmarkThumbnail(bookmark = bookmark, domain = domain, size = 72.dp)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
+                // 本文の長さから、読むのにかかる時間の目安を出す(長い本文でも数えるだけなので、同じ本文のあいだは覚えておく)
+                val readingMinutes = remember(bookmark.content) { bookmark.readingMinutes() }
                 SourceLine(
                     source = domain,
                     relativeTime = formatRelativeTime(bookmark.createdAt, nowMillis),
-                    showFavoriteMark = onToggleFavorite == null && bookmark.isFavorite
+                    showFavoriteMark = onToggleFavorite == null && bookmark.isFavorite,
+                    unread = !bookmark.isRead,
+                    readingMinutes = readingMinutes
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -291,8 +298,25 @@ private fun Bookmark.fileSourceLabel(): String? {
 }
 
 @Composable
-private fun SourceLine(source: String, relativeTime: String, showFavoriteMark: Boolean) {
+private fun SourceLine(
+    source: String,
+    relativeTime: String,
+    showFavoriteMark: Boolean,
+    unread: Boolean,
+    readingMinutes: Int?
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+        if (unread) {
+            // 未読の目印。色だけに頼らず、TalkBack には「未読」と読ませる
+            Box(
+                Modifier
+                    .padding(end = 6.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .semantics { contentDescription = "未読" }
+            )
+        }
         Text(
             text = source,
             style = MaterialTheme.typography.labelMedium,
@@ -302,7 +326,7 @@ private fun SourceLine(source: String, relativeTime: String, showFavoriteMark: B
             modifier = Modifier.weight(1f, fill = false)
         )
         Text(
-            text = " · $relativeTime",
+            text = " · $relativeTime" + (readingMinutes?.let { " · ${ReadingTime.label(it)}" } ?: ""),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1

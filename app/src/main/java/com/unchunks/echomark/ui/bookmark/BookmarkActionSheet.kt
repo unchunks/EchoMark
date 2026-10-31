@@ -8,8 +8,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -27,13 +29,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 
-/** カードの長押しで出す操作メニュー(お気に入り・アーカイブ・共有・削除)。 */
+/** カードの長押しで出す操作メニュー(お気に入り・既読/未読・アーカイブ・共有・削除)。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookmarkActionSheet(
     bookmark: Bookmark,
     onDismiss: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onToggleRead: () -> Unit,
     onToggleArchive: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit
@@ -46,6 +49,7 @@ fun BookmarkActionSheet(
                 action()
             },
             onToggleFavorite = onToggleFavorite,
+            onToggleRead = onToggleRead,
             onToggleArchive = onToggleArchive,
             onShare = onShare,
             onDelete = onDelete
@@ -58,6 +62,7 @@ internal fun BookmarkActionSheetContent(
     bookmark: Bookmark,
     onAction: (() -> Unit) -> Unit,
     onToggleFavorite: () -> Unit,
+    onToggleRead: () -> Unit,
     onToggleArchive: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit
@@ -75,6 +80,11 @@ internal fun BookmarkActionSheetContent(
             icon = if (bookmark.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
             label = if (bookmark.isFavorite) "お気に入りから外す" else "お気に入りに追加",
             onClick = { onAction(onToggleFavorite) }
+        )
+        ActionItem(
+            icon = if (bookmark.isRead) Icons.Outlined.MarkEmailUnread else Icons.Outlined.TaskAlt,
+            label = if (bookmark.isRead) "未読に戻す" else "既読にする",
+            onClick = { onAction(onToggleRead) }
         )
         ActionItem(
             icon = if (bookmark.isArchived) Icons.Outlined.Unarchive else Icons.Outlined.Archive,

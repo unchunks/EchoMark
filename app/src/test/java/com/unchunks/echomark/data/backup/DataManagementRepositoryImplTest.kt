@@ -44,6 +44,7 @@ class DataManagementRepositoryImplTest {
     private lateinit var workManager: WorkManager
     private lateinit var bookmarkRepository: BookmarkRepositoryImpl
     private lateinit var repository: DataManagementRepositoryImpl
+    private val settings = FakeAppSettingsRepository()
 
     @Before
     fun setUp() {
@@ -72,7 +73,7 @@ class DataManagementRepositoryImplTest {
             modelManager = ModelManager(context, bookmarkRepository, dispatcherProvider),
             workManager = workManager,
             bookmarkRepository = bookmarkRepository,
-            appSettings = FakeAppSettingsRepository(),
+            appSettings = settings,
             apiKeyRepository = FakeApiKeyRepository(),
             workScheduler = scheduler,
             attachmentStore = AttachmentStore(context, dispatcherProvider),
@@ -99,6 +100,24 @@ class DataManagementRepositoryImplTest {
         val states = workManager.statesByTag(BookmarkWorkScheduler.TAG)
         assertTrue(states.toString(), states.all { it == WorkInfo.State.CANCELLED })
         assertTrue(bookmarkRepository.getAllBookmarkIds().isEmpty())
+    }
+
+    @Test
+    fun 全データ削除は設定を残す場合でも検索の履歴を消す() = runBlocking {
+        settings.searchHistoryFlow.value = listOf("東京 ラーメン", "kotlin")
+
+        repository.deleteAllData(resetSettings = false)
+
+        assertEquals(emptyList<String>(), settings.searchHistoryFlow.value)
+    }
+
+    @Test
+    fun 全データ削除で設定も初期化するときも検索の履歴は消える() = runBlocking {
+        settings.searchHistoryFlow.value = listOf("kotlin")
+
+        repository.deleteAllData(resetSettings = true)
+
+        assertEquals(emptyList<String>(), settings.searchHistoryFlow.value)
     }
 
     @Test

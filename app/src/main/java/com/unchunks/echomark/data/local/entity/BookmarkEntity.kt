@@ -54,5 +54,7 @@ data class BookmarkEntity (
     val summaryEdited: Boolean = false,
     // v18 で追加。カテゴリをユーザーが選んだもの(再処理しても AI はカテゴリを置き換えない。#33)
     @ColumnInfo(defaultValue = "0")
-    val categoryEdited: Boolean = false
+    val categoryEdited: Boolean = false,
+    // v20 で追加。読んだ(詳細画面を開いた・読んだことにした)日時。null なら未読(#60)
+    val readAt: Long? = null
 )

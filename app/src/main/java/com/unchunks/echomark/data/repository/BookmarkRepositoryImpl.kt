@@ -18,6 +18,7 @@ import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
@@ -500,8 +501,23 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun markAccessed(id: Long) =
         withContext(dispatcherProvider.io) {
-            bookmarkDao.updateLastAccessedAt(id, System.currentTimeMillis())
+            bookmarkDao.markOpened(id, System.currentTimeMillis())
         }
+
+    override suspend fun setRead(id: Long, isRead: Boolean) =
+        withContext(dispatcherProvider.io) {
+            if (isRead) bookmarkDao.markRead(id, System.currentTimeMillis()) else bookmarkDao.markUnread(id)
+        }
+
+    override fun observeUnreadCandidates(limit: Int): Flow<List<Bookmark>> =
+        bookmarkDao.observeUnread(limit)
+            .map { list -> list.map { it.toDomain() } }
+            .flowOn(dispatcherProvider.io)
+
+    override fun observeRecentlyRead(limit: Int): Flow<List<Bookmark>> =
+        bookmarkDao.observeRecentlyRead(limit)
+            .map { list -> list.map { it.toDomain() } }
+            .flowOn(dispatcherProvider.io)
 
     override suspend fun setFavorite(id: Long, isFavorite: Boolean) =
         withContext(dispatcherProvider.io) {
@@ -635,6 +651,11 @@ class BookmarkRepositoryImpl @Inject constructor(
             types = query.types.map { it.name },
             typeCount = query.types.size,
             createdSince = query.period?.sinceMillis(System.currentTimeMillis()) ?: 0L,
+            readFilter = when (query.readState) {
+                null -> 0
+                ReadState.UNREAD -> 1
+                ReadState.READ -> 2
+            },
             sortOrder = sortOrder.name
         )
             .map { list -> list.map { it.toDomain() } }

@@ -21,6 +21,7 @@ import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -122,6 +123,13 @@ class FakeBookmarkRepository : BookmarkRepository {
                 query.categories.isEmpty() || query.categories.any { it.equals(bookmark.category, ignoreCase = true) }
             }
             .filter { query.types.isEmpty() || it.type in query.types }
+            .filter {
+                when (query.readState) {
+                    null -> true
+                    ReadState.UNREAD -> !it.isRead
+                    ReadState.READ -> it.isRead
+                }
+            }
             .filter { bookmark ->
                 val since = query.period?.sinceMillis(System.currentTimeMillis())
                 since == null || bookmark.createdAt >= since
@@ -271,7 +279,17 @@ class FakeBookmarkRepository : BookmarkRepository {
 
     override suspend fun markAccessed(id: Long) {
         accessedIds += id
+        updateBookmark(id) { it.copy(readAt = it.readAt ?: System.currentTimeMillis()) }
     }
+
+    override suspend fun setRead(id: Long, isRead: Boolean) =
+        updateBookmark(id) { it.copy(readAt = if (isRead) it.readAt ?: System.currentTimeMillis() else null) }
+
+    override fun observeUnreadCandidates(limit: Int): Flow<List<Bookmark>> =
+        bookmarks.map { list -> list.filter { !it.isRead && !it.isArchived }.sortedByDescending { it.createdAt }.take(limit) }
+
+    override fun observeRecentlyRead(limit: Int): Flow<List<Bookmark>> =
+        bookmarks.map { list -> list.filter { it.isRead }.sortedByDescending { it.lastAccessedAt }.take(limit) }
 
     /** reprocess の呼び出し(ID と作り直すもの) */
     val reprocessCalls = mutableListOf<Pair<Long, AnalysisScope>>()

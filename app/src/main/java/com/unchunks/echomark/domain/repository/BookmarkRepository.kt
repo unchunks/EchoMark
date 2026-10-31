@@ -76,8 +76,17 @@ interface BookmarkRepository {
     suspend fun addTag(bookmarkId: Long, tagName: String)
     /** タグを外す。AI だけが付けていたタグで、どのブックマークにも付かなくなったらタグ自体も消す。 */
     suspend fun removeTag(bookmarkId: Long, tagName: String)
-    /** 詳細画面を開いたときに lastAccessedAt を現在時刻に更新する。 */
+    /** 詳細画面を開いたときに lastAccessedAt を現在時刻に更新し、まだなら既読にする(#60)。 */
     suspend fun markAccessed(id: Long)
+
+    /** 読んだことにする / 未読に戻す(#60)。 */
+    suspend fun setRead(id: Long, isRead: Boolean)
+
+    /** 「次に読む」の候補にする、まだ読んでいない(アーカイブ以外の)ブックマーク。新しい順に最大 [limit] 件(#61)。 */
+    fun observeUnreadCandidates(limit: Int): Flow<List<Bookmark>>
+
+    /** 最近読んだブックマーク。最後に開いた順に最大 [limit] 件(#61)。 */
+    fun observeRecentlyRead(limit: Int): Flow<List<Bookmark>>
     suspend fun setFavorite(id: Long, isFavorite: Boolean)
     suspend fun setArchived(id: Long, isArchived: Boolean)
     /** リンク先から取得した OG 画像 URL・サイト名を保存する(取得できなかった項目は null)。 */

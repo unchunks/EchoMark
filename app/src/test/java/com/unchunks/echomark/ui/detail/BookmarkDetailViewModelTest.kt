@@ -88,6 +88,23 @@ class BookmarkDetailViewModelTest {
     }
 
     @Test
+    fun 開くと既読になり_未読に戻せる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.bookmark!!.isRead)
+
+        viewModel.toggleRead()
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.bookmark!!.isRead)
+
+        viewModel.toggleRead()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.bookmark!!.isRead)
+    }
+
+    @Test
     fun 存在しないIDなら見つからない状態になる() = runTest {
         val viewModel = createViewModel(id = 99)
         start(viewModel)
@@ -211,8 +228,9 @@ class BookmarkDetailViewModelTest {
         advanceUntilIdle()
 
         assertTrue(closed)
-        assertEquals(listOf(target), repository.deleted)
-        assertEquals(target, recentlyDeleted.consume())
+        // 開いたときに既読になっているので、読んだ日時だけが元と違う
+        assertEquals(listOf(1L), repository.deleted.map { it.id })
+        assertEquals(1L, recentlyDeleted.consume()?.id)
     }
 
     @Test
