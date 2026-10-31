@@ -1,5 +1,6 @@
 package com.unchunks.echomark.screenshot
 
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.ui.common.SelectedFile
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -76,7 +77,24 @@ class BookmarkListScreenshotTest {
             BookmarkListUiState(
                 bookmarks = PreviewSamples.all.take(2),
                 allTags = listOf(tags[1]) + tags.filterNot { it.id == 2L },
-                selectedTagId = 2,
+                selectedTagIds = setOf(2L),
+                totalCount = PreviewSamples.all.size
+            )
+        )
+    )
+
+    /** タグを2つ・カテゴリを1つ選んでいる間は、「すべて解除」と、タグの組み合わせ方(すべて含む / どれかを含む)を出す */
+    @Test
+    fun multiFiltered() = screenshot.captureScreenLightDark(
+        "library_list_multi_filtered",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = PreviewSamples.all.take(1),
+                allTags = listOf(tags[1], tags[0]) + tags.filterNot { it.id == 1L || it.id == 2L },
+                selectedTagIds = setOf(1L, 2L),
+                tagMatch = TagMatch.ANY,
+                allCategories = listOf("技術", "ニュース", "レシピ"),
+                selectedCategories = setOf("技術"),
                 totalCount = PreviewSamples.all.size
             )
         )

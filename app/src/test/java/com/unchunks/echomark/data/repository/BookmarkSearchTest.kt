@@ -110,7 +110,7 @@ class BookmarkSearchTest {
         )
     }
 
-    private suspend fun keywordTitles(query: String) = repository.searchKeywordOnly(query, null).map { it.title }
+    private suspend fun keywordTitles(query: String) = repository.searchKeywordOnly(query).map { it.title }
 
     @Test
     fun 空白で区切った語をすべて含むものを探す() = runBlocking {
@@ -141,7 +141,7 @@ class BookmarkSearchTest {
         embedding.available = false
 
         assertFalse(repository.prepareSemanticSearch("東京 ラーメン"))
-        val result = repository.searchWithDetails("東京 ラーメン", null)
+        val result = repository.searchWithDetails("東京 ラーメン")
 
         assertEquals(listOf(1L), result.bookmarks.map { it.id })
         assertFalse(result.semanticAvailable)
@@ -150,11 +150,11 @@ class BookmarkSearchTest {
     @Test
     fun 検索語の埋め込みは覚えておき検索し直しても埋め込み直さない() = runBlocking {
         assertTrue(repository.prepareSemanticSearch("ラーメン"))
-        repository.searchWithDetails("ラーメン", null)
-        repository.searchWithDetails("ラーメン", null)
+        repository.searchWithDetails("ラーメン")
+        repository.searchWithDetails("ラーメン")
         assertEquals(1, embedding.queryCount)
 
-        repository.searchWithDetails("うどん", null)
+        repository.searchWithDetails("うどん")
         assertEquals(2, embedding.queryCount)
     }
 }

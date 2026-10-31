@@ -16,6 +16,7 @@ import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.chat.ChatMemoryPolicy
 import com.unchunks.echomark.domain.chat.RagSupport
@@ -239,7 +240,7 @@ class ChatRepositoryImpl @Inject constructor(
         val keywordHits = findKeywordBookmarks(query, keywords)
         val tagged = RagSupport.tagsMentionedIn(query, bookmarkRepository.observeAllTags().first())
             .flatMap { tag ->
-                bookmarkRepository.observeBookmarks(BookmarkFilter.ACTIVE, BookmarkSortOrder.NEWEST, tag.id)
+                bookmarkRepository.observeBookmarks(BookmarkQuery(tagIds = setOf(tag.id)), BookmarkSortOrder.NEWEST)
                     .first()
                     .take(RagSupport.SEARCH_LIMIT)
             }
@@ -350,7 +351,7 @@ class ChatRepositoryImpl @Inject constructor(
         else bookmarkRepository.getBookmarksByIds(ids).associateBy { it.id }
 
     override suspend fun getRecentBookmarks(limit: Int): List<Bookmark> =
-        bookmarkRepository.observeBookmarks(BookmarkFilter.ACTIVE, BookmarkSortOrder.NEWEST)
+        bookmarkRepository.observeBookmarks(BookmarkQuery(), BookmarkSortOrder.NEWEST)
             .first()
             .take(limit)
 

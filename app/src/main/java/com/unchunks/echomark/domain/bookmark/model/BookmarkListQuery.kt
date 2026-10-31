@@ -10,6 +10,45 @@ enum class BookmarkFilter {
     FAVORITES
 }
 
+/** 複数のタグを選んだときの組み合わせ方。 */
+enum class TagMatch {
+    /** 選んだタグのすべてを持つ(AND)。どのタグも、階層でその下にあるタグが付いていればよい */
+    ALL,
+
+    /** 選んだタグのどれかを持つ(OR)。階層でその下にあるタグでもよい */
+    ANY
+}
+
+/**
+ * 一覧の絞り込み条件。画面や DB の形を持たない素のデータで、一覧の絞り込み・検索の範囲・(スマートフォルダのような)
+ * 条件の保存が、同じ条件を使えるようにしている。並べ替えと検索語は条件に含めない。
+ * @property filter 通常 / アーカイブ / お気に入り
+ * @property tagIds 選んだタグ。[tagMatch] で組み合わせる。各タグは、階層でその下にあるタグが付いていれば満たす。無ければタグでは絞らない
+ * @property tagMatch [tagIds] が複数のときの組み合わせ方。1つ以下のときは意味を持たない
+ * @property categories 選んだカテゴリ(名前。どれかであればよい。ブックマークのカテゴリは1つだけなので AND は無い)。無ければカテゴリでは絞らない。
+ *   大文字小文字の違いは区別しない
+ */
+data class BookmarkQuery(
+    val filter: BookmarkFilter = BookmarkFilter.ACTIVE,
+    val tagIds: Set<Long> = emptySet(),
+    val tagMatch: TagMatch = TagMatch.ALL,
+    val categories: Set<String> = emptySet()
+) {
+    /** タグかカテゴリで絞っているか(「すべて解除」で外せる条件があるか)。 */
+    val hasTagOrCategory: Boolean get() = tagIds.isNotEmpty() || categories.isNotEmpty()
+
+    fun toggleTag(tagId: Long): BookmarkQuery =
+        copy(tagIds = if (tagId in tagIds) tagIds - tagId else tagIds + tagId)
+
+    fun toggleCategory(name: String): BookmarkQuery {
+        val same = categories.firstOrNull { it.equals(name, ignoreCase = true) }
+        return copy(categories = if (same != null) categories - same else categories + name)
+    }
+
+    /** タグとカテゴリの条件をすべて外す(組み合わせ方も初期値に戻す)。通常 / アーカイブ / お気に入りは変えない。 */
+    fun clearTagsAndCategories(): BookmarkQuery = copy(tagIds = emptySet(), tagMatch = TagMatch.ALL, categories = emptySet())
+}
+
 /** 一覧の並べ替え。 */
 enum class BookmarkSortOrder {
     /** 保存日時が新しい順 */

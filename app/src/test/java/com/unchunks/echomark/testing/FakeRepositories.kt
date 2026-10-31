@@ -1,5 +1,7 @@
 package com.unchunks.echomark.testing
 
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
@@ -68,12 +70,13 @@ class FakeBookmarkRepository : BookmarkRepository {
     val bookmarks = MutableStateFlow<List<Bookmark>>(emptyList())
     val tags = MutableStateFlow<List<Tag>>(emptyList())
 
-    val searchCalls = mutableListOf<Pair<String, Long?>>()
+    /** search / searchWithDetails に渡された検索語 */
+    val searchCalls = mutableListOf<String>()
     val deleted = mutableListOf<Bookmark>()
     val restored = mutableListOf<Bookmark>()
 
-    override suspend fun search(query: String, tagId: Long?): List<Bookmark> {
-        searchCalls += query to tagId
+    override suspend fun search(query: String): List<Bookmark> {
+        searchCalls += query
         return bookmarks.value.filter { it.title.contains(query) }
     }
 
@@ -81,21 +84,32 @@ class FakeBookmarkRepository : BookmarkRepository {
 
     override fun observeAllTags(): Flow<List<Tag>> = tags
 
-    /** DAO のクエリと同じ規則で絞り込み・並べ替えする(タグは tags に tagId の文字列を入れて表す)。 */
+    /**
+     * DAO のクエリと同じ規則で絞り込み・並べ替えする(タグは tags に tagId の文字列を入れて表す。階層は持たない。
+     * カテゴリは大文字小文字を区別しない)。
+     */
     override fun observeBookmarks(
-        filter: BookmarkFilter,
-        sortOrder: BookmarkSortOrder,
-        tagId: Long?
+        query: BookmarkQuery,
+        sortOrder: BookmarkSortOrder
     ): Flow<List<Bookmark>> = bookmarks.map { list ->
         list
             .filter {
-                when (filter) {
+                when (query.filter) {
                     BookmarkFilter.ACTIVE -> !it.isArchived
                     BookmarkFilter.ARCHIVED -> it.isArchived
                     BookmarkFilter.FAVORITES -> it.isFavorite && !it.isArchived
                 }
             }
-            .filter { tagId == null || tagId.toString() in it.tags }
+            .filter { bookmark ->
+                val has = { id: Long -> id.toString() in bookmark.tags }
+                query.tagIds.isEmpty() || when (query.tagMatch) {
+                    TagMatch.ALL -> query.tagIds.all(has)
+                    TagMatch.ANY -> query.tagIds.any(has)
+                }
+            }
+            .filter { bookmark ->
+                query.categories.isEmpty() || query.categories.any { it.equals(bookmark.category, ignoreCase = true) }
+            }
             .sortedWith(
                 when (sortOrder) {
                     BookmarkSortOrder.NEWEST -> compareByDescending<Bookmark> { it.createdAt }
@@ -199,21 +213,20 @@ class FakeBookmarkRepository : BookmarkRepository {
     val reprocessedIds = mutableListOf<Long>()
     var related: List<Bookmark> = emptyList()
 
-    override suspend fun searchWithDetails(query: String, tagId: Long?): BookmarkSearchResult {
-        searchCalls += query to tagId
+    override suspend fun searchWithDetails(query: String): BookmarkSearchResult {
+        searchCalls += query
         val hits = bookmarks.value.filter {
             it.title.contains(query) || it.id in semanticOnlyIds
-        }.filter { tagId == null || tagId.toString() in it.tags }
+        }
         return BookmarkSearchResult(hits, semanticAvailable, semanticOnlyIds.intersect(hits.map { it.id }.toSet()))
     }
 
-    /** searchKeywordOnly の呼び出し(検索語とタグ) */
-    val keywordSearchCalls = mutableListOf<Pair<String, Long?>>()
+    /** searchKeywordOnly の呼び出し(検索語) */
+    val keywordSearchCalls = mutableListOf<String>()
 
-    override suspend fun searchKeywordOnly(query: String, tagId: Long?): List<Bookmark> {
-        keywordSearchCalls += query to tagId
+    override suspend fun searchKeywordOnly(query: String): List<Bookmark> {
+        keywordSearchCalls += query
         return bookmarks.value.filter { it.title.contains(query) }
-            .filter { tagId == null || tagId.toString() in it.tags }
     }
 
     /** prepareSemanticSearch の呼び出し(検索語) */

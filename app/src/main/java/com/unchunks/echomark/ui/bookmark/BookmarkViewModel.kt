@@ -5,14 +5,18 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.AttachmentRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.SaveResult
+import com.unchunks.echomark.domain.repository.CategoryRepository
 import com.unchunks.echomark.domain.repository.TagRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import com.unchunks.echomark.ui.common.SelectedFile
@@ -48,6 +52,7 @@ import javax.inject.Inject
 class BookmarkViewModel @Inject constructor(
     private val repository: BookmarkRepository,
     private val tagRepository: TagRepository,
+    private val categoryRepository: CategoryRepository,
     private val recentlyDeleted: RecentlyDeletedBookmarks,
     private val attachmentRepository: AttachmentRepository,
     private val appSettings: AppSettingsRepository
@@ -55,9 +60,9 @@ class BookmarkViewModel @Inject constructor(
 
     /** 検索語以外の表示条件 */
     private data class ListControls(
-        val filter: BookmarkFilter = BookmarkFilter.ACTIVE,
+        /** 絞り込み条件(通常/アーカイブ/お気に入り・タグ・カテゴリ) */
+        val query: BookmarkQuery = BookmarkQuery(),
         val sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST,
-        val tagId: Long? = null,
         val searchActive: Boolean = false
     )
 
@@ -105,8 +110,9 @@ class BookmarkViewModel @Inject constructor(
     private val listFlow: Flow<ListResult> =
         combine(debouncedQueryFlow, shownControlsFlow, retryTrigger) { query, controls, _ -> query to controls }
             .flatMapLatest { (query, controls) ->
-                // 絞り込み・並べ替え済みの一覧。検索時は「表示してよいもの」の判定と、DB 変更時の再検索のきっかけに使う
-                val visible = repository.observeBookmarks(controls.filter, controls.sortOrder, controls.tagId)
+                // 絞り込み・並べ替え済みの一覧。検索時は「表示してよいもの」の判定(検索結果との積)と、DB 変更時の再検索のきっかけに使う。
+                // 検索自体はタグ・カテゴリを知らない(絞り込みの条件はここだけで持つ)
+                val visible = repository.observeBookmarks(controls.query, controls.sortOrder)
                 val result = if (controls.searchActive && query.isNotBlank()) {
                     // 検索語の埋め込み(意味検索の準備)は、モデルの読み込みや AI 処理との順番待ちで時間がかかることがある。
                     // 待つ間はキーワードの結果を先に出す。準備は検索語ごとに1回だけで、DB の変更で検索し直しても待ち直さない
@@ -118,7 +124,7 @@ class BookmarkViewModel @Inject constructor(
                     combine(visible, semanticReady, ::Pair).mapLatest { (list, ready) ->
                         val allowed = list.map { it.id }.toSet()
                         if (ready == true) {
-                            val found = repository.searchWithDetails(query, controls.tagId)
+                            val found = repository.searchWithDetails(query)
                             ListResult(
                                 bookmarks = found.bookmarks.filter { it.id in allowed },
                                 query = query,
@@ -127,7 +133,7 @@ class BookmarkViewModel @Inject constructor(
                             )
                         } else {
                             ListResult(
-                                bookmarks = repository.searchKeywordOnly(query, controls.tagId).filter { it.id in allowed },
+                                bookmarks = repository.searchKeywordOnly(query).filter { it.id in allowed },
                                 query = query,
                                 semanticAvailable = ready == null,
                                 semanticPending = ready == null
@@ -144,9 +150,19 @@ class BookmarkViewModel @Inject constructor(
                 }
             }
 
-    /** 絞り込みチップに出すタグ。ブックマークが付いているもの(と選択中のもの)だけ */
-    private val tagsFlow: Flow<List<Tag>> = tagRepository.observeTagsWithCount()
-        .map { list -> list.filter { it.bookmarkCount > 0 }.map { Tag(it.id, it.name) } }
+    /**
+     * 絞り込みチップに出すタグの元(件数つき・全タグ)。読み込めなかったときは null(選択中のタグを整理せず、そのまま出す)
+     */
+    private val tagCountsFlow: Flow<List<TagWithCount>?> = tagRepository.observeTagsWithCount()
+        .map<List<TagWithCount>, List<TagWithCount>?> { it }
+        .catch { e ->
+            if (e is CancellationException) throw e
+            emit(null)
+        }
+
+    /** 絞り込みチップに出すカテゴリ。ブックマークがあるものだけ(選択中のものは、画面を組み立てるときに足す) */
+    private val categoryNamesFlow: Flow<List<String>> = categoryRepository.observeCategories()
+        .map { list -> list.filter { it.bookmarkCount > 0 }.map { it.name } }
         .catch { e ->
             if (e is CancellationException) throw e
             emit(emptyList())
@@ -154,19 +170,33 @@ class BookmarkViewModel @Inject constructor(
 
     val uiState: StateFlow<BookmarkListUiState> = combine(
         combine(listFlow, searchQueryFlow, shownControlsFlow, ::Triple),
-        tagsFlow,
+        tagCountsFlow,
+        categoryNamesFlow,
         rediscoverFlow,
         repository.observeBookmarkCount()
-    ) { (list, rawQuery, controls), tags, rediscover, total ->
+    ) { (list, rawQuery, controls), tagCounts, categoryNames, rediscover, total ->
+        val query = controls.query
+        // 削除されたタグは選択から外して見せる(DB の絞り込みも、存在しないタグは無視する)
+        val knownTagIds = tagCounts?.mapTo(HashSet()) { it.id }
+        val selectedTagIds = if (knownTagIds == null) query.tagIds else query.tagIds.filterTo(LinkedHashSet()) { it in knownTagIds }
+        val tags = tagCounts.orEmpty()
+            .filter { it.bookmarkCount > 0 || it.id in selectedTagIds }
+            .map { Tag(it.id, it.name) }
+            .sortedByDescending { it.id in selectedTagIds }
+        val categories = (categoryNames + query.categories.filter { selected -> categoryNames.none { it.equals(selected, ignoreCase = true) } })
+            .sortedByDescending { name -> query.categories.any { it.equals(name, ignoreCase = true) } }
         val trimmed = rawQuery.trim()
         // 入力中(結果がまだ今の検索語のものではない)か、キーワードの結果を出して意味検索を待っている
         val searching = controls.searchActive && trimmed.isNotEmpty() && (list.query != trimmed || list.semanticPending)
         BookmarkListUiState(
             bookmarks = list.bookmarks,
             errorMessage = list.error,
-            allTags = tags.sortedByDescending { it.id == controls.tagId },
-            selectedTagId = controls.tagId,
-            filter = controls.filter,
+            allTags = tags,
+            selectedTagIds = selectedTagIds,
+            tagMatch = query.tagMatch,
+            allCategories = categories,
+            selectedCategories = query.categories,
+            filter = query.filter,
             sortOrder = controls.sortOrder,
             isSearchActive = controls.searchActive,
             searchQuery = rawQuery,
@@ -231,13 +261,29 @@ class BookmarkViewModel @Inject constructor(
         searchQueryFlow.value = query
     }
 
-    fun onTagSelected(tagId: Long?) {
-        controlsFlow.update { it.copy(tagId = tagId) }
+    /** タグを選ぶ・外す(複数選べる。組み合わせ方は [onTagMatchChange]) */
+    fun onTagToggled(tagId: Long) {
+        controlsFlow.update { it.copy(query = it.query.toggleTag(tagId)) }
     }
 
-    /** タグ管理画面で選ばれたタグで絞り込む。検索モードは閉じて、そのタグの一覧を見せる */
+    /** カテゴリを選ぶ・外す(複数選べて、どれかであればよい) */
+    fun onCategoryToggled(name: String) {
+        controlsFlow.update { it.copy(query = it.query.toggleCategory(name)) }
+    }
+
+    /** 複数のタグを選んだときの組み合わせ方(すべて含む / どれかを含む)を変える */
+    fun onTagMatchChange(match: TagMatch) {
+        controlsFlow.update { it.copy(query = it.query.copy(tagMatch = match)) }
+    }
+
+    /** 選んでいるタグとカテゴリをすべて外す(通常/お気に入り/アーカイブと検索は変えない) */
+    fun onClearFilters() {
+        controlsFlow.update { it.copy(query = it.query.clearTagsAndCategories()) }
+    }
+
+    /** タグ管理画面で選ばれたタグで絞り込む(それまでのタグ・カテゴリの条件は置き換える)。検索モードは閉じて、そのタグの一覧を見せる */
     fun showTag(tagId: Long) {
-        controlsFlow.update { it.copy(tagId = tagId, searchActive = false) }
+        controlsFlow.update { it.copy(query = it.query.clearTagsAndCategories().copy(tagIds = setOf(tagId)), searchActive = false) }
         searchQueryFlow.value = ""
     }
 
@@ -250,7 +296,7 @@ class BookmarkViewModel @Inject constructor(
     }
 
     fun onFilterChange(filter: BookmarkFilter) {
-        controlsFlow.update { it.copy(filter = filter) }
+        controlsFlow.update { it.copy(query = it.query.copy(filter = filter)) }
     }
 
     /** 並び順を変えて保存する(一覧は保存した値から読み直す) */

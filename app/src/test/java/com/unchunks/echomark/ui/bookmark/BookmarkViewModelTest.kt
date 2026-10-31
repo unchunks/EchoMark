@@ -1,5 +1,8 @@
 package com.unchunks.echomark.ui.bookmark
 
+import com.unchunks.echomark.domain.model.CategoryKind
+import com.unchunks.echomark.domain.model.CategoryEntry
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
@@ -9,6 +12,7 @@ import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.testing.FakeCategoryRepository
 import com.unchunks.echomark.testing.FakeTagRepository
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
@@ -37,10 +41,11 @@ class BookmarkViewModelTest {
 
     private val repository = FakeBookmarkRepository()
     private val tagRepository = FakeTagRepository()
+    private val categories = FakeCategoryRepository()
     private val recentlyDeleted = RecentlyDeletedBookmarks()
     private val attachments = FakeAttachmentRepository()
     private val settings = FakeAppSettingsRepository()
-    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, recentlyDeleted, attachments, settings)
+    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, categories, recentlyDeleted, attachments, settings)
 
     /**
      * uiState を購読し、届いたメッセージを集める。
@@ -146,7 +151,7 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
 
         viewModel.onFilterChange(BookmarkFilter.FAVORITES)
-        viewModel.onTagSelected(10L)
+        viewModel.onTagToggled(10L)
         viewModel.onSearchActiveChange(true)
         viewModel.onSearchActiveChange(false)
         viewModel.showTag(11L)
@@ -164,11 +169,11 @@ class BookmarkViewModelTest {
         start(viewModel)
         advanceUntilIdle()
 
-        viewModel.onTagSelected(11L)
+        viewModel.onTagToggled(11L)
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertEquals(11L, state.selectedTagId)
+        assertEquals(setOf(11L), state.selectedTagIds)
         assertEquals(listOf(1L), state.bookmarks.map { it.id })
         assertEquals(listOf("b", "a"), state.allTags.map { it.name })
     }
@@ -176,6 +181,7 @@ class BookmarkViewModelTest {
     @Test
     fun タグ管理画面から渡されたタグで絞り込み検索モードを閉じる() = runTest {
         repository.bookmarks.value = listOf(testBookmark(1).copy(tags = listOf("10")), testBookmark(2))
+        tagRepository.tags.value = listOf(TagWithCount(10, "a", 1))
         val viewModel = createViewModel()
         start(viewModel)
         viewModel.onSearchActiveChange(true)
@@ -185,7 +191,7 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertEquals(10L, state.selectedTagId)
+        assertEquals(setOf(10L), state.selectedTagIds)
         assertFalse("検索モードは閉じる", state.isSearchActive)
         assertEquals(listOf(1L), state.bookmarks.map { it.id })
     }
@@ -206,7 +212,7 @@ class BookmarkViewModelTest {
 
         advanceTimeBy(1)
         runCurrent()
-        assertEquals(listOf("app" to null), repository.searchCalls)
+        assertEquals(listOf("app"), repository.searchCalls)
         val state = viewModel.uiState.value
         assertEquals(listOf(1L), state.bookmarks.map { it.id })
         assertFalse(state.isSearching)
@@ -228,7 +234,7 @@ class BookmarkViewModelTest {
         viewModel.onSearchQueryChange("app")
         advanceUntilIdle()
 
-        assertEquals(listOf("app" to null), repository.searchCalls)
+        assertEquals(listOf("app"), repository.searchCalls)
     }
 
     @Test
@@ -575,5 +581,156 @@ class BookmarkViewModelTest {
 
         assertEquals("旅の写真", repository.bookmarks.value.single().title)
         assertEquals(BookmarkListMessage.SaveFailed(AttachmentError.TooLarge(1024).userMessage), messages.last())
+    }
+
+
+    @Test
+    fun タグを複数選ぶと_すべて含むは両方を持つものだけ_どれかを含むは和集合になる() = runTest {
+        repository.bookmarks.value = listOf(
+            testBookmark(1).copy(tags = listOf("10", "11")),
+            testBookmark(2).copy(tags = listOf("10")),
+            testBookmark(3).copy(tags = listOf("11")),
+            testBookmark(4)
+        )
+        tagRepository.tags.value = listOf(TagWithCount(10, "a", 2), TagWithCount(11, "b", 2))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onTagToggled(10L)
+        viewModel.onTagToggled(11L)
+        advanceUntilIdle()
+        assertEquals(setOf(10L, 11L), viewModel.uiState.value.selectedTagIds)
+        assertEquals(TagMatch.ALL, viewModel.uiState.value.tagMatch)
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+
+        viewModel.onTagMatchChange(TagMatch.ANY)
+        advanceUntilIdle()
+        assertEquals(TagMatch.ANY, viewModel.uiState.value.tagMatch)
+        assertEquals(listOf(3L, 2L, 1L), viewModel.uiState.value.bookmarks.map { it.id })
+
+        // もう一度選ぶと外れる
+        viewModel.onTagToggled(10L)
+        advanceUntilIdle()
+        assertEquals(setOf(11L), viewModel.uiState.value.selectedTagIds)
+        assertEquals(listOf(3L, 1L), viewModel.uiState.value.bookmarks.map { it.id })
+    }
+
+    @Test
+    fun カテゴリは件数のあるものだけ並べ_選んだものは件数が無くても先頭に残る() = runTest {
+        repository.bookmarks.value = listOf(
+            testBookmark(1).copy(category = "技術"),
+            testBookmark(2).copy(category = "旅行"),
+            testBookmark(3)
+        )
+        categories.entries.value = listOf(
+            CategoryEntry("旅行", "出かける計画", CategoryKind.USER, 1, id = 1),
+            CategoryEntry("技術", "技術の話題", CategoryKind.BUILT_IN, 1),
+            CategoryEntry("ニュース", "時事", CategoryKind.BUILT_IN, 0)
+        )
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+        assertEquals(listOf("旅行", "技術"), viewModel.uiState.value.allCategories)
+
+        viewModel.onCategoryToggled("技術")
+        viewModel.onCategoryToggled("ニュース")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(setOf("技術", "ニュース"), state.selectedCategories)
+        // どれかのカテゴリ(技術)に当てはまるもの。選んだカテゴリは先頭へ。件数 0 でも選択中は残る
+        assertEquals(listOf(1L), state.bookmarks.map { it.id })
+        assertEquals(setOf("技術", "ニュース"), state.allCategories.take(2).toSet())
+        assertTrue("ニュース" in state.allCategories)
+    }
+
+    @Test
+    fun すべて解除はタグとカテゴリと組み合わせ方を外し_お気に入りや検索は変えない() = runTest {
+        repository.bookmarks.value = listOf(
+            testBookmark(1, title = "apple").copy(tags = listOf("10", "11"), category = "技術", isFavorite = true),
+            testBookmark(2, title = "apple pie").copy(isFavorite = true),
+            testBookmark(3).copy(tags = listOf("10"))
+        )
+        tagRepository.tags.value = listOf(TagWithCount(10, "a", 2), TagWithCount(11, "b", 1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onFilterChange(BookmarkFilter.FAVORITES)
+        viewModel.onSearchQueryChange("apple")
+        viewModel.onTagToggled(10L)
+        viewModel.onTagToggled(11L)
+        viewModel.onTagMatchChange(TagMatch.ANY)
+        viewModel.onCategoryToggled("技術")
+        advanceUntilIdle()
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+        assertTrue(viewModel.uiState.value.hasTagOrCategoryFilter)
+
+        viewModel.onClearFilters()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(emptySet<Long>(), state.selectedTagIds)
+        assertEquals(emptySet<String>(), state.selectedCategories)
+        assertEquals(TagMatch.ALL, state.tagMatch)
+        assertFalse(state.hasTagOrCategoryFilter)
+        // お気に入りと検索語はそのまま: お気に入りで「apple」を含む 1 と 2
+        assertEquals(BookmarkFilter.FAVORITES, state.filter)
+        assertTrue(state.isSearchActive)
+        assertEquals(listOf(2L, 1L), state.bookmarks.map { it.id }.sortedDescending().let { it })
+    }
+
+    @Test
+    fun 検索は絞り込みの条件を知らず_一覧の絞り込みとの積で結果を出す() = runTest {
+        repository.bookmarks.value = listOf(
+            testBookmark(1, title = "apple").copy(tags = listOf("10")),
+            testBookmark(2, title = "apple pie")
+        )
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onTagToggled(10L)
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+
+        // 検索には検索語だけを渡し、絞り込み(タグ)に合うものだけを出す
+        assertEquals(listOf("apple"), repository.searchCalls.distinct())
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+    }
+
+    @Test
+    fun 削除されたタグは選択から外して見せる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1).copy(tags = listOf("10")), testBookmark(2))
+        tagRepository.tags.value = listOf(TagWithCount(10, "a", 1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onTagToggled(10L)
+        advanceUntilIdle()
+        assertEquals(setOf(10L), viewModel.uiState.value.selectedTagIds)
+
+        tagRepository.tags.value = emptyList()
+        advanceUntilIdle()
+
+        assertEquals(emptySet<Long>(), viewModel.uiState.value.selectedTagIds)
+        assertFalse(viewModel.uiState.value.hasTagOrCategoryFilter)
+    }
+
+    @Test
+    fun タグ管理から開いたタグは今のタグとカテゴリの条件を置き換える() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1).copy(tags = listOf("10")), testBookmark(2).copy(tags = listOf("11")))
+        tagRepository.tags.value = listOf(TagWithCount(10, "a", 1), TagWithCount(11, "b", 1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onTagToggled(11L)
+        viewModel.onCategoryToggled("技術")
+        viewModel.onTagMatchChange(TagMatch.ANY)
+        advanceUntilIdle()
+
+        viewModel.showTag(10L)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(setOf(10L), state.selectedTagIds)
+        assertEquals(emptySet<String>(), state.selectedCategories)
+        assertEquals(TagMatch.ALL, state.tagMatch)
+        assertEquals(listOf(1L), state.bookmarks.map { it.id })
     }
 }
