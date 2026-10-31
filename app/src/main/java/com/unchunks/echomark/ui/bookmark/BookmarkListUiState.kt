@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.bookmark
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.common.SelectedFile
@@ -50,6 +51,10 @@ data class BookmarkListUiState(
     /** 検索モード(トップバーが検索欄になっている)か */
     val isSearchActive: Boolean = false,
     val searchQuery: String = "",
+    /** 結果に使った検索語(空白で分けたもの)。カードで一致した語を強調する */
+    val searchTerms: List<String> = emptyList(),
+    /** 検索結果それぞれが、どこに一致したか(ブックマークの ID → 一致した場所) */
+    val searchMatches: Map<Long, SearchMatch> = emptyMap(),
     /** 入力中で、表示中の結果がまだ今の検索語のものではない */
     val isSearching: Boolean = false,
     /** 意味(ベクトル)検索が使えているか。false ならキーワード検索のみ */

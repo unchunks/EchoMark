@@ -56,6 +56,7 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.ui.attachment.rememberAttachmentFile
 import com.unchunks.echomark.ui.attachment.rememberMediaDuration
@@ -86,6 +87,8 @@ private val MIN_SHRUNK_TAG_WIDTH = 56.dp
  * @param nowMillis 相対日時の基準時刻。プレビューやスクリーンショットでは固定値を渡す
  * @param onLongClick 渡すと長押しできる(操作メニューを出す用)。[onLongClickLabel] は TalkBack で読み上げる操作名
  * @param selected 2 画面表示で、右側に詳細を出しているカード。枠線と背景色で強調し、TalkBack では「選択済み」と読む
+ * @param searchTerms 検索結果として出すときの検索語。タイトルと要約で一致した文字を強調する
+ * @param searchMatch 検索結果として出すときの、一致した場所(「一致: タイトル・本文」と本文の一節を出す)
  */
 @Composable
 fun BookmarkCard(
@@ -96,7 +99,9 @@ fun BookmarkCard(
     nowMillis: Long = System.currentTimeMillis(),
     onLongClick: (() -> Unit)? = null,
     onLongClickLabel: String? = null,
-    selected: Boolean = false
+    selected: Boolean = false,
+    searchTerms: List<String> = emptyList(),
+    searchMatch: SearchMatch? = null
 ) {
     val domain = bookmark.displaySource()
     val colors = CardDefaults.cardColors(
@@ -107,7 +112,7 @@ fun BookmarkCard(
     val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     if (onLongClick == null) {
         Card(onClick = onClick, modifier = modifier.fillMaxWidth().then(selectionModifier), colors = colors, border = border) {
-            BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis)
+            BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis, searchTerms, searchMatch)
         }
     } else {
         val haptics = LocalHapticFeedback.current
@@ -127,7 +132,7 @@ fun BookmarkCard(
             colors = colors,
             border = border
         ) {
-            BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis)
+            BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis, searchTerms, searchMatch)
         }
     }
 }
@@ -137,7 +142,9 @@ private fun BookmarkCardBody(
     bookmark: Bookmark,
     domain: String,
     onToggleFavorite: (() -> Unit)?,
-    nowMillis: Long
+    nowMillis: Long,
+    searchTerms: List<String>,
+    searchMatch: SearchMatch?
 ) {
     Column(modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp)) {
         Row(verticalAlignment = Alignment.Top) {
@@ -151,7 +158,7 @@ private fun BookmarkCardBody(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = bookmark.title,
+                    text = rememberHighlighted(bookmark.title, searchTerms),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
@@ -169,13 +176,18 @@ private fun BookmarkCardBody(
         if (!summary.isNullOrBlank()) {
             Spacer(Modifier.height(8.dp))
             Text(
-                text = summary,
+                text = rememberHighlighted(summary, searchTerms),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(end = 8.dp)
             )
+        }
+
+        if (searchMatch != null && !searchMatch.isSemanticOnly) {
+            Spacer(Modifier.height(8.dp))
+            SearchMatchReason(searchMatch, Modifier.padding(end = 8.dp))
         }
 
         // 完了済み(DONE)は要約が見えていれば十分なのでバッジを出さない

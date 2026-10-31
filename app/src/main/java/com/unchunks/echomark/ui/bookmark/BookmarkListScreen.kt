@@ -222,7 +222,10 @@ fun BookmarkListScreen(
         uiState = uiState,
         snackbarHostState = snackbarHostState,
         callbacks = BookmarkListCallbacks(
-            onOpenBookmark = onOpenBookmark,
+            onOpenBookmark = { id ->
+                viewModel.onOpenBookmark(id)
+                onOpenBookmark(id)
+            },
             onSearchActiveChange = viewModel::onSearchActiveChange,
             onSearchQueryChange = viewModel::onSearchQueryChange,
             onFilterChange = viewModel::onFilterChange,
@@ -441,6 +444,8 @@ private fun BookmarkList(
                     if (bookmark.id in uiState.semanticMatchIds) SemanticMatchLabel()
                     BookmarkCard(
                         bookmark = bookmark,
+                        searchTerms = if (uiState.isShowingSearchResults) uiState.searchTerms else emptyList(),
+                        searchMatch = if (uiState.isShowingSearchResults) uiState.searchMatches[bookmark.id] else null,
                         selected = bookmark.id == selectedBookmarkId,
                         onClick = { callbacks.onOpenBookmark(bookmark.id) },
                         onToggleFavorite = { callbacks.onToggleFavorite(bookmark) },

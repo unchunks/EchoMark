@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
 import com.unchunks.echomark.ui.components.AiStatusBadge
 import com.unchunks.echomark.ui.components.BookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
@@ -56,6 +57,32 @@ class ComponentsScreenshotTest {
                 bookmark = PreviewSamples.waitingModelBookmark.copy(isFavorite = true),
                 onClick = {},
                 nowMillis = PreviewSamples.NOW
+            )
+        }
+    }
+
+    @Test
+    fun bookmarkCardsInSearchResults() = screenshot.captureLightDark("bookmark_cards_search") {
+        val terms = listOf("compose", "remember")
+        val body = "あ".repeat(80) + "remember の使い方を詳しく説明する" + "い".repeat(80)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // タイトルと要約の強調・本文の一節(タイトルに無い語)・タグ・URL に一致
+            val withBody = PreviewSamples.urlBookmark.copy(content = body)
+            BookmarkCard(
+                bookmark = withBody,
+                onClick = {},
+                onToggleFavorite = {},
+                nowMillis = PreviewSamples.NOW,
+                searchTerms = terms,
+                searchMatch = SearchMatcher.explain(withBody, terms)
+            )
+            // 意味の近さだけで見つかったもの(一致の理由は出さない)
+            BookmarkCard(
+                bookmark = PreviewSamples.textBookmark,
+                onClick = {},
+                nowMillis = PreviewSamples.NOW,
+                searchTerms = terms,
+                searchMatch = SearchMatcher.explain(PreviewSamples.textBookmark, terms)
             )
         }
     }
