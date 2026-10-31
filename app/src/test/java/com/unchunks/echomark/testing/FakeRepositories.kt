@@ -1,5 +1,7 @@
 package com.unchunks.echomark.testing
 
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.flow.StateFlow
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
@@ -39,6 +41,9 @@ import com.unchunks.echomark.domain.repository.ChatModelChoices
 import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.repository.ChatModelRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
+import com.unchunks.echomark.domain.repository.ChatSpeechOutput
+import com.unchunks.echomark.domain.repository.ChatVoiceInput
+import com.unchunks.echomark.domain.repository.VoiceInputResult
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.domain.model.CategoryDefinition
@@ -651,6 +656,39 @@ open class FakeChatRepository : ChatRepository {
         restored += conversation to messages
         previews.value = (previews.value + ConversationPreview(conversation))
             .sortedByDescending { it.conversation.updatedAt }
+    }
+}
+
+/** 音声入力の Fake。[waitForFinish] なら「話し終える」まで待つ。 */
+class FakeChatVoiceInput : ChatVoiceInput {
+    var result: VoiceInputResult = VoiceInputResult.NoSpeech
+    var waitForFinish = false
+
+    override suspend fun listen(finish: Deferred<Unit>, onTranscribing: () -> Unit): VoiceInputResult {
+        if (waitForFinish) finish.await()
+        onTranscribing()
+        return result
+    }
+}
+
+/** 読み上げの Fake。[spoken] に読み上げた内容を残す。 */
+class FakeChatSpeechOutput : ChatSpeechOutput {
+    private val speaking = MutableStateFlow<Long?>(null)
+    override val speakingMessageId: StateFlow<Long?> = speaking
+    val spoken = mutableListOf<Pair<Long, List<String>>>()
+    var available = true
+    var stopCalls = 0
+
+    override suspend fun speak(messageId: Long, parts: List<String>): Boolean {
+        if (!available) return false
+        spoken += messageId to parts
+        speaking.value = messageId
+        return true
+    }
+
+    override fun stop() {
+        stopCalls++
+        speaking.value = null
     }
 }
 

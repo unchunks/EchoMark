@@ -21,9 +21,12 @@ import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatModelChoices
 import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
+import com.unchunks.echomark.domain.repository.VoiceInputResult
 import com.unchunks.echomark.testing.FakeAiSetupRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeChatModelRepository
+import com.unchunks.echomark.testing.FakeChatSpeechOutput
+import com.unchunks.echomark.testing.FakeChatVoiceInput
 import com.unchunks.echomark.testing.FakeChatRepository
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.navigation.Routes
@@ -55,6 +58,8 @@ class ChatViewModelTest {
     private val chatModels = FakeChatModelRepository()
     private val dispatchers = TestDispatcherProvider(Dispatchers.Unconfined)
     private val settings = FakeAppSettingsRepository()
+    private val voiceInput = FakeChatVoiceInput()
+    private val speechOutput = FakeChatSpeechOutput()
     private val attachmentSource = object : ChatAttachmentSource {
         override suspend fun load(uri: String): ChatAttachmentContext = ChatAttachmentContext("資料.txt", "添付の本文")
     }
@@ -62,7 +67,7 @@ class ChatViewModelTest {
     private fun createViewModel(
         savedState: SavedStateHandle = SavedStateHandle(),
         repo: FakeChatRepository = repository
-    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels, dispatchers, settings)
+    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels, dispatchers, settings, voiceInput, speechOutput)
 
     @Test
     fun モデル未取得のときは専用メッセージとAI設定への導線を出しisSendingが戻る() = runTest {
@@ -533,6 +538,150 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun 声で質問すると文字にして送り_回答を読み上げる() = runTest {
+        voiceInput.result = VoiceInputResult.Text("声の質問")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.startVoiceInput()
+        advanceUntilIdle()
+
+        assertEquals("声の質問", repository.sent.single().second)
+        assertEquals(ChatVoiceState.IDLE, viewModel.uiState.value.voiceState)
+        assertEquals(1, speechOutput.spoken.size)
+    }
+
+    @Test
+    fun 手で打った質問の回答は読み上げない() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("手で打った質問")
+        advanceUntilIdle()
+
+        assertTrue(speechOutput.spoken.isEmpty())
+    }
+
+    @Test
+    fun 録音中は状態を出し_話し終えると文字起こしに進む() = runTest {
+        voiceInput.waitForFinish = true
+        voiceInput.result = VoiceInputResult.Text("質問")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.startVoiceInput()
+        runCurrent()
+        assertEquals(ChatVoiceState.LISTENING, viewModel.uiState.value.voiceState)
+
+        viewModel.finishVoiceInput()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.sent.size)
+        assertEquals(ChatVoiceState.IDLE, viewModel.uiState.value.voiceState)
+    }
+
+    @Test
+    fun やめると録音を捨てて何も送らない() = runTest {
+        voiceInput.waitForFinish = true
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.startVoiceInput()
+        runCurrent()
+        viewModel.cancelVoiceInput()
+        advanceUntilIdle()
+
+        assertTrue(repository.sent.isEmpty())
+        assertEquals(ChatVoiceState.IDLE, viewModel.uiState.value.voiceState)
+        assertNull(viewModel.uiState.value.voiceError)
+    }
+
+    @Test
+    fun 画面が見えなくなると録音も読み上げも止める() = runTest {
+        voiceInput.waitForFinish = true
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.startVoiceInput()
+        runCurrent()
+        viewModel.onScreenHidden()
+        advanceUntilIdle()
+
+        assertEquals(ChatVoiceState.IDLE, viewModel.uiState.value.voiceState)
+        assertTrue(speechOutput.stopCalls >= 2)
+    }
+
+    @Test
+    fun 聞き取れなかった理由を出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        voiceInput.result = VoiceInputResult.NoSpeech
+        viewModel.startVoiceInput()
+        advanceUntilIdle()
+        assertEquals("聞き取れませんでした", viewModel.uiState.value.voiceError)
+
+        voiceInput.result = VoiceInputResult.TranscriptionUnavailable
+        viewModel.startVoiceInput()
+        advanceUntilIdle()
+        assertEquals("この端末では音声を文字にできませんでした", viewModel.uiState.value.voiceError)
+        assertTrue(repository.sent.isEmpty())
+    }
+
+    @Test
+    fun 質問を送ると音声の失敗の表示は消える() = runTest {
+        voiceInput.result = VoiceInputResult.NoSpeech
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.startVoiceInput()
+        advanceUntilIdle()
+
+        viewModel.sendMessage("手で打った質問")
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.voiceError)
+    }
+
+    @Test
+    fun マイクの許可が無ければ理由を出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.onMicrophoneDenied()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.voiceError!!.contains("マイクの許可"))
+    }
+
+    @Test
+    fun 回答の読み上げを切り替える() = runTest {
+        val message = ChatMessage(id = 4, conversationId = 1, role = ChatRole.ASSISTANT, content = "回答 [1]", createdAt = 2)
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.toggleSpeaking(message)
+        advanceUntilIdle()
+        assertEquals(4L, viewModel.uiState.value.speakingMessageId)
+        assertEquals(listOf(4L to listOf("回答")), speechOutput.spoken)
+
+        viewModel.toggleSpeaking(message)
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.speakingMessageId)
+    }
+
+    @Test
+    fun 読み上げを使えなければ理由を出す() = runTest {
+        speechOutput.available = false
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.toggleSpeaking(ChatMessage(id = 4, conversationId = 1, role = ChatRole.ASSISTANT, content = "回答", createdAt = 2))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.voiceError!!.contains("読み上げ"))
+    }
+
+    @Test
     fun 使えるAIが画面の状態に出て_選ぶと保存先に渡す() = runTest {
         val local = ChatModelOption.Local("gemma", "Gemma.litertlm")
         val other = ChatModelOption.Local("qwen", "Qwen.task")
@@ -813,6 +962,8 @@ class ChatViewModelTest {
         },
         chatModels,
         dispatchers,
-        settings
+        settings,
+        voiceInput,
+        speechOutput
     )
 }

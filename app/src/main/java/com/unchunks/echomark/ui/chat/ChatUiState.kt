@@ -45,6 +45,12 @@ data class ChatUiState(
     val branchParent: ConversationBranch? = null,
     /** この会話から分けた会話。 */
     val branches: List<ConversationBranch> = emptyList(),
+    /** 音声入力の進み具合。 */
+    val voiceState: ChatVoiceState = ChatVoiceState.IDLE,
+    /** 音声入力・読み上げを使えなかった理由(なければ null)。 */
+    val voiceError: String? = null,
+    /** 読み上げている回答。 */
+    val speakingMessageId: Long? = null,
     /** トップバーで選べる AI。 */
     val modelChoices: ChatModelChoices = ChatModelChoices(),
     /** 次の質問に添付するファイルの名前(添付していなければ null)。送信すると外れる。 */
@@ -57,6 +63,17 @@ data class ChatUiState(
     /** 何もメッセージが無い新しい会話(挨拶と質問の例を出す)。 */
     val isEmptyConversation: Boolean
         get() = !isLoading && messages.isEmpty() && !isSending && error == null
+}
+
+/** 音声入力の進み具合。 */
+enum class ChatVoiceState {
+    IDLE,
+
+    /** 録音している */
+    LISTENING,
+
+    /** 録音を終えて文字に起こしている */
+    TRANSCRIBING
 }
 
 /**

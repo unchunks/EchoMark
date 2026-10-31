@@ -27,12 +27,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.CallSplit
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -192,7 +194,9 @@ internal fun AssistantMessageItem(
     review: AnswerReview? = null,
     onRegenerate: (() -> Unit)? = null,
     onBranch: (() -> Unit)? = null,
-    onSaveNote: (() -> Unit)? = null
+    onSaveNote: (() -> Unit)? = null,
+    isSpeaking: Boolean = false,
+    onToggleSpeaking: (() -> Unit)? = null
 ) {
     val ids = message.referencedBookmarkIds
     var highlighted by rememberSaveable(message.id) { mutableStateOf<Int?>(null) }
@@ -251,6 +255,16 @@ internal fun AssistantMessageItem(
                         Icons.AutoMirrored.Outlined.NoteAdd,
                         contentDescription = "回答をメモに保存",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            if (onToggleSpeaking != null) {
+                IconButton(onClick = onToggleSpeaking) {
+                    Icon(
+                        if (isSpeaking) Icons.Outlined.StopCircle else Icons.AutoMirrored.Outlined.VolumeUp,
+                        contentDescription = if (isSpeaking) "読み上げを止める" else "回答を読み上げる",
+                        tint = if (isSpeaking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
                 }
