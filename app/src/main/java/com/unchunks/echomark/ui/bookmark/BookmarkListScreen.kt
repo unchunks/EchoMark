@@ -53,6 +53,7 @@ import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.automirrored.outlined.ViewList
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,6 +61,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -76,6 +78,7 @@ import androidx.compose.material3.SwipeToDismissBoxDefaults
 import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
@@ -126,6 +129,8 @@ import com.unchunks.echomark.domain.bookmark.model.ReadingTime
 import com.unchunks.echomark.domain.bookmark.model.Recommendation
 import com.unchunks.echomark.domain.bookmark.model.RecommendationReason
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
+import com.unchunks.echomark.domain.bookmark.model.SmartFolder
+import com.unchunks.echomark.domain.bookmark.model.SmartFolderResult
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.common.displayName
@@ -203,6 +208,11 @@ fun BookmarkListScreen(
                         if (result == SnackbarResult.ActionPerformed) currentOnOpenBookmark(message.id)
                     }
                     is BookmarkListMessage.SaveFailed -> snackbarHostState.showSnackbar(message.message)
+                    is BookmarkListMessage.SmartFolderSaved -> snackbarHostState.showSnackbar("スマートフォルダ「${message.name}」を保存しました")
+                    is BookmarkListMessage.SmartFolderUpdated -> snackbarHostState.showSnackbar("スマートフォルダ「${message.name}」を今の条件に更新しました")
+                    is BookmarkListMessage.SmartFolderDeleted ->
+                        snackbarHostState.showSnackbar("スマートフォルダ「${message.name}」を削除しました(中のブックマークは消えていません)")
+                    is BookmarkListMessage.SmartFolderFailed -> snackbarHostState.showSnackbar(message.message)
                     // 結果の知らせ(FilesSaved / SaveFailed)が届くと閉じる
                     is BookmarkListMessage.SavingFiles -> snackbarHostState.showSnackbar(
                         message = if (message.count > 1) "${message.count}件のファイルを保存しています…" else "ファイルを保存しています…",
@@ -257,6 +267,12 @@ fun BookmarkListScreen(
             onFilterChange = viewModel::onFilterChange,
             onSortOrderChange = viewModel::onSortOrderChange,
             onDisplayChange = viewModel::onDisplayChange,
+            onSmartFolderSelect = viewModel::onSmartFolderSelected,
+            onSaveSmartFolder = viewModel::onSaveSmartFolder,
+            onRenameSmartFolder = viewModel::onRenameSmartFolder,
+            // 並び順も保存していたフォルダは、並び順も今のものに更新する
+            onUpdateSmartFolder = { folder -> viewModel.onOverwriteSmartFolder(folder, includeSort = folder.sortOrder != null) },
+            onDeleteSmartFolder = viewModel::onDeleteSmartFolder,
             onTagToggle = viewModel::onTagToggled,
             onCategoryToggle = viewModel::onCategoryToggled,
             onTagMatchChange = viewModel::onTagMatchChange,
@@ -296,6 +312,19 @@ fun BookmarkListScreen(
     }
 }
 
+/** 一覧画面で出しているスマートフォルダ関係のダイアログ・シート */
+private sealed interface SmartFolderDialog {
+    /** 今の条件を保存する名前の入力 */
+    data object Save : SmartFolderDialog
+
+    /** フォルダの操作(名前を変える・削除)を選ぶシート */
+    data class Manage(val folder: SmartFolder) : SmartFolderDialog
+
+    data class Rename(val folder: SmartFolder) : SmartFolderDialog
+
+    data class ConfirmDelete(val folder: SmartFolder) : SmartFolderDialog
+}
+
 /** 一覧画面の操作。状態を持たない [BookmarkListContent] に渡す */
 class BookmarkListCallbacks(
     val onOpenBookmark: (Long) -> Unit = {},
@@ -321,6 +350,14 @@ class BookmarkListCallbacks(
     val onSortOrderChange: (BookmarkSortOrder) -> Unit = {},
     /** 一覧の見せ方(カード・コンパクト・グリッド)を変える */
     val onDisplayChange: (BookmarkListDisplay) -> Unit = {},
+    /** スマートフォルダを開く(開いているフォルダをもう一度選ぶと閉じる) */
+    val onSmartFolderSelect: (SmartFolder) -> Unit = {},
+    /** 今の条件をスマートフォルダとして保存する(名前・並び順も保存するか・結果の受け取り) */
+    val onSaveSmartFolder: (String, Boolean, (SmartFolderResult) -> Unit) -> Unit = { _, _, _ -> },
+    val onRenameSmartFolder: (Long, String, (SmartFolderResult) -> Unit) -> Unit = { _, _, _ -> },
+    /** 開いたあとに条件を変えたフォルダを、今の条件で上書きする */
+    val onUpdateSmartFolder: (SmartFolder) -> Unit = {},
+    val onDeleteSmartFolder: (SmartFolder) -> Unit = {},
     /** タグを選ぶ・外す(複数選べる) */
     val onTagToggle: (Long) -> Unit = {},
     /** カテゴリを選ぶ・外す(複数選べる) */
@@ -364,6 +401,66 @@ fun BookmarkListContent(
 
     BackHandler(enabled = uiState.isSearchActive) { callbacks.onSearchActiveChange(false) }
     var showConditionSheet by rememberSaveable { mutableStateOf(false) }
+    var smartFolderDialog by remember { mutableStateOf<SmartFolderDialog?>(null) }
+    var smartFolderError by remember { mutableStateOf<String?>(null) }
+    smartFolderDialog?.let { dialog ->
+        val close = {
+            smartFolderDialog = null
+            smartFolderError = null
+        }
+        when (dialog) {
+            SmartFolderDialog.Save -> SmartFolderNameDialog(
+                title = "スマートフォルダとして保存",
+                confirmLabel = "保存",
+                initialName = "",
+                sortOrder = uiState.sortOrder,
+                error = smartFolderError,
+                onConfirm = { name, includeSort ->
+                    callbacks.onSaveSmartFolder(name, includeSort) { result ->
+                        smartFolderError = result.errorMessage()
+                        if (smartFolderError == null) close()
+                    }
+                },
+                onDismiss = close
+            )
+            is SmartFolderDialog.Rename -> SmartFolderNameDialog(
+                title = "名前を変える",
+                confirmLabel = "変更",
+                initialName = dialog.folder.name,
+                sortOrder = null,
+                error = smartFolderError,
+                onConfirm = { name, _ ->
+                    callbacks.onRenameSmartFolder(dialog.folder.id, name) { result ->
+                        smartFolderError = result.errorMessage()
+                        if (smartFolderError == null) close()
+                    }
+                },
+                onDismiss = close
+            )
+            is SmartFolderDialog.Manage -> SmartFolderActionSheet(
+                folder = dialog.folder,
+                onRename = { smartFolderDialog = SmartFolderDialog.Rename(dialog.folder) },
+                onDelete = { smartFolderDialog = SmartFolderDialog.ConfirmDelete(dialog.folder) },
+                onDismiss = { if (smartFolderDialog is SmartFolderDialog.Manage) close() }
+            )
+            is SmartFolderDialog.ConfirmDelete -> AlertDialog(
+                onDismissRequest = close,
+                icon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                title = { Text("削除しますか?") },
+                text = { Text("スマートフォルダ「${dialog.folder.name}」を削除します。中のブックマークは消えません。") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            callbacks.onDeleteSmartFolder(dialog.folder)
+                            close()
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text("削除") }
+                },
+                dismissButton = { TextButton(onClick = close) { Text("キャンセル") } }
+            )
+        }
+    }
     if (showConditionSheet) {
         ConditionSheet(
             selectedTypes = uiState.selectedTypes,
@@ -425,6 +522,22 @@ fun BookmarkListContent(
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
+            if (!uiState.isSearchActive) {
+                SmartFolderRow(
+                    folders = uiState.smartFolders,
+                    activeId = uiState.activeSmartFolderId,
+                    canSave = uiState.canSaveSmartFolder,
+                    folderToUpdate = uiState.smartFolderToUpdate,
+                    onSelect = callbacks.onSmartFolderSelect,
+                    onSave = {
+                        smartFolderError = null
+                        smartFolderDialog = SmartFolderDialog.Save
+                    },
+                    onUpdate = callbacks.onUpdateSmartFolder,
+                    onManage = { smartFolderDialog = SmartFolderDialog.Manage(it) },
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
             if (uiState.isSearchActive) {
                 SearchSuggestionRow(
                     suggestions = uiState.suggestions,

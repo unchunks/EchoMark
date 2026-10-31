@@ -10,7 +10,10 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.SmartFolder
 import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.Recommendation
 import com.unchunks.echomark.domain.bookmark.model.RecommendationReason
@@ -124,6 +127,39 @@ class BookmarkListScreenshotTest {
     fun favoritesEmpty() = screenshot.captureScreenLightDark(
         "library_list_favorites_empty",
         content = content(BookmarkListUiState(filter = BookmarkFilter.FAVORITES, allTags = tags, totalCount = 4))
+    )
+
+    @Test
+    fun smartFolders() = screenshot.captureScreenLightDark(
+        "library_list_smart_folders",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = listOf(PreviewSamples.urlBookmark),
+                allTags = tags,
+                smartFolders = listOf(
+                    SmartFolder(1, "未読の資料", BookmarkQuery(readState = ReadState.UNREAD, types = setOf(BookmarkType.PDF)), BookmarkSortOrder.OLDEST),
+                    SmartFolder(2, "今月の記事", BookmarkQuery(types = setOf(BookmarkType.URL), period = CreatedPeriod.PAST_MONTH)),
+                    SmartFolder(3, "お気に入りのメモ", BookmarkQuery(filter = BookmarkFilter.FAVORITES, types = setOf(BookmarkType.TEXT)))
+                ),
+                activeSmartFolderId = 2,
+                selectedTypes = setOf(BookmarkType.URL),
+                period = CreatedPeriod.PAST_MONTH,
+                totalCount = 4
+            )
+        )
+    )
+
+    @Test
+    fun saveCurrentConditionsAsSmartFolder() = screenshot.captureScreenLightDark(
+        "library_list_smart_folder_save",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = listOf(PreviewSamples.urlBookmark),
+                allTags = tags,
+                readState = ReadState.UNREAD,
+                totalCount = 4
+            )
+        )
     )
 
     @Test

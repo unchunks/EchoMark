@@ -21,6 +21,10 @@ import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.SmartFolder
+import com.unchunks.echomark.domain.bookmark.model.SmartFolderNames
+import com.unchunks.echomark.domain.bookmark.model.SmartFolderResult
+import com.unchunks.echomark.domain.repository.SmartFolderRepository
 import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
@@ -785,4 +789,38 @@ class FakeApiUsageRepository : ApiUsageRepository {
 
     override fun observeSince(from: Long): Flow<List<ApiUsageRecord>> =
         records.map { list -> list.filter { it.createdAt >= from } }
+}
+
+
+/** スマートフォルダの保存先(メモリ上)。名前の決まりは本物と同じ。 */
+class FakeSmartFolderRepository : SmartFolderRepository {
+    val folders = MutableStateFlow<List<SmartFolder>>(emptyList())
+    private var nextId = 1L
+
+    override fun observeFolders(): Flow<List<SmartFolder>> = folders
+
+    override suspend fun create(name: String, query: BookmarkQuery, sortOrder: BookmarkSortOrder?): SmartFolderResult {
+        val normalized = SmartFolderNames.normalize(name) ?: return SmartFolderResult.InvalidName
+        if (folders.value.any { SmartFolderNames.key(it.name) == SmartFolderNames.key(normalized) }) return SmartFolderResult.NameTaken
+        val folder = SmartFolder(nextId++, normalized, query, sortOrder, createdAt = folders.value.size.toLong())
+        folders.value = folders.value + folder
+        return SmartFolderResult.Saved(folder.id)
+    }
+
+    override suspend fun rename(id: Long, name: String): SmartFolderResult {
+        val normalized = SmartFolderNames.normalize(name) ?: return SmartFolderResult.InvalidName
+        if (folders.value.any { it.id != id && SmartFolderNames.key(it.name) == SmartFolderNames.key(normalized) }) {
+            return SmartFolderResult.NameTaken
+        }
+        folders.value = folders.value.map { if (it.id == id) it.copy(name = normalized) else it }
+        return SmartFolderResult.Saved(id)
+    }
+
+    override suspend fun updateConditions(id: Long, query: BookmarkQuery, sortOrder: BookmarkSortOrder?) {
+        folders.value = folders.value.map { if (it.id == id) it.copy(query = query, sortOrder = sortOrder) else it }
+    }
+
+    override suspend fun delete(id: Long) {
+        folders.value = folders.value.filterNot { it.id == id }
+    }
 }

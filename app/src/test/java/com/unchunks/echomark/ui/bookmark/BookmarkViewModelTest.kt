@@ -11,12 +11,15 @@ import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.SmartFolderResult
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeCategoryRepository
+import com.unchunks.echomark.testing.FakeSmartFolderRepository
 import com.unchunks.echomark.testing.FakeTagRepository
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
@@ -56,7 +59,8 @@ class BookmarkViewModelTest {
     private val attachments = FakeAttachmentRepository()
     private val settings = FakeAppSettingsRepository()
     private val highlights = SearchHighlights()
-    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, categories, recentlyDeleted, attachments, settings, TestDispatcherProvider(Dispatchers.Unconfined), highlights)
+    private val smartFolders = FakeSmartFolderRepository()
+    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, categories, recentlyDeleted, attachments, settings, TestDispatcherProvider(Dispatchers.Unconfined), highlights, smartFolders)
 
     /**
      * uiState を購読し、届いたメッセージを集める。
@@ -107,6 +111,179 @@ class BookmarkViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf(3L), viewModel.uiState.value.bookmarks.map { it.id })
         assertEquals(BookmarkFilter.FAVORITES, viewModel.uiState.value.filter)
+    }
+
+    @Test
+    fun スマートフォルダを開くと条件と並び順で探し直し_もう一度選ぶと戻る() = runTest {
+        repository.bookmarks.value = listOf(
+            testBookmark(1, "古い未読").copy(createdAt = 100),
+            testBookmark(2, "新しい未読").copy(createdAt = 300),
+            testBookmark(3, "既読").copy(createdAt = 200, readAt = 5)
+        )
+        smartFolders.create("未読を古い順", BookmarkQuery(readState = ReadState.UNREAD), BookmarkSortOrder.OLDEST)
+        val folder = smartFolders.folders.value.single()
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+        assertEquals(listOf(2L, 3L, 1L), viewModel.uiState.value.bookmarks.map { it.id })
+        assertEquals(folder, viewModel.uiState.value.smartFolders.single())
+        assertNull(viewModel.uiState.value.activeSmartFolderId)
+
+        viewModel.onSmartFolderSelected(folder)
+        advanceUntilIdle()
+
+        var state = viewModel.uiState.value
+        assertEquals(listOf(1L, 2L), state.bookmarks.map { it.id })
+        assertEquals(folder.id, state.activeSmartFolderId)
+        assertEquals(BookmarkSortOrder.OLDEST, state.sortOrder)
+        // 保存してある並び順の設定は書き換えない
+        assertEquals(BookmarkSortOrder.NEWEST, settings.bookmarkSortOrderFlow.value)
+        assertFalse(state.canSaveSmartFolder)
+
+        // 開いているフォルダをもう一度選ぶと閉じる
+        viewModel.onSmartFolderSelected(folder)
+        advanceUntilIdle()
+        state = viewModel.uiState.value
+        assertEquals(listOf(2L, 3L, 1L), state.bookmarks.map { it.id })
+        assertNull(state.activeSmartFolderId)
+        assertEquals(BookmarkSortOrder.NEWEST, state.sortOrder)
+    }
+
+    @Test
+    fun 並び順を選び直すとスマートフォルダの並び順は外れる() = runTest {
+        smartFolders.create("古い順", BookmarkQuery(readState = ReadState.UNREAD), BookmarkSortOrder.OLDEST)
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSmartFolderSelected(smartFolders.folders.value.single())
+        advanceUntilIdle()
+        assertEquals(BookmarkSortOrder.OLDEST, viewModel.uiState.value.sortOrder)
+
+        viewModel.onSortOrderChange(BookmarkSortOrder.TITLE)
+        advanceUntilIdle()
+
+        assertEquals(BookmarkSortOrder.TITLE, viewModel.uiState.value.sortOrder)
+        assertEquals(BookmarkSortOrder.TITLE, settings.bookmarkSortOrderFlow.value)
+        // 条件はそのまま(フォルダを開いたまま)
+        assertEquals(smartFolders.folders.value.single().id, viewModel.uiState.value.activeSmartFolderId)
+    }
+
+    @Test
+    fun 条件を付けると保存でき_保存したフォルダがその条件のフォルダとして開いた状態になる() = runTest {
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+        assertFalse("条件が無ければ保存できない", viewModel.uiState.value.canSaveSmartFolder)
+
+        viewModel.onReadStateToggled(ReadState.UNREAD)
+        viewModel.onTypeToggled(BookmarkType.URL)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.canSaveSmartFolder)
+
+        val results = mutableListOf<SmartFolderResult>()
+        viewModel.onSaveSmartFolder(" 未読のリンク ", includeSort = true) { results += it }
+        advanceUntilIdle()
+
+        assertTrue(results.single() is SmartFolderResult.Saved)
+        val saved = smartFolders.folders.value.single()
+        assertEquals("未読のリンク", saved.name)
+        assertEquals(BookmarkQuery(types = setOf(BookmarkType.URL), readState = ReadState.UNREAD), saved.query)
+        assertEquals(BookmarkSortOrder.NEWEST, saved.sortOrder)
+        assertEquals(listOf<BookmarkListMessage>(BookmarkListMessage.SmartFolderSaved("未読のリンク")), messages)
+        // 同じ条件のフォルダができたので、開いている扱いになり、もう「保存」は出ない
+        assertEquals(saved.id, viewModel.uiState.value.activeSmartFolderId)
+        assertFalse(viewModel.uiState.value.canSaveSmartFolder)
+    }
+
+    @Test
+    fun 並び順を保存しない選択ができ_同じ名前や空の名前は保存しない() = runTest {
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onReadStateToggled(ReadState.READ)
+        advanceUntilIdle()
+
+        val results = mutableListOf<SmartFolderResult>()
+        viewModel.onSaveSmartFolder("既読", includeSort = false) { results += it }
+        viewModel.onSaveSmartFolder("  ", includeSort = false) { results += it }
+        viewModel.onSaveSmartFolder("既読", includeSort = false) { results += it }
+        advanceUntilIdle()
+
+        assertTrue(results[0] is SmartFolderResult.Saved)
+        assertEquals(SmartFolderResult.InvalidName, results[1])
+        assertEquals(SmartFolderResult.NameTaken, results[2])
+        assertNull(smartFolders.folders.value.single().sortOrder)
+    }
+
+    @Test
+    fun 開いたフォルダの条件を変えると更新でき_更新すると開いた状態に戻る() = runTest {
+        smartFolders.create("未読", BookmarkQuery(readState = ReadState.UNREAD), null)
+        val folder = smartFolders.folders.value.single()
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        viewModel.onSmartFolderSelected(folder)
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.smartFolderToUpdate)
+
+        viewModel.onTypeToggled(BookmarkType.PDF)
+        advanceUntilIdle()
+        var state = viewModel.uiState.value
+        assertNull(state.activeSmartFolderId)
+        assertEquals(folder, state.smartFolderToUpdate)
+        assertTrue(state.canSaveSmartFolder)
+
+        viewModel.onOverwriteSmartFolder(folder, includeSort = false)
+        advanceUntilIdle()
+
+        state = viewModel.uiState.value
+        assertEquals(setOf(BookmarkType.PDF), smartFolders.folders.value.single().query.types)
+        assertEquals(folder.id, state.activeSmartFolderId)
+        assertNull(state.smartFolderToUpdate)
+        assertEquals(listOf<BookmarkListMessage>(BookmarkListMessage.SmartFolderUpdated("未読")), messages)
+    }
+
+    @Test
+    fun すべて解除するとフォルダの更新は出なくなる() = runTest {
+        smartFolders.create("未読", BookmarkQuery(readState = ReadState.UNREAD), BookmarkSortOrder.TITLE)
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSmartFolderSelected(smartFolders.folders.value.single())
+        viewModel.onTypeToggled(BookmarkType.PDF)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.smartFolderToUpdate != null)
+
+        viewModel.onClearFilters()
+        advanceUntilIdle()
+        // 別の条件を付け直しても、前に開いたフォルダの更新は出ない
+        viewModel.onTypeToggled(BookmarkType.IMAGE)
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.smartFolderToUpdate)
+        assertEquals(BookmarkSortOrder.NEWEST, viewModel.uiState.value.sortOrder)
+    }
+
+    @Test
+    fun フォルダを削除すると開いていれば通常の一覧に戻り_名前も変えられる() = runTest {
+        smartFolders.create("消すフォルダ", BookmarkQuery(readState = ReadState.UNREAD), null)
+        smartFolders.create("残すフォルダ", BookmarkQuery(readState = ReadState.READ), null)
+        val (doomed, kept) = smartFolders.folders.value
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        viewModel.onSmartFolderSelected(doomed)
+        advanceUntilIdle()
+        assertEquals(doomed.id, viewModel.uiState.value.activeSmartFolderId)
+
+        viewModel.onDeleteSmartFolder(doomed)
+        advanceUntilIdle()
+
+        assertEquals(listOf(kept.id), smartFolders.folders.value.map { it.id })
+        assertNull(viewModel.uiState.value.activeSmartFolderId)
+        assertFalse(viewModel.uiState.value.isNarrowed)
+        assertEquals(listOf<BookmarkListMessage>(BookmarkListMessage.SmartFolderDeleted("消すフォルダ")), messages)
+
+        val results = mutableListOf<SmartFolderResult>()
+        viewModel.onRenameSmartFolder(kept.id, "新しい名前") { results += it }
+        advanceUntilIdle()
+        assertTrue(results.single() is SmartFolderResult.Saved)
+        assertEquals("新しい名前", smartFolders.folders.value.single().name)
     }
 
     @Test

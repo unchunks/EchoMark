@@ -9,6 +9,7 @@ import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
 import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.Recommendation
 import com.unchunks.echomark.domain.bookmark.model.SearchMatch
+import com.unchunks.echomark.domain.bookmark.model.SmartFolder
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
@@ -79,6 +80,12 @@ data class BookmarkListUiState(
     val semanticSearchAvailable: Boolean = true,
     /** キーワードには一致せず、意味が近いことで見つかったもの */
     val semanticMatchIds: Set<Long> = emptySet(),
+    /** スマートフォルダ(保存した絞り込み条件)。作った順 */
+    val smartFolders: List<SmartFolder> = emptyList(),
+    /** 今の条件と同じ条件のスマートフォルダ(開いているフォルダ)。無ければ null */
+    val activeSmartFolderId: Long? = null,
+    /** 開いたフォルダの条件を変えたとき、その条件で上書きできるフォルダ。無ければ null */
+    val smartFolderToUpdate: SmartFolder? = null,
     /** 「次に読む」(まだ読んでいないものから選んだおすすめ)。空なら出さない */
     val recommendations: List<Recommendation> = emptyList(),
     /** 「今日の再発見」(しばらく開いていないもの)。空なら出さない */
@@ -95,6 +102,10 @@ data class BookmarkListUiState(
     /** タグ・カテゴリ・種類・期間のどれかで絞り込んでいる(「すべて解除」で外せる条件がある) */
     val isNarrowed: Boolean
         get() = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty() || selectedTypes.isNotEmpty() || period != null || readState != null
+
+    /** 今の条件を、スマートフォルダとして保存できるか(条件を付けていて、同じ条件のフォルダがまだ無い)。検索語は条件に含めない */
+    val canSaveSmartFolder: Boolean
+        get() = activeSmartFolderId == null && (filter != BookmarkFilter.ACTIVE || isNarrowed)
 
     val showRediscover: Boolean
         get() = !isSearchActive && filter == BookmarkFilter.ACTIVE && !isNarrowed && rediscover.isNotEmpty()
@@ -143,6 +154,18 @@ sealed interface BookmarkListMessage {
 
     /** ファイルをアプリ内へコピーしている(大きなファイルは時間がかかる) */
     data class SavingFiles(val count: Int) : BookmarkListMessage
+
+    /** スマートフォルダを保存した */
+    data class SmartFolderSaved(val name: String) : BookmarkListMessage
+
+    /** スマートフォルダの条件を、今の条件で置き換えた */
+    data class SmartFolderUpdated(val name: String) : BookmarkListMessage
+
+    /** スマートフォルダを削除した */
+    data class SmartFolderDeleted(val name: String) : BookmarkListMessage
+
+    /** スマートフォルダの保存・更新・削除ができなかった */
+    data class SmartFolderFailed(val message: String) : BookmarkListMessage
 
     /** ファイルを保存した。[savedCount] 件を保存し、[failedCount] 件は保存できなかった */
     data class FilesSaved(val firstId: Long, val savedCount: Int, val failedCount: Int) : BookmarkListMessage

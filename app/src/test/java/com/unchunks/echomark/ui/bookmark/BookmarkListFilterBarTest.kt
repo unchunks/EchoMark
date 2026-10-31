@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -112,7 +113,9 @@ class BookmarkListFilterBarTest {
     }
 
     private fun scrollChipsTo(text: String) {
-        composeRule.onNode(hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+        // 横に動く行は、スマートフォルダの行(上)と絞り込みのチップの行(下)の2つ。絞り込みのチップの行は最後
+        composeRule.onAllNodes(hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+            .onLast()
             .performScrollToNode(hasText(text))
     }
 

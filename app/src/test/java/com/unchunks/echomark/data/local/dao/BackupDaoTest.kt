@@ -7,6 +7,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.backup.BackupData
+import com.unchunks.echomark.data.backup.SmartFolderBackup
+import com.unchunks.echomark.data.mapper.smartFolderEntity
+import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
@@ -16,7 +19,13 @@ import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
+import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.ReadState
+import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.TagSource
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -58,8 +67,9 @@ class BackupDaoTest {
         messages: List<ChatMessageEntity> = emptyList(),
         tagAliases: List<TagAliasEntity> = emptyList(),
         removedTags: List<RemovedTagEntity> = emptyList(),
-        categories: List<CategoryEntity> = emptyList()
-    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories)
+        categories: List<CategoryEntity> = emptyList(),
+        smartFolders: List<SmartFolderBackup> = emptyList()
+    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders)
 
     @Test
     fun 空のDBに統合すると全件入り_書き出すと同じ内容になる() = runTest {
@@ -406,6 +416,87 @@ class BackupDaoTest {
         assertEquals(parent.id, branch.branchedFromId)
         assertEquals(3L, branch.branchedAt)
         assertEquals(true, branch.isPinned)
+    }
+
+    @Test
+    fun スマートフォルダは書き出すとタグが名前になり_全データ削除で消える() = runTest {
+        val tagId = db.tagDao().insertTag(TagEntity(name = "kotlin"))
+        val missing = tagId + 100
+        db.smartFolderDao().insert(
+            smartFolderEntity(
+                "未読の kotlin",
+                BookmarkQuery(tagIds = setOf(tagId, missing), readState = ReadState.UNREAD, period = CreatedPeriod.PAST_WEEK),
+                BookmarkSortOrder.TITLE,
+                createdAt = 5
+            )
+        )
+
+        val exported = dao.snapshot(exportedAt = 1).smartFolders.single()
+
+        // タグは名前で持つ。もう無いタグ(削除済み)の ID は外す
+        assertEquals("未読の kotlin", exported.name)
+        assertEquals(listOf("kotlin"), exported.tagNames)
+        assertEquals("UNREAD", exported.readState)
+        assertEquals("PAST_WEEK", exported.period)
+        assertEquals("TITLE", exported.sortOrder)
+
+        dao.deleteAll()
+        assertEquals(emptyList<SmartFolderBackup>(), dao.snapshot(exportedAt = 1).smartFolders)
+    }
+
+    @Test
+    fun スマートフォルダを読み込むとタグを名前で探し直し_無ければ作る() = runTest {
+        // この端末では「kotlin」の ID が 1 ではない
+        db.tagDao().insertTag(TagEntity(name = "other"))
+        val existingKotlin = db.tagDao().insertTag(TagEntity(name = "kotlin"))
+        val source = backup(
+            smartFolders = listOf(
+                SmartFolderBackup(
+                    name = "kotlin と新しいタグ", tagNames = listOf("kotlin", "新しいタグ"), tagMatch = "ANY",
+                    readState = "UNREAD", period = "PAST_MONTH", sortOrder = "OLDEST", filter = "FAVORITES"
+                ),
+                SmartFolderBackup(name = "全部", filter = "ZZZ", period = "PAST_DECADE")
+            )
+        )
+
+        val result = dao.merge(source)
+
+        assertEquals(2, result.smartFoldersAdded)
+        assertEquals(1, result.tagsAdded)
+        val folders = db.smartFolderDao().getAll().map { it.toDomain() }
+        val first = folders.single { it.name == "kotlin と新しいタグ" }
+        val newTagId = dao.getAllTags().single { it.name == "新しいタグ" }.id
+        assertEquals(setOf(existingKotlin, newTagId), first.query.tagIds)
+        assertEquals(TagMatch.ANY, first.query.tagMatch)
+        assertEquals(ReadState.UNREAD, first.query.readState)
+        assertEquals(CreatedPeriod.PAST_MONTH, first.query.period)
+        assertEquals(BookmarkFilter.FAVORITES, first.query.filter)
+        assertEquals(BookmarkSortOrder.OLDEST, first.sortOrder)
+        // 知らない値は既定に戻す
+        val second = folders.single { it.name == "全部" }
+        assertEquals(BookmarkQuery(), second.query)
+    }
+
+    @Test
+    fun 同じ名前のスマートフォルダがあれば読み込んでも追加しない() = runTest {
+        db.smartFolderDao().insert(smartFolderEntity("Kotlin 記事", BookmarkQuery(readState = ReadState.READ), null, createdAt = 1))
+
+        val result = dao.merge(
+            backup(
+                smartFolders = listOf(
+                    SmartFolderBackup(name = "kotlin 記事", readState = "UNREAD"),
+                    SmartFolderBackup(name = "別のフォルダ"),
+                    SmartFolderBackup(name = "別のフォルダ")
+                )
+            )
+        )
+
+        assertEquals(1, result.smartFoldersAdded)
+        val folders = db.smartFolderDao().getAll()
+        // 書き出し元の作成日時(未指定は 0)が先の、新しいフォルダの方が前に並ぶので、順序には頼らない
+        assertEquals(setOf("Kotlin 記事", "別のフォルダ"), folders.map { it.name }.toSet())
+        // 既にあるフォルダの条件は変えない
+        assertEquals("READ", folders.single { it.name == "Kotlin 記事" }.readState)
     }
 
     @Test

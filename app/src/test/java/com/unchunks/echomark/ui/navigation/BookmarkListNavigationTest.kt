@@ -21,6 +21,7 @@ import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeCategoryRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.testing.FakeSmartFolderRepository
 import com.unchunks.echomark.testing.FakeTagRepository
 import com.unchunks.echomark.testing.fakeCaptureViewModel
 import com.unchunks.echomark.testing.testBookmark
@@ -69,7 +70,7 @@ class BookmarkListNavigationTest {
             EchoMarkTheme {
                 NavHost(navController = controller, startDestination = BOOKMARKS_ROUTE) {
                     composable(BOOKMARKS_ROUTE) { entry ->
-                        val viewModel = viewModel { BookmarkViewModel(repository, tagRepository, FakeCategoryRepository(), recentlyDeleted, FakeAttachmentRepository(), FakeAppSettingsRepository(), TestDispatcherProvider(Dispatchers.Unconfined), SearchHighlights()) }
+                        val viewModel = viewModel { BookmarkViewModel(repository, tagRepository, FakeCategoryRepository(), recentlyDeleted, FakeAttachmentRepository(), FakeAppSettingsRepository(), TestDispatcherProvider(Dispatchers.Unconfined), SearchHighlights(), FakeSmartFolderRepository()) }
                         listViewModel = viewModel
                         CompositionLocalProvider(LocalCaptureViewModel provides captureViewModel) {
                             BookmarkListDestination(
