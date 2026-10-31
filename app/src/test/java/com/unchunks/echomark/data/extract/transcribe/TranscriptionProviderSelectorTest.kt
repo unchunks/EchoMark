@@ -62,6 +62,22 @@ class TranscriptionProviderSelectorTest {
     }
 
     @Test
+    fun チャットの音声はチャットの設定に合わせる() {
+        // 要約はクラウドでも、チャットが端末内なら声をクラウドに送らない
+        runBlocking { settings.setLlmBackend(AiTask.CHAT, LlmBackend.LOCAL) }
+        assertEquals(listOf("on-device"), runBlocking { selector().providers(AiTask.CHAT).map { it.name } })
+        assertEquals(listOf("openai", "on-device"), names())
+
+        // チャットがクラウドでも、要約が端末内なら要約の文字起こしは送らない
+        runBlocking {
+            settings.setLlmBackend(AiTask.CHAT, LlmBackend.API)
+            settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.LOCAL)
+        }
+        assertEquals(listOf("openai", "on-device"), runBlocking { selector().providers(AiTask.CHAT).map { it.name } })
+        assertEquals(listOf("on-device"), names())
+    }
+
+    @Test
     fun 端末内のAIを選んでいれば端末内だけ() {
         settings.setBackendForAll(LlmBackend.LOCAL)
 

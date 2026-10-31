@@ -1,6 +1,8 @@
 package com.unchunks.echomark.ui.chat
 
+import android.Manifest
 import android.content.ClipData
+import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,7 +45,9 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,11 +87,14 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.unchunks.components.composeui.ChatMarkdown
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.ChatMessage
@@ -120,6 +127,15 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.attachFile(it.toString()) }
+    }
+    val context = LocalContext.current
+    // マイクの許可は、マイクのボタンを押したときにだけ求める
+    val requestMicrophone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.startVoiceInput() else viewModel.onMicrophoneDenied()
+    }
+    // 画面が見えなくなったらマイクと読み上げを止める
+    LifecycleStartEffect(viewModel) {
+        onStopOrDispose { viewModel.onScreenHidden() }
     }
     var showScope by rememberSaveable { mutableStateOf(false) }
     var showTemplates by rememberSaveable { mutableStateOf(false) }
@@ -155,6 +171,14 @@ fun ChatScreen(
         onScopeClick = { showScope = true },
         onTemplateClick = { showTemplates = true },
         onResumePrevious = viewModel::resumeAboutConversation,
+        onVoiceClick = {
+            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            if (granted) viewModel.startVoiceInput() else requestMicrophone.launch(Manifest.permission.RECORD_AUDIO)
+        },
+        onFinishVoice = viewModel::finishVoiceInput,
+        onCancelVoice = viewModel::cancelVoiceInput,
+        onToggleSpeaking = viewModel::toggleSpeaking,
         onBranch = { message -> viewModel.branchFrom(message) { input = it } },
         onOpenConversation = viewModel::openConversation,
         onSaveNote = { message ->
@@ -234,7 +258,11 @@ fun ChatContent(
     onResumePrevious: () -> Unit = {},
     onBranch: (ChatMessage) -> Unit = {},
     onOpenConversation: (Long) -> Unit = {},
-    onSaveNote: (ChatMessage) -> Unit = {}
+    onSaveNote: (ChatMessage) -> Unit = {},
+    onVoiceClick: () -> Unit = {},
+    onFinishVoice: () -> Unit = {},
+    onCancelVoice: () -> Unit = {},
+    onToggleSpeaking: (ChatMessage) -> Unit = {}
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -366,6 +394,7 @@ fun ChatContent(
                         onBranch = onBranch,
                         onOpenConversation = onOpenConversation,
                         onSaveNote = onSaveNote,
+                        onToggleSpeaking = onToggleSpeaking,
                         modifier = Modifier.nestedScroll(userScrollConnection)
                     )
                 }
@@ -391,7 +420,17 @@ fun ChatContent(
             uiState.scopeLabel?.takeIf { uiState.aboutBookmark == null }?.let { label ->
                 ChatScopeStatus(label = label, onClick = onScopeClick)
             }
-            ChatInputBar(
+            uiState.voiceError?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.centeredMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp)
+                )
+            }
+            if (uiState.voiceState != ChatVoiceState.IDLE) {
+                ChatVoiceBar(state = uiState.voiceState, onFinish = onFinishVoice, onCancel = onCancelVoice)
+            } else ChatInputBar(
                 value = input,
                 onValueChange = onInputChange,
                 isSending = uiState.isSending,
@@ -400,6 +439,7 @@ fun ChatContent(
                     onSend(input)
                 },
                 onStop = onStop,
+                onVoiceClick = onVoiceClick,
                 onAttachClick = onAttachClick,
                 onTemplateClick = onTemplateClick,
                 // 質問の対象のブックマークがあるときは、対象を根拠にするため範囲は選ばない
@@ -531,6 +571,7 @@ private fun ChatMessageList(
     onBranch: (ChatMessage) -> Unit,
     onOpenConversation: (Long) -> Unit,
     onSaveNote: (ChatMessage) -> Unit,
+    onToggleSpeaking: (ChatMessage) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // 生成中でなければ、最後の質問は編集でき、最後が回答なら作り直せる(失敗の表示中は再試行のボタンを使う)
@@ -566,7 +607,9 @@ private fun ChatMessageList(
                         onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) },
                         onRegenerate = if (message.id == regeneratableId) onRegenerate else null,
                         onBranch = if (idle) ({ onBranch(message) }) else null,
-                        onSaveNote = if (idle) ({ onSaveNote(message) }) else null
+                        onSaveNote = if (idle) ({ onSaveNote(message) }) else null,
+                        isSpeaking = message.id == uiState.speakingMessageId,
+                        onToggleSpeaking = { onToggleSpeaking(message) }
                     )
                 }
                 val branches = uiState.branches.filter { it.branchedAt == message.createdAt }
@@ -650,9 +693,41 @@ internal fun ChatScopeStatus(label: String, onClick: () -> Unit) {
     }
 }
 
+/** 音声入力の間、入力欄の代わりに出す。話し終えるボタンと、やめるボタン。文字に起こしている間は待つだけ。 */
+@Composable
+internal fun ChatVoiceBar(state: ChatVoiceState, onFinish: () -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .centeredMaxWidth()
+                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onCancel) {
+                Icon(Icons.Filled.Close, contentDescription = "音声入力をやめる")
+            }
+            Text(
+                text = if (state == ChatVoiceState.TRANSCRIBING) "文字に起こしています…" else "聞いています…",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
+            if (state == ChatVoiceState.TRANSCRIBING) {
+                CircularProgressIndicator(modifier = Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp)
+            } else {
+                FilledIconButton(onClick = onFinish, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.Stop, contentDescription = "話し終える")
+                }
+            }
+        }
+    }
+}
+
 /**
  * 入力欄。複数行の丸い入力欄と、送信ボタン(空なら無効)。生成中は送信ボタンが停止ボタンに変わる。
  * 生成中も次の質問を打ち始められるよう、入力欄自体は無効にしない。
+ * 何も入力していないときは、送信ボタンの代わりに音声で質問するボタンを出す。
  * 左の追加のボタンから、添付・テンプレート・参照する範囲を開く。
  * @param onScopeClick null なら参照する範囲を選べない
  */
@@ -664,6 +739,7 @@ internal fun ChatInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
+    onVoiceClick: () -> Unit = {},
     onAttachClick: () -> Unit = {},
     onTemplateClick: () -> Unit = {},
     onScopeClick: (() -> Unit)? = null
@@ -725,12 +801,12 @@ internal fun ChatInputBar(
                     FilledTonalIconButton(onClick = onStop, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Filled.Stop, contentDescription = "生成を停止")
                     }
+                } else if (value.isBlank()) {
+                    FilledTonalIconButton(onClick = onVoiceClick, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Outlined.Mic, contentDescription = "音声で質問")
+                    }
                 } else {
-                    FilledIconButton(
-                        onClick = onSend,
-                        enabled = value.isNotBlank(),
-                        modifier = Modifier.size(48.dp)
-                    ) {
+                    FilledIconButton(onClick = onSend, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Filled.ArrowUpward, contentDescription = "送信")
                     }
                 }

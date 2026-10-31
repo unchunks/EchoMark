@@ -18,9 +18,10 @@ import javax.inject.Inject
  * 文字起こしに使う仕組みを、試す順に選ぶ。
  *
  * クラウドに音声を送るのは、次のすべてを満たすときだけ:
- * - 「要約」の AI の実行場所がクラウド API([LlmBackend.API])。文字起こしは主に要約の材料になるため、要約の設定に合わせる
+ * - 文字起こしの結果を使う用途の AI の実行場所がクラウド API([LlmBackend.API])。ファイルの文字起こしは主に要約の材料になるため
+ *   「要約」の設定に、チャットの音声入力は「チャット」の設定に合わせる(端末内で話しているつもりの声をクラウドに送らない)
  * - 「ファイルをクラウドに送る」設定([AppSettingsRepository.sendFilesToCloud])がオン
- * - 要約に選んだ提供元が音声を扱える(OpenAI・Gemini。Claude は音声入力に対応していない)で、その API キーがある
+ * - その用途に選んだ提供元が音声を扱える(OpenAI・Gemini。Claude は音声入力に対応していない)で、その API キーがある
  *
  * クラウドで失敗したら端末内の認識に切り替える([Transcriber])。
  */
@@ -32,11 +33,11 @@ class TranscriptionProviderSelector @Inject constructor(
     private val onDevice: OnDeviceSpeechTranscriber
 ) {
 
-    suspend fun providers(): List<TranscriptionProvider> = listOfNotNull(cloudProvider(), onDevice)
+    suspend fun providers(task: AiTask = AiTask.SUMMARY): List<TranscriptionProvider> = listOfNotNull(cloudProvider(task), onDevice)
 
     /** 条件を満たせばクラウドの文字起こし。満たさなければ null。 */
-    suspend fun cloudProvider(): TranscriptionProvider? {
-        val setting = appSettings.aiTaskSetting(AiTask.SUMMARY).first()
+    suspend fun cloudProvider(task: AiTask = AiTask.SUMMARY): TranscriptionProvider? {
+        val setting = appSettings.aiTaskSetting(task).first()
         if (setting.backend != LlmBackend.API) return null
         if (!appSettings.sendFilesToCloud.first()) return null
         return when (val provider = setting.apiProvider) {

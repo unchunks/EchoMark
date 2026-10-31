@@ -32,6 +32,7 @@ import com.unchunks.echomark.ui.chat.ChatScopeSheetContent
 import com.unchunks.echomark.ui.chat.ChatSuggestions
 import com.unchunks.echomark.ui.chat.ChatTemplateSheetContent
 import com.unchunks.echomark.ui.chat.ChatUiState
+import com.unchunks.echomark.ui.chat.ChatVoiceState
 import com.unchunks.echomark.ui.chat.CitedSource
 import com.unchunks.echomark.ui.chat.ClaimStatus
 import com.unchunks.echomark.ui.chat.ConversationListContent
@@ -304,6 +305,21 @@ class ChatScreenshotTest {
     @Test
     fun conversationListNoMatch() = captureScreen("conversation_list_no_match") {
         ConversationList(ConversationListUiState(isLoading = false, hasConversations = true, query = "見つからない語"))
+    }
+
+    @Test
+    fun voiceListening() = captureScreen("chat_voice_listening") {
+        Chat(conversationState.copy(voiceState = ChatVoiceState.LISTENING))
+    }
+
+    @Test
+    fun voiceTranscribing() = captureScreen("chat_voice_transcribing") {
+        Chat(conversationState.copy(voiceState = ChatVoiceState.TRANSCRIBING))
+    }
+
+    @Test
+    fun voiceErrorAndSpeaking() = captureScreen("chat_voice_error_speaking") {
+        Chat(conversationState.copy(voiceError = "聞き取れませんでした", speakingMessageId = answer.id))
     }
 
     @Test

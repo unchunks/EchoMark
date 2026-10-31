@@ -22,6 +22,9 @@ import com.unchunks.echomark.domain.repository.AiSetupRepository
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.ChatAttachmentSource
+import com.unchunks.echomark.domain.repository.ChatSpeechOutput
+import com.unchunks.echomark.domain.repository.ChatVoiceInput
+import com.unchunks.echomark.domain.repository.VoiceInputResult
 import com.unchunks.echomark.domain.repository.ChatModelChoices
 import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.repository.ChatModelRepository
@@ -30,6 +33,7 @@ import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -61,7 +65,9 @@ class ChatViewModel @Inject constructor(
     private val attachmentSource: ChatAttachmentSource,
     private val chatModels: ChatModelRepository,
     private val dispatchers: DispatcherProvider,
-    private val appSettings: AppSettingsRepository
+    private val appSettings: AppSettingsRepository,
+    private val voiceInput: ChatVoiceInput,
+    private val speechOutput: ChatSpeechOutput
 ) : ViewModel() {
 
     // 既存会話は "chat/{conversationId}" の引数で渡る。"chat/new" では未設定(null)で、
@@ -93,6 +99,18 @@ class ChatViewModel @Inject constructor(
 
     /** 今の送信を停止ボタンで止めたか。 */
     private var stopRequested = false
+
+    private val voiceStateFlow = MutableStateFlow(ChatVoiceState.IDLE)
+    private val voiceErrorFlow = MutableStateFlow<String?>(null)
+
+    /** 録音の処理。キャンセルすると録音を捨てる。 */
+    private var voiceJob: Job? = null
+
+    /** 録音を今の分で終えて文字に起こす合図。 */
+    private var finishVoice: CompletableDeferred<Unit>? = null
+
+    /** 今の送信を声で質問したか。声で聞いた質問の回答は読み上げる。 */
+    private var speakNextAnswer = false
 
     private val answerReviewsFlow = MutableStateFlow<Map<Long, AnswerReview>>(emptyMap())
 
@@ -153,6 +171,7 @@ class ChatViewModel @Inject constructor(
         pendingReferenceCountFlow,
         errorFlow
     ) { sending, streaming, pendingCount, error -> SendingState(sending, streaming, pendingCount, error) }
+        .combine(combine(voiceStateFlow, voiceErrorFlow, speechOutput.speakingMessageId, ::VoiceUiState)) { sending, voice -> sending to voice }
 
     private val contextState = combine(
         conversationFlow,
@@ -225,6 +244,7 @@ class ChatViewModel @Inject constructor(
         answerReviewsFlow
     ) { messagesAndRefs, sending, context, composer, reviews ->
         val attachment = composer.attachment
+        val (sendingValues, voice) = sending
         val messages = messagesAndRefs?.first.orEmpty()
         val bookmarks = messagesAndRefs?.second.orEmpty()
         ChatUiState(
@@ -247,10 +267,13 @@ class ChatViewModel @Inject constructor(
             branches = composer.branch.branches,
             aboutBookmark = context.aboutBookmark,
             suggestions = context.suggestions,
-            isSending = sending.isSending,
-            streamingText = sending.streamingText,
-            pendingReferenceCount = sending.pendingReferenceCount,
-            error = sending.error,
+            isSending = sendingValues.isSending,
+            streamingText = sendingValues.streamingText,
+            pendingReferenceCount = sendingValues.pendingReferenceCount,
+            error = sendingValues.error,
+            voiceState = voice.state,
+            voiceError = voice.error,
+            speakingMessageId = voice.speakingMessageId,
             aiSetup = context.aiSetup,
             modelChoices = context.modelChoices,
             attachmentName = attachment.name,
@@ -271,6 +294,76 @@ class ChatViewModel @Inject constructor(
     fun retry() {
         val failed = errorFlow.value?.failedMessage ?: return
         send(failed, isRetry = true)
+    }
+
+    /** 音声で質問を始める。マイクの権限は画面で確かめてから呼ぶ。話し終わると文字に起こして送り、回答を読み上げる。 */
+    fun startVoiceInput() {
+        if (isSendingFlow.value || voiceJob?.isActive == true) return
+        speechOutput.stop()
+        voiceErrorFlow.value = null
+        voiceStateFlow.value = ChatVoiceState.LISTENING
+        val finish = CompletableDeferred<Unit>().also { finishVoice = it }
+        voiceJob = viewModelScope.launch {
+            try {
+                val result = voiceInput.listen(finish) { voiceStateFlow.value = ChatVoiceState.TRANSCRIBING }
+                when (result) {
+                    is VoiceInputResult.Text -> {
+                        speakNextAnswer = true
+                        sendMessage(result.text)
+                    }
+                    VoiceInputResult.NoSpeech -> voiceErrorFlow.value = "聞き取れませんでした"
+                    VoiceInputResult.MicrophoneUnavailable -> voiceErrorFlow.value = "マイクを使えませんでした"
+                    VoiceInputResult.TranscriptionUnavailable ->
+                        voiceErrorFlow.value = "この端末では音声を文字にできませんでした"
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "音声入力に失敗")
+                voiceErrorFlow.value = "音声を文字にできませんでした"
+            } finally {
+                voiceStateFlow.value = ChatVoiceState.IDLE
+            }
+        }
+    }
+
+    /** 話し終わったことを伝える。録音を今の分で終えて文字に起こす。 */
+    fun finishVoiceInput() {
+        finishVoice?.complete(Unit)
+    }
+
+    /** 録音を捨てて音声入力をやめる。 */
+    fun cancelVoiceInput() {
+        voiceJob?.cancel()
+    }
+
+    /** マイクの許可が得られなかった。 */
+    fun onMicrophoneDenied() {
+        voiceErrorFlow.value = "マイクの許可が無いため、音声で質問できません。端末の設定で許可できます"
+    }
+
+    /** [message] の読み上げを始める。読み上げ中なら止める。 */
+    fun toggleSpeaking(message: ChatMessage) {
+        if (speechOutput.speakingMessageId.value == message.id) speechOutput.stop() else speak(message.id, message.content)
+    }
+
+    private fun speak(messageId: Long, answer: String) {
+        voiceErrorFlow.value = null
+        viewModelScope.launch {
+            if (!speechOutput.speak(messageId, AnswerSpeech.partsOf(answer))) {
+                voiceErrorFlow.value = "読み上げを使えませんでした。端末の読み上げの設定を確かめてください"
+            }
+        }
+    }
+
+    /** 画面が見えなくなった。マイクと読み上げを止める(見えていない間に録音し続けない)。 */
+    fun onScreenHidden() {
+        cancelVoiceInput()
+        speechOutput.stop()
+    }
+
+    override fun onCleared() {
+        speechOutput.stop()
     }
 
     /** 回答を資料と照らし合わせる。本文の長い資料では時間がかかるため、画面のスレッドの外で行う。 */
@@ -381,8 +474,12 @@ class ChatViewModel @Inject constructor(
         attachmentFlow.value = null
         isSendingFlow.value = true
         errorFlow.value = null
+        voiceErrorFlow.value = null
         pendingReferenceCountFlow.value = null
         stopRequested = false
+        // 声で聞いた質問だけを読み上げる。送り直しや手入力の質問は読み上げない
+        val speakAnswer = speakNextAnswer
+        speakNextAnswer = false
         sendJob = viewModelScope.launch {
             try {
                 // 会話は最初の送信時に遅延作成する(空の会話を増やさない)。
@@ -401,7 +498,11 @@ class ChatViewModel @Inject constructor(
                         is ChatStreamEvent.Started ->
                             pendingReferenceCountFlow.value = event.referencedBookmarkIds.size
                         is ChatStreamEvent.Delta -> streamingTextFlow.value = event.textSoFar
-                        is ChatStreamEvent.Completed -> streamingTextFlow.value = null
+                        is ChatStreamEvent.Completed -> {
+                            val answer = streamingTextFlow.value
+                            streamingTextFlow.value = null
+                            if (speakAnswer && !answer.isNullOrBlank()) speak(event.messageId, answer)
+                        }
                         is ChatStreamEvent.Failed -> {
                             Timber.w(event.error, "sendMessageStream failed")
                             errorFlow.value = event.error.toChatError(text)
@@ -492,6 +593,8 @@ class ChatViewModel @Inject constructor(
 
     /** 回答の結果を使い回せるか見分ける。資料が削除されたら確かめ直す。 */
     private data class ReviewKey(val messageId: Long, val availableIds: List<Long>)
+
+    private class VoiceUiState(val state: ChatVoiceState, val error: String?, val speakingMessageId: Long?)
 
     private class SendingState(
         val isSending: Boolean,

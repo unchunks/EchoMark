@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- チャットの音声入力。マイクのボタンを押したときにだけ許可を求める -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- マイクの無い端末でも入れられるようにする(音声入力だけ使えない) -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <!-- 再発見通知用。Android 13+ のみ実行時に要求する(設定でオンにしたとき) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 長い処理をフォアグラウンドで実行する(WorkManager の setForeground)。
@@ -16,6 +20,10 @@
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <!-- 回答の読み上げの仕組みに接続するため -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
     </queries>
 
