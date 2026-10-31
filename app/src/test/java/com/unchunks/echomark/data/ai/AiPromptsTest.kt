@@ -29,6 +29,14 @@ class AiPromptsTest {
     }
 
     @Test
+    fun チャットは複数の保存内容をまとめさせ_確かでないことはそう書かせる() {
+        val prompt = AiPrompts.chatInstructions(emptyList())
+
+        assertTrue(prompt, prompt.contains("共通点や違いをまとめる"))
+        assertTrue(prompt, prompt.contains("確かでないと書く"))
+    }
+
+    @Test
     fun 既存のタグを優先順のまま指示に入れて使い回させる() {
         val prompt = AiPrompts.analyzeInstructions(ContentKind.WEB_PAGE, listOf("Android", "読書"))
 

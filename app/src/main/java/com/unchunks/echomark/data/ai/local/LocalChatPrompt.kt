@@ -42,7 +42,6 @@ internal object LocalChatPrompt {
     private const val MEMORY_BUDGET_DIVISOR = 3
 
     private const val HISTORY_HEADER = "これまでの会話:"
-    private const val MEMORY_HEADER = "さらに前の会話の要約:"
     private const val QUESTION_PREFIX = "質問: "
     private const val ELLIPSIS = "…"
 
@@ -74,7 +73,7 @@ internal object LocalChatPrompt {
 
         // 記憶は文脈に押し出されないよう先に取る(入力を減らしてやり直すときは、一緒に短くする)
         val memorySection = memory?.trim()?.takeIf { it.isNotEmpty() }
-            ?.let { "$MEMORY_HEADER\n${truncate(it, minOf(MAX_MEMORY_CHARS, budget / MEMORY_BUDGET_DIVISOR))}" }
+            ?.let { AiPrompts.chatMemorySection(truncate(it, minOf(MAX_MEMORY_CHARS, budget / MEMORY_BUDGET_DIVISOR))) }
         val restBudget = budget - (memorySection?.let { it.length + 2 } ?: 0)
 
         val instructions = buildInstructions(context.take(MAX_CONTEXT_ITEMS), restBudget)

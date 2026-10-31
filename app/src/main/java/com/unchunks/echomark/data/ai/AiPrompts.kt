@@ -570,6 +570,8 @@ object AiPrompts {
             add("- 保存内容から答えた文には、その番号を [1] のように付ける。保存内容に無いことを、保存内容にあるように書かない。")
             add("- 保存内容に答えが無ければそう伝え、一般的な知識で答えられるときは「一般的には」と分けて答える。")
             add("- あいさつや雑談、保存と関係の無い質問には、保存内容に触れずに自然に答える。")
+            add("- 複数の保存内容を使うときは、並べるだけでなく共通点や違いをまとめる。内容が食い違うときは、そのことを書く。")
+            add("- 答えの長さは質問の大きさに合わせる。確かでないことは、確かでないと書く。")
             add("- 続きの質問は前の会話を踏まえて答える。何を聞かれているか分からないときは、確認の質問を1つ返す。")
         }
         add("")
@@ -580,6 +582,12 @@ object AiPrompts {
             context.forEach { add(it); add("") }
         }
     }.joinToString("\n").trimEnd()
+
+    /** 会話の記憶([memory]: 古い発言の要約)をチャットの指示に足す部分。 */
+    fun chatMemorySection(memory: String): String = "$CHAT_MEMORY_HEADER\n${memory.trim()}"
+
+    /** 会話の記憶の見出し */
+    const val CHAT_MEMORY_HEADER = "さらに前の会話の要約:"
 
     /** 接続テスト用の短い依頼。 */
     const val CONNECTION_TEST_MESSAGE = "接続テストです。「OK」とだけ返してください。"

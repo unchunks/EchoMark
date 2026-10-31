@@ -76,6 +76,16 @@ object RagSupport {
         return if (text.isEmpty()) "[$index] $title" else "[$index] $title: $text"
     }
 
+    /** 回答の中の引用番号([1]・[1, 2]) */
+    private val CITATION = Regex("""\s*\[\d{1,3}(?:\s*[,、]\s*\d{1,3})*]""")
+
+    /**
+     * 回答から引用番号を除いた発言。番号はその回答のときの資料の番号で、次の質問の資料の番号とは別のものなので、
+     * 履歴や要約に残すと、今の資料を指しているように読めてしまう。
+     */
+    fun withoutCitations(message: ChatMessage): ChatMessage =
+        if (message.role == ChatRole.ASSISTANT) message.copy(content = message.content.replace(CITATION, "")) else message
+
     /** 「このブックマークについて質問」で固定する1件の本文の最大文字数(要約と本文を合わせて)。 */
     const val PINNED_SNIPPET_CHARS = 1000
 
@@ -86,12 +96,18 @@ object RagSupport {
      * 質問の対象として固定したブックマークの文脈1件。要約と本文の両方を、通常より長めに含める。
      * 例: "[1] (質問の対象) タイトル: 要約 本文: ..."
      */
-    fun formatPinnedContextEntry(index: Int, title: String, summary: String?, content: String?): String {
+    fun formatPinnedContextEntry(
+        index: Int,
+        title: String,
+        summary: String?,
+        content: String?,
+        maxChars: Int = PINNED_SNIPPET_CHARS
+    ): String {
         val body = listOfNotNull(
             summary?.takeIf { it.isNotBlank() },
             content?.takeIf { it.isNotBlank() && it != summary }?.let { "本文: $it" }
         ).joinToString(" ")
-        return formatContextEntry(index, "$PINNED_MARK $title", body, PINNED_SNIPPET_CHARS)
+        return formatContextEntry(index, "$PINNED_MARK $title", body, maxChars)
     }
 
     /**

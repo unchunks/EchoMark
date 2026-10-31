@@ -25,10 +25,12 @@ import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.AnalysisSchema
 import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.data.ai.local.AnalysisParser
+import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.provider.ChatContextUsage
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.AiTask
@@ -83,7 +85,21 @@ class ApiLlmProvider @Inject constructor(
             chat(task, userMessage, context, history)
 
         override fun chatStream(userMessage: String, context: List<String>, history: List<ChatMessage>): Flow<String> =
-            chatStream(task, userMessage, context, history)
+            chatStream(task, userMessage, context, history, memory = null)
+
+        // 端末内 AI で作った会話の記憶があれば読む(要約に含めた発言は、履歴には入っていない)
+        override fun chatStream(
+            userMessage: String,
+            context: List<String>,
+            history: List<ChatMessage>,
+            memory: String?,
+            onContextUsage: (ChatContextUsage) -> Unit
+        ): Flow<String> = chatStream(task, userMessage, context, history, memory)
+
+        override suspend fun chatContextLimits(): ChatContextLimits {
+            val setting = appSettings.aiTaskSetting(task).first()
+            return ChatContextLimits.forCloud(ApiInputBudget.singleCallChars(setting.apiProvider, setting.apiModel))
+        }
 
         override suspend fun complete(prompt: String): String {
             val (client, credentials) = current(task)
@@ -259,7 +275,7 @@ class ApiLlmProvider @Inject constructor(
         history: List<ChatMessage>
     ): String {
         val (client, credentials) = current(task)
-        val request = chatRequest(userMessage, context, history)
+        val request = chatRequest(userMessage, context, history, memory = null)
         return recordingUsage(task, client, credentials) { onUsage -> client.complete(request, credentials, onUsage) }.trim()
     }
 
@@ -267,13 +283,14 @@ class ApiLlmProvider @Inject constructor(
         task: AiTask,
         userMessage: String,
         context: List<String>,
-        history: List<ChatMessage>
+        history: List<ChatMessage>,
+        memory: String?
     ): Flow<String> = flow {
         val (client, credentials) = current(task)
         var latest: ApiTokenUsage? = null
         // 途中で止められても(収集のキャンセル・失敗)、そこまでに分かったトークン数を記録する
         emitAll(
-            client.stream(chatRequest(userMessage, context, history), credentials) { latest = it }
+            client.stream(chatRequest(userMessage, context, history, memory), credentials) { latest = it }
                 .onCompletion { recordUsage(task, client, credentials, latest) }
         )
     }
@@ -336,11 +353,15 @@ class ApiLlmProvider @Inject constructor(
     private fun chatRequest(
         userMessage: String,
         context: List<String>,
-        history: List<ChatMessage>
+        history: List<ChatMessage>,
+        memory: String?
     ): ApiRequest = ApiRequest(
         purpose = ApiPurpose.CHAT,
-        system = AiPrompts.chatInstructions(context.take(MAX_CONTEXT_ITEMS)),
-        messages = history.takeLast(MAX_HISTORY_ITEMS).map { ApiMessage(it.role, it.content.take(MAX_HISTORY_CHARS)) } +
+        system = listOfNotNull(
+            AiPrompts.chatInstructions(context),
+            memory?.takeIf { it.isNotBlank() }?.let(AiPrompts::chatMemorySection)
+        ).joinToString("\n\n"),
+        messages = history.takeLast(ChatContextLimits.MAX_CLOUD_HISTORY_MESSAGES).map { ApiMessage(it.role, it.content.take(MAX_HISTORY_CHARS)) } +
             ApiMessage(ChatRole.USER, userMessage)
     )
 
@@ -354,8 +375,6 @@ class ApiLlmProvider @Inject constructor(
         /** 要約の出力の形が正しくなかったときに作り直させる回数の上限(1回の解析で呼び出しは最大 1 + この回数) */
         const val MAX_REPAIRS = 2
 
-        const val MAX_CONTEXT_ITEMS = 5
-        const val MAX_HISTORY_ITEMS = 6
         const val MAX_HISTORY_CHARS = 2_000
     }
 }

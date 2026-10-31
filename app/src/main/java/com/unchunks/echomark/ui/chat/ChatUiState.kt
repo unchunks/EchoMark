@@ -29,6 +29,8 @@ data class ChatUiState(
     val pendingReferenceCount: Int? = null,
     val error: ChatError? = null,
     val aiSetup: AiSetupState = AiSetupState.READY,
+    /** 保存済みの回答の messageId -> 引用元と資料との照らし合わせの結果。確かめ終わった回答から入る。 */
+    val answerReviews: Map<Long, AnswerReview> = emptyMap(),
     /** トップバーで選べる AI。 */
     val modelChoices: ChatModelChoices = ChatModelChoices(),
     /** 次の質問に添付するファイルの名前(添付していなければ null)。送信すると外れる。 */

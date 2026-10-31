@@ -18,11 +18,15 @@ import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatModelChoices
 import com.unchunks.echomark.domain.repository.ChatModelOption
+import com.unchunks.echomark.ui.chat.AnswerClaim
+import com.unchunks.echomark.ui.chat.AnswerReview
 import com.unchunks.echomark.ui.chat.ChatContent
 import com.unchunks.echomark.ui.chat.ChatError
 import com.unchunks.echomark.ui.chat.ChatModelMenuItems
 import com.unchunks.echomark.ui.chat.ChatSuggestions
 import com.unchunks.echomark.ui.chat.ChatUiState
+import com.unchunks.echomark.ui.chat.CitedSource
+import com.unchunks.echomark.ui.chat.ClaimStatus
 import com.unchunks.echomark.ui.chat.ConversationListContent
 import com.unchunks.echomark.ui.chat.ConversationListUiState
 import com.unchunks.echomark.ui.components.PreviewSamples
@@ -75,7 +79,16 @@ class ChatScreenshotTest {
         title = "Compose のパフォーマンスについて保存…",
         hasConversation = true,
         messages = listOf(question, answer),
-        referencedBookmarks = referenced
+        referencedBookmarks = referenced,
+        answerReviews = mapOf(
+            answer.id to AnswerReview(
+                sources = listOf(
+                    CitedSource(1, 1L, "再コンポーズを減らすには、状態を安定させて remember と derivedStateOf を使い分けます。"),
+                    CitedSource(2, 3L, null)
+                ),
+                claims = listOf(AnswerClaim("Lazy リストには key を指定する", listOf(1), ClaimStatus.SUPPORTED))
+            )
+        )
     )
 
     /** 画面全体を、一般的なスマートフォンの大きさで撮る。 */
@@ -186,6 +199,25 @@ class ChatScreenshotTest {
         ),
         selected = ChatModelOption.Local("qwen", "Qwen3-0.6B.task")
     )
+
+    @Test
+    fun answerNeedsChecking() = captureScreen("chat_answer_check") {
+        Chat(
+            conversationState.copy(
+                answerReviews = mapOf(
+                    answer.id to AnswerReview(
+                        sources = listOf(CitedSource(1, 1L, null)),
+                        uncitedNumbers = listOf(2),
+                        claims = listOf(
+                            AnswerClaim("情報は編集して自分の知識にする", listOf(1), ClaimStatus.NOT_FOUND),
+                            AnswerClaim("Lazy リストには key を指定する", listOf(1), ClaimStatus.OTHER_SOURCE, betterSource = 2)
+                        ),
+                        unknownNumbers = listOf(7)
+                    )
+                )
+            )
+        )
+    }
 
     @Test
     fun modelPicker() = captureScreen("chat_model_picker") {

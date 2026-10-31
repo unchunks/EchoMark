@@ -1,6 +1,7 @@
 package com.unchunks.echomark.domain.provider
 
 import com.unchunks.components.llm.LlmException
+import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
@@ -55,6 +56,9 @@ interface LlmProvider {
         memory: String?,
         onContextUsage: (ChatContextUsage) -> Unit
     ): Flow<String> = chatStream(userMessage, context, history)
+
+    /** チャットの1回の質問に、会話履歴と資料をどれだけ入れられるか。既定は文脈の短い端末内 AI の量。 */
+    suspend fun chatContextLimits(): ChatContextLimits = ChatContextLimits.COMPACT
 
     /**
      * 会話の古い発言([messages]、古い順)を、これまでの要約([previousSummary])とまとめて短い要約にする。

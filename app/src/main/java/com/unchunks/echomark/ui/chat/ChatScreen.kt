@@ -216,7 +216,7 @@ fun ChatContent(
     LaunchedEffect(listState) {
         snapshotFlow { isAtBottom }.collect { if (it) autoFollow = true }
     }
-    LaunchedEffect(uiState.messages.size, uiState.streamingText?.length, uiState.error, uiState.isSending) {
+    LaunchedEffect(uiState.messages.size, uiState.streamingText?.length, uiState.error, uiState.isSending, uiState.answerReviews.size) {
         if (autoFollow) listState.scrollToBottom()
     }
 
@@ -473,6 +473,7 @@ private fun ChatMessageList(
                     AssistantMessageItem(
                         message = message,
                         referencedBookmarks = uiState.referencedBookmarks,
+                        review = uiState.answerReviews[message.id],
                         onOpenBookmark = onOpenBookmark,
                         onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) },
                         onRegenerate = if (message.id == regeneratableId) onRegenerate else null

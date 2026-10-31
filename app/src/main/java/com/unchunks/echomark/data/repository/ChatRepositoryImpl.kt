@@ -18,6 +18,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.chat.ChatMemoryPolicy
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.ChatAttachmentContext
@@ -84,8 +85,19 @@ class ChatRepositoryImpl @Inject constructor(
         isRetry: Boolean,
         attachment: ChatAttachmentContext?
     ): Flow<ChatStreamEvent> = flow {
+        // AI を使えなくても質問は保存する(再試行で使い回す)ため、失敗は準備の後で知らせる
+        var providerFailure: Exception? = null
+        val provider = try {
+            llmProviderResolver.resolve(AiTask.CHAT)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            providerFailure = e
+            null
+        }
         val prepared = try {
-            prepare(conversationId, userMessage, pinnedBookmarkId, isRetry, attachment)
+            val limits = provider?.chatContextLimits() ?: ChatContextLimits.COMPACT
+            prepare(conversationId, userMessage, pinnedBookmarkId, isRetry, attachment, limits)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -93,13 +105,8 @@ class ChatRepositoryImpl @Inject constructor(
             return@flow
         }
         emit(ChatStreamEvent.Started(prepared.referencedIds))
-
-        val provider = try {
-            llmProviderResolver.resolve(AiTask.CHAT)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            emit(ChatStreamEvent.Failed(e))
+        if (provider == null) {
+            providerFailure?.let { emit(ChatStreamEvent.Failed(it)) }
             return@flow
         }
 
@@ -148,18 +155,19 @@ class ChatRepositoryImpl @Inject constructor(
         userMessage: String,
         pinnedBookmarkId: Long?,
         isRetry: Boolean,
-        attachment: ChatAttachmentContext?
+        attachment: ChatAttachmentContext?,
+        limits: ChatContextLimits
     ): PreparedChat {
         // 0. 今回の発言を保存する前に、直近の会話履歴を取得しておく(今回分を含めないため)。
         //    再試行で、失敗した同じ発言が最後に残っているなら、それを履歴から外して使い回す(二重に保存しない)
-        val recent = chatMessageDao.getRecentMessages(conversationId, RagSupport.HISTORY_LIMIT + 1)
+        val recent = chatMessageDao.getRecentMessages(conversationId, limits.historyMessages + 1)
         val last = recent.lastOrNull()
         val reuseLastUserMessage = isRetry && last?.role == ChatRole.USER && last.content == userMessage
         // 要約に含めた発言は、要約の方で渡す
         val conversation = conversationDao.getById(conversationId)
         val coveredUntil = conversation?.summaryCoveredUntil
         val history = (if (reuseLastUserMessage) recent.dropLast(1) else recent)
-            .takeLast(RagSupport.HISTORY_LIMIT)
+            .takeLast(limits.historyMessages)
             .map { it.toDomain() }
             .let { ChatMemoryPolicy.notCovered(it, coveredUntil) }
 
@@ -184,7 +192,7 @@ class ChatRepositoryImpl @Inject constructor(
         val query = RagSupport.searchQueryFor(RagSupport.searchQueryWithHistory(userMessage, history), pinned?.title)
         val keywords = RagSupport.keywordsOf(query)
         val searched = try {
-            findRelevantBookmarks(query, keywords)
+            findRelevantBookmarks(query, keywords, limits.maxSources)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -198,34 +206,41 @@ class ChatRepositoryImpl @Inject constructor(
         val candidates = (previous + searched).distinctBy { it.id }
             // 質問に近いものもタグで絞れるものも無ければ(「最近保存した記事の要点は？」のような保存全体についての質問)、
             // 最近保存したものを渡す。関係があるかは AI に判断させる
-            .ifEmpty { if (pinned == null) getRecentBookmarks(RagSupport.SEARCH_LIMIT) else emptyList() }
-        // 添付があるときは、資料を減らして添付の分の文脈を残す。添付は資料の後ろに置き、引用の番号を資料と揃える
-        val usedBookmarks = RagSupport.pinFirst(pinned, candidates, idOf = { it.id })
-            .let { if (attachment == null) it else it.take(MAX_CONTEXT_BOOKMARKS_WITH_ATTACHMENT) }
+            .ifEmpty { if (pinned == null) getRecentBookmarks(limits.maxSources) else emptyList() }
+        // 添付があるときは、資料を減らして添付の分の文脈を残す
+        val usedBookmarks = RagSupport.pinFirst(
+            pinned,
+            candidates,
+            idOf = { it.id },
+            limit = if (attachment == null) limits.maxSources else limits.maxSourcesWithAttachment
+        )
         val now = System.currentTimeMillis()
         val bookmarkContext = usedBookmarks.mapIndexed { i, b ->
             val title = RagSupport.contextTitle(b.title, b.createdAt, now)
             if (b.id == pinned?.id) {
                 // 本文が長ければ、冒頭ではなく質問の語が出てくる辺りを渡す
-                val content = RagSupport.bestPassage(b.content, keywords, RagSupport.PINNED_SNIPPET_CHARS) ?: b.content
-                RagSupport.formatPinnedContextEntry(i + 1, title, b.summary, content)
+                val content = RagSupport.bestPassage(b.content, keywords, limits.pinnedChars) ?: b.content
+                RagSupport.formatPinnedContextEntry(i + 1, title, b.summary, content, limits.pinnedChars)
             } else {
                 // 上位のものには、要約に加えて本文の質問に関係する部分を添える(要約に無い細かいことにも答えられるように)
-                val passage = if (i < PASSAGE_ITEMS) RagSupport.bestPassage(b.content, keywords) else null
+                val passage = if (i < limits.passageItems) RagSupport.bestPassage(b.content, keywords, limits.passageChars) else null
                 RagSupport.formatContextEntry(
                     i + 1,
                     title,
                     RagSupport.contextBody(b.summary, b.content, passage),
-                    maxChars = if (passage == null) RagSupport.MAX_SNIPPET_CHARS else RagSupport.MAX_SNIPPET_CHARS + RagSupport.PASSAGE_CHARS + PASSAGE_LABEL_CHARS
+                    maxChars = if (passage == null) limits.snippetChars else limits.snippetChars + limits.passageChars + PASSAGE_LABEL_CHARS
                 )
             }
         }
+        // 添付の番号は資料の続きにする(引用の番号を、保存した資料の順と揃える)
         val attachmentContext = attachment?.let {
-            RagSupport.formatContextEntry(usedBookmarks.size + 1, "添付「${it.name}」", it.text)
+            val body = RagSupport.bestPassage(it.text, keywords, limits.attachmentChars) ?: it.text
+            RagSupport.formatContextEntry(usedBookmarks.size + 1, "添付「${it.name}」", body, limits.attachmentChars)
         }
         return PreparedChat(
-            history,
-            bookmarkContext + listOfNotNull(attachmentContext),
+            history.map(RagSupport::withoutCitations),
+            // 文脈に入りきらないときは後ろから外れるため、ユーザーが選んで渡した添付を先に置く
+            listOfNotNull(attachmentContext) + bookmarkContext,
             usedBookmarks.map { it.id },
             memory = conversation?.summary?.takeIf { coveredUntil != null }
         )
@@ -235,14 +250,14 @@ class ChatRepositoryImpl @Inject constructor(
      * 質問に意味の近いもの(埋め込み)・質問の語を含むもの(キーワード)・質問に名前が出てくるタグ(「「技術」の保存をまとめて」など)の
      * 付いたものを、順位を統合して(RRF)返す。意味の近さだけでは、固有名詞やタグで絞る質問の対象を取りこぼすため、3つを合わせる。
      */
-    private suspend fun findRelevantBookmarks(query: String, keywords: List<String>): List<Bookmark> {
-        val similar = findSimilarBookmarks(query)
+    private suspend fun findRelevantBookmarks(query: String, keywords: List<String>, limit: Int): List<Bookmark> {
+        val similar = findSimilarBookmarks(query, limit)
         val keywordHits = findKeywordBookmarks(query, keywords)
         val tagged = RagSupport.tagsMentionedIn(query, bookmarkRepository.observeAllTags().first())
             .flatMap { tag ->
                 bookmarkRepository.observeBookmarks(BookmarkQuery(tagIds = setOf(tag.id)), BookmarkSortOrder.NEWEST)
                     .first()
-                    .take(RagSupport.SEARCH_LIMIT)
+                    .take(limit)
             }
         val byId = (similar + keywordHits + tagged).associateBy { it.id }
         return RankFusion.fuse(listOf(similar, keywordHits, tagged).map { list -> list.map { it.id } })
@@ -259,7 +274,7 @@ class ChatRepositoryImpl @Inject constructor(
         return RankFusion.fuse(lists.map { list -> list.map { it.id } }).mapNotNull { byId[it] }.take(KEYWORD_SEARCH_LIMIT)
     }
 
-    private suspend fun findSimilarBookmarks(userMessage: String): List<Bookmark> {
+    private suspend fun findSimilarBookmarks(userMessage: String, limit: Int): List<Bookmark> {
         // 2. 質問文をembedding化。埋め込みモデルが無い環境ではキーワード検索で代替する
         // 使えなければ意味の近さでは探さない(キーワードとタグでは探す)
         val queryVector = try {
@@ -283,7 +298,7 @@ class ChatRepositoryImpl @Inject constructor(
         // 現在のモデルの版のベクトルだけを比べる(再埋め込みの途中は旧版を除く)
         val profile = embeddingProvider.profile
         val hits = try {
-            vectorSearch.nearestNeighbors(queryVector, RagSupport.SEARCH_LIMIT, profile.modelVersion)
+            vectorSearch.nearestNeighbors(queryVector, limit, profile.modelVersion)
                 .map { it.bookmarkId to it.score }
         } catch (e: CancellationException) {
             throw e
@@ -364,9 +379,6 @@ class ChatRepositoryImpl @Inject constructor(
     )
 
     companion object {
-        /** 本文の「関連する部分」を添える、文脈の上位の件数(端末内 AI の文脈の予算に収まるよう、上位だけにする) */
-        private const val PASSAGE_ITEMS = 3
-
         /** 「関連する部分: 「」」の見出しの分の文字数 */
         private const val PASSAGE_LABEL_CHARS = 12
 
@@ -375,9 +387,6 @@ class ChatRepositoryImpl @Inject constructor(
 
         /** 生成を途中で止めた回答の末尾に付ける印。 */
         const val STOPPED_SUFFIX = "\n\n(停止)"
-
-        /** 添付がある質問で、文脈に入れる保存済みの資料の上限(残りは添付の本文に使う) */
-        private const val MAX_CONTEXT_BOOKMARKS_WITH_ATTACHMENT = 3
 
         /** 最初の発言が来るまでの会話タイトル。 */
         const val DEFAULT_TITLE = "新しいチャット"

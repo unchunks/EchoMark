@@ -18,6 +18,7 @@ import com.unchunks.echomark.data.local.entity.ConversationWithLastMessage
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -194,9 +195,9 @@ class ChatRepositoryImplStreamTest {
         ).toList()
 
         assertTrue(events.last() is ChatStreamEvent.Completed)
-        // 添付は文脈の末尾に入り、名前も一緒に見せる
-        assertTrue(seenContext.last(), seenContext.last().contains("添付の本文です"))
-        assertTrue(seenContext.last(), seenContext.last().contains("資料.txt"))
+        // 添付は入りきらずに外れないよう文脈の先頭に入り、名前も一緒に見せる
+        assertTrue(seenContext.first(), seenContext.first().contains("添付の本文です"))
+        assertTrue(seenContext.first(), seenContext.first().contains("資料.txt"))
         assertEquals(listOf("この資料の要点は?", "回答"), messageDao.all.value.map { it.content })
     }
 
@@ -236,6 +237,98 @@ class ChatRepositoryImplStreamTest {
 
         assertEquals("これまでの要約", llm.memory)
         assertEquals(listOf("新しい質問", "新しい回答"), llm.history.map { it.content })
+    }
+
+    @Test
+    fun 履歴の回答の引用番号は渡さない() = runBlocking {
+        messageDao.insert(ChatMessageEntity(conversationId = 1, role = ChatRole.ASSISTANT, content = "前の回答 [1]。", createdAt = 10))
+        val llm = MemoryRecordingLlm()
+
+        repository(llm).sendMessageStream(1L, "質問").toList()
+
+        assertEquals(listOf("前の回答。"), llm.history.map { it.content })
+    }
+
+    /** 渡された文脈と履歴を記録し、[limits] の量を使う LLM。 */
+    private class LimitsLlm(private val limits: ChatContextLimits) : LlmProvider by FakeLlmProvider(listOf("回答")) {
+        var context: List<String> = emptyList()
+        var history: List<ChatMessage> = emptyList()
+
+        override suspend fun chatContextLimits(): ChatContextLimits = limits
+
+        override fun chatStream(
+            userMessage: String,
+            context: List<String>,
+            history: List<ChatMessage>,
+            memory: String?,
+            onContextUsage: (ChatContextUsage) -> Unit
+        ): Flow<String> {
+            this.context = context
+            this.history = history
+            return flow { emit("回答") }
+        }
+    }
+
+    @Test
+    fun 文脈の長いAIには履歴も資料も多く長く渡す() = runBlocking {
+        val body = "保存した本文です。".repeat(100)
+        fakeBookmarks.bookmarks.value = (1L..7L).map { testBookmark(id = it, title = "記事$it").copy(content = body) }
+        searchReturnsAll = true
+        (1..12).forEach { i ->
+            messageDao.insert(
+                ChatMessageEntity(
+                    conversationId = 1,
+                    role = if (i % 2 == 1) ChatRole.USER else ChatRole.ASSISTANT,
+                    content = "発言$i",
+                    createdAt = i.toLong()
+                )
+            )
+        }
+        val llm = LimitsLlm(ChatContextLimits.forCloud(60_000))
+
+        repository(llm).sendMessageStream(1L, "保存した本文について詳しく教えてください").toList()
+
+        assertEquals(12, llm.history.size)
+        assertEquals(7, llm.context.size)
+        assertTrue(llm.context.first(), llm.context.first().length > RagSupport.MAX_SNIPPET_CHARS * 2)
+    }
+
+    @Test
+    fun 端末内AIでは資料の量を変えない() = runBlocking {
+        fakeBookmarks.bookmarks.value = (1L..7L).map { testBookmark(id = it, title = "記事$it") }
+        searchReturnsAll = true
+        val llm = LimitsLlm(ChatContextLimits.COMPACT)
+
+        repository(llm).sendMessageStream(1L, "保存した本文について詳しく教えてください").toList()
+
+        assertEquals(RagSupport.SEARCH_LIMIT, llm.context.size)
+    }
+
+    @Test
+    fun 添付は長さの上限まで渡し_質問の語が出てくる辺りを選ぶ() = runBlocking {
+        val text = "前置きの文章です。".repeat(200) + "決算の数字は三割増えました。" + "後書きの文章です。".repeat(200)
+        val llm = LimitsLlm(ChatContextLimits.COMPACT)
+
+        repository(llm).sendMessageStream(
+            1L,
+            "決算の数字は？",
+            attachment = ChatAttachmentContext("資料.txt", text)
+        ).toList()
+
+        val attached = llm.context.first()
+        assertTrue(attached, attached.contains("決算の数字は三割増えました"))
+        assertTrue(attached.length > RagSupport.MAX_SNIPPET_CHARS)
+    }
+
+    @Test
+    fun AIを使えなくても質問を保存してから失敗を知らせる() = runBlocking {
+        val settings = FakeAppSettingsRepository(LlmBackend.API)
+
+        val events = repository(FakeLlmProvider(), settings).sendMessageStream(1L, "Kotlin").toList()
+
+        assertEquals(ChatStreamEvent.Started(listOf(5L)), events[0])
+        assertTrue(events[1] is ChatStreamEvent.Failed)
+        assertEquals(listOf(ChatRole.USER), messageDao.all.value.map { it.role })
     }
 
     @Test

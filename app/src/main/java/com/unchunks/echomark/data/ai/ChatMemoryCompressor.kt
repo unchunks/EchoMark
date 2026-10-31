@@ -5,6 +5,7 @@ import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.domain.chat.ChatMemoryPolicy
+import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.repository.AiTask
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -63,7 +64,8 @@ class ChatMemoryCompressor @Inject constructor(
             val batch = ChatMemoryPolicy.nextBatch(uncovered, tight)
             if (batch.isEmpty()) return
             val previous = conversation.summary.takeIf { coveredUntil != null }
-            val summary = llmProviderResolver.resolve(AiTask.CHAT).summarizeConversation(previous, batch) ?: return
+            val summary = llmProviderResolver.resolve(AiTask.CHAT)
+                .summarizeConversation(previous, batch.map(RagSupport::withoutCitations)) ?: return
             conversationDao.updateSummary(conversationId, summary, batch.last().createdAt, coveredUntil)
         } catch (e: CancellationException) {
             throw e
