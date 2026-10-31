@@ -8,4 +8,8 @@
     <cache-path
         name="shared_logs"
         path="shared-logs/" />
+    <!-- 追加シートで撮った写真・動画・録音の一時ファイル(カメラのアプリに書き込ませ、保存のときに読む) -->
+    <cache-path
+        name="captures"
+        path="captures/" />
 </paths>

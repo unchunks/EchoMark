@@ -1,6 +1,7 @@
 package com.unchunks.echomark.ui.navigation
 
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -20,8 +21,10 @@ import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeCategoryRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeTagRepository
+import com.unchunks.echomark.testing.fakeCaptureViewModel
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.bookmark.BookmarkViewModel
+import com.unchunks.echomark.ui.capture.LocalCaptureViewModel
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
@@ -50,6 +53,7 @@ class BookmarkListNavigationTest {
     private val repository = FakeBookmarkRepository()
     private val tagRepository = FakeTagRepository()
     private val recentlyDeleted = RecentlyDeletedBookmarks()
+    private val captureViewModel by lazy { fakeCaptureViewModel() }
 
     private lateinit var navController: NavHostController
     private var listViewModel: BookmarkViewModel? = null
@@ -64,13 +68,15 @@ class BookmarkListNavigationTest {
                     composable(BOOKMARKS_ROUTE) { entry ->
                         val viewModel = viewModel { BookmarkViewModel(repository, tagRepository, FakeCategoryRepository(), recentlyDeleted, FakeAttachmentRepository(), FakeAppSettingsRepository()) }
                         listViewModel = viewModel
-                        BookmarkListDestination(
-                            entry = entry,
-                            onOpenBookmark = { controller.navigate(Routes.bookmarkDetail(it)) },
-                            onOpenTagManagement = { controller.navigate(Routes.TAGS) },
-                            onOpenDiscover = { controller.navigate(Routes.DISCOVER) },
-                            viewModel = viewModel
-                        )
+                        CompositionLocalProvider(LocalCaptureViewModel provides captureViewModel) {
+                            BookmarkListDestination(
+                                entry = entry,
+                                onOpenBookmark = { controller.navigate(Routes.bookmarkDetail(it)) },
+                                onOpenTagManagement = { controller.navigate(Routes.TAGS) },
+                                onOpenDiscover = { controller.navigate(Routes.DISCOVER) },
+                                viewModel = viewModel
+                            )
+                        }
                     }
                     composable(Routes.TAGS) { Text("タグ管理(仮)") }
                     composable(Routes.DISCOVER) { Text("資料を探す(仮)") }
