@@ -2,13 +2,11 @@ package com.unchunks.echomark.ui.bookmark
 
 import android.Manifest
 import android.content.ActivityNotFoundException
-import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.MediaStore
-import android.view.textclassifier.TextClassifier
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -120,8 +118,8 @@ data class AddBookmarkForm(
 /**
  * ブックマークの追加シート。リンク/メモ/ファイルを切り替えて入力し、[onSave] で保存する。
  * ファイルは端末のファイル選択(複数可)で選ぶ。
- * 開いたときにクリップボードへ URL がありそうなら「クリップボードの URL を貼り付け」を提案する
- * (Android 12 以降は、中身を読むとシステムの通知が出るため、提案の判定には分類結果だけを使い、読むのは押したときだけにする)。
+ * 開いたときにクリップボードに保存できそうなもの(URL・テキスト・画像)があれば、貼り付けを提案する
+ * (Android 12 以降は、中身を読むとシステムの通知が出るため、提案の判定には種類の説明だけを使い、読むのは押したときだけにする)。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,7 +136,8 @@ fun AddBookmarkSheet(
     var text by rememberSaveable { mutableStateOf("") }
     var urlError by rememberSaveable { mutableStateOf<String?>(null) }
     var files by rememberSaveable(stateSaver = SelectedFile.ListSaver) { mutableStateOf(emptyList<SelectedFile>()) }
-    val clipboardHasUrl = remember { clipboardLikelyHasUrl(context) }
+    val clipboardHint = remember { clipboardHint(context) }
+    var clipboardMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val form = AddBookmarkForm(mode, url, title, memo, text, urlError, files)
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         val picked = uris.map { querySelectedFile(context.contentResolver, it) }
@@ -200,7 +199,36 @@ fun AddBookmarkSheet(
     ) {
         AddBookmarkSheetContent(
             form = form,
-            showClipboardSuggestion = clipboardHasUrl && url.isBlank(),
+            showClipboardSuggestion = clipboardHint != ClipboardHint.NONE && when (mode) {
+                AddMode.LINK -> url.isBlank()
+                AddMode.NOTE -> text.isBlank()
+                AddMode.FILE -> files.isEmpty()
+            },
+            clipboardHint = clipboardHint,
+            clipboardMessage = clipboardMessage,
+            onPasteClipboardContent = {
+                // 中身は、いま押されたときに初めて読む
+                when (val content = readClipboard(context)) {
+                    is ClipboardContent.Url -> {
+                        mode = AddMode.LINK
+                        url = content.url
+                        urlError = null
+                        clipboardMessage = null
+                    }
+                    is ClipboardContent.Text -> {
+                        mode = AddMode.NOTE
+                        text = if (text.isBlank()) content.text else text + "\n\n" + content.text
+                        clipboardMessage = null
+                    }
+                    is ClipboardContent.Image -> {
+                        mode = AddMode.FILE
+                        clipboardMessage = null
+                        // クリップボードが変わっても保存できるよう、アプリの一時ファイルにコピーしてから加える
+                        capture.importClipboardImage(content.uri, content.mimeType)
+                    }
+                    ClipboardContent.Empty -> clipboardMessage = "クリップボードに保存できるものがありません"
+                }
+            },
             autoFocus = true,
             capture = CaptureUiState(
                 canTakePhoto = captureAvailability.canTakePhoto,
@@ -276,7 +304,10 @@ fun AddBookmarkSheetContent(
     onTakeVideo: () -> Unit = {},
     onStartVoiceMemo: () -> Unit = {},
     onStopVoiceMemo: () -> Unit = {},
-    onCancelVoiceMemo: () -> Unit = {}
+    onCancelVoiceMemo: () -> Unit = {},
+    clipboardHint: ClipboardHint = ClipboardHint.URL,
+    clipboardMessage: String? = null,
+    onPasteClipboardContent: () -> Unit = onPasteFromClipboard
 ) {
     val firstFieldFocus = remember { FocusRequester() }
     if (autoFocus) {
@@ -329,21 +360,34 @@ fun AddBookmarkSheetContent(
             }
         }
 
-        when (form.mode) {
-            AddMode.LINK -> {
-                if (showClipboardSuggestion) {
-                    AssistChip(
-                        onClick = onPasteFromClipboard,
-                        label = { Text("クリップボードの URL を貼り付け") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Outlined.ContentPaste,
-                                contentDescription = null,
-                                modifier = Modifier.size(AssistChipDefaults.IconSize)
-                            )
+        // クリップボードにあるものの種類(中身は読んでいない)に合わせて、リンク・メモ・ファイルのどれにも貼り付けられる
+        if (showClipboardSuggestion) {
+            AssistChip(
+                onClick = onPasteClipboardContent,
+                label = {
+                    Text(
+                        when (clipboardHint) {
+                            ClipboardHint.IMAGE -> "クリップボードの画像を追加"
+                            ClipboardHint.TEXT -> "クリップボードのテキストをメモにする"
+                            else -> "クリップボードの URL を貼り付け"
                         }
                     )
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.ContentPaste,
+                        contentDescription = null,
+                        modifier = Modifier.size(AssistChipDefaults.IconSize)
+                    )
                 }
+            )
+        }
+        clipboardMessage?.let {
+            Text(text = it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+
+        when (form.mode) {
+            AddMode.LINK -> {
                 OutlinedTextField(
                     value = form.url,
                     onValueChange = onUrlChange,
@@ -493,24 +537,6 @@ private fun FileInputs(
     }
 }
 
-/**
- * クリップボードに URL がありそうか。中身は読まず、システムの分類結果(Android 12+)で判定する。
- * 分類がまだ・使えないときは提案しない(URL 欄の貼り付けボタンはいつでも使える)。
- */
-private fun clipboardLikelyHasUrl(context: Context): Boolean {
-    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return false
-    val description = clipboard.primaryClipDescription ?: return false
-    val isText = description.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) ||
-        description.hasMimeType(ClipDescription.MIMETYPE_TEXT_URILIST) ||
-        description.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)
-    if (!isText) return false
-    return if (description.classificationStatus == ClipDescription.CLASSIFICATION_COMPLETE) {
-        description.getConfidenceScore(TextClassifier.TYPE_URL) >= URL_CONFIDENCE
-    } else {
-        false
-    }
-}
-
 /** クリップボードの文字列から URL を取り出す(利用者が貼り付けを押したときだけ呼ぶ)。 */
 private fun readClipboardUrl(context: Context): String? {
     val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return null
@@ -519,8 +545,6 @@ private fun readClipboardUrl(context: Context): String? {
     val text = clip.getItemAt(0).coerceToText(context)?.toString().orEmpty()
     return findUrlInText(text) ?: normalizeUrlInput(text)
 }
-
-private const val URL_CONFIDENCE = 0.5f
 
 /** カメラのアプリに撮影を頼んでいる最中の出力先(撮影中にアプリのプロセスが終わっても結果を受け取れるよう、画面の状態として残す) */
 private data class PendingCamera(val target: CaptureTarget, val kind: CaptureKind) {

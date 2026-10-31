@@ -22,7 +22,7 @@ import kotlinx.coroutines.delay
 
 /**
  * 他アプリの共有メニューから受け取ってクイック保存するActivity。
- * テキスト・URL(ACTION_SEND, text/plain)と、ファイル(画像・PDF・音声・動画・テキストファイル。
+ * テキスト・URL(ACTION_SEND / ACTION_SEND_MULTIPLE, text/plain)と、ファイル(画像・PDF・音声・動画・テキストファイル。
  * ACTION_SEND / ACTION_SEND_MULTIPLE の EXTRA_STREAM)を受け付ける。
  */
 @AndroidEntryPoint

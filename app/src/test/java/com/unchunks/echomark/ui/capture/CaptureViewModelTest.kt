@@ -257,4 +257,31 @@ class CaptureViewModelTest {
 
         assertTrue((events.single() as CaptureEvent.Message).text.contains("マイク"))
     }
+
+    @Test
+    fun クリップボードの画像を一時ファイルにコピーして追加する() = runTest {
+        val viewModel = createViewModel()
+        val events = mutableListOf<CaptureEvent>()
+        backgroundScope.launch { viewModel.events.toList(events) }
+
+        viewModel.importClipboardImage("content://clip/1", "image/png")
+        runCurrent()
+
+        assertEquals(listOf("content://clip/1" to "image/png"), files.copiedIn)
+        val captured = events.single() as CaptureEvent.Captured
+        assertEquals("image/png", captured.mimeType)
+    }
+
+    @Test
+    fun クリップボードの画像をコピーできなければ理由を知らせる() = runTest {
+        files.copyInSucceeds = false
+        val viewModel = createViewModel()
+        val events = mutableListOf<CaptureEvent>()
+        backgroundScope.launch { viewModel.events.toList(events) }
+
+        viewModel.importClipboardImage("content://clip/1", "image/png")
+        runCurrent()
+
+        assertTrue(events.single() is CaptureEvent.Message)
+    }
 }

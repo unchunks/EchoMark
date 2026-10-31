@@ -75,4 +75,83 @@ class SharedContentParseTest {
 
         assertNull(parseSharedContent(intent))
     }
+
+    @Test
+    fun 複数のテキストの共有は1件ずつのURLとメモとして受け取る() {
+        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "text/plain"
+            putCharSequenceArrayListExtra(
+                Intent.EXTRA_TEXT,
+                arrayListOf("記事 https://example.com/a", "  ", "メモの文章\n二行目", "記事 https://example.com/a")
+            )
+        }
+
+        val shared = parseSharedContent(intent)!!
+
+        assertTrue(shared.hasMultipleEntries)
+        assertTrue(shared.files.isEmpty())
+        assertEquals(2, shared.entries.size)
+        assertEquals("https://example.com/a", shared.entries[0].url)
+        assertEquals("記事", shared.entries[0].title)
+        assertNull(shared.entries[1].url)
+        assertEquals("メモの文章\n二行目", shared.entries[1].text)
+        assertEquals("メモの文章", shared.entries[1].title)
+    }
+
+    @Test
+    fun 複数共有でも1件だけならふつうのテキストの共有と同じに扱う() {
+        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "text/plain"
+            putCharSequenceArrayListExtra(Intent.EXTRA_TEXT, arrayListOf("https://example.com/only"))
+        }
+
+        val shared = parseSharedContent(intent)!!
+
+        assertTrue(!shared.hasMultipleEntries)
+        assertEquals("https://example.com/only", shared.url)
+        assertTrue(shared.entries.isEmpty())
+    }
+
+    @Test
+    fun 複数共有でテキストもファイルも無ければ受け取らない() {
+        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "text/plain"
+            putCharSequenceArrayListExtra(Intent.EXTRA_TEXT, arrayListOf("", "  "))
+        }
+
+        assertNull(parseSharedContent(intent))
+    }
+
+    @Test
+    fun URLだけが並んだテキストは1件ずつのリンクとして受け取る() {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "https://example.com/a\n\nhttps://example.com/b\nhttps://example.com/a")
+        }
+
+        val shared = parseSharedContent(intent)!!
+
+        assertEquals(listOf("https://example.com/a", "https://example.com/b"), shared.entries.map { it.url })
+    }
+
+    @Test
+    fun URLと文章が混ざったテキストは1件のメモとして受け取る() {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "この記事がおすすめ\nhttps://example.com/a\nhttps://example.com/b")
+        }
+
+        val shared = parseSharedContent(intent)!!
+
+        assertTrue(!shared.hasMultipleEntries)
+        assertEquals("https://example.com/a", shared.url)
+    }
+
+    @Test
+    fun URLだけの行の判定() {
+        assertEquals(listOf("https://a.example", "https://b.example"), urlOnlyLines("https://a.example\n  https://b.example  "))
+        assertTrue(urlOnlyLines("https://a.example").isEmpty())
+        assertTrue(urlOnlyLines("https://a.example\n説明").isEmpty())
+        assertTrue(urlOnlyLines("").isEmpty())
+    }
 }
