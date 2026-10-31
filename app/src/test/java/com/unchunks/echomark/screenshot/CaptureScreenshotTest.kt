@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.ui.bookmark.AddBookmarkForm
 import com.unchunks.echomark.ui.bookmark.AddBookmarkSheetContent
 import com.unchunks.echomark.ui.bookmark.AddMode
+import com.unchunks.echomark.ui.bookmark.ClipboardHint
 import com.unchunks.echomark.ui.capture.CaptureUiState
 import com.unchunks.echomark.ui.capture.VoiceMemoState
 import com.unchunks.echomark.ui.common.SelectedFile
@@ -60,12 +61,38 @@ class CaptureScreenshotTest {
         AddSheet(AddBookmarkForm(mode = AddMode.FILE), CaptureUiState(canRecordVoice = true))
     }
 
+    @Test
+    fun clipboardText() = screenshot.captureLightDark("clipboard_text") {
+        AddSheet(AddBookmarkForm(mode = AddMode.NOTE), CaptureUiState(), ClipboardHint.TEXT, showClipboard = true)
+    }
+
+    @Test
+    fun clipboardImage() = screenshot.captureLightDark("clipboard_image") {
+        AddSheet(AddBookmarkForm(mode = AddMode.FILE), allAvailable, ClipboardHint.IMAGE, showClipboard = true)
+    }
+
+    @Test
+    fun clipboardEmpty() = screenshot.captureLightDark("clipboard_empty") {
+        AddSheet(
+            AddBookmarkForm(mode = AddMode.LINK), CaptureUiState(), ClipboardHint.URL,
+            showClipboard = true, clipboardMessage = "クリップボードに保存できるものがありません"
+        )
+    }
+
     @Composable
-    private fun AddSheet(form: AddBookmarkForm, capture: CaptureUiState) {
+    private fun AddSheet(
+        form: AddBookmarkForm,
+        capture: CaptureUiState,
+        clipboardHint: ClipboardHint = ClipboardHint.URL,
+        showClipboard: Boolean = false,
+        clipboardMessage: String? = null
+    ) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
             AddBookmarkSheetContent(
                 form = form,
-                showClipboardSuggestion = false,
+                showClipboardSuggestion = showClipboard,
+                clipboardHint = clipboardHint,
+                clipboardMessage = clipboardMessage,
                 onModeChange = {},
                 onUrlChange = {},
                 onTitleChange = {},

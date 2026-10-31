@@ -170,7 +170,12 @@ class FakeBookmarkRepository : BookmarkRepository {
         bookmarks.value = bookmarks.value + bookmark
     }
 
+    /** 設定すると saveBookmark / saveUrlBookmark がこの例外で失敗する */
+    var failSaveBookmark: Throwable? = null
+    var failSaveUrl: Throwable? = null
+
     override suspend fun saveBookmark(bookmark: Bookmark): SaveResult {
+        failSaveBookmark?.let { throw it }
         val id = (bookmarks.value.maxOfOrNull { it.id } ?: 0L) + 1L
         bookmarks.value = bookmarks.value + bookmark.copy(id = id)
         return SaveResult(id, isDuplicate = false)
@@ -178,6 +183,7 @@ class FakeBookmarkRepository : BookmarkRepository {
 
     /** 同じ URL が既にあれば重複として既存の ID を返す(実装と同じ規則)。 */
     override suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult {
+        failSaveUrl?.let { throw it }
         val trimmed = url.trim()
         savedUrls += Triple(trimmed, title, memo)
         bookmarks.value.firstOrNull { it.contentUri == trimmed }?.let { return SaveResult(it.id, isDuplicate = true) }

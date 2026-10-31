@@ -83,6 +83,21 @@ class CaptureViewModel @Inject constructor(
         }
     }
 
+    /**
+     * クリップボードの画像を一時ファイルにコピーして追加する(貼り付けを押したときだけ呼ぶ)。
+     * コピーできなければ理由を知らせる。
+     */
+    fun importClipboardImage(uri: String, mimeType: String) {
+        viewModelScope.launch {
+            val target = files.copyIn(uri, mimeType)
+            if (target != null) {
+                eventChannel.trySend(CaptureEvent.Captured(target.uri, target.mimeType))
+            } else {
+                eventChannel.trySend(CaptureEvent.Message("クリップボードの画像を取り込めませんでした(大きすぎる・クリップボードが変わったなど)"))
+            }
+        }
+    }
+
     /** 追加シートから外した・閉じたときに、撮った・録った一時ファイルを捨てる */
     fun discard(uris: Collection<String>) = files.discard(uris)
 

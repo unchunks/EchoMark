@@ -22,6 +22,17 @@ class FakeCaptureFiles : CaptureFiles {
         return CaptureTarget("content://test.fileprovider/captures/${kind.name}-$counter", kind.mimeType, "/cache/captures/${kind.name}-$counter")
     }
 
+    /** copyIn の結果。null なら取り込めなかった扱い */
+    var copyInSucceeds = true
+    val copiedIn = mutableListOf<Pair<String, String>>()
+
+    override suspend fun copyIn(uri: String, mimeType: String): CaptureTarget? {
+        copiedIn += uri to mimeType
+        if (!copyInSucceeds) return null
+        counter++
+        return CaptureTarget("content://test.fileprovider/captures/clip-$counter", mimeType, "/cache/captures/clip-$counter")
+    }
+
     override fun hasContent(uri: String) = uri in contents
 
     override fun discard(uris: Collection<String>) {

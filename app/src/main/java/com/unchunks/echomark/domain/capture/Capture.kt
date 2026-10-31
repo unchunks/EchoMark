@@ -24,6 +24,12 @@ interface CaptureFiles {
     /** [kind] の空の一時ファイルを作る。作れなければ null */
     fun create(kind: CaptureKind): CaptureTarget?
 
+    /**
+     * クリップボードなどにある画像 [uri](content://)を、一時ファイルにコピーする。読めない・大きすぎる・
+     * 保存できない形式のときは null。コピーしておくと、貼り付けのあとにクリップボードが変わっても保存できる
+     */
+    suspend fun copyIn(uri: String, mimeType: String): CaptureTarget?
+
     /** [uri] の一時ファイルに中身がある(撮影が取り消されていない)か */
     fun hasContent(uri: String): Boolean
 

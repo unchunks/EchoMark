@@ -123,7 +123,7 @@ fun ShareSheetContent(
         if (saved) {
             SavedResult(
                 status = status as? ShareSaveStatus.Saved ?: ShareSaveStatus.Saved(isDuplicate = false),
-                isLink = shared.url != null,
+                isLink = shared.url != null || shared.entries.any { it.url != null },
                 isFile = shared.files.isNotEmpty()
             )
         } else {
@@ -193,10 +193,14 @@ private fun ShareForm(
             }
         }
 
-        if (hasFiles) SharedFilesPreview(shared.files) else SharedPreview(shared)
+        when {
+            hasFiles -> SharedFilesPreview(shared.files)
+            shared.hasMultipleEntries -> SharedEntriesPreview(shared.entries)
+            else -> SharedPreview(shared)
+        }
 
-        // 複数のファイルは、それぞれのファイル名をタイトルにする
-        if (shared.files.size <= 1) {
+        // 複数のファイルは、それぞれのファイル名をタイトルにする。複数のテキスト・URL は、それぞれの内容からタイトルを決める
+        if (shared.files.size <= 1 && !shared.hasMultipleEntries) {
             OutlinedTextField(
                 value = title,
                 onValueChange = onTitleChange,
@@ -260,6 +264,8 @@ private fun ShareForm(
             Button(
                 enabled = !saving && if (hasFiles) {
                     shared.files.any { it.canSave }
+                } else if (shared.hasMultipleEntries) {
+                    true
                 } else {
                     shared.url != null || title.isNotBlank() || shared.text.isNotBlank()
                 },
@@ -275,7 +281,13 @@ private fun ShareForm(
                     // saving のとき status は Saving(K2 のスマートキャスト)
                     Text(if (status.total > 1) "保存中… ${status.done}/${status.total}" else "保存中…")
                 } else {
-                    Text(if (shared.files.size > 1) "${shared.files.count { it.canSave }}件を保存" else "保存")
+                    Text(
+                        when {
+                            shared.files.size > 1 -> "${shared.files.count { it.canSave }}件を保存"
+                            shared.hasMultipleEntries -> "${shared.entries.size}件を保存"
+                            else -> "保存"
+                        }
+                    )
                 }
             }
         }
@@ -322,6 +334,49 @@ private fun SharedPreview(shared: SharedContent) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+        }
+    }
+}
+
+/** まとめて共有された URL・テキストのプレビュー。件数と、1件ずつのドメインまたは冒頭(多ければ先頭から数件)を出す */
+@Composable
+private fun SharedEntriesPreview(entries: List<SharedEntry>) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "${entries.size}件を、それぞれ別のブックマークとして保存します",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            entries.take(MAX_LISTED_FILES).forEach { entry ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (entry.url != null) Icons.Outlined.Link else Icons.AutoMirrored.Outlined.Notes,
+                        contentDescription = if (entry.url != null) "リンク" else "メモ",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        entry.url ?: entry.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (entries.size > MAX_LISTED_FILES) {
+                Text(
+                    "ほか${entries.size - MAX_LISTED_FILES}件",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -409,7 +464,8 @@ private fun SavedResult(status: ShareSaveStatus.Saved, isLink: Boolean, isFile: 
             Text(
                 when {
                     isDuplicate -> "同じ URL のブックマークがあります"
-                    status.failedCount > 0 -> "${status.failedCount}件は保存できませんでした(大きすぎる・読み込めないなど)"
+                    status.failedCount > 0 && isFile -> "${status.failedCount}件は保存できませんでした(大きすぎる・読み込めないなど)"
+                    status.failedCount > 0 -> "${status.failedCount}件は保存できませんでした"
                     isFile -> "中身を読み取って、AI が要約します"
                     isLink -> "ページを読み込んで、AI が要約します"
                     else -> "AI が要約とタグ付けをします"
