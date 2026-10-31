@@ -46,7 +46,9 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.Sell
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
@@ -113,7 +115,9 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ReadingTime
 import com.unchunks.echomark.domain.bookmark.model.SearchMatcher
+import com.unchunks.echomark.domain.bookmark.model.readingMinutes
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryLanguage
@@ -221,6 +225,7 @@ fun BookmarkDetailScreen(
             onOpenAiSettings = onOpenAiSettings,
             onShare = { shareBookmark(context, it) },
             onToggleFavorite = viewModel::toggleFavorite,
+            onToggleRead = viewModel::toggleRead,
             onSetArchived = { viewModel.setArchived(it) },
             onReprocess = { viewModel.reprocess() },
             onReprocessPart = viewModel::reprocess,
@@ -250,6 +255,8 @@ class BookmarkDetailCallbacks(
     val onOpenAiSettings: () -> Unit = {},
     val onShare: (Bookmark) -> Unit = {},
     val onToggleFavorite: () -> Unit = {},
+    /** 読んだことにする / 未読に戻す */
+    val onToggleRead: () -> Unit = {},
     val onSetArchived: (Boolean) -> Unit = {},
     val onReprocess: () -> Unit = {},
     /** 要約だけ・タグだけを作り直す */
@@ -405,6 +412,16 @@ private fun DetailTopBar(
                     onClick = {
                         menuOpen = false
                         onEdit()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(if (bookmark.isRead) "未読に戻す" else "既読にする") },
+                    leadingIcon = {
+                        Icon(if (bookmark.isRead) Icons.Outlined.MarkEmailUnread else Icons.Outlined.TaskAlt, contentDescription = null)
+                    },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.onToggleRead()
                     }
                 )
                 DropdownMenuItem(
@@ -590,8 +607,10 @@ private fun SourceAndDate(bookmark: Bookmark, nowMillis: Long) {
     )
     Spacer(Modifier.height(2.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
+        val readingMinutes = remember(bookmark.content) { bookmark.readingMinutes() }
         Text(
-            text = "${formatRelativeTime(bookmark.createdAt, nowMillis)}に保存",
+            text = "${formatRelativeTime(bookmark.createdAt, nowMillis)}に保存" +
+                (readingMinutes?.let { " · ${ReadingTime.label(it)}で読めます" } ?: ""),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

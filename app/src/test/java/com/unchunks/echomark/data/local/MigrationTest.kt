@@ -555,6 +555,31 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate19To20_marksOnlyOpenedBookmarksAsRead() {
+        helper.createDatabase(19).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited) " +
+                    "VALUES (1, 'TEXT', '開いた', 100, 500, 'DONE', 0, 0, 0), (2, 'TEXT', '開いていない', 200, 200, 'DONE', 1, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v20 と一致するか(列・既定値)も検証される
+        val connection = helper.runMigrationsAndValidate(20, listOf(MIGRATION_19_20))
+
+        val rows = connection.prepare("SELECT id, readAt, lastAccessedAt, isFavorite FROM bookmarks ORDER BY id").use { stmt ->
+            buildList {
+                while (stmt.step()) {
+                    add(listOf(stmt.getLong(0), if (stmt.isNull(1)) null else stmt.getLong(1), stmt.getLong(2), stmt.getLong(3)))
+                }
+            }
+        }
+        // 保存したあとに開いたものは、最後に開いた日時で既読。開いていないものは未読(NULL)。ほかの列は変わらない
+        assertEquals(listOf(listOf(1L, 500L, 500L, 0L), listOf(2L, null, 200L, 1L)), rows)
+        connection.close()
+    }
+
+    @Test
     fun migrate17To18_addsEmptyCategoriesAndKeepsCategoriesAsAiChosen() {
         helper.createDatabase(17).apply {
             execSQL(

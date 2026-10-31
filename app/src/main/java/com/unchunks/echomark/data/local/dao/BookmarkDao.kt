@@ -33,6 +33,28 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET lastAccessedAt = :lastAccessedAt WHERE id = :id")
     suspend fun updateLastAccessedAt(id: Long, lastAccessedAt: Long)
 
+    /** 詳細画面を開いた: 最後に開いた日時を更新し、まだなら既読にする(読んだ日時は最初に読んだときのまま)。 */
+    @Query("UPDATE bookmarks SET lastAccessedAt = :now, readAt = COALESCE(readAt, :now) WHERE id = :id")
+    suspend fun markOpened(id: Long, now: Long)
+
+    /** 読んだことにする(すでに読んでいれば、読んだ日時はそのまま)。 */
+    @Query("UPDATE bookmarks SET readAt = COALESCE(readAt, :now) WHERE id = :id")
+    suspend fun markRead(id: Long, now: Long)
+
+    /** 未読に戻す。 */
+    @Query("UPDATE bookmarks SET readAt = NULL WHERE id = :id")
+    suspend fun markUnread(id: Long)
+
+    /** まだ読んでいない(アーカイブ以外の)ブックマーク。新しい順に [limit] 件。「次に読む」の候補 */
+    @Transaction
+    @Query("SELECT * FROM bookmarks WHERE readAt IS NULL AND isArchived = 0 ORDER BY createdAt DESC, id DESC LIMIT :limit")
+    fun observeUnread(limit: Int): Flow<List<BookmarkWithTags>>
+
+    /** 最近読んだブックマーク。最後に開いた順に [limit] 件。「次に読む」で何に興味があるかの手がかり */
+    @Transaction
+    @Query("SELECT * FROM bookmarks WHERE readAt IS NOT NULL ORDER BY lastAccessedAt DESC, id DESC LIMIT :limit")
+    fun observeRecentlyRead(limit: Int): Flow<List<BookmarkWithTags>>
+
     @Query("UPDATE bookmarks SET title = :title, content = :content WHERE id = :id")
     suspend fun updateTitleAndContent(id: Long, title: String, content: String?)
 
@@ -246,6 +268,7 @@ interface BookmarkDao {
      * カテゴリ: :categories が空でなければ、そのどれかであるものだけ(大文字小文字は区別しない)。
      * 種類: :types(BookmarkType の name)が空でなければ、そのどれかであるものだけ。
      * 期間: :createdSince が 0 でなければ、その時刻(ミリ秒)以後に保存したものだけ。
+     * 読んだか: :readFilter が 1 なら未読(readAt が NULL)だけ、2 なら既読だけ、0 なら絞らない。
      * :tagCount・:categoryCount・:typeCount は :tagIds・:categories・:types の個数(空のときの IN () を避けて、条件を使うかの判定に使う)。
      * :sortOrder は BookmarkSortOrder の name。並べ替えは CASE で切り替え、該当しない CASE は NULL になって順序に影響しない。
      * 同順位は新しい順。
@@ -268,6 +291,7 @@ interface BookmarkDao {
         AND (:categoryCount = 0 OR category COLLATE NOCASE IN (:categories))
         AND (:typeCount = 0 OR type IN (:types))
         AND (:createdSince = 0 OR createdAt >= :createdSince)
+        AND (:readFilter = 0 OR (:readFilter = 1 AND readAt IS NULL) OR (:readFilter = 2 AND readAt IS NOT NULL))
         ORDER BY
             CASE WHEN :sortOrder = 'OLDEST' THEN createdAt END ASC,
             CASE WHEN :sortOrder = 'RECENTLY_OPENED' THEN lastAccessedAt END DESC,
@@ -286,6 +310,7 @@ interface BookmarkDao {
         types: List<String>,
         typeCount: Int,
         createdSince: Long,
+        readFilter: Int,
         sortOrder: String
     ): Flow<List<BookmarkWithTags>>
 

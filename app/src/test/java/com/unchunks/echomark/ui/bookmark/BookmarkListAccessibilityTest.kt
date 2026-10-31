@@ -26,10 +26,11 @@ class BookmarkListAccessibilityTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun カードのクリックできるノードにアーカイブと削除のカスタムアクションがある() {
+    fun カードのクリックできるノードに既読_アーカイブ_削除のカスタムアクションがある() {
         val bookmark = PreviewSamples.urlBookmark
         val archived = mutableListOf<Pair<Bookmark, Boolean>>()
         val deleted = mutableListOf<Bookmark>()
+        val toggledRead = mutableListOf<Bookmark>()
         composeRule.setContent {
             EchoMarkTheme {
                 BookmarkListContent(
@@ -37,7 +38,8 @@ class BookmarkListAccessibilityTest {
                     snackbarHostState = SnackbarHostState(),
                     callbacks = BookmarkListCallbacks(
                         onSetArchived = { b, value -> archived += b to value },
-                        onDelete = { deleted += it }
+                        onDelete = { deleted += it },
+                        onToggleRead = { toggledRead += it }
                     ),
                     nowMillis = PreviewSamples.NOW
                 )
@@ -46,9 +48,11 @@ class BookmarkListAccessibilityTest {
 
         val card = composeRule.onNode(hasClickAction() and hasText(bookmark.title, substring = true)).fetchSemanticsNode()
         val actions = card.config.getOrNull(SemanticsActions.CustomActions).orEmpty()
-        assertEquals(listOf("アーカイブ", "削除"), actions.map { it.label })
+        // 未読のカードなので「既読にする」(読んだものは「未読に戻す」)
+        assertEquals(listOf("既読にする", "アーカイブ", "削除"), actions.map { it.label })
 
         composeRule.runOnIdle { actions.forEach { it.action() } }
+        assertEquals(listOf(bookmark), toggledRead)
         assertEquals(listOf(bookmark to true), archived)
         assertEquals(listOf(bookmark), deleted)
     }

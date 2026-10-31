@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TravelExplore
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.StarOutline
@@ -116,6 +117,10 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.ReadState
+import com.unchunks.echomark.domain.bookmark.model.ReadingTime
+import com.unchunks.echomark.domain.bookmark.model.Recommendation
+import com.unchunks.echomark.domain.bookmark.model.RecommendationReason
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
@@ -240,6 +245,8 @@ fun BookmarkListScreen(
             onHistoryClear = viewModel::onHistoryCleared,
             onTypeToggle = viewModel::onTypeToggled,
             onPeriodToggle = viewModel::onPeriodToggled,
+            onReadStateToggle = viewModel::onReadStateToggled,
+            onToggleRead = viewModel::toggleRead,
             onClearTypeAndPeriod = viewModel::onClearTypeAndPeriod,
             onFilterChange = viewModel::onFilterChange,
             onSortOrderChange = viewModel::onSortOrderChange,
@@ -274,6 +281,7 @@ fun BookmarkListScreen(
             bookmark = target,
             onDismiss = { actionTarget = null },
             onToggleFavorite = { viewModel.toggleFavorite(target) },
+            onToggleRead = { viewModel.toggleRead(target) },
             onToggleArchive = { setArchived(target, !target.isArchived) },
             onShare = { shareBookmark(context, target) },
             onDelete = { delete(target) }
@@ -296,7 +304,11 @@ class BookmarkListCallbacks(
     val onTypeToggle: (BookmarkType) -> Unit = {},
     /** 保存した日からの期間を選ぶ・外す */
     val onPeriodToggle: (CreatedPeriod) -> Unit = {},
-    /** 種類と期間を外す */
+    /** 読んだかどうか(未読・既読)で絞る・外す */
+    val onReadStateToggle: (ReadState) -> Unit = {},
+    /** 読んだことにする / 未読に戻す */
+    val onToggleRead: (Bookmark) -> Unit = {},
+    /** 種類・期間・読んだかを外す */
     val onClearTypeAndPeriod: () -> Unit = {},
     val onFilterChange: (BookmarkFilter) -> Unit = {},
     val onSortOrderChange: (BookmarkSortOrder) -> Unit = {},
@@ -347,8 +359,10 @@ fun BookmarkListContent(
         ConditionSheet(
             selectedTypes = uiState.selectedTypes,
             period = uiState.period,
+            readState = uiState.readState,
             onTypeToggle = callbacks.onTypeToggle,
             onPeriodToggle = callbacks.onPeriodToggle,
+            onReadStateToggle = callbacks.onReadStateToggle,
             onClear = callbacks.onClearTypeAndPeriod,
             onDismiss = { showConditionSheet = false }
         )
@@ -419,11 +433,13 @@ fun BookmarkListContent(
                 selectedCategories = uiState.selectedCategories,
                 selectedTypes = uiState.selectedTypes,
                 period = uiState.period,
+                readState = uiState.readState,
                 onFilterChange = callbacks.onFilterChange,
                 onTagToggle = callbacks.onTagToggle,
                 onCategoryToggle = callbacks.onCategoryToggle,
                 onTypeToggle = callbacks.onTypeToggle,
                 onPeriodToggle = callbacks.onPeriodToggle,
+                onReadStateToggle = callbacks.onReadStateToggle,
                 onOpenConditions = { showConditionSheet = true },
                 onTagMatchChange = callbacks.onTagMatchChange,
                 onClearFilters = callbacks.onClearFilters
@@ -470,6 +486,13 @@ private fun BookmarkList(
                 }
             }
         } else {
+            if (uiState.showRecommendations) {
+                item(key = "recommendations", contentType = "recommendations", span = StaggeredGridItemSpan.FullLine) {
+                    Box(Modifier.ignoreListSidePadding()) {
+                        ReadNextSection(uiState.recommendations, callbacks.onOpenBookmark)
+                    }
+                }
+            }
             if (uiState.showRediscover) {
                 item(key = "rediscover", contentType = "rediscover", span = StaggeredGridItemSpan.FullLine) {
                     Box(Modifier.ignoreListSidePadding()) {
@@ -509,6 +532,7 @@ private fun BookmarkList(
                         // TalkBack がフォーカスするのはカード(クリックできるノード)なので、カードに付ける
                         modifier = Modifier.semantics {
                             customActions = listOf(
+                                CustomAccessibilityAction(if (bookmark.isRead) "未読に戻す" else "既読にする") { callbacks.onToggleRead(bookmark); true },
                                 CustomAccessibilityAction(archiveLabel) { onArchiveToggle(); true },
                                 CustomAccessibilityAction("削除") { onDelete(); true }
                             )
@@ -682,16 +706,19 @@ private fun FilterBar(
     selectedCategories: Set<String>,
     selectedTypes: Set<BookmarkType>,
     period: CreatedPeriod?,
+    readState: ReadState?,
     onFilterChange: (BookmarkFilter) -> Unit,
     onTagToggle: (Long) -> Unit,
     onCategoryToggle: (String) -> Unit,
     onTypeToggle: (BookmarkType) -> Unit,
     onPeriodToggle: (CreatedPeriod) -> Unit,
+    onReadStateToggle: (ReadState) -> Unit,
     onOpenConditions: () -> Unit,
     onTagMatchChange: (TagMatch) -> Unit,
     onClearFilters: () -> Unit
 ) {
-    val narrowed = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty() || selectedTypes.isNotEmpty() || period != null
+    val narrowed = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty() || selectedTypes.isNotEmpty() || period != null ||
+        readState != null
     Column {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             FilterChipRow(
@@ -702,11 +729,13 @@ private fun FilterBar(
                 selectedCategories = selectedCategories,
                 selectedTypes = selectedTypes,
                 period = period,
+                readState = readState,
                 onFilterChange = onFilterChange,
                 onTagToggle = onTagToggle,
                 onCategoryToggle = onCategoryToggle,
                 onTypeToggle = onTypeToggle,
                 onPeriodToggle = onPeriodToggle,
+                onReadStateToggle = onReadStateToggle,
                 onOpenConditions = onOpenConditions,
                 // 「すべて解除」を出す間は、右の余白を詰めてそちらに譲る
                 endPadding = if (narrowed) 8.dp else 16.dp,
@@ -721,7 +750,7 @@ private fun FilterBar(
                     },
                     modifier = Modifier
                         .padding(end = 16.dp)
-                        .semantics { contentDescription = "タグ・カテゴリ・種類・期間の絞り込みをすべて解除" }
+                        .semantics { contentDescription = "タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除" }
                 )
             }
         }
@@ -772,11 +801,13 @@ private fun FilterChipRow(
     selectedCategories: Set<String>,
     selectedTypes: Set<BookmarkType>,
     period: CreatedPeriod?,
+    readState: ReadState?,
     onFilterChange: (BookmarkFilter) -> Unit,
     onTagToggle: (Long) -> Unit,
     onCategoryToggle: (String) -> Unit,
     onTypeToggle: (BookmarkType) -> Unit,
     onPeriodToggle: (CreatedPeriod) -> Unit,
+    onReadStateToggle: (ReadState) -> Unit,
     onOpenConditions: () -> Unit,
     endPadding: Dp,
     modifier: Modifier = Modifier
@@ -799,17 +830,17 @@ private fun FilterChipRow(
             )
         }
         item(key = "conditions") {
-            val count = selectedTypes.size + if (period != null) 1 else 0
+            val count = selectedTypes.size + (if (period != null) 1 else 0) + (if (readState != null) 1 else 0)
             AssistChip(
                 onClick = onOpenConditions,
-                label = { Text(if (count == 0) "種類・時期" else "種類・時期(${count})") },
+                label = { Text(if (count == 0) "条件" else "条件(${count})") },
                 leadingIcon = { Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
                 modifier = Modifier.semantics {
-                    contentDescription = if (count == 0) "種類と保存した時期で絞り込む" else "種類と保存した時期で絞り込む(${count}件を選択中)"
+                    contentDescription = if (count == 0) "種類・保存した時期・読んだかで絞り込む" else "種類・保存した時期・読んだかで絞り込む(${count}件を選択中)"
                 }
             )
         }
-        conditionChips(selectedTypes, period, onTypeToggle, onPeriodToggle)
+        conditionChips(selectedTypes, period, readState, onTypeToggle, onPeriodToggle, onReadStateToggle)
         if (categories.isNotEmpty()) {
             item(key = "divider_categories") {
                 VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
@@ -866,7 +897,8 @@ private fun filterSummary(uiState: BookmarkListUiState): String? {
     val categoryText = uiState.selectedCategories.takeIf { it.isNotEmpty() }?.joinToString(" または ")?.let { "カテゴリ: ${it}" }
     val typeText = uiState.selectedTypes.takeIf { it.isNotEmpty() }?.joinToString(" または ") { it.displayName() }?.let { "種類: ${it}" }
     val periodText = uiState.period?.let { "保存した時期: ${it.label()}" }
-    return listOfNotNull(tagText, categoryText, typeText, periodText).takeIf { it.isNotEmpty() }?.joinToString("、")
+    val readText = uiState.readState?.label()
+    return listOfNotNull(tagText, categoryText, typeText, periodText, readText).takeIf { it.isNotEmpty() }?.joinToString("、")
 }
 
 @Composable
@@ -934,6 +966,60 @@ private fun ListHeader(count: Int, sortOrder: BookmarkSortOrder) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 4.dp)
     )
+}
+
+/** 「次に読む」(#61): まだ読んでいないものから、最近読んだものに近い・お気に入り・すぐ読める・新しいものを選んで横に並べる */
+@Composable
+private fun ReadNextSection(items: List<Recommendation>, onOpen: (Long) -> Unit) {
+    Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.AutoMirrored.Outlined.MenuBook,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(
+                    "次に読む",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.semantics { heading() }
+                )
+                Text(
+                    "まだ読んでいないブックマークから",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(items, key = { it.bookmark.id }) { recommendation ->
+                CompactBookmarkCard(
+                    bookmark = recommendation.bookmark,
+                    onClick = { onOpen(recommendation.bookmark.id) },
+                    caption = recommendation.reason.caption(),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            }
+        }
+    }
+}
+
+/** おすすめの理由の言い方 */
+internal fun RecommendationReason.caption(): String = when (this) {
+    is RecommendationReason.SharedTag -> "最近「#${tag}」を読んでいます"
+    is RecommendationReason.SharedCategory -> "最近「${category}」を読んでいます"
+    RecommendationReason.Favorite -> "お気に入りで、まだ読んでいません"
+    is RecommendationReason.Short -> "${ReadingTime.label(minutes)}で読めます"
+    RecommendationReason.Recent -> "最近保存しました"
 }
 
 /** 「今日の再発見」: しばらく開いていないブックマークを横に並べる */

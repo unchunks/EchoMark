@@ -10,6 +10,9 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.ReadState
+import com.unchunks.echomark.domain.bookmark.model.Recommendation
+import com.unchunks.echomark.domain.bookmark.model.RecommendationReason
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.bookmark.AddBookmarkForm
@@ -120,6 +123,40 @@ class BookmarkListScreenshotTest {
     fun favoritesEmpty() = screenshot.captureScreenLightDark(
         "library_list_favorites_empty",
         content = content(BookmarkListUiState(filter = BookmarkFilter.FAVORITES, allTags = tags, totalCount = 4))
+    )
+
+    @Test
+    fun readNextRecommendations() = screenshot.captureScreenLightDark(
+        "library_list_read_next",
+        content = content(
+            BookmarkListUiState(
+                // 読んだものはドットなし、本文があれば「約N分」を出す
+                bookmarks = listOf(
+                    PreviewSamples.urlBookmark.copy(content = "あ".repeat(1_800)),
+                    PreviewSamples.textBookmark.copy(readAt = now - day)
+                ),
+                recommendations = listOf(
+                    Recommendation(PreviewSamples.urlBookmark, RecommendationReason.SharedTag("Compose")),
+                    Recommendation(PreviewSamples.processingBookmark, RecommendationReason.Short(3)),
+                    Recommendation(PreviewSamples.textBookmark, RecommendationReason.Favorite)
+                ),
+                allTags = tags,
+                totalCount = 4
+            )
+        )
+    )
+
+    @Test
+    fun unreadFilter() = screenshot.captureScreenLightDark(
+        "library_list_unread",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = listOf(PreviewSamples.urlBookmark),
+                allTags = tags,
+                readState = ReadState.UNREAD,
+                totalCount = 4
+            )
+        )
     )
 
     @Test

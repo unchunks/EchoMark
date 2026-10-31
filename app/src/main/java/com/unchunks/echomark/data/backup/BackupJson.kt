@@ -85,7 +85,7 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 11
+    const val CURRENT_VERSION = 12
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -198,6 +198,7 @@ object BackupJson {
         .putNullable("fileName", fileName)
         .apply { fileSize?.let { put("fileSize", it) } }
         .apply { contentFetchedAt?.let { put("contentFetchedAt", it) } }
+        .apply { readAt?.let { put("readAt", it) } }
 
     private fun TagEntity.toJson() = JSONObject()
         .put("id", id)
@@ -279,6 +280,12 @@ object BackupJson {
             mimeType = stringOrNull("mimeType"),
             fileName = stringOrNull("fileName"),
             fileSize = longOrNull("fileSize")?.takeIf { it >= 0 },
+            // version 11 以前には無い。DB のマイグレーションと同じく、保存したあとに開いたことがあるものだけ既読にする
+            readAt = if (version >= 12) {
+                longOrNull("readAt")
+            } else {
+                (longOrNull("lastAccessedAt") ?: createdAt).takeIf { it > createdAt }
+            },
             contentFetchedAt = if (version >= 5) {
                 longOrNull("contentFetchedAt")
             } else {

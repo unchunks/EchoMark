@@ -216,6 +216,12 @@ class BookmarkDetailViewModel @Inject constructor(
         viewModelScope.launch { repository.setFavorite(bookmarkId, !bookmark.isFavorite) }
     }
 
+    /** 読んだことにする / 未読に戻す(#60)。開いたときは自動で既読になるので、未読に戻すのに使う */
+    fun toggleRead() {
+        val bookmark = uiState.value.bookmark ?: return
+        viewModelScope.launch { repository.setRead(bookmarkId, !bookmark.isRead) }
+    }
+
     /** アーカイブする/戻す。取り消しは同じ関数を逆の値で呼ぶ */
     fun setArchived(archived: Boolean, notify: Boolean = true) {
         viewModelScope.launch {

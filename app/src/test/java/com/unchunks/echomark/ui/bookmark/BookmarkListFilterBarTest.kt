@@ -16,6 +16,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.components.PreviewSamples
@@ -57,6 +58,7 @@ class BookmarkListFilterBarTest {
             selectedCategories = query.categories,
             selectedTypes = query.types,
             period = query.period,
+            readState = query.readState,
             totalCount = 4
         )
         val state = mutableStateOf(state())
@@ -79,6 +81,11 @@ class BookmarkListFilterBarTest {
                         onTypeToggle = {
                             calls += "type:$it"
                             query = query.toggleType(it)
+                            state.value = state()
+                        },
+                        onReadStateToggle = {
+                            calls += "read:$it"
+                            query = query.toggleReadState(it)
                             state.value = state()
                         },
                         onPeriodToggle = {
@@ -121,7 +128,7 @@ class BookmarkListFilterBarTest {
         composeRule.waitForIdle()
 
         // スクロールし直さなくても、右端の「すべて解除」で一度に外せる
-        composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間の絞り込みをすべて解除").assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
 
         assertEquals(listOf("tag:12", "clear"), calls)
@@ -147,7 +154,7 @@ class BookmarkListFilterBarTest {
         composeRule.onNodeWithText("どれかを含む").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間の絞り込みをすべて解除").performClick()
+        composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除").performClick()
         composeRule.waitForIdle()
 
         assertEquals(listOf("tag:1", "tag:5", "match:ANY", "clear"), calls)
@@ -168,7 +175,7 @@ class BookmarkListFilterBarTest {
         composeRule.waitForIdle()
 
         // カテゴリだけ・タグだけのどちらでも出る。ここでは両方選んでいる
-        composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間の絞り込みをすべて解除").assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
 
         assertEquals(listOf("category:ニュース", "tag:3", "clear"), calls)
@@ -178,21 +185,25 @@ class BookmarkListFilterBarTest {
     @Test
     fun 種類と期間を選んでいる間もチップとすべて解除を出し_押すと外れる() {
         val calls = mutableListOf<String>()
-        setContent(calls, initial = BookmarkQuery(types = setOf(BookmarkType.URL), period = CreatedPeriod.PAST_WEEK))
+        setContent(calls, initial = BookmarkQuery(types = setOf(BookmarkType.URL), period = CreatedPeriod.PAST_WEEK, readState = ReadState.UNREAD)
+        )
 
-        scrollChipsTo("種類・時期(2)")
-        composeRule.onNodeWithText("種類・時期(2)").assertIsDisplayed()
+        scrollChipsTo("条件(3)")
+        composeRule.onNodeWithText("条件(3)").assertIsDisplayed()
+        scrollChipsTo("未読")
+        composeRule.onNodeWithContentDescription("未読で絞り込み中。タップで外す").assertIsDisplayed()
         scrollChipsTo("リンク")
         composeRule.onNodeWithContentDescription("リンクで絞り込み中。タップで外す").assertIsDisplayed()
         scrollChipsTo("1週間以内")
         composeRule.onNodeWithContentDescription("1週間以内で絞り込み中。タップで外す").assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間の絞り込みをすべて解除").assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
 
         assertEquals(listOf("clear"), calls)
         composeRule.onNodeWithContentDescription("リンクで絞り込み中。タップで外す").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("1週間以内で絞り込み中。タップで外す").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("未読で絞り込み中。タップで外す").assertDoesNotExist()
     }
 
     @Test
@@ -200,12 +211,13 @@ class BookmarkListFilterBarTest {
         val calls = mutableListOf<String>()
         setContent(calls)
 
-        composeRule.onNodeWithContentDescription("種類と保存した時期で絞り込む").performClick()
+        composeRule.onNodeWithContentDescription("種類・保存した時期・読んだかで絞り込む").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithText("画像").performClick()
         composeRule.onNodeWithText("1か月以内").performClick()
+        composeRule.onNodeWithText("既読").performClick()
         composeRule.waitForIdle()
-        assertEquals(listOf("type:IMAGE", "period:PAST_MONTH"), calls)
+        assertEquals(listOf("type:IMAGE", "period:PAST_MONTH", "read:READ"), calls)
 
         composeRule.onNodeWithText("閉じる").performClick()
         composeRule.waitForIdle()

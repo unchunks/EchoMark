@@ -31,7 +31,7 @@ class BackupJsonTest {
                 id = 1, type = BookmarkType.URL, content = "本文\n\"引用\"つき", contentUri = "https://example.com/a",
                 title = "記事A", summary = "要約", category = "技術", createdAt = 100, lastAccessedAt = 200,
                 aiStatus = AiStatus.DONE, imageUrl = "https://example.com/og.png", siteName = "Example",
-                isFavorite = true, isArchived = false, contentFetchedAt = 150
+                isFavorite = true, isArchived = false, contentFetchedAt = 150, readAt = 200
             ),
             BookmarkEntity(
                 id = 2, type = BookmarkType.TEXT, content = null, contentUri = null, title = "メモ",
@@ -66,6 +66,29 @@ class BackupJsonTest {
         val decoded = BackupJson.decode(BackupJson.encode(sample))
         assertEquals(sample, decoded.data)
         assertEquals(0, decoded.invalidRecords)
+    }
+
+    @Test
+    fun 読んだ日時を書き出し_未読は書かない() {
+        val text = BackupJson.encode(sample)
+        val bookmarks = JSONObject(text).getJSONArray("bookmarks")
+        assertEquals(200L, bookmarks.getJSONObject(0).getLong("readAt"))
+        assertFalse(bookmarks.getJSONObject(1).has("readAt"))
+    }
+
+    @Test
+    fun 読んだ日時の無い古い版のバックアップは_保存したあとに開いたものだけ既読として読む() {
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":11,"exportedAt":1,"bookmarks":[
+              {"id":1,"type":"TEXT","title":"開いた","createdAt":100,"lastAccessedAt":500,"aiStatus":"DONE"},
+              {"id":2,"type":"TEXT","title":"開いていない","createdAt":200,"lastAccessedAt":200,"aiStatus":"DONE"},
+              {"id":3,"type":"TEXT","title":"最後に開いた日時なし","createdAt":300,"aiStatus":"DONE"}
+            ]}
+            """.trimIndent()
+        )
+
+        assertEquals(listOf(500L, null, null), decoded.data.bookmarks.map { it.readAt })
     }
 
     @Test

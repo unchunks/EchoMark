@@ -25,6 +25,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.MatchField
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import org.junit.Assert.assertNull
@@ -699,6 +700,99 @@ class BookmarkViewModelTest {
     }
 
     @Test
+    fun 自分で書いたメモは読んだものとして保存する() = runTest {
+        val viewModel = createViewModel()
+        start(viewModel)
+
+        viewModel.save(NewBookmarkInput.Note(text = "買い物リスト", title = ""))
+        advanceUntilIdle()
+
+        assertTrue(repository.bookmarks.value.single().isRead)
+    }
+
+    @Test
+    fun 読んだことにする_未読に戻すを切り替えられ_未読だけに絞れる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1), testBookmark(2).copy(readAt = 10))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onReadStateToggled(ReadState.UNREAD)
+        advanceUntilIdle()
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+        assertEquals(ReadState.UNREAD, viewModel.uiState.value.readState)
+        assertTrue(viewModel.uiState.value.isNarrowed)
+
+        // 既読にすると、未読の一覧から消える
+        viewModel.toggleRead(repository.bookmarks.value.first { it.id == 1L })
+        advanceUntilIdle()
+        assertEquals(emptyList<Long>(), viewModel.uiState.value.bookmarks.map { it.id })
+        assertEquals(ListEmptyKind.NO_FILTER_MATCH, viewModel.uiState.value.emptyKind)
+
+        viewModel.onReadStateToggled(ReadState.READ)
+        advanceUntilIdle()
+        assertEquals(setOf(1L, 2L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
+
+        // 未読に戻す
+        viewModel.toggleRead(repository.bookmarks.value.first { it.id == 2L })
+        advanceUntilIdle()
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+
+        // すべて解除で読んだかの条件も外れる
+        viewModel.onClearFilters()
+        advanceUntilIdle()
+        assertEquals(null, viewModel.uiState.value.readState)
+        assertEquals(setOf(1L, 2L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
+    }
+
+    @Test
+    fun 次に読むは未読から選び_絞り込みや検索の間は出さず_読むと入れ替わる() = runTest {
+        val now = System.currentTimeMillis()
+        repository.bookmarks.value = listOf(
+            testBookmark(1).copy(readAt = now, tags = listOf("kotlin")),
+            testBookmark(2).copy(createdAt = now, tags = listOf("kotlin")),
+            testBookmark(3).copy(createdAt = now - 40L * 24 * 60 * 60 * 1000, tags = listOf("cooking"))
+        )
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        var state = viewModel.uiState.value
+        assertEquals(listOf(2L, 3L), state.recommendations.map { it.bookmark.id })
+        assertTrue(state.showRecommendations)
+
+        // 絞り込み・検索の間は出さない
+        viewModel.onFilterChange(BookmarkFilter.FAVORITES)
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.showRecommendations)
+        viewModel.onFilterChange(BookmarkFilter.ACTIVE)
+        viewModel.onSearchActiveChange(true)
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.showRecommendations)
+        viewModel.onSearchActiveChange(false)
+        advanceUntilIdle()
+
+        // 読んだら、おすすめから外れる
+        viewModel.toggleRead(repository.bookmarks.value.first { it.id == 2L })
+        advanceUntilIdle()
+        state = viewModel.uiState.value
+        assertEquals(listOf(3L), state.recommendations.map { it.bookmark.id })
+    }
+
+    @Test
+    fun 次に読むに出したものは今日の再発見には出さない() = runTest {
+        // lastAccessedAt = 0 は十分古い(再発見の候補)。未読なので、次に読むの候補でもある
+        repository.bookmarks.value = listOf(testBookmark(1), testBookmark(2).copy(readAt = 5, lastAccessedAt = 0))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(1L), state.recommendations.map { it.bookmark.id })
+        assertEquals(listOf(2L), state.rediscover.map { it.id })
+    }
+
+    @Test
     fun 長い1行目は切り詰めてタイトルにする() {
         val title = BookmarkViewModel.deriveTitle("あ".repeat(50))
         assertEquals(41, title.length)
@@ -719,8 +813,8 @@ class BookmarkViewModelTest {
 
     @Test
     fun 今日の再発見はしばらく開いていないものを出し削除すると消える() = runTest {
-        // lastAccessedAt = 0 は十分古い
-        val stale = testBookmark(1)
+        // lastAccessedAt = 0 は十分古い。読んでいない(未読の)ものは「次に読む」に出るので、読んだものにしておく
+        val stale = testBookmark(1).copy(readAt = 5)
         repository.bookmarks.value = listOf(stale, testBookmark(2, lastAccessedAt = System.currentTimeMillis()))
         val viewModel = createViewModel()
         start(viewModel)

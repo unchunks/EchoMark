@@ -37,5 +37,10 @@ data class Bookmark(
     /** URL の本文(リンク先)を取得できた日時。未取得・取得に失敗したままなら null(再処理で取得し直す) */
     val contentFetchedAt: Long? = null,
     /** 処理の段・日時・失敗の理由([aiStatus] の詳細) */
-    val processing: ProcessingInfo = ProcessingInfo()
-)
+    val processing: ProcessingInfo = ProcessingInfo(),
+    /** 読んだ日時(詳細画面を開いた・読んだことにした)。null なら未読 */
+    val readAt: Long? = null
+) {
+    /** 読んだか(詳細画面を開いたか、読んだことにしたか) */
+    val isRead: Boolean get() = readAt != null
+}

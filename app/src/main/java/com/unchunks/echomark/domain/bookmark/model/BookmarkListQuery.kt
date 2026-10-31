@@ -19,6 +19,15 @@ enum class TagMatch {
     ANY
 }
 
+/** 読んだかどうかによる絞り込み(#60)。 */
+enum class ReadState {
+    /** まだ読んでいない(詳細画面を開いていない・未読に戻した) */
+    UNREAD,
+
+    /** 読んだ */
+    READ
+}
+
 /**
  * 保存した日からの期間による絞り込み。「いつ頃保存したか」で探すときに使う(日付を選ばせず、スマートフォルダに保存しても
  * 開くたびに今日から数え直せるよう、相対の期間にしている)。
@@ -48,6 +57,7 @@ enum class CreatedPeriod(val days: Int) {
  *   大文字小文字の違いは区別しない
  * @property types 選んだ種類(リンク・メモ・画像など。どれかであればよい)。無ければ種類では絞らない
  * @property period 保存した日からの期間。null なら期間では絞らない
+ * @property readState 読んだかどうか。null なら絞らない
  */
 data class BookmarkQuery(
     val filter: BookmarkFilter = BookmarkFilter.ACTIVE,
@@ -55,10 +65,12 @@ data class BookmarkQuery(
     val tagMatch: TagMatch = TagMatch.ALL,
     val categories: Set<String> = emptySet(),
     val types: Set<BookmarkType> = emptySet(),
-    val period: CreatedPeriod? = null
+    val period: CreatedPeriod? = null,
+    val readState: ReadState? = null
 ) {
-    /** タグ・カテゴリ・種類・期間のどれかで絞っているか(「すべて解除」で外せる条件があるか)。通常/アーカイブ/お気に入りは含まない。 */
-    val isNarrowed: Boolean get() = tagIds.isNotEmpty() || categories.isNotEmpty() || types.isNotEmpty() || period != null
+    /** タグ・カテゴリ・種類・期間・読んだかのどれかで絞っているか(「すべて解除」で外せる条件があるか)。通常/アーカイブ/お気に入りは含まない。 */
+    val isNarrowed: Boolean
+        get() = tagIds.isNotEmpty() || categories.isNotEmpty() || types.isNotEmpty() || period != null || readState != null
 
     fun toggleTag(tagId: Long): BookmarkQuery =
         copy(tagIds = if (tagId in tagIds) tagIds - tagId else tagIds + tagId)
@@ -74,9 +86,13 @@ data class BookmarkQuery(
     /** 期間を選ぶ。すでに選んでいる期間をもう一度選ぶと外れる。 */
     fun togglePeriod(selected: CreatedPeriod): BookmarkQuery = copy(period = if (period == selected) null else selected)
 
-    /** タグ・カテゴリ・種類・期間の条件をすべて外す(タグの組み合わせ方も初期値に戻す)。通常 / アーカイブ / お気に入りは変えない。 */
-    fun clearConditions(): BookmarkQuery =
-        copy(tagIds = emptySet(), tagMatch = TagMatch.ALL, categories = emptySet(), types = emptySet(), period = null)
+    /** 読んだかを選ぶ。すでに選んでいるものをもう一度選ぶと外れる。 */
+    fun toggleReadState(selected: ReadState): BookmarkQuery = copy(readState = if (readState == selected) null else selected)
+
+    /** タグ・カテゴリ・種類・期間・読んだかの条件をすべて外す(タグの組み合わせ方も初期値に戻す)。通常 / アーカイブ / お気に入りは変えない。 */
+    fun clearConditions(): BookmarkQuery = copy(
+        tagIds = emptySet(), tagMatch = TagMatch.ALL, categories = emptySet(), types = emptySet(), period = null, readState = null
+    )
 }
 
 /** 一覧の並べ替え。 */

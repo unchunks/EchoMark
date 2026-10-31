@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.icon
@@ -140,9 +141,16 @@ private fun suggestionKey(suggestion: SearchSuggestion): String = when (suggesti
 internal fun LazyListScope.conditionChips(
     selectedTypes: Set<BookmarkType>,
     period: CreatedPeriod?,
+    readState: ReadState?,
     onTypeToggle: (BookmarkType) -> Unit,
-    onPeriodToggle: (CreatedPeriod) -> Unit
+    onPeriodToggle: (CreatedPeriod) -> Unit,
+    onReadStateToggle: (ReadState) -> Unit
 ) {
+    if (readState != null) {
+        item(key = "read_state") {
+            ConditionChip(label = readState.label(), onRemove = { onReadStateToggle(readState) })
+        }
+    }
     items(BookmarkType.entries.filter { it in selectedTypes }, key = { "type_${it.name}" }) { type ->
         ConditionChip(label = type.displayName(), onRemove = { onTypeToggle(type) })
     }
@@ -165,8 +173,14 @@ private fun ConditionChip(label: String, onRemove: () -> Unit) {
     )
 }
 
+/** 読んだかどうかの表示名 */
+fun ReadState.label(): String = when (this) {
+    ReadState.UNREAD -> "未読"
+    ReadState.READ -> "既読"
+}
+
 /**
- * 種類(リンク・メモ・画像など。複数選べる)と、保存した日からの期間(1つ選ぶ)を選ぶシート(#56)。
+ * 種類(リンク・メモ・画像など。複数選べる)・保存した日からの期間(1つ選ぶ)・読んだかどうか(1つ選ぶ)を選ぶシート(#56、#60)。
  * 選ぶとすぐ一覧(検索中なら検索結果)に反映される。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -174,8 +188,10 @@ private fun ConditionChip(label: String, onRemove: () -> Unit) {
 internal fun ConditionSheet(
     selectedTypes: Set<BookmarkType>,
     period: CreatedPeriod?,
+    readState: ReadState?,
     onTypeToggle: (BookmarkType) -> Unit,
     onPeriodToggle: (CreatedPeriod) -> Unit,
+    onReadStateToggle: (ReadState) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -223,9 +239,29 @@ internal fun ConditionSheet(
                     )
                 }
             }
+            Spacer(Modifier.height(20.dp))
+            Text("読んだか", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReadState.entries.forEach { entry ->
+                    val selected = entry == readState
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onReadStateToggle(entry) },
+                        label = { Text(entry.label()) },
+                        leadingIcon = if (selected) {
+                            { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                        } else {
+                            null
+                        }
+                    )
+                }
+            }
             Spacer(Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onClear, enabled = selectedTypes.isNotEmpty() || period != null) { Text("種類と時期を外す") }
+                TextButton(onClick = onClear, enabled = selectedTypes.isNotEmpty() || period != null || readState != null) {
+                    Text("この条件を外す")
+                }
                 TextButton(onClick = onDismiss) { Text("閉じる") }
             }
         }
