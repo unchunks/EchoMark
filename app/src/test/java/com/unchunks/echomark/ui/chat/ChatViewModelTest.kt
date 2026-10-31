@@ -12,6 +12,7 @@ import com.unchunks.echomark.domain.model.ChatAttachmentException
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationBranch
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
@@ -458,6 +459,77 @@ class ChatViewModelTest {
         viewModel.deleteTemplate(saved)
         advanceUntilIdle()
         assertTrue(viewModel.uiState.value.userTemplates.isEmpty())
+    }
+
+    private val question = ChatMessage(id = 3, conversationId = 1, role = ChatRole.USER, content = "質問", createdAt = 1)
+    private val reply = ChatMessage(id = 4, conversationId = 1, role = ChatRole.ASSISTANT, content = "回答 [1]", createdAt = 2)
+
+    @Test
+    fun 回答から分けると分けた会話に切り替わる() = runTest {
+        repository.branchedConversationId = 50L
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        var restored: String? = null
+
+        viewModel.branchFrom(reply) { restored = it }
+        advanceUntilIdle()
+
+        assertEquals(50L, viewModel.conversationId.value)
+        assertEquals(listOf(reply), repository.branchedFrom)
+        assertNull(restored)
+    }
+
+    @Test
+    fun 質問から分けると質問を入力欄に戻す() = runTest {
+        repository.branchedConversationId = 50L
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        var restored: String? = null
+
+        viewModel.branchFrom(question) { restored = it }
+        advanceUntilIdle()
+
+        assertEquals("質問", restored)
+    }
+
+    @Test
+    fun 分けられなければ今の会話のまま() = runTest {
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.branchFrom(question) {}
+        advanceUntilIdle()
+
+        assertEquals(1L, viewModel.conversationId.value)
+    }
+
+    @Test
+    fun 分けた先と元の会話を画面の状態に出す() = runTest {
+        repository.conversation.value = Conversation(
+            id = 1, title = "分岐", createdAt = 0, updatedAt = 0, branchedFromId = 1, branchedAt = 2
+        )
+        repository.branches.value = listOf(ConversationBranch(9, "別の分岐", 2))
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(1L, viewModel.uiState.value.branchParent?.id)
+        assertEquals(listOf(9L), viewModel.uiState.value.branches.map { it.id })
+    }
+
+    @Test
+    fun 回答を質問のタイトルでメモに保存する() = runTest {
+        repository.messages.value = listOf(question, reply)
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        var saved: Long? = null
+
+        viewModel.saveAsNote(reply) { saved = it }
+        advanceUntilIdle()
+
+        assertEquals(77L, saved)
+        assertEquals(listOf("質問" to "回答"), repository.notes)
     }
 
     @Test

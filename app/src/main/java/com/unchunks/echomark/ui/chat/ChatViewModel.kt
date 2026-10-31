@@ -15,6 +15,7 @@ import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationBranch
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiSetupRepository
@@ -187,12 +188,34 @@ class ChatViewModel @Inject constructor(
         navAboutBookmarkId?.let { emit(repository.latestConversationAbout(it)) }
     }
 
+    /** この会話を分けた元の会話。 */
+    private val branchParentFlow: Flow<ConversationBranch?> = conversationFlow.flatMapLatest { conversation ->
+        val parentId = conversation?.branchedFromId
+        if (parentId == null) {
+            flowOf(null)
+        } else {
+            repository.observeConversation(parentId).map { parent ->
+                parent?.let { ConversationBranch(it.id, it.title, conversation.branchedAt ?: 0L) }
+            }
+        }
+    }
+
+    /** この会話から分けた会話。 */
+    private val branchesFlow: Flow<List<ConversationBranch>> = conversationIdFlow.flatMapLatest { id ->
+        if (id == null) flowOf(emptyList()) else repository.observeBranches(id)
+    }
+
+    private val branchState = combine(branchParentFlow, branchesFlow) { parent, branches -> BranchState(parent, branches) }
+
     private val composerState = combine(
         attachmentState,
         scopeLabelFlow,
         previousAboutConversationFlow,
-        appSettings.chatTemplates
-    ) { attachment, scopeLabel, previousAbout, templates -> ComposerState(attachment, scopeLabel, previousAbout, templates) }
+        appSettings.chatTemplates,
+        branchState
+    ) { attachment, scopeLabel, previousAbout, templates, branch ->
+        ComposerState(attachment, scopeLabel, previousAbout, templates, branch)
+    }
 
     val uiState: StateFlow<ChatUiState> = combine(
         messagesWithReferences,
@@ -220,6 +243,8 @@ class ChatViewModel @Inject constructor(
             scopeLabel = composer.scopeLabel,
             previousAboutConversationId = composer.previousAboutConversationId,
             userTemplates = composer.userTemplates,
+            branchParent = composer.branch.parent,
+            branches = composer.branch.branches,
             aboutBookmark = context.aboutBookmark,
             suggestions = context.suggestions,
             isSending = sending.isSending,
@@ -270,6 +295,35 @@ class ChatViewModel @Inject constructor(
     fun resumeAboutConversation() {
         val id = uiState.value.previousAboutConversationId ?: return
         if (conversationIdFlow.value == null) savedStateHandle[ARG_CONVERSATION_ID] = id
+    }
+
+    /** この画面のまま会話 [id] に切り替える(分けた先・元の会話を開く)。生成中は切り替えない。 */
+    fun openConversation(id: Long) {
+        if (isSendingFlow.value) return
+        errorFlow.value = null
+        savedStateHandle[ARG_CONVERSATION_ID] = id
+    }
+
+    /**
+     * [message] の時点から会話を分けて、分けた会話を開く。元の会話はそのまま残る。
+     * 質問から分けたときは、その質問を直して送れるよう [onQuestionRestored] に渡す。
+     */
+    fun branchFrom(message: ChatMessage, onQuestionRestored: (String) -> Unit) {
+        if (isSendingFlow.value) return
+        viewModelScope.launch {
+            val id = repository.branchConversation(message) ?: return@launch
+            openConversation(id)
+            if (message.role == ChatRole.USER) onQuestionRestored(message.content)
+        }
+    }
+
+    /** 回答をメモとして保存する。保存したブックマークの ID を [onSaved] に渡す。 */
+    fun saveAsNote(message: ChatMessage, onSaved: (Long) -> Unit) {
+        val state = uiState.value
+        val question = state.messages.takeWhile { it.id != message.id }.lastOrNull { it.role == ChatRole.USER }?.content
+        val sources = state.answerReviews[message.id]?.sources.orEmpty().mapNotNull { state.referencedBookmarks[it.bookmarkId] }
+        val note = ChatNotes.from(question, message, sources)
+        viewModelScope.launch { onSaved(repository.saveNote(note.title, note.content)) }
     }
 
     /** 入力中の [text] を自分のテンプレートに保存する。 */
@@ -452,11 +506,14 @@ class ChatViewModel @Inject constructor(
         val error: String?
     )
 
+    private class BranchState(val parent: ConversationBranch?, val branches: List<ConversationBranch>)
+
     private class ComposerState(
         val attachment: AttachmentState,
         val scopeLabel: String?,
         val previousAboutConversationId: Long?,
-        val userTemplates: List<ChatTemplate>
+        val userTemplates: List<ChatTemplate>,
+        val branch: BranchState
     )
 
     private class ContextState(

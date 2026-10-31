@@ -136,6 +136,9 @@ abstract class BackupDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertConversation(conversation: ConversationEntity): Long
 
+    @Query("UPDATE conversations SET branchedFromId = :branchedFromId, branchedAt = :branchedAt WHERE id = :id")
+    abstract suspend fun updateConversationBranch(id: Long, branchedFromId: Long, branchedAt: Long?)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertMessage(message: ChatMessageEntity): Long
 
@@ -153,7 +156,8 @@ abstract class BackupDao {
      * - カテゴリ: 名前(大文字小文字・全角半角を区別しない)が今の DB に無いものだけ追加する(既にあるカテゴリの説明は変えない)。
      *   カテゴリを自分で選んだ印(categoryEdited)は、追加するブックマークにそのまま付く
      * - 会話・メッセージ: 同じ会話があればスキップ。メッセージの引用と会話の質問の対象(aboutBookmarkId)は
-     *   新しいブックマーク ID に付け替える(対象がバックアップに無ければ通常の会話にする)
+     *   新しいブックマーク ID に付け替える(対象がバックアップに無ければ通常の会話にする)。
+     *   分けた元の会話(branchedFromId)は、追加した会話の分だけ、この DB の会話の ID に付け替える(元が無ければ通常の会話にする)
      */
     @Transaction
     open suspend fun merge(data: BackupData): BackupMergeResult {
@@ -232,15 +236,30 @@ abstract class BackupDao {
         }
 
         val conversationIds = mutableMapOf<Long, Long>()
+        // スキップした会話の書き出し元の ID → この DB の ID(分けた元の付け替えだけに使う)
+        val existingConversationIds = mutableMapOf<Long, Long>()
         var conversationsSkipped = 0
         for (conversation in data.conversations) {
-            if (findSameConversationId(conversation.title, conversation.createdAt) != null) {
+            val existingId = findSameConversationId(conversation.title, conversation.createdAt)
+            if (existingId != null) {
+                existingConversationIds[conversation.id] = existingId
                 conversationsSkipped++
                 continue
             }
             conversationIds[conversation.id] = insertConversation(
-                conversation.copy(id = 0, aboutBookmarkId = conversation.aboutBookmarkId?.let { bookmarkIds[it] })
+                conversation.copy(
+                    id = 0,
+                    aboutBookmarkId = conversation.aboutBookmarkId?.let { bookmarkIds[it] },
+                    branchedFromId = null,
+                    branchedAt = null
+                )
             )
+        }
+        // 元の会話が後に並んでいても付け替えられるよう、全部を入れてから紐付ける
+        for (conversation in data.conversations) {
+            val id = conversationIds[conversation.id] ?: continue
+            val parentId = conversation.branchedFromId?.let { conversationIds[it] ?: existingConversationIds[it] } ?: continue
+            updateConversationBranch(id, parentId, conversation.branchedAt)
         }
 
         // 別名: 今の DB にある名前・別名とぶつからないものだけ

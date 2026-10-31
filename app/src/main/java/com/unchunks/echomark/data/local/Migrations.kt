@@ -196,6 +196,18 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
 }
 
 /**
+ * v18 → v19: 会話の固定(conversations.isPinned、#48)と、分けた元の会話(branchedFromId・branchedAt、#44)を追加する。
+ * - 既存の行: isPinned は 0(固定していない)、branchedFromId・branchedAt は NULL(分けていない)。ほかの列は変わらない
+ */
+val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `conversations` ADD COLUMN `isPinned` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `conversations` ADD COLUMN `branchedFromId` INTEGER")
+        db.execSQL("ALTER TABLE `conversations` ADD COLUMN `branchedAt` INTEGER")
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
@@ -203,7 +215,7 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
 val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18
+        MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

@@ -57,6 +57,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -89,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.ChatMarkdown
 import com.unchunks.components.llm.ChatRole
+import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.navigation.WideContentMaxWidth
@@ -152,7 +154,17 @@ fun ChatScreen(
         onSelectModel = viewModel::selectModel,
         onScopeClick = { showScope = true },
         onTemplateClick = { showTemplates = true },
-        onResumePrevious = viewModel::resumeAboutConversation
+        onResumePrevious = viewModel::resumeAboutConversation,
+        onBranch = { message -> viewModel.branchFrom(message) { input = it } },
+        onOpenConversation = viewModel::openConversation,
+        onSaveNote = { message ->
+            viewModel.saveAsNote(message) { bookmarkId ->
+                scope.launch {
+                    val result = snackbarHostState.showSnackbar("メモに保存しました", actionLabel = "開く")
+                    if (result == SnackbarResult.ActionPerformed) onOpenBookmark(bookmarkId)
+                }
+            }
+        }
     )
 
     if (showScope) {
@@ -219,7 +231,10 @@ fun ChatContent(
     onSelectModel: (ChatModelOption) -> Unit = {},
     onScopeClick: () -> Unit = {},
     onTemplateClick: () -> Unit = {},
-    onResumePrevious: () -> Unit = {}
+    onResumePrevious: () -> Unit = {},
+    onBranch: (ChatMessage) -> Unit = {},
+    onOpenConversation: (Long) -> Unit = {},
+    onSaveNote: (ChatMessage) -> Unit = {}
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -292,6 +307,13 @@ fun ChatContent(
                 .consumeWindowInsets(innerPadding)
                 .imePadding()
         ) {
+            uiState.branchParent?.let { parent ->
+                BranchParentBar(
+                    parent = parent,
+                    onOpen = { onOpenConversation(parent.id) },
+                    modifier = Modifier.centeredMaxWidth().padding(horizontal = 8.dp)
+                )
+            }
             val about = uiState.aboutBookmark
             if (about != null || !uiState.aiSetup.isReady) {
                 Column(
@@ -341,6 +363,9 @@ fun ChatContent(
                             autoFollow = true
                             onSend(question)
                         },
+                        onBranch = onBranch,
+                        onOpenConversation = onOpenConversation,
+                        onSaveNote = onSaveNote,
                         modifier = Modifier.nestedScroll(userScrollConnection)
                     )
                 }
@@ -503,12 +528,18 @@ private fun ChatMessageList(
     onRegenerate: () -> Unit,
     onEditLast: (String) -> Unit,
     onFollowUp: (String) -> Unit,
+    onBranch: (ChatMessage) -> Unit,
+    onOpenConversation: (Long) -> Unit,
+    onSaveNote: (ChatMessage) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // 生成中でなければ、最後の質問は編集でき、最後が回答なら作り直せる(失敗の表示中は再試行のボタンを使う)
     val lastUserId = uiState.messages.lastOrNull { it.role == ChatRole.USER }?.id.takeIf { !uiState.isSending }
     val regeneratableId = uiState.messages.lastOrNull()
         ?.takeIf { it.role == ChatRole.ASSISTANT && !uiState.isSending && uiState.error == null }?.id
+    // 途中の質問は、手前の発言を残して分け、質問を直して送れる(最初の質問は分けても何も残らないため出さない)
+    val firstUserId = uiState.messages.firstOrNull { it.role == ChatRole.USER }?.id
+    val idle = !uiState.isSending
     // 広い画面では左右の余白を広げて、メッセージを中央の読みやすい幅に収める(スクロールは幅全体で受ける)
     BoxWithConstraints(modifier.fillMaxSize()) {
         val side = maxOf(16.dp, (maxWidth - WideContentMaxWidth) / 2 + 16.dp)
@@ -523,7 +554,8 @@ private fun ChatMessageList(
                     UserMessageItem(
                         text = message.content,
                         onCopy = { onCopy(message.content) },
-                        onEdit = if (message.id == lastUserId) ({ onEditLast(message.content) }) else null
+                        onEdit = if (message.id == lastUserId) ({ onEditLast(message.content) }) else null,
+                        onBranch = if (idle && message.id != firstUserId) ({ onBranch(message) }) else null
                     )
                 } else {
                     AssistantMessageItem(
@@ -532,9 +564,13 @@ private fun ChatMessageList(
                         review = uiState.answerReviews[message.id],
                         onOpenBookmark = onOpenBookmark,
                         onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) },
-                        onRegenerate = if (message.id == regeneratableId) onRegenerate else null
+                        onRegenerate = if (message.id == regeneratableId) onRegenerate else null,
+                        onBranch = if (idle) ({ onBranch(message) }) else null,
+                        onSaveNote = if (idle) ({ onSaveNote(message) }) else null
                     )
                 }
+                val branches = uiState.branches.filter { it.branchedAt == message.createdAt }
+                if (branches.isNotEmpty()) BranchLinks(branches = branches, onOpen = onOpenConversation)
             }
             // 生成中の回答。最初の文字が届くまでは進み具合を出す
             val streaming = uiState.streamingText

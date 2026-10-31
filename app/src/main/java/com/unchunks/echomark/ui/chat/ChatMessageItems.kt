@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.CallSplit
+import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
@@ -45,6 +47,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import com.unchunks.components.composeui.MarkdownText
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ConversationBranch
 import com.unchunks.echomark.ui.components.BookmarkThumbnail
 
 /**
@@ -91,13 +95,15 @@ private fun Modifier.copyOnLongPress(onCopy: () -> Unit): Modifier {
 /**
  * ユーザーの発言。右寄せの吹き出し(右下だけ角を小さくして、話し手の側を示す)。
  * [onEdit] を渡すと(最後の質問)、吹き出しの左に編集ボタンを出す。
+ * [onBranch] を渡すと(途中の質問)、そこから会話を分けて質問を直すボタンを出す。
  */
 @Composable
 internal fun UserMessageItem(
     text: String,
     onCopy: () -> Unit,
     modifier: Modifier = Modifier,
-    onEdit: (() -> Unit)? = null
+    onEdit: (() -> Unit)? = null,
+    onBranch: (() -> Unit)? = null
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -109,6 +115,15 @@ internal fun UserMessageItem(
                 Icon(
                     Icons.Outlined.Edit,
                     contentDescription = "質問を編集",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        } else if (onBranch != null) {
+            IconButton(onClick = onBranch) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.CallSplit,
+                    contentDescription = "ここから分けて質問を直す",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
@@ -175,7 +190,9 @@ internal fun AssistantMessageItem(
     onCopy: () -> Unit,
     modifier: Modifier = Modifier,
     review: AnswerReview? = null,
-    onRegenerate: (() -> Unit)? = null
+    onRegenerate: (() -> Unit)? = null,
+    onBranch: (() -> Unit)? = null,
+    onSaveNote: (() -> Unit)? = null
 ) {
     val ids = message.referencedBookmarkIds
     var highlighted by rememberSaveable(message.id) { mutableStateOf<Int?>(null) }
@@ -213,6 +230,26 @@ internal fun AssistantMessageItem(
                     Icon(
                         Icons.Outlined.Refresh,
                         contentDescription = "回答を作り直す",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            if (onBranch != null) {
+                IconButton(onClick = onBranch) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.CallSplit,
+                        contentDescription = "ここから会話を分ける",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            if (onSaveNote != null) {
+                IconButton(onClick = onSaveNote) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.NoteAdd,
+                        contentDescription = "回答をメモに保存",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
@@ -422,6 +459,34 @@ private fun SuggestionItem(text: String, onClick: () -> Unit) {
                 modifier = Modifier.size(18.dp)
             )
         }
+    }
+}
+
+/** この発言から分けた会話へのリンク。 */
+@Composable
+internal fun BranchLinks(
+    branches: List<ConversationBranch>,
+    onOpen: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        branches.forEach { branch ->
+            TextButton(onClick = { onOpen(branch.id) }) {
+                Icon(Icons.AutoMirrored.Outlined.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(branch.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/** 分けた会話の上部に出す、元の会話へのリンク。 */
+@Composable
+internal fun BranchParentBar(parent: ConversationBranch, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    TextButton(onClick = onOpen, modifier = modifier) {
+        Icon(Icons.AutoMirrored.Outlined.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("「${parent.title}」から分けた会話", maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

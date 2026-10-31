@@ -20,14 +20,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,6 +51,8 @@ import androidx.compose.material3.SwipeToDismissBoxDefaults
 import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +64,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.selected
@@ -121,7 +129,9 @@ fun ConversationListScreen(
             onConversationDeleted(preview.conversation.id)
         },
         snackbarHostState = snackbarHostState,
-        selectedConversationId = selectedConversationId
+        selectedConversationId = selectedConversationId,
+        onQueryChange = viewModel::onQueryChange,
+        onSetPinned = viewModel::setPinned
     )
 }
 
@@ -142,10 +152,12 @@ fun ConversationListContent(
     onDelete: (ConversationPreview) -> Unit,
     modifier: Modifier = Modifier,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
-    selectedConversationId: Long? = null
+    selectedConversationId: Long? = null,
+    onQueryChange: (String) -> Unit = {},
+    onSetPinned: (Long, Boolean) -> Unit = { _, _ -> }
 ) {
     var renameTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
-    val isEmpty = !uiState.isLoading && uiState.conversations.isEmpty()
+    val isEmpty = !uiState.isLoading && !uiState.hasConversations && uiState.conversations.isEmpty()
 
     Scaffold(
         modifier = modifier,
@@ -192,6 +204,19 @@ fun ConversationListContent(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    item(key = "search") {
+                        ConversationSearchField(query = uiState.query, onQueryChange = onQueryChange)
+                    }
+                    if (uiState.conversations.isEmpty()) {
+                        item(key = "no_match") {
+                            Text(
+                                text = "「${uiState.query.trim()}」を含むチャットはありません",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 16.dp)
+                            )
+                        }
+                    }
                     if (!uiState.aiSetup.isReady) {
                         item(key = "ai_setup") {
                             AiSetupBanner(
@@ -206,9 +231,11 @@ fun ConversationListContent(
                             preview = preview,
                             selected = preview.conversation.id == selectedConversationId,
                             nowMillis = nowMillis,
+                            excerpt = uiState.matchedExcerpts[preview.conversation.id],
                             onOpen = { onOpenConversation(preview.conversation.id) },
                             onRename = { renameTargetId = preview.conversation.id },
                             onDelete = { onDelete(preview) },
+                            onTogglePinned = { onSetPinned(preview.conversation.id, !preview.conversation.isPinned) },
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -227,15 +254,46 @@ fun ConversationListContent(
     }
 }
 
-/** 左右どちらへスワイプしても削除する(削除後は Snackbar で元に戻せる)。 */
+/** タイトルと発言を探す欄。 */
+@Composable
+private fun ConversationSearchField(query: String, onQueryChange: (String) -> Unit) {
+    TextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = { Text("チャットを検索", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Outlined.Close, contentDescription = "検索語を消す")
+                }
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(28.dp),
+        colors = TextFieldDefaults.colors(
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent
+        ),
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+/**
+ * 左右どちらへスワイプしても削除する(削除後は Snackbar で元に戻せる)。
+ * @param excerpt 検索語を含む発言の抜粋。最後のメッセージの代わりに出す
+ */
 @Composable
 private fun SwipeToDeleteConversation(
     preview: ConversationPreview,
     selected: Boolean,
     nowMillis: Long,
+    excerpt: String?,
     onOpen: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onTogglePinned: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val threshold = SwipeToDismissBoxDefaults.positionalThreshold
@@ -260,9 +318,11 @@ private fun SwipeToDeleteConversation(
             preview = preview,
             selected = selected,
             nowMillis = nowMillis,
+            matchedExcerpt = excerpt,
             onOpen = onOpen,
             onRename = onRename,
-            onDelete = onDelete
+            onDelete = onDelete,
+            onTogglePinned = onTogglePinned
         )
     }
 }
@@ -290,13 +350,16 @@ private fun ConversationCard(
     preview: ConversationPreview,
     selected: Boolean,
     nowMillis: Long,
+    matchedExcerpt: String?,
     onOpen: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onTogglePinned: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val conversation = preview.conversation
-    val excerpt = conversationExcerpt(preview)
+    val excerpt = matchedExcerpt ?: conversationExcerpt(preview)
+    val pinLabel = if (conversation.isPinned) "固定を外す" else "一覧の先頭に固定"
     val aboutTitle = preview.aboutBookmarkTitle
     Surface(
         // 2 画面表示で右側に開いている会話は、枠線と背景色で強調する(アイコンの丸と同じ色にならないよう背景は少し濃くするだけ)
@@ -313,6 +376,7 @@ private fun ConversationCard(
             .semantics {
                 if (selected) this.selected = true
                 customActions = listOf(
+                    CustomAccessibilityAction(pinLabel) { onTogglePinned(); true },
                     CustomAccessibilityAction("名前を変更") { onRename(); true },
                     CustomAccessibilityAction("削除") { onDelete(); true }
                 )
@@ -339,6 +403,15 @@ private fun ConversationCard(
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (conversation.isPinned) {
+                        Icon(
+                            Icons.Filled.PushPin,
+                            contentDescription = "固定中",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
                     Text(
                         text = conversation.title,
                         style = MaterialTheme.typography.titleMedium,
@@ -372,6 +445,11 @@ private fun ConversationCard(
                     Icon(Icons.Outlined.MoreVert, contentDescription = "「${conversation.title}」の操作")
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(pinLabel) },
+                        leadingIcon = { Icon(Icons.Outlined.PushPin, contentDescription = null) },
+                        onClick = { menuExpanded = false; onTogglePinned() }
+                    )
                     DropdownMenuItem(
                         text = { Text("名前を変更") },
                         leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },
@@ -427,7 +505,18 @@ internal fun conversationExcerpt(preview: ConversationPreview, maxChars: Int = E
     return if (preview.lastMessageRole == ChatRole.USER) "あなた: $text" else text
 }
 
+/** 検索語の周りを切り出した発言の抜粋。語が見つからなければ冒頭。 */
+internal fun conversationMatchExcerpt(message: String, term: String, maxChars: Int = EXCERPT_MAX_CHARS): String {
+    val text = ChatMarkdown.toPlainText(message).replace(WHITESPACE, " ").trim()
+    val at = text.indexOf(term, ignoreCase = true)
+    if (at <= EXCERPT_LEAD_CHARS) return text.take(maxChars)
+    return "…" + text.substring(at - EXCERPT_LEAD_CHARS).take(maxChars)
+}
+
 private const val EXCERPT_MAX_CHARS = 120
+
+/** 検索語の前に残す文字数 */
+private const val EXCERPT_LEAD_CHARS = 16
 
 /** 改行・連続する空白(1つの空白にまとめる) */
 private val WHITESPACE = Regex("\\s+")

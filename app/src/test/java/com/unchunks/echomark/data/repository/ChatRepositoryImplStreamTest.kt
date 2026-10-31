@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.ConversationMatchRow
 import com.unchunks.echomark.data.local.entity.ConversationWithLastMessage
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toEntity
@@ -689,6 +690,8 @@ private class FakeChatMessageDao : ChatMessageDao {
     override suspend fun getRecentMessages(conversationId: Long, limit: Int): List<ChatMessageEntity> =
         all.value.filter { it.conversationId == conversationId }.takeLast(limit)
 
+    override suspend fun getMessagesUpTo(conversationId: Long, createdAt: Long, id: Long): List<ChatMessageEntity> = emptyList()
+
     override suspend fun deleteFrom(conversationId: Long, createdAt: Long, id: Long) {
         all.value = all.value.filterNot {
             it.conversationId == conversationId && (it.createdAt > createdAt || (it.createdAt == createdAt && it.id >= id))
@@ -719,6 +722,10 @@ private class FakeConversationDao : ConversationDao {
     }
     override fun observeById(id: Long): Flow<ConversationEntity?> = MutableStateFlow(null)
     override suspend fun latestIdAbout(bookmarkId: Long): Long? = 21L.takeIf { bookmarkId == 7L }
+    override suspend fun insertMessages(messages: List<ChatMessageEntity>) = Unit
+    override fun observeBranches(conversationId: Long): Flow<List<ConversationEntity>> = MutableStateFlow(emptyList())
+    override suspend fun search(pattern: String): List<ConversationMatchRow> = emptyList()
+    override suspend fun setPinned(id: Long, pinned: Boolean) = Unit
     override fun observeAllWithLastMessage(): Flow<List<ConversationWithLastMessage>> =
         MutableStateFlow(emptyList())
     override suspend fun touch(id: Long, updatedAt: Long) = Unit

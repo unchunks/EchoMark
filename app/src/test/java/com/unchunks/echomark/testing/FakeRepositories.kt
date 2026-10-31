@@ -26,6 +26,8 @@ import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationBranch
+import com.unchunks.echomark.domain.model.ConversationMatch
 import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
@@ -567,6 +569,32 @@ open class FakeChatRepository : ChatRepository {
     override fun observeConversationPreviews(): Flow<List<ConversationPreview>> = previews
 
     override suspend fun latestConversationAbout(bookmarkId: Long): Long? = latestAboutConversationId
+
+    /** branchConversation が返す会話(null なら分けられない)。 */
+    var branchedConversationId: Long? = null
+    val branchedFrom = mutableListOf<ChatMessage>()
+    val branches = MutableStateFlow<List<ConversationBranch>>(emptyList())
+    val notes = mutableListOf<Pair<String, String>>()
+    val pinned = mutableListOf<Pair<Long, Boolean>>()
+    var searchResults: List<ConversationMatch> = emptyList()
+    val searches = mutableListOf<String>()
+
+    override suspend fun branchConversation(message: ChatMessage): Long? {
+        branchedFrom += message
+        return branchedConversationId
+    }
+    override fun observeBranches(conversationId: Long): Flow<List<ConversationBranch>> = branches
+    override suspend fun saveNote(title: String, content: String): Long {
+        notes += title to content
+        return 77L
+    }
+    override suspend fun setPinned(conversationId: Long, pinned: Boolean) {
+        this.pinned += conversationId to pinned
+    }
+    override suspend fun searchConversations(query: String): List<ConversationMatch> {
+        searches += query
+        return searchResults
+    }
     override fun observeScopeChoices(): Flow<ChatScopeChoices> = scopeChoices
     override fun observeScopeCount(scope: BookmarkQuery): Flow<Int> = scopeCount
 

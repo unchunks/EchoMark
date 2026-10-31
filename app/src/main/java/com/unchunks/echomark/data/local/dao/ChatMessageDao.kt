@@ -37,6 +37,13 @@ interface ChatMessageDao {
     )
     suspend fun getMessagesAfter(conversationId: Long, after: Long, limit: Int): List<ChatMessageEntity>
 
+    /** [createdAt]・[id] のメッセージまでを古い順に返す(会話を分けるときに、共通の発言を写す)。 */
+    @Query(
+        "SELECT * FROM chat_messages WHERE conversationId = :conversationId " +
+            "AND (createdAt < :createdAt OR (createdAt = :createdAt AND id <= :id)) ORDER BY createdAt ASC, id ASC"
+    )
+    suspend fun getMessagesUpTo(conversationId: Long, createdAt: Long, id: Long): List<ChatMessageEntity>
+
     /**
      * [createdAt]・[id] のメッセージと、それより後のメッセージを削除する(回答の作り直し・質問の編集で、そこから先を消す)。
      * 同じ時刻のメッセージは ID の順で前後を決める。

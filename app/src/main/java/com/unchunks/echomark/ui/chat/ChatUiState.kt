@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.chat
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.model.ConversationBranch
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatModelChoices
 
@@ -40,6 +41,10 @@ data class ChatUiState(
     val previousAboutConversationId: Long? = null,
     /** ユーザーが保存したテンプレート。 */
     val userTemplates: List<ChatTemplate> = emptyList(),
+    /** この会話を分けた元の会話(分けていない・元が削除済みなら null)。 */
+    val branchParent: ConversationBranch? = null,
+    /** この会話から分けた会話。 */
+    val branches: List<ConversationBranch> = emptyList(),
     /** トップバーで選べる AI。 */
     val modelChoices: ChatModelChoices = ChatModelChoices(),
     /** 次の質問に添付するファイルの名前(添付していなければ null)。送信すると外れる。 */

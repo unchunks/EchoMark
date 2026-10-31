@@ -6,6 +6,8 @@ import com.unchunks.echomark.domain.model.ChatAttachmentContext
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationBranch
+import com.unchunks.echomark.domain.model.ConversationMatch
 import com.unchunks.echomark.domain.model.ConversationPreview
 import kotlinx.coroutines.flow.Flow
 
@@ -68,6 +70,25 @@ interface ChatRepository {
      * 最後の質問の編集(その質問から先を消して、直した質問を送る)に使う。
      */
     suspend fun deleteMessagesFrom(message: ChatMessage)
+
+    /**
+     * [message] の時点から会話を分ける。共通の発言を新しい会話に写し、元の会話はそのまま残す。
+     * 回答からなら回答までを、質問からならその質問の手前までを写す(質問を直して別の答えを試せるように)。
+     * @return 新しい会話の ID。写す発言が無ければ null
+     */
+    suspend fun branchConversation(message: ChatMessage): Long?
+
+    /** [conversationId] から分けた会話(新しい順)。 */
+    fun observeBranches(conversationId: Long): Flow<List<ConversationBranch>>
+
+    /** 回答をメモ(テキストのブックマーク)として保存する。保存したブックマークの ID を返す。 */
+    suspend fun saveNote(title: String, content: String): Long
+
+    /** 会話を一覧の先頭に固定する / 外す。 */
+    suspend fun setPinned(conversationId: Long, pinned: Boolean)
+
+    /** タイトルか発言に [query] の語をすべて含む会話を探す。空白だけなら空。 */
+    suspend fun searchConversations(query: String): List<ConversationMatch>
 
     /** 会話を手動でリネームする(以降は自動タイトルで上書きしない)。 */
     suspend fun renameConversation(conversationId: Long, title: String)

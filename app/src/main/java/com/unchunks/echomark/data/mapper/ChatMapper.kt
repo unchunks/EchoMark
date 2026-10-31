@@ -11,7 +11,7 @@ import com.unchunks.echomark.domain.model.ConversationPreview
 fun ConversationEntity.toDomain() = Conversation(
     id = id, title = title, isTitleManuallySet = isTitleManuallySet,
     summary = summary, createdAt = createdAt, updatedAt = updatedAt, aboutBookmarkId = aboutBookmarkId,
-    summaryCoveredUntil = summaryCoveredUntil
+    summaryCoveredUntil = summaryCoveredUntil, isPinned = isPinned, branchedFromId = branchedFromId, branchedAt = branchedAt
 )
 
 fun ChatMessageEntity.toDomain() = ChatMessage(
@@ -32,7 +32,7 @@ fun ConversationWithLastMessage.toDomain() = ConversationPreview(
 fun Conversation.toEntity() = ConversationEntity(
     id = id, title = title, isTitleManuallySet = isTitleManuallySet,
     summary = summary, createdAt = createdAt, updatedAt = updatedAt, aboutBookmarkId = aboutBookmarkId,
-    summaryCoveredUntil = summaryCoveredUntil
+    summaryCoveredUntil = summaryCoveredUntil, isPinned = isPinned, branchedFromId = branchedFromId, branchedAt = branchedAt
 )
 
 fun ChatMessage.toEntity() = ChatMessageEntity(

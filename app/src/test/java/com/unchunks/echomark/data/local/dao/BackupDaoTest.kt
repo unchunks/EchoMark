@@ -387,4 +387,52 @@ class BackupDaoTest {
         assertTrue(restored.categoryEdited)
         assertEquals(listOf("旅行" to "行き先や宿"), categoryDao.getAll().map { it.name to it.description })
     }
+
+    @Test
+    fun 分けた会話は読み込むと元の会話の新しいIDに付け替える() = runTest {
+        // 元の会話が後に並んでいても付け替えられる
+        val source = backup(
+            conversations = listOf(
+                ConversationEntity(21, "分岐", createdAt = 7, updatedAt = 8, isPinned = true, branchedFromId = 20, branchedAt = 3),
+                ConversationEntity(20, "元", createdAt = 5, updatedAt = 6)
+            )
+        )
+
+        dao.merge(source)
+
+        val conversations = dao.getAllConversations()
+        val parent = conversations.single { it.title == "元" }
+        val branch = conversations.single { it.title == "分岐" }
+        assertEquals(parent.id, branch.branchedFromId)
+        assertEquals(3L, branch.branchedAt)
+        assertEquals(true, branch.isPinned)
+    }
+
+    @Test
+    fun 元の会話がスキップされても分けた会話を今の会話に紐付ける() = runTest {
+        dao.merge(backup(conversations = listOf(ConversationEntity(20, "元", createdAt = 5, updatedAt = 6))))
+        val existing = dao.getAllConversations().single().id
+
+        dao.merge(
+            backup(
+                conversations = listOf(
+                    ConversationEntity(20, "元", createdAt = 5, updatedAt = 6),
+                    ConversationEntity(21, "分岐", createdAt = 7, updatedAt = 8, branchedFromId = 20, branchedAt = 3)
+                )
+            )
+        )
+
+        assertEquals(existing, dao.getAllConversations().single { it.title == "分岐" }.branchedFromId)
+    }
+
+    @Test
+    fun 元の会話がバックアップに無ければ通常の会話にする() = runTest {
+        dao.merge(
+            backup(conversations = listOf(ConversationEntity(21, "分岐", createdAt = 7, updatedAt = 8, branchedFromId = 99, branchedAt = 3)))
+        )
+
+        val branch = dao.getAllConversations().single()
+        assertEquals(null, branch.branchedFromId)
+        assertEquals(null, branch.branchedAt)
+    }
 }

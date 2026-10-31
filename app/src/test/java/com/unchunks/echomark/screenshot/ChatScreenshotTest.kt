@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationBranch
 import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
@@ -272,6 +273,37 @@ class ChatScreenshotTest {
                 onDelete = {}
             )
         }
+    }
+
+    @Test
+    fun branched() = captureScreen("chat_branched") {
+        Chat(
+            conversationState.copy(
+                branchParent = ConversationBranch(9, "Compose の性能の相談", answer.createdAt),
+                branches = listOf(ConversationBranch(10, "Compose の性能の相談(分岐)", question.createdAt))
+            )
+        )
+    }
+
+    @Test
+    fun conversationListPinnedAndSearched() = captureScreen("conversation_list_pinned_search") {
+        ConversationList(
+            ConversationListUiState(
+                isLoading = false,
+                hasConversations = true,
+                query = "編集",
+                conversations = listOf(
+                    previews[0].copy(conversation = previews[0].conversation.copy(isPinned = true)),
+                    previews[1]
+                ),
+                matchedExcerpts = mapOf(2L to "…情報を編集するとはどういうこと？")
+            )
+        )
+    }
+
+    @Test
+    fun conversationListNoMatch() = captureScreen("conversation_list_no_match") {
+        ConversationList(ConversationListUiState(isLoading = false, hasConversations = true, query = "見つからない語"))
     }
 
     @Test

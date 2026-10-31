@@ -4,6 +4,7 @@ import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationMatch
 import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.testing.FakeAiSetupRepository
@@ -35,6 +36,52 @@ class ConversationListViewModelTest {
         val events = mutableListOf<ConversationPreview>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.deletedEvents.toList(events) }
         return events
+    }
+
+    @Test
+    fun 検索すると当たった会話だけを出し_発言の抜粋を添える() = runTest {
+        repository.previews.value = listOf(preview(1), preview(2))
+        repository.searchResults = listOf(ConversationMatch(2, "コルーチンの発言"))
+        val viewModel = ConversationListViewModel(repository, aiSetup)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        viewModel.onQueryChange("コルーチン")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(2L), state.conversations.map { it.conversation.id })
+        assertEquals("コルーチンの発言", state.matchedExcerpts[2L])
+        assertTrue(state.hasConversations)
+    }
+
+    @Test
+    fun 打っている間は検索せず_消すと全部に戻る() = runTest {
+        repository.previews.value = listOf(preview(1), preview(2))
+        val viewModel = ConversationListViewModel(repository, aiSetup)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        viewModel.onQueryChange("コ")
+        viewModel.onQueryChange("コル")
+        advanceUntilIdle()
+        assertEquals(listOf("コル"), repository.searches)
+        assertTrue(viewModel.uiState.value.conversations.isEmpty())
+        assertTrue(viewModel.uiState.value.hasConversations)
+
+        viewModel.onQueryChange("")
+        advanceUntilIdle()
+        assertEquals(2, viewModel.uiState.value.conversations.size)
+    }
+
+    @Test
+    fun 会話を固定する() = runTest {
+        val viewModel = ConversationListViewModel(repository, aiSetup)
+
+        viewModel.setPinned(3L, true)
+        advanceUntilIdle()
+
+        assertEquals(listOf(3L to true), repository.pinned)
     }
 
     private fun preview(id: Long, updatedAt: Long = id) = ConversationPreview(
