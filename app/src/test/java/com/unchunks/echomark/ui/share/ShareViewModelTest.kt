@@ -227,4 +227,19 @@ class ShareViewModelTest {
 
         assertTrue(viewModel.status.value is ShareSaveStatus.Failed)
     }
+
+    @Test
+    fun 引用はメモの本文に引用の形で保存しタグを付ける() = runTest {
+        val viewModel = ShareViewModel(repository, attachments)
+        val quote = quoteContentOf("選んだ文章\n二行目")!!
+
+        viewModel.save(quote, title = quote.tentativeTitle, memo = "出典: 本の 12 ページ", tagsInput = QUOTE_TAG)
+        advanceUntilIdle()
+
+        val saved = repository.bookmarks.value.single()
+        assertEquals(BookmarkType.TEXT, saved.type)
+        assertEquals("> 選んだ文章\n> 二行目\n\n出典: 本の 12 ページ", saved.content)
+        assertEquals("選んだ文章", saved.title)
+        assertEquals(listOf(QUOTE_TAG), saved.tags)
+    }
 }

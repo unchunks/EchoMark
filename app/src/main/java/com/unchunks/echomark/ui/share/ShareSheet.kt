@@ -79,7 +79,8 @@ internal fun QuickSaveSheet(
     var title by rememberSaveable { mutableStateOf(shared.tentativeTitle.takeIf { it != shared.url }.orEmpty()) }
     // ファイルに添えられた文章(写真の説明など)はメモに入れておく
     var memo by rememberSaveable { mutableStateOf(if (shared.files.isNotEmpty()) shared.text else "") }
-    var tags by rememberSaveable { mutableStateOf("") }
+    // 引用は「引用」のタグを最初から入れておく(外してもよい)
+    var tags by rememberSaveable { mutableStateOf(if (shared.isQuote) QUOTE_TAG else "") }
     // タイトルとメモが変わるたびに、保存する内容に合うタグの提案を出し直す(開いた直後も1回)
     LaunchedEffect(title, memo) { onInputChange(title, memo) }
 
@@ -186,7 +187,11 @@ private fun ShareForm(
                     modifier = Modifier.semantics { heading() }
                 )
                 Text(
-                    if (hasFiles) "保存すると中身を読み取って、AI が要約します" else "保存すると AI が要約とタグ付けをします",
+                    when {
+                        hasFiles -> "保存すると中身を読み取って、AI が要約します"
+                        shared.isQuote -> "選んだ文章を引用として保存します。AI が要約とタグ付けをします"
+                        else -> "保存すると AI が要約とタグ付けをします"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

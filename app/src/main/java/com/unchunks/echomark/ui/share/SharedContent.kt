@@ -20,14 +20,16 @@ data class SharedEntry(val url: String?, val text: String, val title: String)
 /**
  * 共有インテントから取り出した内容。[files] があればファイルとして保存する([text] は添えられた文章)。
  * [entries] が2件以上なら、1件ずつ別のブックマークとして保存する(URL はリンク、それ以外はメモ)。
- * ファイルも [entries] も無く url が null ならテキストとして扱う
+ * ファイルも [entries] も無く url が null ならテキストとして扱う。[isQuote] なら、選んだ文章の引用
  */
 data class SharedContent(
     val url: String?,
     val text: String,
     val tentativeTitle: String,
     val files: List<SelectedFile> = emptyList(),
-    val entries: List<SharedEntry> = emptyList()
+    val entries: List<SharedEntry> = emptyList(),
+    /** 選んだ文章を引用として保存する(本文は各行の頭に「> 」を付けた形で、「引用」のタグを添える) */
+    val isQuote: Boolean = false
 ) {
     /** 2件以上のテキスト・URL をまとめて受け取った */
     val hasMultipleEntries: Boolean get() = files.isEmpty() && entries.size > 1
@@ -37,8 +39,12 @@ data class SharedContent(
 internal fun SharedContent.withFileDetails(resolver: ContentResolver): SharedContent =
     if (files.isEmpty()) this else copy(files = files.map { querySelectedFile(resolver, it.uri.toUri(), it.mimeType) })
 
-/** 共有インテント(ACTION_SEND / ACTION_SEND_MULTIPLE)から保存する内容を取り出す。保存できるものが無ければ null */
+/**
+ * 共有インテント(ACTION_SEND / ACTION_SEND_MULTIPLE)、または文字を選んだメニュー(ACTION_PROCESS_TEXT)から、
+ * 保存する内容を取り出す。保存できるものが無ければ null
+ */
 internal fun parseSharedContent(intent: Intent): SharedContent? {
+    if (intent.action == Intent.ACTION_PROCESS_TEXT) return quoteContentOf(intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty())
     if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) return null
     val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
     val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)?.trim()?.takeIf { it.isNotEmpty() }
@@ -127,3 +133,18 @@ private const val MAX_SHARED_ENTRIES = 50
 
 /** 仮タイトルにするテキストの最大の長さ */
 private const val MAX_TENTATIVE_TITLE = 80
+
+/** 選んだ文章を引用として保存する内容にする。空なら null。タイトルの候補は引用の最初の行 */
+internal fun quoteContentOf(selected: String): SharedContent? {
+    val text = selected.trim()
+    if (text.isEmpty()) return null
+    val firstLine = text.lines().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    return SharedContent(url = null, text = asQuote(text), tentativeTitle = firstLine.take(MAX_TENTATIVE_TITLE), isQuote = true)
+}
+
+/** 各行の頭に「> 」を付ける(空行は「>」だけ)。Markdown の引用の書き方 */
+internal fun asQuote(text: String): String =
+    text.lines().joinToString("\n") { line -> if (line.isBlank()) ">" else "> ${line.trimEnd()}" }
+
+/** 引用を付けて保存するときに、入力欄に最初から入れておくタグ */
+internal const val QUOTE_TAG = "引用"

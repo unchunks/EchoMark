@@ -1,6 +1,11 @@
 <resources>
     <string name="app_name">EchoMark</string>
     <string name="share_label">EchoMarkに保存</string>
+    <!-- 文字を選んだときのメニュー(ACTION_PROCESS_TEXT)に出る名前 -->
+    <string name="share_quote_label">引用として EchoMark に保存</string>
+    <!-- クイック設定のタイル -->
+    <string name="tile_clipboard_save_label">クリップボードを保存</string>
+    <string name="tile_clipboard_save_subtitle">EchoMark</string>
     <string name="notification_channel_rediscover">再発見ダイジェスト</string>
     <string name="notification_channel_rediscover_desc">しばらく開いていないブックマークをお知らせします</string>
     <string name="rediscover_notification_title">こんなブックマーク、忘れていませんか?</string>
