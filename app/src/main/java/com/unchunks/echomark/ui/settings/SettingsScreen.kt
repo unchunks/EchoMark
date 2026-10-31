@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.MoveToInbox
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Palette
@@ -62,6 +63,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.echomark.ui.importer.LinkImportDialog
+import com.unchunks.echomark.ui.importer.LinkImportViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.components.composeui.ReadableLazyColumn
@@ -109,6 +112,8 @@ class SettingsActions(
     val onOpenNotificationSettings: () -> Unit = {},
     val onExportBackup: () -> Unit = {},
     val onImportBackup: () -> Unit = {},
+    /** 他のサービス(Pocket・Raindrop.io・ブラウザなど)の書き出しファイルを取り込む(ファイルを選ぶ) */
+    val onImportFromServices: () -> Unit = {},
     val onDeleteAllData: (resetSettings: Boolean) -> Unit = {},
     val onDataResultDismissed: () -> Unit = {},
     val onShareCrashLog: () -> Unit = {},
@@ -124,7 +129,8 @@ fun SettingsScreen(
     onOpenOnboarding: (() -> Unit)? = null,
     onOpenProcessingQueue: () -> Unit = {},
     onOpenCategories: () -> Unit = {},
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(),
+    importViewModel: LinkImportViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -161,6 +167,18 @@ fun SettingsScreen(
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.importBackup(uri.toString())
     }
+
+    // 書き出しファイルの形式(HTML・CSV・JSON)はファイルアプリによって MIME タイプが異なるため、すべて選べるようにして中身で判定する
+    val linkImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importViewModel.onFilePicked(uri.toString())
+    }
+    val importState by importViewModel.state.collectAsState()
+    LinkImportDialog(
+        state = importState,
+        onFolderAsTagChange = importViewModel::setFolderAsTag,
+        onImport = importViewModel::startImport,
+        onClose = importViewModel::dismiss
+    )
 
     SettingsContent(
         uiState = uiState,
@@ -201,6 +219,7 @@ fun SettingsScreen(
             },
             onExportBackup = { exportLauncher.launch("echomark-backup-${LocalDate.now()}.json") },
             onImportBackup = { importLauncher.launch(arrayOf(BACKUP_MIME_TYPE, "text/plain", "application/octet-stream")) },
+            onImportFromServices = { linkImportLauncher.launch(arrayOf("*/*")) },
             onDeleteAllData = viewModel::deleteAllData,
             onDataResultDismissed = viewModel::onDataResultDismissed,
             onShareCrashLog = {
@@ -380,6 +399,14 @@ fun SettingsContent(
                     icon = Icons.Outlined.Download,
                     summary = "今のデータに追加します。同じ URL のブックマークはスキップします",
                     onClick = actions.onImportBackup
+                )
+            }
+            item {
+                SettingsItem(
+                    title = "他のサービスから取り込む",
+                    icon = Icons.Outlined.MoveToInbox,
+                    summary = "Pocket・Raindrop.io・Instapaper・Pinboard・ブラウザの書き出しファイル(HTML・CSV・JSON)から、リンクを追加します",
+                    onClick = actions.onImportFromServices
                 )
             }
             item {

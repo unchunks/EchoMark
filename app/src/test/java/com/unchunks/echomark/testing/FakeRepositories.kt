@@ -181,6 +181,37 @@ class FakeBookmarkRepository : BookmarkRepository {
         return SaveResult(id, isDuplicate = false)
     }
 
+    /** importLinks で受け取ったリンクと、フォルダ名をタグにしたか */
+    val importedLinks = mutableListOf<com.unchunks.echomark.domain.importer.ImportedLink>()
+    var importedFolderAsTag: Boolean? = null
+
+    override suspend fun importLinks(
+        links: List<com.unchunks.echomark.domain.importer.ImportedLink>,
+        folderAsTag: Boolean,
+        onProgress: (done: Int, total: Int) -> Unit
+    ): com.unchunks.echomark.domain.importer.ImportResult {
+        importedFolderAsTag = folderAsTag
+        var added = 0
+        var duplicates = 0
+        links.forEachIndexed { index, link ->
+            if (bookmarks.value.any { it.contentUri == link.url }) {
+                duplicates++
+            } else {
+                importedLinks += link
+                saveBookmark(
+                    Bookmark(
+                        type = BookmarkType.URL, contentUri = link.url, title = link.title ?: link.url, content = link.note,
+                        createdAt = link.savedAt ?: 1L, lastAccessedAt = link.savedAt ?: 1L,
+                        isFavorite = link.favorite, isArchived = link.archived
+                    )
+                )
+                added++
+            }
+            onProgress(index + 1, links.size)
+        }
+        return com.unchunks.echomark.domain.importer.ImportResult(added, duplicates, processingStarted = added > 0)
+    }
+
     /** 同じ URL が既にあれば重複として既存の ID を返す(実装と同じ規則)。 */
     override suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult {
         failSaveUrl?.let { throw it }

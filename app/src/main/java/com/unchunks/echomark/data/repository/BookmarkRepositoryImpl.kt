@@ -40,6 +40,8 @@ import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.CategoryDefinition
 import com.unchunks.echomark.domain.model.CategoryNames
 import com.unchunks.echomark.domain.model.TagNames
+import com.unchunks.echomark.domain.importer.ImportResult
+import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.model.TagSource
 import com.unchunks.echomark.domain.model.TagSuggestions
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -107,6 +109,51 @@ class BookmarkRepositoryImpl @Inject constructor(
                 lastAccessedAt = now
             )
         )
+    }
+
+    override suspend fun importLinks(
+        links: List<ImportedLink>,
+        folderAsTag: Boolean,
+        onProgress: (done: Int, total: Int) -> Unit
+    ): ImportResult = withContext(dispatcherProvider.io) {
+        val now = System.currentTimeMillis()
+        var duplicates = 0
+        var failed = 0
+        val newIds = ArrayList<Long>()
+        links.forEachIndexed { index, link ->
+            try {
+                // 元の保存日時を引き継ぐ(未来の日時や 0 は今にそろえる)。アーカイブ済みは読んだものとして扱う
+                val savedAt = (link.savedAt ?: now).coerceIn(1L, now)
+                val entity = Bookmark(
+                    type = BookmarkType.URL,
+                    content = link.note,
+                    contentUri = link.url,
+                    title = link.title ?: link.url,
+                    createdAt = savedAt,
+                    lastAccessedAt = savedAt,
+                    isFavorite = link.favorite,
+                    isArchived = link.archived,
+                    readAt = if (link.archived) savedAt else null
+                ).toEntity().copy(queuedAt = now)
+                val id = bookmarkDao.insertIgnore(entity)
+                if (id == -1L) {
+                    duplicates++
+                } else {
+                    newIds += id
+                    val tags = if (folderAsTag && link.folder != null) link.tags + link.folder else link.tags
+                    if (tags.isNotEmpty()) tagDao.addTagsToBookmark(id, tags, TagSource.USER)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "取り込みで1件の保存に失敗")
+                failed++
+            }
+            if ((index + 1) % IMPORT_PROGRESS_STEP == 0 || index == links.lastIndex) onProgress(index + 1, links.size)
+        }
+        // 数千件を同時に処理しないよう、1件ずつ順番の列に積む(夜間にまとめて処理する設定なら積まれない)
+        val started = newIds.isNotEmpty() && enqueueSequentialProcessing(newIds)
+        ImportResult(added = newIds.size, duplicates = duplicates, failed = failed, processingStarted = started)
     }
 
     override suspend fun saveFileBookmark(attachment: StoredAttachment, title: String?, memo: String?): SaveResult {
@@ -795,6 +842,9 @@ class BookmarkRepositoryImpl @Inject constructor(
 
         /** ID の一覧で問い合わせるときの1回あたりの件数(SQLite の変数の上限より十分小さく) */
         const val ID_QUERY_CHUNK_SIZE = 500
+
+        /** 取り込みの進み具合を知らせる間隔(件数) */
+        const val IMPORT_PROGRESS_STEP = 50
 
         /** 要約の履歴に残す版の数(これを超えたら古い版から消す) */
         const val SUMMARY_HISTORY_LIMIT = 20
