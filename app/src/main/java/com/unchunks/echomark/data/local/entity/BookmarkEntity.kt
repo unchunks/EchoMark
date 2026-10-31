@@ -56,5 +56,10 @@ data class BookmarkEntity (
     @ColumnInfo(defaultValue = "0")
     val categoryEdited: Boolean = false,
     // v20 で追加。読んだ(詳細画面を開いた・読んだことにした)日時。null なら未読(#60)
-    val readAt: Long? = null
+    val readAt: Long? = null,
+    // v21 で追加。ページのオフラインコピー(MHTML と PDF。#80)。端末の中のファイル(attachments/ 内)を指す。
+    // ファイルはバックアップに含めない(大きく、リンク先から取り直せる)ので、これらの列もバックアップには含めない
+    val snapshotPath: String? = null,
+    val snapshotPdfPath: String? = null,
+    val snapshotAt: Long? = null
 )

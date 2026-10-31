@@ -71,6 +71,11 @@ abstract class RepositoryModule {
     ): DataManagementRepository
 
     @Binds
+    abstract fun bindPageSnapshotRepository(
+        impl: com.unchunks.echomark.data.snapshot.PageSnapshotRepositoryImpl
+    ): com.unchunks.echomark.domain.snapshot.PageSnapshotRepository
+
+    @Binds
     abstract fun bindAttachmentRepository(
         impl: AttachmentStore
     ): AttachmentRepository

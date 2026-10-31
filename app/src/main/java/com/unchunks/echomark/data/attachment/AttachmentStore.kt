@@ -123,6 +123,30 @@ class AttachmentStore @Inject constructor(
         )
     }
 
+    /**
+     * アプリ内で作ったファイル([source])を添付ファイルの置き場所へ移し、相対パスを返す(ページのオフラインコピー用)。
+     * 取り込みと同じく `.part` に書いてから名前を変え、移したあとは [source] を消す。
+     * 空き容量が足りない・書けないときは [AttachmentException]。
+     */
+    suspend fun adopt(source: File, extension: String): String = withContext(dispatcherProvider.io) {
+        require(isSafeExtension(extension)) { "unsafe extension: $extension" }
+        ensureSpace(source.length())
+        val storedName = "${UUID.randomUUID()}.$extension"
+        val part = File(directory, storedName + PART_SUFFIX)
+        val dest = File(directory, storedName)
+        try {
+            source.copyTo(part, overwrite = true)
+            if (!part.renameTo(dest)) throw IOException("rename failed")
+        } catch (e: IOException) {
+            part.delete()
+            Timber.w(e, "オフラインコピーの書き込みに失敗")
+            val error = if (allocatableBytes() < STORAGE_MARGIN_BYTES) AttachmentError.InsufficientStorage else AttachmentError.ReadFailed
+            throw AttachmentException(error, e)
+        }
+        source.delete()
+        "$ATTACHMENT_DIRECTORY/$storedName"
+    }
+
     /** 保存先のファイル(存在するとは限らない)。添付ファイルの置き場所でないパスなら null */
     fun fileOf(filePath: String?): File? = attachmentFile(context.filesDir, filePath)
 

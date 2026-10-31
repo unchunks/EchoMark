@@ -220,6 +220,21 @@ val MIGRATION_19_20 = object : Migration(19, 20) {
 }
 
 /**
+ * v20 → v21: ページのオフラインコピー(#80)の列を足す。
+ * - bookmarks.snapshotPath: MHTML の保存先(filesDir からの相対パス)
+ * - bookmarks.snapshotPdfPath: PDF の保存先
+ * - bookmarks.snapshotAt: 保存した日時
+ * - 既存の行: どれも NULL(オフラインコピーなし)。ほかの列は変わらない
+ */
+val MIGRATION_20_21 = object : Migration(20, 21) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `snapshotPath` TEXT")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `snapshotPdfPath` TEXT")
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `snapshotAt` INTEGER")
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
@@ -228,7 +243,7 @@ val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
-        MIGRATION_19_20
+        MIGRATION_19_20, MIGRATION_20_21
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */
