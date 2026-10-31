@@ -5,6 +5,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.model.InstalledModels
@@ -15,7 +17,9 @@ import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.testing.aiTasks
+import com.unchunks.echomark.testing.fakeCaptureViewModel
 import com.unchunks.echomark.ui.bookmark.AddBookmarkSheet
+import com.unchunks.echomark.ui.capture.LocalCaptureViewModel
 import com.unchunks.echomark.ui.onboarding.AiSetupChoice
 import com.unchunks.echomark.ui.onboarding.OnboardingActions
 import com.unchunks.echomark.ui.onboarding.OnboardingContent
@@ -173,7 +177,9 @@ class LargeScreenScreenshotTest {
 
     @Test
     fun addBookmarkSheet() = screenshot.captureDialogLightDark("large_add_bookmark_sheet") {
-        AddBookmarkSheet(onDismiss = {}, onSave = {})
+        CompositionLocalProvider(LocalCaptureViewModel provides remember { fakeCaptureViewModel() }) {
+            AddBookmarkSheet(onDismiss = {}, onSave = {})
+        }
     }
 
     @Test
@@ -226,7 +232,9 @@ class LargeScreenScreenshotTest {
     @Test
     @Config(qualifiers = LANDSCAPE_QUALIFIERS)
     fun addBookmarkSheetLandscape() = screenshot.captureDialogLightDark("landscape_add_bookmark_sheet") {
-        AddBookmarkSheet(onDismiss = {}, onSave = {})
+        CompositionLocalProvider(LocalCaptureViewModel provides remember { fakeCaptureViewModel() }) {
+            AddBookmarkSheet(onDismiss = {}, onSave = {})
+        }
     }
 }
 
