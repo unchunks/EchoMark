@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- チャットの音声入力。マイクのボタンを押したときにだけ許可を求める -->
+    <!-- チャットの音声入力と、追加シートの音声メモの録音。マイクのボタンを押したときにだけ許可を求める -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- マイクの無い端末でも入れられるようにする(音声入力だけ使えない) -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -24,6 +24,13 @@
         <!-- 回答の読み上げの仕組みに接続するため -->
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- 写真・動画を撮るカメラのアプリがあるか確かめるため(追加シートの「写真」「動画」のボタンの出し分け) -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.VIDEO_CAPTURE" />
         </intent>
     </queries>
 

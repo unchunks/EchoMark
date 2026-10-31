@@ -1,8 +1,13 @@
 package com.unchunks.echomark.ui.bookmark
 
+import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.provider.MediaStore
 import android.view.textclassifier.TextClassifier
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,9 +46,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,8 +64,20 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.unchunks.echomark.domain.bookmark.model.MAX_ATTACHMENT_BYTES
 import com.unchunks.echomark.domain.bookmark.model.SUPPORTED_ATTACHMENT_MIME_TYPES
+import com.unchunks.echomark.domain.capture.CaptureKind
+import com.unchunks.echomark.domain.capture.CaptureTarget
+import com.unchunks.echomark.ui.capture.CaptureEvent
+import com.unchunks.echomark.ui.capture.CaptureSection
+import com.unchunks.echomark.ui.capture.CaptureUiState
+import com.unchunks.echomark.ui.capture.CaptureViewModel
+import com.unchunks.echomark.ui.capture.LocalCaptureViewModel
 import com.unchunks.echomark.ui.common.SelectedFile
 import com.unchunks.echomark.ui.common.findUrlInText
 import com.unchunks.echomark.ui.common.normalizeUrlInput
@@ -108,7 +127,8 @@ data class AddBookmarkForm(
 @Composable
 fun AddBookmarkSheet(
     onDismiss: () -> Unit,
-    onSave: (NewBookmarkInput) -> Unit
+    onSave: (NewBookmarkInput) -> Unit,
+    capture: CaptureViewModel = LocalCaptureViewModel.current ?: hiltViewModel()
 ) {
     val context = LocalContext.current
     var mode by rememberSaveable { mutableStateOf(AddMode.LINK) }
@@ -125,14 +145,80 @@ fun AddBookmarkSheet(
         files = (files + picked).distinctBy { it.uri }
     }
 
+    // 撮影・録音。カメラは端末のカメラのアプリに任せるので、このアプリはカメラの権限を持たない
+    val voiceMemo by capture.voiceMemo.collectAsState()
+    var captureMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingCamera by rememberSaveable(stateSaver = PendingCamera.Saver) { mutableStateOf<PendingCamera?>(null) }
+    val captureAvailability = remember { CaptureAvailability.of(context) }
+    LaunchedEffect(capture) {
+        capture.events.collect { event ->
+            when (event) {
+                is CaptureEvent.Captured -> {
+                    captureMessage = null
+                    val captured = querySelectedFile(context.contentResolver, event.uri.toUri(), event.mimeType)
+                    files = (files + captured).distinctBy { it.uri }
+                    mode = AddMode.FILE
+                }
+                is CaptureEvent.Message -> captureMessage = event.text
+            }
+        }
+    }
+    val finishCamera: (Boolean) -> Unit = { captured ->
+        pendingCamera?.let { capture.onCameraResult(it.target, it.kind, captured) }
+        pendingCamera = null
+    }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture(), finishCamera)
+    val captureVideo = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo(), finishCamera)
+    val launchCamera: (CaptureKind) -> Unit = { kind ->
+        captureMessage = null
+        capture.prepareCamera(kind)?.let { target ->
+            pendingCamera = PendingCamera(target, kind)
+            try {
+                if (kind == CaptureKind.PHOTO) takePicture.launch(target.uri.toUri()) else captureVideo.launch(target.uri.toUri())
+            } catch (e: ActivityNotFoundException) {
+                finishCamera(false)
+                captureMessage = "カメラのアプリが見つかりません"
+            }
+        }
+    }
+    // マイクの許可は、録音のボタンを押したときにだけ求める
+    val requestMicrophone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) capture.startVoiceMemo() else capture.onMicrophoneDenied()
+    }
+    // バックグラウンドではマイクが止まるので、見えなくなったらそこまでの録音を残して終える
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { capture.onScreenHidden() }
+    // 撮った・録ったものを使わずに閉じるときは、一時ファイルを捨てる
+    val dismiss = {
+        capture.cancelVoiceMemo()
+        capture.discard(files.map { it.uri })
+        onDismiss()
+    }
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         AddBookmarkSheetContent(
             form = form,
             showClipboardSuggestion = clipboardHasUrl && url.isBlank(),
             autoFocus = true,
+            capture = CaptureUiState(
+                canTakePhoto = captureAvailability.canTakePhoto,
+                canTakeVideo = captureAvailability.canTakeVideo,
+                canRecordVoice = captureAvailability.canRecordVoice,
+                voiceMemo = voiceMemo,
+                message = captureMessage
+            ),
+            onTakePhoto = { launchCamera(CaptureKind.PHOTO) },
+            onTakeVideo = { launchCamera(CaptureKind.VIDEO) },
+            onStartVoiceMemo = {
+                captureMessage = null
+                val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (granted) capture.startVoiceMemo() else requestMicrophone.launch(Manifest.permission.RECORD_AUDIO)
+            },
+            onStopVoiceMemo = capture::stopVoiceMemo,
+            onCancelVoiceMemo = capture::cancelVoiceMemo,
             onModeChange = { mode = it },
             onUrlChange = {
                 url = it
@@ -142,7 +228,10 @@ fun AddBookmarkSheet(
             onMemoChange = { memo = it },
             onTextChange = { text = it },
             onPickFiles = { pickFiles.launch(SUPPORTED_ATTACHMENT_MIME_TYPES.toTypedArray()) },
-            onRemoveFile = { removed -> files = files.filterNot { it.uri == removed.uri } },
+            onRemoveFile = { removed ->
+                capture.discard(listOf(removed.uri))
+                files = files.filterNot { it.uri == removed.uri }
+            },
             onPasteFromClipboard = {
                 val pasted = readClipboardUrl(context)
                 if (pasted != null) {
@@ -152,7 +241,7 @@ fun AddBookmarkSheet(
                     urlError = "クリップボードに URL がありません"
                 }
             },
-            onCancel = onDismiss,
+            onCancel = dismiss,
             onSave = {
                 val input = form.toInput()
                 if (input == null) {
@@ -181,7 +270,13 @@ fun AddBookmarkSheetContent(
     modifier: Modifier = Modifier,
     autoFocus: Boolean = false,
     onPickFiles: () -> Unit = {},
-    onRemoveFile: (SelectedFile) -> Unit = {}
+    onRemoveFile: (SelectedFile) -> Unit = {},
+    capture: CaptureUiState = CaptureUiState(),
+    onTakePhoto: () -> Unit = {},
+    onTakeVideo: () -> Unit = {},
+    onStartVoiceMemo: () -> Unit = {},
+    onStopVoiceMemo: () -> Unit = {},
+    onCancelVoiceMemo: () -> Unit = {}
 ) {
     val firstFieldFocus = remember { FocusRequester() }
     if (autoFocus) {
@@ -305,7 +400,18 @@ fun AddBookmarkSheetContent(
                     singleLine = true
                 )
             }
-            AddMode.FILE -> FileInputs(form, onPickFiles, onRemoveFile, onTitleChange)
+            AddMode.FILE -> FileInputs(
+                form = form,
+                capture = capture,
+                onPickFiles = onPickFiles,
+                onRemoveFile = onRemoveFile,
+                onTitleChange = onTitleChange,
+                onTakePhoto = onTakePhoto,
+                onTakeVideo = onTakeVideo,
+                onStartVoiceMemo = onStartVoiceMemo,
+                onStopVoiceMemo = onStopVoiceMemo,
+                onCancelVoiceMemo = onCancelVoiceMemo
+            )
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -331,7 +437,8 @@ fun AddBookmarkSheetContent(
         ) {
             TextButton(onClick = onCancel) { Text("キャンセル") }
             Spacer(Modifier.size(8.dp))
-            Button(onClick = onSave, enabled = form.canSave) {
+            // 録音中は、録音を止めて音声メモを加えてから保存する
+            Button(onClick = onSave, enabled = form.canSave && !capture.isRecording) {
                 val count = form.files.count { it.canSave }
                 Text(if (form.mode == AddMode.FILE && count > 1) "${count}件を保存" else "保存")
             }
@@ -343,10 +450,24 @@ fun AddBookmarkSheetContent(
 @Composable
 private fun FileInputs(
     form: AddBookmarkForm,
+    capture: CaptureUiState,
     onPickFiles: () -> Unit,
     onRemoveFile: (SelectedFile) -> Unit,
-    onTitleChange: (String) -> Unit
+    onTitleChange: (String) -> Unit,
+    onTakePhoto: () -> Unit,
+    onTakeVideo: () -> Unit,
+    onStartVoiceMemo: () -> Unit,
+    onStopVoiceMemo: () -> Unit,
+    onCancelVoiceMemo: () -> Unit
 ) {
+    CaptureSection(
+        state = capture,
+        onTakePhoto = onTakePhoto,
+        onTakeVideo = onTakeVideo,
+        onStartVoiceMemo = onStartVoiceMemo,
+        onStopVoiceMemo = onStopVoiceMemo,
+        onCancelVoiceMemo = onCancelVoiceMemo
+    )
     FilledTonalButton(onClick = onPickFiles, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Outlined.AttachFile, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
@@ -400,3 +521,33 @@ private fun readClipboardUrl(context: Context): String? {
 }
 
 private const val URL_CONFIDENCE = 0.5f
+
+/** カメラのアプリに撮影を頼んでいる最中の出力先(撮影中にアプリのプロセスが終わっても結果を受け取れるよう、画面の状態として残す) */
+private data class PendingCamera(val target: CaptureTarget, val kind: CaptureKind) {
+    companion object {
+        val Saver: Saver<PendingCamera?, List<String>> = Saver(
+            save = { pending ->
+                pending?.let { listOf(it.kind.name, it.target.uri, it.target.mimeType, it.target.path) } ?: emptyList()
+            },
+            restore = { saved ->
+                saved.takeIf { it.size == 4 }?.let { (kind, uri, mime, path) ->
+                    PendingCamera(CaptureTarget(uri, mime, path), CaptureKind.valueOf(kind))
+                }
+            }
+        )
+    }
+}
+
+/** 端末で撮影・録音に使えるもの。カメラのアプリとマイクが無い端末では、そのボタンを出さない */
+private data class CaptureAvailability(val canTakePhoto: Boolean, val canTakeVideo: Boolean, val canRecordVoice: Boolean) {
+    companion object {
+        fun of(context: Context): CaptureAvailability {
+            val packageManager = context.packageManager
+            return CaptureAvailability(
+                canTakePhoto = Intent(MediaStore.ACTION_IMAGE_CAPTURE).resolveActivity(packageManager) != null,
+                canTakeVideo = Intent(MediaStore.ACTION_VIDEO_CAPTURE).resolveActivity(packageManager) != null,
+                canRecordVoice = packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)
+            )
+        }
+    }
+}
