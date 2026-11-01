@@ -4,6 +4,8 @@ import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.securestorage.SecretCipher
 import com.unchunks.components.securestorage.UnrecoverableSecretException
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
@@ -61,6 +63,8 @@ class FakeAppSettingsRepository(
     val readingStyleFlow = MutableStateFlow(ReadingStyle())
     val chatTemplatesFlow = MutableStateFlow<List<ChatTemplate>>(emptyList())
     val searchHistoryFlow = MutableStateFlow<List<String>>(emptyList())
+    val duplicateSensitivityFlow = MutableStateFlow(DuplicateSensitivity.DEFAULT)
+    val dismissedDuplicatesFlow = MutableStateFlow<Set<DuplicatePair>>(emptySet())
     var resetCalls = 0
     val processingFlow = MutableStateFlow(ProcessingSettings())
 
@@ -103,6 +107,12 @@ class FakeAppSettingsRepository(
     override suspend fun setSendFilesToCloud(enabled: Boolean) { sendFilesToCloudFlow.value = enabled }
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) { localLlmUseGpuFlow.value = enabled }
     override suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder) { bookmarkSortOrderFlow.value = sortOrder }
+    override val duplicateSensitivity: Flow<DuplicateSensitivity> = duplicateSensitivityFlow
+    override val dismissedDuplicates: Flow<Set<DuplicatePair>> = dismissedDuplicatesFlow
+    override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) { duplicateSensitivityFlow.value = sensitivity }
+    override suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>) {
+        dismissedDuplicatesFlow.update(transform)
+    }
     override val searchHistory: Flow<List<String>> = searchHistoryFlow
     override suspend fun updateSearchHistory(transform: (List<String>) -> List<String>) {
         searchHistoryFlow.update(transform)
@@ -128,6 +138,7 @@ class FakeAppSettingsRepository(
         bookmarkSortOrderFlow.value = BookmarkSortOrder.NEWEST
         bookmarkListDisplayFlow.value = BookmarkListDisplay.CARD
         readingStyleFlow.value = ReadingStyle()
+        duplicateSensitivityFlow.value = DuplicateSensitivity.DEFAULT
         processingFlow.value = ProcessingSettings()
         summaryStyleFlow.value = SummaryStyle()
         chatTemplatesFlow.value = emptyList()

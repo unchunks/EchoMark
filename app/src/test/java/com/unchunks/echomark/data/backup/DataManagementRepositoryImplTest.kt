@@ -13,6 +13,8 @@ import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
@@ -119,6 +121,29 @@ class DataManagementRepositoryImplTest {
         repository.deleteAllData(resetSettings = false)
 
         assertEquals(emptyList<ChatTemplate>(), settings.chatTemplatesFlow.value)
+    }
+
+    @Test
+    fun 全データ削除は設定を残す場合でも両方残すと答えた重複の組を消す() = runBlocking {
+        settings.dismissedDuplicatesFlow.value = setOf(DuplicatePair.of(1, 2))
+        settings.duplicateSensitivityFlow.value = DuplicateSensitivity.LOOSE
+
+        repository.deleteAllData(resetSettings = false)
+
+        assertEquals(emptySet<DuplicatePair>(), settings.dismissedDuplicatesFlow.value)
+        // 見分け方の設定は設定なので残る
+        assertEquals(DuplicateSensitivity.LOOSE, settings.duplicateSensitivityFlow.value)
+    }
+
+    @Test
+    fun 全データ削除で設定も初期化するときは両方残すと答えた組も見分け方も戻る() = runBlocking {
+        settings.dismissedDuplicatesFlow.value = setOf(DuplicatePair.of(1, 2))
+        settings.duplicateSensitivityFlow.value = DuplicateSensitivity.LOOSE
+
+        repository.deleteAllData(resetSettings = true)
+
+        assertEquals(emptySet<DuplicatePair>(), settings.dismissedDuplicatesFlow.value)
+        assertEquals(DuplicateSensitivity.DEFAULT, settings.duplicateSensitivityFlow.value)
     }
 
     @Test

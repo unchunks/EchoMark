@@ -25,6 +25,9 @@ class VectorSearchDataSource @Inject constructor(
     private companion object {
         /** 版の絞り込みが近傍探索の後に効く場合に備えて、多めに取る倍率 */
         const val OVERFETCH_FACTOR = 4
+
+        /** [forEachByModelVersion] で一度に読む件数(768 次元 × 4 バイト × 件数 がメモリに載る) */
+        const val BATCH_SIZE = 200
     }
 
     /** bookmarkId に対応する埋め込みを登録する。既にあれば上書きする。 */
@@ -72,6 +75,25 @@ class VectorSearchDataSource @Inject constructor(
                 // 版の絞り込みが近傍探索の後に効く場合に備え、ここでも保証する(近い順に並べ直して切り詰める)
                 .sortedBy { it.score }
                 .take(limit)
+        } finally {
+            query.close()
+        }
+    }
+
+    /**
+     * [modelVersion] で保存されている埋め込みを、[BATCH_SIZE] 件ずつ読んで [action] に渡す(全件を一度にメモリへ載せない)。
+     * 読んでいる間に追加・削除があっても、見落とす・重複するのは許す(重複・関連の見つけ方は目安のため)。
+     */
+    fun forEachByModelVersion(modelVersion: String, action: (bookmarkId: Long, vector: FloatArray) -> Unit) {
+        val query = embeddingBox.query(EmbeddingEntity_.modelVersion.equal(modelVersion)).order(EmbeddingEntity_.id).build()
+        try {
+            var offset = 0L
+            while (true) {
+                val batch = query.find(offset, BATCH_SIZE.toLong())
+                batch.forEach { action(it.bookmarkId, it.vector) }
+                if (batch.size < BATCH_SIZE) break
+                offset += batch.size
+            }
         } finally {
             query.close()
         }

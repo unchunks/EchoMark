@@ -110,7 +110,8 @@ internal fun BookmarkListDetailDestination(
     onOpenTagManagement: () -> Unit,
     onAskAi: (Long) -> Unit,
     onOpenAiSettings: () -> Unit,
-    onOpenDiscover: () -> Unit = {}
+    onOpenDiscover: () -> Unit = {},
+    onOpenDuplicates: () -> Unit = {}
 ) {
     val handle = entry.savedStateHandle
     val selectedId by handle.getStateFlow<Long?>(PaneSelection.KEY_BOOKMARK_ID, null).collectAsState()
@@ -135,6 +136,7 @@ internal fun BookmarkListDetailDestination(
                 onOpenBookmark = { id -> if (twoPane) select(id) else onOpenBookmarkRoute(id) },
                 onOpenTagManagement = onOpenTagManagement,
                 onOpenDiscover = onOpenDiscover,
+                onOpenDuplicates = onOpenDuplicates,
                 selectedBookmarkId = if (twoPane) selectedId else null,
                 onBookmarkRemoved = { id -> if (id == selectedId) select(null) }
             )
