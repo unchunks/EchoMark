@@ -159,6 +159,8 @@ class DataManagementRepositoryImpl @Inject constructor(
         // 検索の履歴(何を探したか)と、自分で作ったチャットのテンプレートは利用者のデータなので、設定を残す場合でも消す
         appSettings.updateSearchHistory { emptyList() }
         appSettings.updateChatTemplates { emptyList() }
+        // 「両方残す」と答えた重複の組は古い ID を覚えているだけなので、設定を残す場合でも消す
+        appSettings.updateDismissedDuplicates { emptySet() }
         if (resetSettings) {
             appSettings.resetToDefaults()
             ApiProvider.entries.forEach { apiKeyRepository.clearKey(it) }

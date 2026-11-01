@@ -64,6 +64,7 @@ import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailViewModel
 import com.unchunks.echomark.ui.discover.DiscoverScreen
+import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
@@ -216,7 +217,8 @@ fun EchoMarkNavHost(
                     onOpenTagManagement = { navController.navigate(Routes.TAGS) },
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
-                    onOpenDiscover = { navController.navigate(Routes.DISCOVER) }
+                    onOpenDiscover = { navController.navigate(Routes.DISCOVER) },
+                    onOpenDuplicates = { navController.navigate(Routes.DUPLICATES) }
                 )
             }
             // 資料を探す。AI が選んだ資料をまとめて追加し、戻ると一覧に追加したものが並ぶ
@@ -238,6 +240,17 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 ResourceFinderScreen(onBack = navController.popBackAction())
+            }
+            // 重複の整理と関連のまとまり。ブックマークをタップしたら詳細を開く
+            composable(
+                route = Routes.DUPLICATES,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                DuplicatesScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
+                )
             }
             // タグ管理。タグをタップしたら、そのタグで絞り込んだ一覧へ戻る
             composable(

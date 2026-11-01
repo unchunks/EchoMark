@@ -14,6 +14,9 @@ object Routes {
     /** 資料を探す(ブックマーク一覧のメニューから開くサブ画面) */
     const val DISCOVER = "discover"
 
+    /** 重複の整理と関連のまとまり(ブックマーク一覧のメニューから開くサブ画面) */
+    const val DUPLICATES = "duplicates"
+
     /** 一覧ページのリンク・端末内のファイルから資料を探す(資料を探す画面から開く) */
     const val DISCOVER_FROM_PAGE_OR_FILES = "discover/page-or-files"
 

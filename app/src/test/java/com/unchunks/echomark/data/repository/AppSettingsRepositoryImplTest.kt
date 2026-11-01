@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
+import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingFont
@@ -140,6 +142,35 @@ class AppSettingsRepositoryImplTest {
 
         repository.updateSearchHistory { emptyList() }
         assertEquals(emptyList<String>(), repository.searchHistory.first())
+    }
+
+    @Test
+    fun 重複の見分け方は既定が標準で_保存でき_読めない名前は既定に戻る() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertEquals(DuplicateSensitivity.STANDARD, repository.duplicateSensitivity.first())
+
+        repository.setDuplicateSensitivity(DuplicateSensitivity.STRICT)
+        assertEquals(DuplicateSensitivity.STRICT, repository.duplicateSensitivity.first())
+
+        dataStore.edit { it[stringPreferencesKey("duplicate_sensitivity")] = "MUCH_LOOSER" }
+        assertEquals(DuplicateSensitivity.DEFAULT, repository.duplicateSensitivity.first())
+    }
+
+    @Test
+    fun 両方残すと答えた組を保存して読み出せ_壊れた行は読み飛ばし_空にすると消える() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertEquals(emptySet<DuplicatePair>(), repository.dismissedDuplicates.first())
+
+        repository.updateDismissedDuplicates { it + DuplicatePair.of(9, 2) + DuplicatePair.of(2, 9) + DuplicatePair.of(3, 4) }
+        assertEquals(setOf(DuplicatePair.of(2, 9), DuplicatePair.of(3, 4)), repository.dismissedDuplicates.first())
+
+        dataStore.edit { it[stringPreferencesKey("dismissed_duplicates")] = "2:9\nごみ\n5:5\n7:8" }
+        assertEquals(setOf(DuplicatePair.of(2, 9), DuplicatePair.of(7, 8)), repository.dismissedDuplicates.first())
+
+        repository.updateDismissedDuplicates { emptySet() }
+        assertEquals(emptySet<DuplicatePair>(), repository.dismissedDuplicates.first())
     }
 
     @Test

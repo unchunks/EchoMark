@@ -79,6 +79,23 @@ class VectorSearchDataSourceTest {
     }
 
     @Test
+    fun 版を指定して全件を順に読み_1回分の件数を超えても取りこぼさない() {
+        // 1回に読む件数(200)の2倍を超える数
+        val total = 405
+        for (i in 1..total) dataSource.upsert(i.toLong(), vectorOf(0.001f * i), "v")
+        dataSource.upsert(9_999L, vectorOf(0f), "other")
+
+        val seen = mutableListOf<Long>()
+        dataSource.forEachByModelVersion("v") { id, vector ->
+            seen += id
+            assertEquals(768, vector.size)
+        }
+
+        assertEquals((1..total).map { it.toLong() }.toSet(), seen.toSet())
+        assertEquals(total, seen.size)
+    }
+
+    @Test
     fun 版ごとの件数を数える() {
         dataSource.upsert(1L, vectorOf(0f), "a")
         dataSource.upsert(2L, vectorOf(0.1f), "a")
