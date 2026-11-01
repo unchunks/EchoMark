@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.detail
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -92,6 +93,7 @@ private fun ReadingTheme.colors(): ReadingColors = when (this) {
  * @param highlightTerms 検索結果から開いたときの検索語。本文で一致した文字を強調する
  * @param onStyleChange 文字の大きさ・背景・書体を変えた(端末に保存される)
  * @param onClose 読書モードを閉じて、詳細画面に戻る
+ * @param onQuote 段落を長押ししたとき(その段落を引用したノートを書く)。null なら長押しは何もしない
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,6 +106,7 @@ fun ReadingModeContent(
     highlightTerms: List<String>,
     onStyleChange: (ReadingStyle) -> Unit,
     onClose: () -> Unit,
+    onQuote: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = style.theme.colors()
@@ -189,6 +192,14 @@ fun ReadingModeContent(
                             style = MaterialTheme.typography.labelLarge,
                             color = colors.secondary
                         )
+                        if (onQuote != null) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "段落を長押しすると、引用してノートを書けます",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.secondary
+                            )
+                        }
                     }
                 }
                 itemsIndexed(blocks, key = { index, _ -> "block_$index" }) { _, block ->
@@ -209,7 +220,19 @@ fun ReadingModeContent(
                             fontSize = style.fontSize.sp.sp,
                             lineHeight = (style.fontSize.sp * LINE_HEIGHT_RATIO).sp,
                             color = colors.text,
-                            modifier = Modifier.padding(bottom = 14.dp)
+                            modifier = Modifier
+                                .then(
+                                    if (onQuote != null) {
+                                        Modifier.combinedClickable(
+                                            onClick = {},
+                                            onLongClickLabel = "この段落を引用してノートを書く",
+                                            onLongClick = { onQuote(block.text) }
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .padding(bottom = 14.dp)
                         )
                     }
                 }

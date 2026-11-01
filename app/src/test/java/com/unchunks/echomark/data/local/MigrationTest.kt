@@ -717,4 +717,35 @@ class MigrationTest {
         assertTrue(duplicate.isFailure)
         connection.close()
     }
+
+    @Test
+    fun migrate23To24_addsEmptyNotesAndKeepsBookmarks() {
+        helper.createDatabase(23).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited) " +
+                    "VALUES (1, 'TEXT', 't', 1, 1, 'DONE', 1, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v24 と一致するか(列・外部キー・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(24, listOf(MIGRATION_23_24))
+
+        connection.prepare("SELECT COUNT(*) FROM bookmark_notes").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        connection.prepare("SELECT title, isFavorite FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("t", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+        }
+        // 引用は無くてよい
+        connection.execSQL("INSERT INTO bookmark_notes (bookmarkId, text, createdAt, updatedAt) VALUES (1, 'ノート', 5, 5)")
+        connection.prepare("SELECT quote FROM bookmark_notes").use { stmt ->
+            assertTrue(stmt.step())
+            assertTrue(stmt.isNull(0))
+        }
+        connection.close()
+    }
 }

@@ -6,6 +6,7 @@ import com.unchunks.components.search.RankFusion
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.local.dao.BookmarkDao
+import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.CategoryDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
@@ -62,12 +63,14 @@ import javax.inject.Inject
 class BookmarkRepositoryImpl @Inject constructor(
     private val bookmarkDao: BookmarkDao,
     private val tagDao: TagDao,
+    private val noteDao: BookmarkNoteDao,
     private val categoryDao: CategoryDao,
     private val vectorSearch: VectorSearchDataSource,
     private val dispatcherProvider: DispatcherProvider,
     private val workScheduler: BookmarkWorkScheduler,
     private val embeddingProvider: EmbeddingProvider,
-    private val attachmentStore: AttachmentStore
+    private val attachmentStore: AttachmentStore,
+    private val deletedNotes: DeletedNotesStash = DeletedNotesStash()
 ) : BookmarkRepository {
 
     override suspend fun saveBookmark(bookmark: Bookmark): SaveResult =
@@ -519,6 +522,8 @@ class BookmarkRepositoryImpl @Inject constructor(
                     processing = ProcessingInfo(queuedAt = System.currentTimeMillis())
                 ).toEntity()
             )
+            // 削除のときに預かったノートも戻す
+            noteDao.insertAll(deletedNotes.take(bookmark.id))
             // 付けた人も元どおりにする(AI のタグをユーザーのタグに変えてしまわない)
             val (aiTags, userTags) = bookmark.tags.partition { it in bookmark.aiTags }
             tagDao.addTagsToBookmark(bookmark.id, userTags, TagSource.USER)
@@ -606,6 +611,8 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             // 処理待ち・実行中の本文取得・AI 処理を止める(削除後にクラウドへ送ったり、書き込んだりしない)
             workScheduler.cancel(bookmark.id)
+            // ノートは削除で連鎖して消えるので、「元に戻す」に備えて先に預ける
+            deletedNotes.put(bookmark.id, noteDao.getByBookmark(bookmark.id))
             bookmarkDao.delete(bookmark.toEntity())
             // 紐付けは連鎖して消えるため、AI だけが付けていてどこにも付かなくなったタグを消す
             // (取り消したときは restoreBookmark が同じ名前で付け直す)

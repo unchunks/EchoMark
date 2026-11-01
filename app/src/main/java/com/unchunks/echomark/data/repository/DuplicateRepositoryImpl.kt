@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.repository
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.echomark.data.local.dao.BookmarkDao
+import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toDomain
@@ -32,6 +33,7 @@ import javax.inject.Singleton
 class DuplicateRepositoryImpl @Inject constructor(
     private val bookmarkDao: BookmarkDao,
     private val tagDao: TagDao,
+    private val noteDao: BookmarkNoteDao,
     private val vectorSearch: VectorSearchDataSource,
     private val embeddingProvider: EmbeddingProvider,
     private val appSettings: AppSettingsRepository,
@@ -106,12 +108,18 @@ class DuplicateRepositoryImpl @Inject constructor(
         tagDao.addTagsToBookmark(keepId, userTags, TagSource.USER)
         tagDao.addTagsToBookmark(keepId, aiTags, TagSource.AI)
 
+        // ノートは残す方へ移す(消す方を削除すると連鎖して消えるため)。元に戻すときのために ID を覚える
+        val movedNoteIds = noteDao.getByBookmark(removeId).map { it.id }
+        if (movedNoteIds.isNotEmpty()) noteDao.moveToBookmark(movedNoteIds, keepId)
+
         // オフラインコピーを残す方へ移したときは、消す方の削除でファイルの掃除を始めないよう、参照を外して渡す
         val movedSnapshot = fields.snapshotPath != keep.snapshotPath
         val toDelete = if (movedSnapshot) remove.copy(snapshotPath = null, snapshotPdfPath = null, snapshotAt = null) else remove
         bookmarkRepository.deleteBookmark(toDelete)
         Timber.i("重複を統合: 残す id=$keepId / 消す id=$removeId")
-        MergeUndo(keptBefore = keep, removed = remove, addedTags = tagsToAdd.filter { it !in keep.tags })
+        MergeUndo(
+            keptBefore = keep, removed = remove, addedTags = tagsToAdd.filter { it !in keep.tags }, movedNoteIds = movedNoteIds
+        )
     }
 
     override suspend fun undoMerge(undo: MergeUndo) {
@@ -119,6 +127,8 @@ class DuplicateRepositoryImpl @Inject constructor(
             val keepId = undo.keptBefore.id
             writeFields(keepId, BookmarkMerge.Fields.of(undo.keptBefore))
             bookmarkRepository.restoreBookmark(undo.removed)
+            // 移したノートを消した方へ戻す
+            if (undo.movedNoteIds.isNotEmpty()) noteDao.moveToBookmark(undo.movedNoteIds, undo.removed.id)
             // 統合で足したタグを外す。「外した」とは覚えさせない(AI が付け直せるように)
             undo.addedTags.forEach { name ->
                 tagDao.getTagByName(name)?.let { tagDao.deleteCrossRef(keepId, it.id) }

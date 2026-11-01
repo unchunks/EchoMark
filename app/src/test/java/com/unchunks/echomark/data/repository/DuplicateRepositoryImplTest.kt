@@ -8,6 +8,7 @@ import androidx.work.WorkManager
 import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
+import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateReason
@@ -71,6 +72,7 @@ class DuplicateRepositoryImplTest {
         bookmarkRepository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            noteDao = db.bookmarkNoteDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = dispatcherProvider,
@@ -81,6 +83,7 @@ class DuplicateRepositoryImplTest {
         repository = DuplicateRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            noteDao = db.bookmarkNoteDao(),
             vectorSearch = vectorSearch,
             embeddingProvider = embedding,
             appSettings = settings,
@@ -270,5 +273,27 @@ class DuplicateRepositoryImplTest {
         assertNull(repository.merge(12_345L, keep))
         assertNull(repository.merge(keep, keep))
         assertNotNull(load(keep))
+    }
+
+    @Test
+    fun 統合すると消す方のノートは残す方に移り_元に戻すと消した方へ戻る() = runBlocking {
+        val keep = save("https://example.com/keep")
+        val remove = save("https://example.com/remove")
+        val noteDao = db.bookmarkNoteDao()
+        noteDao.insert(BookmarkNoteEntity(bookmarkId = keep, text = "残す方のノート", createdAt = 1, updatedAt = 1))
+        noteDao.insert(BookmarkNoteEntity(bookmarkId = remove, text = "消す方のノート", quote = "引用", createdAt = 2, updatedAt = 3))
+        val movedBefore = noteDao.getByBookmark(remove).single()
+
+        val undo = repository.merge(keep, remove)!!
+
+        // 消す方を削除しても、ノートは連鎖して消えず、残す方にある
+        assertTrue(noteDao.getByBookmark(remove).isEmpty())
+        assertEquals(listOf("残す方のノート", "消す方のノート"), noteDao.getByBookmark(keep).map { it.text })
+        assertEquals(listOf(movedBefore.id), undo.movedNoteIds)
+
+        repository.undoMerge(undo)
+
+        assertEquals(listOf("残す方のノート"), noteDao.getByBookmark(keep).map { it.text })
+        assertEquals(listOf(movedBefore), noteDao.getByBookmark(remove))
     }
 }

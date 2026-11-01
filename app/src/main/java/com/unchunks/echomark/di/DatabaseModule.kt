@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
 import com.unchunks.echomark.data.local.dao.ConversationDao
 import com.unchunks.echomark.data.local.dao.CategoryDao
+import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.SmartFolderDao
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.dao.TagDao
@@ -66,6 +67,11 @@ object DatabaseModule {
     @Provides
     fun provideSubscriptionDao(database: AppDatabase): SubscriptionDao {
         return database.subscriptionDao()
+    }
+
+    @Provides
+    fun provideBookmarkNoteDao(database: AppDatabase): BookmarkNoteDao {
+        return database.bookmarkNoteDao()
     }
 
     @Provides
