@@ -1,0 +1,117 @@
+package com.unchunks.echomark.worker
+
+import android.content.Context
+import androidx.hilt.work.HiltWorker
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import com.unchunks.echomark.data.ai.AiPerfLog
+import com.unchunks.echomark.data.ai.AiPrewarmer
+import com.unchunks.echomark.data.attachment.AttachmentStore
+import com.unchunks.echomark.data.remote.DownloadSink
+import com.unchunks.echomark.data.remote.FetchedContent
+import com.unchunks.echomark.data.remote.UrlContentFetcher
+import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.isProcessingCancelled
+import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import kotlinx.coroutines.withContext
+import timber.log.Timber
+
+/**
+ * URLブックマークのページ本文を取得して title / content に反映し、OG 画像・サイト名を保存する。
+ * リンク先が PDF・画像・音声・動画なら本体をダウンロードしてファイルとして保存する(種類は URL のまま。
+ * 中身は後続の [ContentExtractionWorker] が取り出す)。
+ * 後続の AI 処理をブロックしないよう、失敗しても Result.success() を返す。
+ */
+@HiltWorker
+class UrlFetchWorker @AssistedInject constructor(
+    @Assisted context: Context,
+    @Assisted params: WorkerParameters,
+    private val repository: BookmarkRepository,
+    private val fetcher: UrlContentFetcher,
+    private val attachmentStore: AttachmentStore,
+    private val aiPrewarmer: AiPrewarmer,
+    private val stats: ProcessingStatsRepository
+) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        val bookmarkId = inputData.getLong(KEY_BOOKMARK_ID, -1L)
+        if (bookmarkId == -1L) return Result.success()
+
+        val bookmark = repository.getBookmarkById(bookmarkId)
+        val url = bookmark?.contentUri
+        // ユーザーが処理をやめたもの(一括の列に残っているワーク)は何もしない
+        if (bookmark?.isProcessingCancelled == true) return Result.success()
+        if (bookmark == null || url == null) {
+            Timber.w("UrlFetchWorker: 対象が見つかりません id=%d", bookmarkId)
+            return Result.success()
+        }
+
+        // 処理中(本文の取得)にし、終えたら(中断されても)次の段を待つ処理待ちに戻す
+        withProcessingStage(repository, stats, bookmark, ProcessingStage.FETCH_CONTENT) { fetch(bookmarkId, bookmark, url) }
+        return Result.success()
+    }
+
+    /** 本文を取得して保存する。取得できたら true(失敗・削除済みでも後続の AI 処理は続けるため、例外にはしない) */
+    private suspend fun fetch(bookmarkId: Long, bookmark: Bookmark, url: String): Boolean {
+        // 後続の AI 処理で端末内モデルを使うなら、通信している間に読み込んでおく
+        if (bookmark.summary.isNullOrBlank()) aiPrewarmer.prewarmLocalLlmIfUsed()
+
+        // ワークが止められたら(ブックマークの削除など)ダウンロードも止める
+        val sink = DownloadSink { body, mimeType, fileName, maxBytes ->
+            attachmentStore.saveStream(body, mimeType, fileName, maxBytes) { !isStopped }
+        }
+        val fetchResult = withContext(AiPerfLog.trace(bookmarkId)) {
+            AiPerfLog.measure("fetch") { fetcher.fetch(url, sink) }
+        }
+        val fetched = fetchResult.getOrElse { e ->
+            Timber.w(e, "UrlFetchWorker: 取得に失敗 url=%s", url)
+            return false
+        }
+
+        // 取得の間にタイトルやメモが編集された・削除されたかもしれないため、読み直してから書く
+        // (削除されていれば、保存したファイルはどこからも参照されず、しばらくして掃除される)
+        val latest = repository.getBookmarkById(bookmarkId) ?: return false
+
+        // 前に保存したファイルは参照されなくなり、しばらくして掃除される
+        fetched.file?.let { repository.updateAttachment(bookmarkId, it) }
+        repository.updateTitleAndContent(bookmarkId, titleAfterFetch(latest, url, fetched), contentAfterFetch(latest, fetched))
+        // 取れなかった項目は既存の値を残す(再取得で消さない)
+        repository.updateLinkMetadata(
+            bookmarkId,
+            imageUrl = fetched.imageUrl ?: latest.imageUrl,
+            siteName = fetched.siteName ?: latest.siteName
+        )
+        // 取得できたことを記録する(メモ付きの URL でも、取得できていなければ再処理で取得し直せるように)
+        repository.markContentFetched(bookmarkId, System.currentTimeMillis())
+        return true
+    }
+
+    companion object {
+        const val KEY_BOOKMARK_ID = BookmarkAiProcessingWorker.KEY_BOOKMARK_ID
+
+        /** 取得した後のタイトル。未編集(空、または URL のまま)のときだけページのタイトルに置き換える */
+        internal fun titleAfterFetch(bookmark: Bookmark, url: String, fetched: FetchedContent): String =
+            if (bookmark.title.isBlank() || bookmark.title == url) fetched.title ?: bookmark.title else bookmark.title
+
+        /** 取得した後の本文。ページの本文はメモの後ろに追記する(再実行時に同じ本文を二重に追記しない) */
+        internal fun contentAfterFetch(bookmark: Bookmark, fetched: FetchedContent): String? {
+            // 有料・会員限定で冒頭しか取得できなかったページは、そのことが分かる印を先頭に入れる(AI は取得できた範囲だけを要約する)
+            // (冒頭の本文も説明文も取れなかったときは、印だけの本文にしない)
+            val pageText = listOfNotNull(fetched.description, fetched.text.takeIf { it.isNotBlank() })
+            val limitNote = fetched.accessLimit?.let { LimitedAccess.note(it) }?.takeIf { it.isNotBlank() && pageText.isNotEmpty() }
+            val fetchedText = listOfNotNull(limitNote).plus(pageText).joinToString("\n\n")
+            val existing = bookmark.content
+            return when {
+                fetchedText.isBlank() -> existing
+                existing.isNullOrBlank() -> fetchedText
+                existing.contains(fetchedText) -> existing
+                else -> existing + "\n\n" + fetchedText
+            }
+        }
+    }
+}

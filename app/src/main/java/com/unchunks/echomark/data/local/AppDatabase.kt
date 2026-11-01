@@ -3,29 +3,59 @@ package com.unchunks.echomark.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.unchunks.echomark.data.local.dao.ApiUsageDao
+import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.dao.BookmarkDao
+import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
+import com.unchunks.echomark.data.local.dao.CategoryDao
+import com.unchunks.echomark.data.local.dao.SmartFolderDao
+import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
-import com.unchunks.echomark.data.local.dao.LearningItemDao
+import com.unchunks.echomark.data.local.dao.ConversationDao
 import com.unchunks.echomark.data.local.dao.TagDao
+import com.unchunks.echomark.data.local.entity.ApiUsageEntity
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
+import com.unchunks.echomark.data.local.entity.CategoryEntity
+import com.unchunks.echomark.data.local.entity.SmartFolderEntity
+import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.Converters
-import com.unchunks.echomark.data.local.entity.LearningItemEntity
+import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
+import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 
 @Database(
     entities = [
         BookmarkEntity::class, TagEntity::class, BookmarkTagCrossRef::class,
-        LearningItemEntity::class, ChatMessageEntity::class
+        ConversationEntity::class, ChatMessageEntity::class, ApiUsageEntity::class, SummaryHistoryEntity::class,
+        TagAliasEntity::class, RemovedTagEntity::class, CategoryEntity::class, SmartFolderEntity::class, SubscriptionEntity::class,
+        BookmarkNoteEntity::class
     ],
-    version = 4,
+    version = AppDatabase.VERSION,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun tagDao(): TagDao
-    abstract fun learningItemDao(): LearningItemDao
+    abstract fun categoryDao(): CategoryDao
+    abstract fun smartFolderDao(): SmartFolderDao
+    abstract fun subscriptionDao(): SubscriptionDao
+    abstract fun bookmarkNoteDao(): BookmarkNoteDao
+    abstract fun conversationDao(): ConversationDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun backupDao(): BackupDao
+    abstract fun apiUsageDao(): ApiUsageDao
+
+    companion object {
+        /**
+         * DB のスキーマの版。テーブル・列・インデックスを変えたら 1 つ上げ、Migrations.kt にマイグレーションを足す
+         * (手順は docs/database-migrations.md)。
+         */
+        const val VERSION = 24
+    }
 }

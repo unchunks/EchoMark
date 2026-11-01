@@ -1,0 +1,147 @@
+package com.unchunks.echomark.screenshot
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.echomark.domain.repository.BackupImportSummary
+import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.ui.settings.CrashLogDialog
+import com.unchunks.echomark.ui.settings.CrashLogSummary
+import com.unchunks.echomark.ui.settings.DataOperationDialog
+import com.unchunks.echomark.ui.settings.DataOperationState
+import com.unchunks.echomark.ui.settings.DeleteConfirmDialog
+import com.unchunks.echomark.ui.settings.DeleteFinalDialog
+import com.unchunks.echomark.ui.settings.LicensesDialog
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryStyle
+import com.unchunks.echomark.domain.repository.ProcessingSettings
+import com.unchunks.echomark.ui.settings.PrivacyDialog
+import com.unchunks.echomark.ui.settings.ProcessingSettingsDialog
+import com.unchunks.echomark.ui.settings.SettingsDialog
+import com.unchunks.echomark.ui.settings.SummarySettingsDialog
+import com.unchunks.echomark.ui.settings.ThemeModeDialog
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+
+/** 設定画面のダイアログ(テーマ・削除の二重確認・プライバシー・ライセンス・バックアップの進行と結果)。 */
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w400dp-h860dp-xhdpi")
+class SettingsDialogScreenshotTest {
+
+    @get:Rule
+    val screenshot = ScreenshotRule()
+
+    @Test
+    fun themeDialog() = screenshot.captureDialogLightDark("settings_dialog_theme") {
+        ThemeModeDialog(selected = ThemeMode.SYSTEM, onSelect = {}, onDismiss = {})
+    }
+
+    @Test
+    fun concurrencyDialog() = screenshot.captureDialogLightDark("settings_dialog_concurrency") {
+        ProcessingSettingsDialog(
+            dialog = SettingsDialog.CONCURRENCY,
+            settings = ProcessingSettings(),
+            onChange = {},
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun nightlyHourDialog() = screenshot.captureDialogLightDark("settings_dialog_nightly_hour") {
+        ProcessingSettingsDialog(
+            dialog = SettingsDialog.NIGHTLY_HOUR,
+            settings = ProcessingSettings(nightlyBatch = true),
+            onChange = {},
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun summaryLanguageDialog() = screenshot.captureDialogLightDark("settings_dialog_summary_language") {
+        SummarySettingsDialog(
+            dialog = SettingsDialog.SUMMARY_LANGUAGE,
+            style = SummaryStyle(),
+            onChange = {},
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun summaryFormatDialog() = screenshot.captureDialogLightDark("settings_dialog_summary_format") {
+        SummarySettingsDialog(
+            dialog = SettingsDialog.SUMMARY_FORMAT,
+            style = SummaryStyle(format = SummaryFormat.BULLETS),
+            onChange = {},
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun deleteConfirmDialog() = screenshot.captureDialogLightDark("settings_dialog_delete_confirm") {
+        DeleteConfirmDialog(resetSettings = true, onResetSettingsChange = {}, onNext = {}, onDismiss = {})
+    }
+
+    @Test
+    fun deleteFinalDialog() = screenshot.captureDialogLightDark("settings_dialog_delete_final") {
+        DeleteFinalDialog(resetSettings = false, onConfirm = {}, onDismiss = {})
+    }
+
+    @Test
+    fun privacyDialog() = screenshot.captureDialogLightDark("settings_dialog_privacy") {
+        PrivacyDialog(backends = setOf(LlmBackend.LOCAL), onDismiss = {})
+    }
+
+    @Test
+    fun licensesDialog() = screenshot.captureDialogLightDark("settings_dialog_licenses") {
+        LicensesDialog(onDismiss = {})
+    }
+
+    @Test
+    fun crashLogDialog() = screenshot.captureDialogLightDark("settings_dialog_crash_log") {
+        CrashLogDialog(
+            crashLog = CrashLogSummary(
+                count = 3,
+                latestText = "EchoMark クラッシュ\n日時: 2026-10-27T12:00:00+09:00\nバージョン: 1.0 (1)\n端末: Google Pixel 7\n" +
+                    "OS: Android 16 (API 36)\nスレッド: main\n----\njava.lang.IllegalStateException: boom\n\tat com.unchunks.echomark.Foo.bar(Foo.kt:12)"
+            ),
+            onShare = {}, onClear = {}, onDismiss = {}
+        )
+    }
+
+    @Test
+    fun crashLogDialogEmpty() = screenshot.captureDialogLightDark("settings_dialog_crash_log_empty") {
+        CrashLogDialog(crashLog = CrashLogSummary(), onShare = {}, onClear = {}, onDismiss = {})
+    }
+
+    @Test
+    fun importResultDialog()= screenshot.captureDialogLightDark("settings_dialog_import_result") {
+        DataOperationDialog(
+            state = DataOperationState.Imported(
+                BackupImportSummary(
+                    bookmarksAdded = 42, bookmarksSkipped = 3, tagsAdded = 12,
+                    conversationsAdded = 5, conversationsSkipped = 1, messagesAdded = 30, invalidRecords = 2
+                )
+            ),
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun importFailedDialog() = screenshot.captureDialogLightDark("settings_dialog_import_failed") {
+        DataOperationDialog(
+            state = DataOperationState.Failed(
+                "読み込めませんでした",
+                "新しいバージョンのアプリで作られたバックアップです。アプリを更新してから読み込んでください"
+            ),
+            onDismiss = {}
+        )
+    }
+
+    @Test
+    fun runningDialog() = screenshot.captureDialogLightDark("settings_dialog_running") {
+        DataOperationDialog(state = DataOperationState.Running("バックアップを読み込んでいます…"), onDismiss = {})
+    }
+}

@@ -2,7 +2,37 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- チャットの音声入力と、追加シートの音声メモの録音。マイクのボタンを押したときにだけ許可を求める -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- マイクの無い端末でも入れられるようにする(音声入力だけ使えない) -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- 再発見通知用。Android 13+ のみ実行時に要求する(設定でオンにしたとき) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 長い処理をフォアグラウンドで実行する(WorkManager の setForeground)。
+         - 長い音声・動画の文字起こし(ContentExtractionWorker): Android 15+ はメディア処理(mediaProcessing)、それより前はデータ同期(dataSync)
+         - 端末内 AI・長い本文・ファイルの解析など長い AI 処理(BookmarkAiProcessingWorker): データ同期(dataSync) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+
+    <!-- 端末内の音声認識サービス(文字起こし)に接続するため、パッケージの可視性を宣言する -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <!-- 回答の読み上げの仕組みに接続するため -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- 写真・動画を撮るカメラのアプリがあるか確かめるため(追加シートの「写真」「動画」のボタンの出し分け) -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.VIDEO_CAPTURE" />
+        </intent>
+    </queries>
 
     <application
         android:name=".EchoMarkApplication"
@@ -17,7 +47,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.EchoMark"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -25,7 +54,155 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- 通知タップ → echomark://bookmark/{id} で詳細画面へ(Navigation のディープリンク) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="bookmark"
+                    android:scheme="echomark" />
+            </intent-filter>
+
+            <!-- まとめての処理の通知タップ → echomark://processing-queue で処理の状況の画面へ -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data
+                    android:host="processing-queue"
+                    android:scheme="echomark" />
+            </intent-filter>
+
+            <!-- ランチャーのアイコン長押しで出るショートカット(URL を追加・検索・新しいチャット・AI の設定) -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <activity
+            android:name=".ui.share.ShareReceiverActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/share_label"
+            android:taskAffinity=""
+            android:theme="@style/Theme.EchoMark.Share"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <!-- 複数のテキスト・URL をまとめて共有(1件ずつ別のブックマークにする) -->
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- ファイル(画像・PDF・音声・動画・テキストファイル)の共有。1件ずつ保存する -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            他のアプリで文字を選んだときのメニュー(ACTION_PROCESS_TEXT)に「引用として EchoMark に保存」を出す。
+            ShareReceiverActivity が、選んだ文章を引用(各行の頭に「> 」)にして保存する。文字を書き換えて返すことはしない
+        -->
+        <activity-alias
+            android:name=".ui.share.QuoteReceiverAlias"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/share_quote_label"
+            android:targetActivity=".ui.share.ShareReceiverActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- クイック設定のタイル「クリップボードを保存」から開く(アプリの中からだけ。タイルを押した前面でクリップボードを読む) -->
+        <activity
+            android:name=".ui.share.ClipboardSaveActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/share_label"
+            android:taskAffinity=""
+            android:theme="@style/Theme.EchoMark.Share"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- 保存したページのオフラインコピーを開く(アプリの中からだけ。JavaScript・通信を止めた WebView で表示する) -->
+        <activity
+            android:name=".ui.snapshot.SnapshotViewerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.EchoMark" />
+
+        <service
+            android:name=".ui.tile.ClipboardSaveTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notification"
+            android:label="@string/tile_clipboard_save_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- まとめての処理の通知の「やめる」(アプリの中からだけ呼ぶ) -->
+        <receiver
+            android:name=".worker.BulkProcessingCancelReceiver"
+            android:exported="false" />
+
+        <!-- ホーム画面ウィジェット「EchoMark 再発見」(Jetpack Glance) -->
+        <receiver
+            android:name=".ui.widget.RediscoverWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_rediscover_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/rediscover_widget_info" />
+        </receiver>
+
+        <!-- ML Kit の画像ラベル付け(Google Play 開発者サービス版)のモデルを、インストール時にダウンロードさせる -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ica" />
+
+        <!-- WorkManager のフォアグラウンド実行用サービスに、フォアグラウンドのワーカーが使う種類(dataSync・mediaProcessing)を付ける。
+             ForegroundInfo に渡す種類は、ここで宣言したものに含まれている必要がある(Android 14+) -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync|mediaProcessing"
+            tools:node="merge" />
+
+        <!-- 保存した添付ファイルを、ほかのアプリで開く・共有するときに一時的な読み取り権限つきで渡す -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <provider
             android:name="androidx.startup.InitializationProvider"
@@ -37,6 +214,16 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!--
+            端末内 AI(LiteRT-LM)を GPU で動かすときに使う、端末のベンダーのライブラリ(OpenCL と、その読み込みに使う vndksupport)。
+            Android 12 以降は宣言しないとアプリから読み込めない。無い端末でも動くよう required="false"
+            (https://github.com/google-ai-edge/LiteRT-LM/blob/main/docs/api/kotlin/getting_started.md)
+        -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-car.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
     </application>
 
 </manifest>

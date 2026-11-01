@@ -1,0 +1,405 @@
+package com.unchunks.echomark.ui.settings.ai
+
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.unchunks.components.embedding.EmbeddingModelProfile
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.data.ai.api.ApiLlmProvider
+import com.unchunks.echomark.data.ai.model.CatalogDownloadState
+import com.unchunks.echomark.data.ai.model.DeviceSpecs
+import com.unchunks.echomark.data.ai.model.DeviceSpecsReader
+import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
+import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
+import com.unchunks.echomark.data.ai.model.InstalledModels
+import com.unchunks.echomark.data.ai.model.LocalModelInfo
+import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkManager
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkResult
+import com.unchunks.echomark.data.ai.model.ModelBenchmarkState
+import com.unchunks.echomark.data.ai.model.ModelCatalog
+import com.unchunks.echomark.data.ai.model.ModelCatalogDownloader
+import com.unchunks.echomark.data.ai.model.ModelCatalogEntry
+import com.unchunks.echomark.data.ai.model.ModelImportState
+import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.data.ai.model.ModelRecommendation
+import com.unchunks.echomark.data.ai.model.ModelRecommender
+import com.unchunks.echomark.domain.model.EmbeddingProgress
+import com.unchunks.echomark.domain.provider.toLlmUserMessage
+import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.AiTaskSetting
+import com.unchunks.echomark.domain.repository.ApiKeyRepository
+import com.unchunks.echomark.domain.repository.AppSettingsRepository
+import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.LlmBackend
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import timber.log.Timber
+import javax.inject.Inject
+
+/** 接続テストの状態。 */
+sealed interface ConnectionTestState {
+    data object Idle : ConnectionTestState
+    data object Running : ConnectionTestState
+    data class Success(val provider: ApiProvider) : ConnectionTestState
+    data class Failure(val message: String) : ConnectionTestState
+}
+
+data class AiSettingsUiState(
+    /** 用途ごとの設定(実行場所・提供元・モデル) */
+    val tasks: Map<AiTask, AiTaskSetting> = AiTask.entries.associateWith { AiTaskSetting() },
+    /** 取り込んだ端末内モデルの一覧と既定のモデル */
+    val localModels: InstalledModels = InstalledModels(),
+    /** モデルの id ごとの、読み込めなかったこと(無ければ失敗していない。まだ読み込んでいない場合も) */
+    val localModelLoadFailures: Map<String, LocalModelLoadFailure> = emptyMap(),
+    /** 端末内モデルを測った結果(モデルと演算装置の組ごとに最後の1件) */
+    val benchmarks: List<ModelBenchmarkResult> = emptyList(),
+    val benchmarkState: ModelBenchmarkState = ModelBenchmarkState.Idle,
+    val importState: ModelImportState = ModelImportState.Idle,
+    /** 取り込んだ埋め込みモデル。null なら同梱のモデルを使っている */
+    val embeddingModel: EmbeddingModelInfo? = null,
+    val embeddingImportState: ModelImportState = ModelImportState.Idle,
+    /** 検索インデックス(埋め込み)の更新状況。まだ読めていなければ null */
+    val embeddingProgress: EmbeddingProgress? = null,
+    /** API キーを入力・確認する提供元(キーは提供元ごとに1つで、用途の選択とは別) */
+    val keyProvider: ApiProvider = ApiProvider.CLAUDE,
+    /** API キーが保存済みの提供元 */
+    val configuredProviders: Set<ApiProvider> = emptySet(),
+    /** クラウド API にファイル(画像・PDF・音声・動画)そのものも送って解析するか */
+    val sendFilesToCloud: Boolean = true,
+    /** 端末内 AI を GPU で動かすか(実験的。既定はオフ = CPU) */
+    val localLlmUseGpu: Boolean = false,
+    /** おすすめのモデル */
+    val catalog: List<ModelCatalogEntry> = ModelCatalog.entries,
+    val catalogDownload: CatalogDownloadState = CatalogDownloadState.Idle,
+    /** この端末の性能。読むまでは null(おすすめの判断を出さない) */
+    val deviceSpecs: DeviceSpecs? = null
+) {
+    fun setting(task: AiTask): AiTaskSetting = tasks[task] ?: AiTaskSetting()
+
+    /** おすすめのモデルが、この端末に合うかの判断。合う順。端末の性能を読むまでは空 */
+    val recommendations: List<ModelRecommendation>
+        get() = deviceSpecs?.let { ModelRecommender.recommend(it, catalog, localModels, benchmarks) }.orEmpty()
+
+    /** 測った結果で GPU の方が速いのに、GPU を使う設定になっていないか */
+    val showGpuTip: Boolean get() = !localLlmUseGpu && ModelRecommender.isGpuFaster(benchmarks)
+
+    /** 既定の端末内モデル。1つも取り込んでいなければ null */
+    val localModel: LocalModelInfo? get() = localModels.default
+
+    /** [task] を端末内で動かすときに使うモデル(選んだモデルが無ければ既定のモデル) */
+    fun localModelFor(task: AiTask): LocalModelInfo? = localModels.resolve(setting(task).localModelId)
+
+    /** 端末内で動かす用途が、別々の端末内モデルを使うか(用途が切り替わるたびに読み込み直す) */
+    val usesMultipleLocalModels: Boolean
+        get() = AiTask.entries.filter { setting(it).backend == LlmBackend.LOCAL }.mapNotNull(::localModelFor).distinct().size > 1
+
+    /** [task] に選んだ実行場所に必要なもの(端末内モデル・API キー)がそろっているか */
+    fun isReady(task: AiTask): Boolean {
+        val setting = setting(task)
+        return when (setting.backend) {
+            LlmBackend.LOCAL -> localModel != null
+            LlmBackend.API -> setting.apiProvider in configuredProviders
+        }
+    }
+
+    /** 端末内で動かす用途があるか */
+    val usesLocal: Boolean get() = AiTask.entries.any { setting(it).backend == LlmBackend.LOCAL }
+
+    /** クラウド API を使う用途 */
+    val apiTasks: List<AiTask> get() = AiTask.entries.filter { setting(it).backend == LlmBackend.API }
+
+    /** ファイルを送りうる用途(タグ付け・要約)で使う提供元。重複なし */
+    val analysisApiProviders: List<ApiProvider>
+        get() = listOf(AiTask.SUMMARY, AiTask.TAGGING).map(::setting)
+            .filter { it.backend == LlmBackend.API }
+            .map { it.apiProvider }
+            .distinct()
+
+    /** タグ付けと要約が別の AI で、1件につき2回推論するか */
+    val analyzesSeparately: Boolean get() = !setting(AiTask.TAGGING).sameEngineAs(setting(AiTask.SUMMARY))
+
+    val isKeyConfigured: Boolean get() = keyProvider in configuredProviders
+
+    /** 接続テストに使うモデル。[keyProvider] を選んでいる用途があればそのモデル、無ければ提供元の既定 */
+    val testModel: String
+        get() = apiTasks.map(::setting).firstOrNull { it.apiProvider == keyProvider }?.apiModel
+            ?: keyProvider.defaultModel
+}
+
+/** 端末内モデル [modelId] を選んでいた用途を、既定のモデルに戻す。 */
+internal suspend fun AppSettingsRepository.resetTasksUsingLocalModel(modelId: String) {
+    aiTaskSettings.first().filterValues { it.localModelId == modelId }.keys.forEach { setLocalModel(it, null) }
+}
+
+/** uiState にまとめる前の、端末内モデルの一覧と測定に関する状態。 */
+private data class LocalLlmSnapshot(
+    val installed: InstalledModels,
+    val loadFailures: Map<String, LocalModelLoadFailure>,
+    val benchmarks: List<ModelBenchmarkResult>,
+    val benchmarkState: ModelBenchmarkState
+)
+
+/** uiState にまとめる前の、モデル(端末内 LLM・埋め込み)に関する状態。 */
+private data class ModelsSnapshot(
+    val llm: LocalLlmSnapshot,
+    val llmImport: ModelImportState,
+    val embedding: EmbeddingModelInfo?,
+    val embeddingImport: ModelImportState,
+    val embeddingProgress: EmbeddingProgress?,
+    val deviceSpecs: DeviceSpecs?
+)
+
+@HiltViewModel
+class AiSettingsViewModel @Inject constructor(
+    private val appSettings: AppSettingsRepository,
+    private val apiKeyRepository: ApiKeyRepository,
+    private val modelManager: ModelManager,
+    private val catalogDownloader: ModelCatalogDownloader,
+    private val deviceSpecsReader: DeviceSpecsReader,
+    private val benchmarkManager: ModelBenchmarkManager,
+    private val embeddingModelManager: EmbeddingModelManager,
+    private val apiLlmProvider: ApiLlmProvider,
+    private val bookmarkRepository: BookmarkRepository
+) : ViewModel() {
+
+    /** キーを入力する提供元として選ばれたもの。未選択なら、クラウド API を使う用途の提供元を出す */
+    private val selectedKeyProvider = MutableStateFlow<ApiProvider?>(null)
+
+    val uiState: StateFlow<AiSettingsUiState> = combine(
+        appSettings.aiTaskSettings,
+        combine(
+            combine(
+                modelManager.installed, modelManager.loadFailures, benchmarkManager.results, benchmarkManager.state, ::LocalLlmSnapshot
+            ),
+            modelManager.importState,
+            embeddingModelManager.installedModel,
+            embeddingModelManager.importState,
+            combine(embeddingProgressFlow(), deviceSpecsFlow(), ::Pair)
+        ) { llm, llmImport, embedding, embeddingImport, (embeddingProgress, deviceSpecs) ->
+            ModelsSnapshot(llm, llmImport, embedding, embeddingImport, embeddingProgress, deviceSpecs)
+        },
+        selectedKeyProvider,
+        combine(appSettings.sendFilesToCloud, appSettings.localLlmUseGpu, catalogDownloadFlow(), ::Triple),
+        apiKeyRepository.configuredProviders
+    ) { tasks, models, keyProvider, (sendFiles, useGpu, catalogDownload), configured ->
+        AiSettingsUiState(
+            tasks = tasks,
+            localModels = models.llm.installed,
+            localModelLoadFailures = models.llm.loadFailures,
+            benchmarks = models.llm.benchmarks,
+            benchmarkState = models.llm.benchmarkState,
+            importState = models.llmImport,
+            embeddingProgress = models.embeddingProgress,
+            deviceSpecs = models.deviceSpecs,
+            embeddingModel = models.embedding,
+            embeddingImportState = models.embeddingImport,
+            keyProvider = keyProvider
+                ?: AiTask.entries.mapNotNull { tasks[it] }.firstOrNull { it.backend == LlmBackend.API }?.apiProvider
+                ?: ApiProvider.CLAUDE,
+            configuredProviders = configured,
+            sendFilesToCloud = sendFiles,
+            localLlmUseGpu = useGpu,
+            catalogDownload = catalogDownload
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AiSettingsUiState())
+
+    /** この端末の性能。空き容量が変わるため、モデルの一覧が変わるたびに読み直す。 */
+    private fun deviceSpecsFlow(): Flow<DeviceSpecs?> = modelManager.installed.map { deviceSpecsReader.read() }
+
+    /** おすすめのモデルのダウンロードの進み具合を定期的に読む(画面を見ている間だけ動く。終わっていれば取り込む)。 */
+    private fun catalogDownloadFlow(): Flow<CatalogDownloadState> = channelFlow {
+        launch {
+            while (true) {
+                try {
+                    catalogDownloader.refresh()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "ダウンロードの進み具合を取得できない")
+                }
+                delay(EMBEDDING_PROGRESS_POLL_MILLIS)
+            }
+        }
+        catalogDownloader.state.collect { send(it) }
+    }
+
+    /** 検索インデックスの更新状況を定期的に読む(画面を見ている間だけ動く)。 */
+    private fun embeddingProgressFlow(): Flow<EmbeddingProgress?> = flow {
+        while (true) {
+            emit(
+                try {
+                    bookmarkRepository.getEmbeddingProgress()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "検索インデックスの状況を取得できない")
+                    null
+                }
+            )
+            delay(EMBEDDING_PROGRESS_POLL_MILLIS)
+        }
+    }
+
+    private val _connectionTest = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
+    val connectionTest: StateFlow<ConnectionTestState> = _connectionTest.asStateFlow()
+
+    /** Snackbar で1回だけ出すメッセージ。 */
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+
+    private var testJob: Job? = null
+
+    fun setBackend(task: AiTask, backend: LlmBackend) {
+        viewModelScope.launch { appSettings.setLlmBackend(task, backend) }
+    }
+
+    /** [task] の提供元を選ぶ。キーの入力欄もその提供元に合わせる(未設定ならすぐ入力できるように) */
+    fun setApiProvider(task: AiTask, provider: ApiProvider) {
+        selectKeyProvider(provider)
+        viewModelScope.launch { appSettings.setApiProvider(task, provider) }
+    }
+
+    fun setApiModel(task: AiTask, provider: ApiProvider, modelId: String) {
+        _connectionTest.value = ConnectionTestState.Idle
+        viewModelScope.launch { appSettings.setApiModel(task, provider, modelId) }
+    }
+
+    /** API キーを入力・確認する提供元を選ぶ。 */
+    fun selectKeyProvider(provider: ApiProvider) {
+        if (uiState.value.keyProvider != provider) _connectionTest.value = ConnectionTestState.Idle
+        selectedKeyProvider.value = provider
+    }
+
+    fun setSendFilesToCloud(enabled: Boolean) {
+        viewModelScope.launch { appSettings.setSendFilesToCloud(enabled) }
+    }
+
+    fun setLocalLlmUseGpu(enabled: Boolean) {
+        viewModelScope.launch { appSettings.setLocalLlmUseGpu(enabled) }
+    }
+
+    /** キーを暗号化して保存する。入力欄の平文は呼び出し側で消すこと。 */
+    fun saveApiKey(provider: ApiProvider, apiKey: String) {
+        if (apiKey.isBlank()) return
+        _connectionTest.value = ConnectionTestState.Idle
+        viewModelScope.launch {
+            apiKeyRepository.setKey(provider, apiKey)
+            _message.value = "${provider.displayName} の API キーを保存しました"
+        }
+    }
+
+    fun clearApiKey(provider: ApiProvider) {
+        _connectionTest.value = ConnectionTestState.Idle
+        viewModelScope.launch {
+            apiKeyRepository.clearKey(provider)
+            _message.value = "${provider.displayName} の API キーを削除しました"
+        }
+    }
+
+    /**
+     * 短いリクエストで疎通を確認する。
+     * @param typedKey 入力中のキー。空なら保存済みのキーで試す
+     */
+    fun testConnection(typedKey: String) {
+        if (_connectionTest.value == ConnectionTestState.Running) return
+        val state = uiState.value
+        val provider = state.keyProvider
+        _connectionTest.value = ConnectionTestState.Running
+        testJob = viewModelScope.launch {
+            _connectionTest.value = try {
+                apiLlmProvider.testConnection(provider, state.testModel, typedKey.ifBlank { null })
+                ConnectionTestState.Success(provider)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 例外メッセージにキーは含めていない(LlmException 側で伏せている)
+                Timber.w("接続テストに失敗: provider=$provider (${e.javaClass.simpleName})")
+                ConnectionTestState.Failure(e.toLlmUserMessage("接続できませんでした"))
+            }
+        }
+    }
+
+    fun importModel(uri: Uri) = modelManager.startImport(uri)
+
+    fun cancelImport() = modelManager.cancelImport()
+
+    /** おすすめのモデルをダウンロードする。 */
+    fun downloadCatalogModel(entry: ModelCatalogEntry) {
+        viewModelScope.launch { catalogDownloader.start(entry) }
+    }
+
+    fun cancelCatalogDownload() {
+        viewModelScope.launch { catalogDownloader.cancel() }
+    }
+
+    /** [model] を削除する。このモデルを選んでいた用途は既定のモデルに戻す。 */
+    fun deleteModel(model: LocalModelInfo) {
+        modelManager.deleteModel(model.id)
+        benchmarkManager.forget(model.id)
+        viewModelScope.launch { appSettings.resetTasksUsingLocalModel(model.id) }
+        _message.value = "「${model.displayName}」を削除しました"
+    }
+
+    /** [model] をこの端末で測る。 */
+    fun benchmarkModel(model: LocalModelInfo) = benchmarkManager.start(model)
+
+    /** 用途ごとにモデルを選んでいないときに使うモデルを [model] にする。 */
+    fun setDefaultModel(model: LocalModelInfo) {
+        modelManager.setDefaultModel(model.id)
+        _message.value = "「${model.displayName}」を既定のモデルにしました"
+    }
+
+    /** [task] を端末内で動かすときのモデルを選ぶ。null なら既定のモデル。 */
+    fun setLocalModel(task: AiTask, modelId: String?) {
+        viewModelScope.launch { appSettings.setLocalModel(task, modelId) }
+    }
+
+    /** [profile] のモデルとして埋め込みモデルのファイルを取り込む(終わると埋め込みを作り直す)。 */
+    fun importEmbeddingModel(uri: Uri, profile: EmbeddingModelProfile) =
+        embeddingModelManager.startImport(uri, profile)
+
+    fun cancelEmbeddingImport() = embeddingModelManager.cancelImport()
+
+    /** 取り込んだ埋め込みモデルを消して同梱のモデルに戻す(埋め込みは作り直す)。 */
+    fun revertEmbeddingModel() {
+        embeddingModelManager.revertToBundled()
+        _message.value = "同梱の埋め込みモデルに戻しました。検索インデックスを作り直します"
+    }
+
+    fun onEmbeddingImportResultShown() = embeddingModelManager.clearImportResult()
+
+    /** 取り込み結果(成功・失敗)の表示が済んだ。 */
+    fun onImportResultShown() = modelManager.clearImportResult()
+
+    /** 失敗・準備待ちのブックマークの AI 処理をやり直す。 */
+    fun reprocessPending() {
+        viewModelScope.launch {
+            val count = bookmarkRepository.enqueueFailedAndWaitingProcessing()
+            _message.value = if (count == 0) "再処理が必要なブックマークはありません" else "${count} 件のブックマークを再処理します"
+        }
+    }
+
+    fun onMessageShown() {
+        _message.update { null }
+    }
+
+    private companion object {
+        const val EMBEDDING_PROGRESS_POLL_MILLIS = 2_000L
+    }
+}

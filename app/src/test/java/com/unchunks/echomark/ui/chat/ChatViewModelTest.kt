@@ -1,0 +1,969 @@
+package com.unchunks.echomark.ui.chat
+
+import androidx.lifecycle.SavedStateHandle
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.llm.ChatRole
+import com.unchunks.components.llm.LlmException
+import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
+import com.unchunks.echomark.domain.model.ChatAttachmentContext
+import com.unchunks.echomark.domain.model.ChatAttachmentException
+import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatScopeChoices
+import com.unchunks.echomark.domain.model.Conversation
+import com.unchunks.echomark.domain.model.ConversationBranch
+import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.repository.ChatAttachmentSource
+import com.unchunks.echomark.domain.provider.MODEL_NOT_AVAILABLE_USER_MESSAGE
+import com.unchunks.echomark.domain.provider.ModelNotAvailableException
+import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.ChatModelChoices
+import com.unchunks.echomark.domain.repository.ChatModelOption
+import com.unchunks.echomark.domain.repository.ChatStreamEvent
+import com.unchunks.echomark.domain.repository.VoiceInputResult
+import com.unchunks.echomark.testing.FakeAiSetupRepository
+import com.unchunks.echomark.testing.FakeAppSettingsRepository
+import com.unchunks.echomark.testing.FakeChatModelRepository
+import com.unchunks.echomark.testing.FakeChatSpeechOutput
+import com.unchunks.echomark.testing.FakeChatVoiceInput
+import com.unchunks.echomark.testing.FakeChatRepository
+import com.unchunks.echomark.testing.testBookmark
+import com.unchunks.echomark.ui.navigation.Routes
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ChatViewModelTest {
+
+    @get:Rule
+    val mainRule = MainDispatcherRule()
+
+    private val repository = FakeChatRepository()
+    private val aiSetup = FakeAiSetupRepository()
+    private val chatModels = FakeChatModelRepository()
+    private val dispatchers = TestDispatcherProvider(Dispatchers.Unconfined)
+    private val settings = FakeAppSettingsRepository()
+    private val voiceInput = FakeChatVoiceInput()
+    private val speechOutput = FakeChatSpeechOutput()
+    private val attachmentSource = object : ChatAttachmentSource {
+        override suspend fun load(uri: String): ChatAttachmentContext = ChatAttachmentContext("資料.txt", "添付の本文")
+    }
+
+    private fun createViewModel(
+        savedState: SavedStateHandle = SavedStateHandle(),
+        repo: FakeChatRepository = repository
+    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels, dispatchers, settings, voiceInput, speechOutput)
+
+    @Test
+    fun モデル未取得のときは専用メッセージとAI設定への導線を出しisSendingが戻る() = runTest {
+        repository.sendFailure = ModelNotAvailableException()
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("こんにちは")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(MODEL_NOT_AVAILABLE_USER_MESSAGE, state.error?.message)
+        val error = state.error!!
+        assertTrue(error.needsAiSettings)
+        assertEquals("こんにちは", error.failedMessage)
+        assertFalse(state.isSending)
+    }
+
+    @Test
+    fun 一般的な失敗ではエラーメッセージを出しisSendingが戻る() = runTest {
+        repository.sendFailure = IllegalStateException("boom")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("こんにちは")
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value.error!!
+        assertTrue(error.message.startsWith("送信に失敗しました"))
+        assertTrue(error.message.contains("boom"))
+        assertFalse(error.needsAiSettings)
+        assertFalse(viewModel.uiState.value.isSending)
+    }
+
+    @Test
+    fun 通信エラーはAI設定への導線を出さない() = runTest {
+        repository.sendFailure = LlmException.Network()
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("hi")
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.error!!.needsAiSettings)
+    }
+
+    @Test
+    fun 失敗後の再送信ではエラーが消えて成功できる() = runTest {
+        repository.sendFailure = ModelNotAvailableException()
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.sendMessage("1回目")
+        advanceUntilIdle()
+
+        repository.sendFailure = null
+        viewModel.sendMessage("2回目")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNull(state.error)
+        assertFalse(state.isSending)
+        assertEquals(listOf("1回目", "2回目"), repository.sent.map { it.second })
+    }
+
+    @Test
+    fun 再試行は最後の質問を再試行として送り直す() = runTest {
+        repository.sendFailure = LlmException.Network()
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+
+        repository.sendFailure = null
+        viewModel.retry()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(
+                FakeChatRepository.SendCall(42L, "質問", null, isRetry = false),
+                FakeChatRepository.SendCall(42L, "質問", null, isRetry = true)
+            ),
+            repository.sendCalls
+        )
+        assertNull(viewModel.uiState.value.error)
+        // 会話は作り直さない
+        assertEquals(1, repository.createCalls)
+    }
+
+    @Test
+    fun エラーが無ければ再試行しても何も送らない() = runTest {
+        val viewModel = createViewModel()
+
+        viewModel.retry()
+        advanceUntilIdle()
+
+        assertTrue(repository.sent.isEmpty())
+    }
+
+    @Test
+    fun 送信中は二重送信されない() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val slowRepository = object : FakeChatRepository() {
+            override fun sendMessageStream(
+                conversationId: Long,
+                userMessage: String,
+                pinnedBookmarkId: Long?,
+                isRetry: Boolean,
+                attachment: ChatAttachmentContext?,
+                scope: BookmarkQuery?
+            ): Flow<ChatStreamEvent> = flow {
+                sent += conversationId to userMessage
+                gate.await()
+                emit(ChatStreamEvent.Completed(1L))
+            }
+        }
+        val viewModel = createViewModel(repo = slowRepository)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("a")
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isSending)
+        viewModel.sendMessage("b")
+        runCurrent()
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("a"), slowRepository.sent.map { it.second })
+        assertFalse(viewModel.uiState.value.isSending)
+    }
+
+    @Test
+    fun 会話は初回送信時に1度だけ作られIDが保存される() = runTest {
+        val savedState = SavedStateHandle()
+        val viewModel = createViewModel(savedState)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("1")
+        advanceUntilIdle()
+        viewModel.sendMessage("2")
+        advanceUntilIdle()
+
+        assertEquals(1, repository.createCalls)
+        assertEquals(listOf<String?>(null), repository.createdTitles)
+        assertEquals(42L, savedState.get<Long>(ChatViewModel.ARG_CONVERSATION_ID))
+        assertEquals(listOf(42L, 42L), repository.sent.map { it.first })
+    }
+
+    @Test
+    fun 既存会話ならcreateConversationを呼ばずタイトルを出す() = runTest {
+        repository.conversation.value = Conversation(id = 7L, title = "Kotlin の話", createdAt = 0L, updatedAt = 0L)
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("hi")
+        advanceUntilIdle()
+
+        assertEquals(0, repository.createCalls)
+        assertEquals(listOf(7L to "hi"), repository.sent)
+        assertEquals("Kotlin の話", viewModel.uiState.value.title)
+        assertTrue(viewModel.uiState.value.hasConversation)
+    }
+
+    @Test
+    fun 空白のメッセージは送信されない() = runTest {
+        val viewModel = createViewModel()
+
+        viewModel.sendMessage("  ")
+        advanceUntilIdle()
+
+        assertTrue(repository.sent.isEmpty())
+        assertEquals(0, repository.createCalls)
+    }
+
+    @Test
+    fun 生成中のテキストと参照件数が出て完了で消える() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val streamingRepository = object : FakeChatRepository() {
+            override fun sendMessageStream(
+                conversationId: Long,
+                userMessage: String,
+                pinnedBookmarkId: Long?,
+                isRetry: Boolean,
+                attachment: ChatAttachmentContext?,
+                scope: BookmarkQuery?
+            ): Flow<ChatStreamEvent> = flow {
+                emit(ChatStreamEvent.Started(listOf(1L, 2L)))
+                emit(ChatStreamEvent.Delta("こんに"))
+                emit(ChatStreamEvent.Delta("こんにちは"))
+                gate.await()
+                emit(ChatStreamEvent.Completed(10L))
+            }
+        }
+        val viewModel = createViewModel(repo = streamingRepository)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("hi")
+        runCurrent()
+        assertEquals("こんにちは", viewModel.uiState.value.streamingText)
+        assertEquals(2, viewModel.uiState.value.pendingReferenceCount)
+        assertTrue(viewModel.uiState.value.isSending)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.streamingText)
+        assertNull(viewModel.uiState.value.pendingReferenceCount)
+        assertFalse(viewModel.uiState.value.isSending)
+        assertNull(viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun 停止すると収集がキャンセルされ送信中が解除される() = runTest {
+        var cancelled = false
+        val endlessRepository = object : FakeChatRepository() {
+            override fun sendMessageStream(
+                conversationId: Long,
+                userMessage: String,
+                pinnedBookmarkId: Long?,
+                isRetry: Boolean,
+                attachment: ChatAttachmentContext?,
+                scope: BookmarkQuery?
+            ): Flow<ChatStreamEvent> = flow {
+                emit(ChatStreamEvent.Delta("途中"))
+                try {
+                    awaitCancellation()
+                } finally {
+                    cancelled = true
+                }
+            }
+        }
+        val viewModel = createViewModel(repo = endlessRepository)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("hi")
+        runCurrent()
+        assertEquals("途中", viewModel.uiState.value.streamingText)
+
+        viewModel.stopGenerating()
+        advanceUntilIdle()
+        assertTrue(cancelled)
+        assertFalse(viewModel.uiState.value.isSending)
+        assertNull(viewModel.uiState.value.streamingText)
+        assertNull(viewModel.uiState.value.error)
+    }
+
+    /** 回答の文字が届かないまま止まり続ける送信。 */
+    private fun silentRepository() = object : FakeChatRepository() {
+        override fun sendMessageStream(
+            conversationId: Long,
+            userMessage: String,
+            pinnedBookmarkId: Long?,
+            isRetry: Boolean,
+            attachment: ChatAttachmentContext?,
+            scope: BookmarkQuery?
+        ): Flow<ChatStreamEvent> = flow {
+            sendCalls += SendCall(conversationId, userMessage, pinnedBookmarkId, isRetry)
+            emit(ChatStreamEvent.Started(emptyList()))
+            awaitCancellation()
+        }
+    }
+
+    @Test
+    fun 最初の文字が届く前に止めると同じ質問を送り直せる() = runTest {
+        val silent = silentRepository()
+        val viewModel = createViewModel(repo = silent)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("質問")
+        runCurrent()
+        viewModel.stopGenerating()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isSending)
+        assertEquals("質問", state.error?.failedMessage)
+        assertFalse(state.error!!.needsAiSettings)
+
+        viewModel.retry()
+        runCurrent()
+        assertEquals(true, silent.sendCalls.last().isRetry)
+        assertNull(viewModel.uiState.value.error)
+        viewModel.stopGenerating()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun 会話を削除して止めたときは送り直しを出さない() = runTest {
+        val viewModel = createViewModel(repo = silentRepository())
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("質問")
+        runCurrent()
+        viewModel.deleteConversation(onDeleted = {})
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun 保存済みの回答を資料と照らし合わせて画面の状態に出す() = runTest {
+        repository.bookmarks = listOf(testBookmark(7L).copy(content = "コルーチンは中断と再開ができます。"))
+        repository.messages.value = listOf(
+            ChatMessage(id = 3, conversationId = 1, role = ChatRole.USER, content = "質問", createdAt = 1),
+            ChatMessage(
+                id = 4,
+                conversationId = 1,
+                role = ChatRole.ASSISTANT,
+                content = "コルーチンは中断と再開ができます [1]。",
+                referencedBookmarkIds = listOf(7L),
+                createdAt = 2
+            )
+        )
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val review = viewModel.uiState.value.answerReviews.getValue(4L)
+        assertEquals(listOf(1), review.sources.map { it.number })
+        assertEquals(ClaimStatus.SUPPORTED, review.claims.single().status)
+        assertEquals(setOf(4L), viewModel.uiState.value.answerReviews.keys)
+    }
+
+    @Test
+    fun 選んだ範囲を質問に渡し_範囲の説明を出す() = runTest {
+        repository.scopeChoices.value = ChatScopeChoices(tags = listOf(Tag(3L, "技術")))
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        backgroundScope.launch { viewModel.scopeChoices.collect {} }
+        advanceUntilIdle()
+
+        val narrowed = BookmarkQuery(tagIds = setOf(3L))
+        viewModel.setScope(narrowed)
+        advanceUntilIdle()
+        assertEquals("技術", viewModel.uiState.value.scopeLabel)
+
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+        assertEquals(listOf<BookmarkQuery?>(narrowed), repository.sentScopes)
+
+        viewModel.setScope(ChatScopeChoices.ALL)
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.scopeLabel)
+    }
+
+    @Test
+    fun 範囲を選んでいなければ保存全体から探す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+
+        assertEquals(listOf<BookmarkQuery?>(null), repository.sentScopes)
+    }
+
+    @Test
+    fun 同じブックマークの前の会話を続きから開ける() = runTest {
+        repository.latestAboutConversationId = 12L
+        repository.bookmarks = listOf(testBookmark(7L))
+        val viewModel = createViewModel(SavedStateHandle(mapOf(Routes.ARG_ABOUT_BOOKMARK_ID to 7L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertEquals(12L, viewModel.uiState.value.previousAboutConversationId)
+
+        viewModel.resumeAboutConversation()
+        advanceUntilIdle()
+
+        assertEquals(12L, viewModel.conversationId.value)
+    }
+
+    @Test
+    fun 最後の回答に続く質問の候補を出す() = runTest {
+        repository.messages.value = listOf(
+            ChatMessage(id = 3, conversationId = 1, role = ChatRole.USER, content = "質問", createdAt = 1),
+            ChatMessage(id = 4, conversationId = 1, role = ChatRole.ASSISTANT, content = "回答", createdAt = 2)
+        )
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.followUps.isNotEmpty())
+    }
+
+    @Test
+    fun 入力中の文をテンプレートに保存して消せる() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.saveTemplate("  会議の議題をまとめて  ")
+        advanceUntilIdle()
+
+        val saved = viewModel.uiState.value.userTemplates.single()
+        assertEquals("会議の議題をまとめて", saved.text)
+
+        viewModel.deleteTemplate(saved)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.userTemplates.isEmpty())
+    }
+
+    private val question = ChatMessage(id = 3, conversationId = 1, role = ChatRole.USER, content = "質問", createdAt = 1)
+    private val reply = ChatMessage(id = 4, conversationId = 1, role = ChatRole.ASSISTANT, content = "回答 [1]", createdAt = 2)
+
+    @Test
+    fun 回答から分けると分けた会話に切り替わる() = runTest {
+        repository.branchedConversationId = 50L
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        var restored: String? = null
+
+        viewModel.branchFrom(reply) { restored = it }
+        advanceUntilIdle()
+
+        assertEquals(50L, viewModel.conversationId.value)
+        assertEquals(listOf(reply), repository.branchedFrom)
+        assertNull(restored)
+    }
+
+    @Test
+    fun 質問から分けると質問を入力欄に戻す() = runTest {
+        repository.branchedConversationId = 50L
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        var restored: String? = null
+
+        viewModel.branchFrom(question) { restored = it }
+        advanceUntilIdle()
+
+        assertEquals("質問", restored)
+    }
+
+    @Test
+    fun 分けられなければ今の会話のまま() = runTest {
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.branchFrom(question) {}
+        advanceUntilIdle()
+
+        assertEquals(1L, viewModel.conversationId.value)
+    }
+
+    @Test
+    fun 分けた先と元の会話を画面の状態に出す() = runTest {
+        repository.conversation.value = Conversation(
+            id = 1, title = "分岐", createdAt = 0, updatedAt = 0, branchedFromId = 1, branchedAt = 2
+        )
+        repository.branches.value = listOf(ConversationBranch(9, "別の分岐", 2))
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(1L, viewModel.uiState.value.branchParent?.id)
+        assertEquals(listOf(9L), viewModel.uiState.value.branches.map { it.id })
+    }
+
+    @Test
+    fun 回答を質問のタイトルでメモに保存する() = runTest {
+        repository.messages.value = listOf(question, reply)
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 1L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        var saved: Long? = null
+
+        viewModel.saveAsNote(reply) { saved = it }
+        advanceUntilIdle()
+
+        assertEquals(77L, saved)
+        assertEquals(listOf("質問" to "回答"), repository.notes)
+    }
+
+    @Test
+    fun 声で質問すると文字にして送り_回答を読み上げる() = runTest {
+        voiceInput.result = VoiceInputResult.Text("声の質問")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.startVoiceInput()
+        advanceUntilIdle()
+
+        assertEquals("声の質問", repository.sent.single().second)
+        assertEquals(ChatVoiceState.IDLE, viewModel.uiState.value.voiceState)
+        assertEquals(1, speechOutput.spoken.size)
+    }
+
+    @Test
+    fun 手で打った質問の回答は読み上げない() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("手で打った質問")
+        advanceUntilIdle()
+
+        assertTrue(speechOutput.spoken.isEmpty())
+    }
+
+    @Test
+    fun 録音中は状態を出し_話し終えると文字起こしに進む() = runTest {
+        voiceInput.waitForFinish = true
+        voiceInput.result = VoiceInputResult.Text("質問")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.startVoiceInput()
+        runCurrent()
+        assertEquals(ChatVoiceState.LISTENING, viewModel.uiState.value.voiceState)
+
+        viewModel.finishVoiceInput()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.sent.size)
+        assertEquals(ChatVoiceState.IDLE, viewModel.uiState.value.voiceState)
+    }
+
+    @Test
+    fun やめると録音を捨てて何も送らない() = runTest {
+        voiceInput.waitForFinish = true
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.startVoiceInput()
+        runCurrent()
+        viewModel.cancelVoiceInput()
+        advanceUntilIdle()
+
+        assertTrue(repository.sent.isEmpty())
+        assertEquals(ChatVoiceState.IDLE, viewModel.uiState.value.voiceState)
+        assertNull(viewModel.uiState.value.voiceError)
+    }
+
+    @Test
+    fun 画面が見えなくなると録音も読み上げも止める() = runTest {
+        voiceInput.waitForFinish = true
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.startVoiceInput()
+        runCurrent()
+        viewModel.onScreenHidden()
+        advanceUntilIdle()
+
+        assertEquals(ChatVoiceState.IDLE, viewModel.uiState.value.voiceState)
+        assertTrue(speechOutput.stopCalls >= 2)
+    }
+
+    @Test
+    fun 聞き取れなかった理由を出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        voiceInput.result = VoiceInputResult.NoSpeech
+        viewModel.startVoiceInput()
+        advanceUntilIdle()
+        assertEquals("聞き取れませんでした", viewModel.uiState.value.voiceError)
+
+        voiceInput.result = VoiceInputResult.TranscriptionUnavailable
+        viewModel.startVoiceInput()
+        advanceUntilIdle()
+        assertEquals("この端末では音声を文字にできませんでした", viewModel.uiState.value.voiceError)
+        assertTrue(repository.sent.isEmpty())
+    }
+
+    @Test
+    fun 質問を送ると音声の失敗の表示は消える() = runTest {
+        voiceInput.result = VoiceInputResult.NoSpeech
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.startVoiceInput()
+        advanceUntilIdle()
+
+        viewModel.sendMessage("手で打った質問")
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.voiceError)
+    }
+
+    @Test
+    fun マイクの許可が無ければ理由を出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.onMicrophoneDenied()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.voiceError!!.contains("マイクの許可"))
+    }
+
+    @Test
+    fun 回答の読み上げを切り替える() = runTest {
+        val message = ChatMessage(id = 4, conversationId = 1, role = ChatRole.ASSISTANT, content = "回答 [1]", createdAt = 2)
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.toggleSpeaking(message)
+        advanceUntilIdle()
+        assertEquals(4L, viewModel.uiState.value.speakingMessageId)
+        assertEquals(listOf(4L to listOf("回答")), speechOutput.spoken)
+
+        viewModel.toggleSpeaking(message)
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.speakingMessageId)
+    }
+
+    @Test
+    fun 読み上げを使えなければ理由を出す() = runTest {
+        speechOutput.available = false
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.toggleSpeaking(ChatMessage(id = 4, conversationId = 1, role = ChatRole.ASSISTANT, content = "回答", createdAt = 2))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.voiceError!!.contains("読み上げ"))
+    }
+
+    @Test
+    fun 使えるAIが画面の状態に出て_選ぶと保存先に渡す() = runTest {
+        val local = ChatModelOption.Local("gemma", "Gemma.litertlm")
+        val other = ChatModelOption.Local("qwen", "Qwen.task")
+        chatModels.state.value = ChatModelChoices(listOf(local, other), selected = local)
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertEquals(local, viewModel.uiState.value.modelChoices.selected)
+
+        viewModel.selectModel(other)
+        advanceUntilIdle()
+
+        assertEquals(listOf<ChatModelOption>(other), chatModels.selections)
+        assertEquals(other, viewModel.uiState.value.modelChoices.selected)
+    }
+
+    @Test
+    fun APIの失敗は種類ごとの日本語メッセージになる() = runTest {
+        repository.sendFailure = LlmException.ApiKeyMissing(ApiProvider.GEMINI)
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("hi")
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value.error!!
+        assertEquals("Gemini (Google) の API キーが未設定です。設定 > AI 設定 で入力してください", error.message)
+        assertTrue(error.needsAiSettings)
+        assertFalse(viewModel.uiState.value.isSending)
+    }
+
+    @Test
+    fun ブックマークについての質問では対象を固定しタイトルにブックマーク名を使う() = runTest {
+        repository.bookmarks = listOf(testBookmark(id = 7L, title = "Compose のヒント"))
+        val viewModel = createViewModel(SavedStateHandle(mapOf(Routes.ARG_ABOUT_BOOKMARK_ID to 7L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(7L, state.aboutBookmark?.id)
+        assertEquals(ChatSuggestions.forBookmark, state.suggestions)
+        assertTrue(state.isEmptyConversation)
+
+        viewModel.sendMessage("要約して")
+        advanceUntilIdle()
+
+        assertEquals(listOf<String?>("Compose のヒントについて"), repository.createdTitles)
+        assertEquals(listOf<Long?>(7L), repository.createdAboutBookmarkIds)
+        assertEquals(7L, repository.sendCalls.single().pinnedBookmarkId)
+    }
+
+    @Test
+    fun 通常の会話は対象なしで作られる() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.sendMessage("hi")
+        advanceUntilIdle()
+
+        assertEquals(listOf<Long?>(null), repository.createdAboutBookmarkIds)
+        assertNull(repository.sendCalls.single().pinnedBookmarkId)
+    }
+
+    @Test
+    fun 会話一覧から開き直すと保存した対象を固定する() = runTest {
+        repository.bookmarks = listOf(testBookmark(id = 7L, title = "Compose のヒント"))
+        repository.conversation.value = Conversation(
+            id = 9L, title = "Compose のヒントについて", isTitleManuallySet = true,
+            createdAt = 0L, updatedAt = 0L, aboutBookmarkId = 7L
+        )
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 9L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(7L, state.aboutBookmark?.id)
+        assertEquals(ChatSuggestions.forBookmark, state.suggestions)
+
+        viewModel.sendMessage("続きを教えて")
+        advanceUntilIdle()
+
+        assertEquals(0, repository.createCalls)
+        assertEquals(FakeChatRepository.SendCall(9L, "続きを教えて", 7L, isRetry = false), repository.sendCalls.single())
+    }
+
+    @Test
+    fun 保存した対象が削除済みなら通常の会話として扱う() = runTest {
+        repository.bookmarks = listOf(testBookmark(id = 1L).copy(tags = listOf("Kotlin")))
+        repository.conversation.value = Conversation(
+            id = 9L, title = "消えた記事について", isTitleManuallySet = true,
+            createdAt = 0L, updatedAt = 0L, aboutBookmarkId = 7L
+        )
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 9L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNull(state.aboutBookmark)
+        assertEquals(ChatSuggestions.forLibrary(repository.bookmarks), state.suggestions)
+
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+
+        assertNull(repository.sendCalls.single().pinnedBookmarkId)
+    }
+
+    @Test
+    fun 対象のブックマークが削除済みなら新しい会話も通常の会話として作る() = runTest {
+        val viewModel = createViewModel(SavedStateHandle(mapOf(Routes.ARG_ABOUT_BOOKMARK_ID to 7L)))
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.aboutBookmark)
+
+        viewModel.sendMessage("質問")
+        advanceUntilIdle()
+
+        assertEquals(listOf<String?>(null), repository.createdTitles)
+        assertEquals(listOf<Long?>(null), repository.createdAboutBookmarkIds)
+        assertNull(repository.sendCalls.single().pinnedBookmarkId)
+    }
+
+    @Test
+    fun 通常の会話では保存済みのタグから質問の例を作る() = runTest {
+        repository.bookmarks = listOf(
+            testBookmark(id = 1L).copy(tags = listOf("Kotlin")),
+            testBookmark(id = 2L).copy(tags = listOf("Kotlin", "Android"))
+        )
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNull(state.aboutBookmark)
+        assertEquals(ChatSuggestions.forLibrary(repository.bookmarks), state.suggestions)
+        assertTrue(state.suggestions.any { "Kotlin" in it })
+    }
+
+    @Test
+    fun AIの準備状態を画面に伝える() = runTest {
+        aiSetup.state.value = AiSetupState.API_KEY_MISSING
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(AiSetupState.API_KEY_MISSING, viewModel.uiState.value.aiSetup)
+
+        aiSetup.state.value = AiSetupState.READY
+        advanceUntilIdle()
+        assertEquals(AiSetupState.READY, viewModel.uiState.value.aiSetup)
+    }
+
+    @Test
+    fun 名前変更と削除は作成済みの会話に対して行う() = runTest {
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+        var closed = false
+
+        viewModel.rename("新しい名前")
+        viewModel.deleteConversation { closed = true }
+        advanceUntilIdle()
+
+        assertEquals(listOf(7L to "新しい名前"), repository.renamed)
+        assertEquals(listOf(7L), repository.deletedIds)
+        assertTrue(closed)
+    }
+
+    private fun conversationMessages() = listOf(
+        ChatMessage(id = 1, conversationId = 7, role = ChatRole.USER, content = "最初の質問", createdAt = 1),
+        ChatMessage(id = 2, conversationId = 7, role = ChatRole.ASSISTANT, content = "最初の回答", createdAt = 2),
+        ChatMessage(id = 3, conversationId = 7, role = ChatRole.USER, content = "次の質問", createdAt = 3),
+        ChatMessage(id = 4, conversationId = 7, role = ChatRole.ASSISTANT, content = "次の回答", createdAt = 4)
+    )
+
+    @Test
+    fun 回答を作り直すと最後の回答を消して同じ質問を再試行として送る() = runTest {
+        repository.messages.value = conversationMessages()
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.regenerate()
+        advanceUntilIdle()
+
+        assertEquals(listOf(4L), repository.deletedFrom.map { it.id })
+        // 残った最後の質問を使い回す(isRetry)
+        assertEquals(listOf(FakeChatRepository.SendCall(7L, "次の質問", null, true)), repository.sendCalls)
+    }
+
+    @Test
+    fun 最後が質問なら作り直さない() = runTest {
+        repository.messages.value = conversationMessages().dropLast(1)
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.regenerate()
+        advanceUntilIdle()
+
+        assertTrue(repository.deletedFrom.isEmpty())
+        assertTrue(repository.sendCalls.isEmpty())
+    }
+
+    @Test
+    fun 最後の質問を編集するとその質問から先を消して直した質問を送る() = runTest {
+        repository.messages.value = conversationMessages()
+        val viewModel = createViewModel(SavedStateHandle(mapOf(ChatViewModel.ARG_CONVERSATION_ID to 7L)))
+
+        viewModel.editLastMessage("  直した質問 ")
+        advanceUntilIdle()
+
+        assertEquals(listOf(3L), repository.deletedFrom.map { it.id })
+        assertEquals(listOf(FakeChatRepository.SendCall(7L, "直した質問", null, false)), repository.sendCalls)
+    }
+
+    @Test
+    fun 未作成の会話では名前変更も削除もしない() = runTest {
+        val viewModel = createViewModel()
+
+        viewModel.rename("名前")
+        viewModel.deleteConversation {}
+        advanceUntilIdle()
+
+        assertTrue(repository.renamed.isEmpty())
+        assertTrue(repository.deletedIds.isEmpty())
+    }
+
+    @Test
+    fun 添付したファイルは次の質問にだけ使い_送信すると入力欄から外れる() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.attachFile("content://docs/1")
+        advanceUntilIdle()
+        assertEquals("資料.txt", viewModel.uiState.value.attachmentName)
+
+        viewModel.sendMessage("この資料の要点は?")
+        advanceUntilIdle()
+
+        assertEquals(ChatAttachmentContext("資料.txt", "添付の本文"), repository.sentAttachments.last())
+        assertNull(viewModel.uiState.value.attachmentName)
+    }
+
+    @Test
+    fun 失敗した質問を送り直すときは同じ添付を使う() = runTest {
+        repository.sendFailure = IllegalStateException("boom")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.attachFile("content://docs/1")
+        advanceUntilIdle()
+        viewModel.sendMessage("この資料の要点は?")
+        advanceUntilIdle()
+
+        repository.sendFailure = null
+        viewModel.retry()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.sentAttachments.size)
+        assertEquals(repository.sentAttachments[0], repository.sentAttachments[1])
+        assertEquals(ChatAttachmentContext("資料.txt", "添付の本文"), repository.sentAttachments[1])
+    }
+
+    @Test
+    fun 添付を読めないときは理由を出し_質問は添付なしで送れる() = runTest {
+        val viewModel = createViewModelWithAttachmentFailure()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.attachFile("content://docs/broken")
+        advanceUntilIdle()
+
+        assertEquals("「壊れた.bin」の中身を読み取れませんでした", viewModel.uiState.value.attachmentError)
+        assertNull(viewModel.uiState.value.attachmentName)
+        assertFalse(viewModel.uiState.value.isAttaching)
+    }
+
+    private fun createViewModelWithAttachmentFailure() = ChatViewModel(
+        repository,
+        aiSetup,
+        SavedStateHandle(),
+        object : ChatAttachmentSource {
+            override suspend fun load(uri: String): ChatAttachmentContext =
+                throw ChatAttachmentException("「壊れた.bin」の中身を読み取れませんでした")
+        },
+        chatModels,
+        dispatchers,
+        settings,
+        voiceInput,
+        speechOutput
+    )
+}
