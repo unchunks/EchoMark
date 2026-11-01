@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.backup
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.attachment.isValidAttachmentPath
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
@@ -13,6 +14,7 @@ import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.mapper.SmartFolderCodec
 import com.unchunks.echomark.data.mapper.smartFolderEntity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.NoteText
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
@@ -51,7 +53,9 @@ data class BackupData(
     /** スマートフォルダ(保存した絞り込み条件)。タグは ID が端末ごとに変わるので、名前で持つ */
     val smartFolders: List<SmartFolderBackup> = emptyList(),
     /** 購読しているフィード。種類・URL・タイトル・サイトの URL・登録日時・有効かどうかだけ入れる(確認の状態は端末の中のもの) */
-    val subscriptions: List<SubscriptionEntity> = emptyList()
+    val subscriptions: List<SubscriptionEntity> = emptyList(),
+    /** ブックマークのノート・注釈。[BookmarkNoteEntity.bookmarkId] は [bookmarks] の ID */
+    val notes: List<BookmarkNoteEntity> = emptyList()
 )
 
 /**
@@ -121,7 +125,8 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ],
  *   "categories": [ {name, description, createdAt} ],
  *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ],
- *   "subscriptions": [ {type("RSS" / "YOUTUBE"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ] }
+ *   "subscriptions": [ {type("RSS" / "YOUTUBE"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ],
+ *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -153,10 +158,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 14: 購読しているフィード(subscriptions。DB v23 の subscriptions)を追加。13 以前は無いものとして読む。
  *   確認の状態(最後に確認した日時・ETag・見た記事の目印・失敗の回数)は端末の中のものなので含めず、読み込んだ端末では最初の確認から始める
  *   (最新の数件だけ保存し、ほかは「見た」ことにする)。同じフィードの URL が既にあれば追加しない
+ * - 15: ブックマークのノート・注釈(notes。DB v24 の bookmark_notes)を追加。14 以前は無いものとして読む。
+ *   bookmarkId は書き出し元の ID で、読み込むときに付け替える。同じブックマークに同じ文章・同じ作成日時のノートが既にあれば追加しない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 14
+    const val CURRENT_VERSION = 15
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -186,6 +193,8 @@ object BackupJson {
         writeArray(writer, "smartFolders", data.smartFolders) { it.toJson() }
         writer.write(",")
         writeArray(writer, "subscriptions", data.subscriptions) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "notes", data.notes) { it.toJson() }
         writer.write("}")
         writer.flush()
     }
@@ -237,7 +246,8 @@ object BackupJson {
             removedTags = readArray("removedTags") { it.toRemovedTag() },
             categories = readArray("categories") { it.toCategory() },
             smartFolders = readArray("smartFolders") { it.toSmartFolder() },
-            subscriptions = readArray("subscriptions") { it.toSubscription() }
+            subscriptions = readArray("subscriptions") { it.toSubscription() },
+            notes = readArray("notes") { it.toNote() }
         )
         return DecodedBackup(data, invalid)
     }
@@ -420,6 +430,26 @@ object BackupJson {
             readState = stringOrNull("readState"),
             sortOrder = stringOrNull("sortOrder"),
             createdAt = longOrNull("createdAt") ?: 0L
+        )
+    }
+
+    private fun BookmarkNoteEntity.toJson() = JSONObject()
+        .put("bookmarkId", bookmarkId)
+        .put("text", text)
+        .apply { quote?.let { put("quote", it) } }
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+
+    private fun JSONObject.toNote(): BookmarkNoteEntity? {
+        // 空のノートは取り込まない。長すぎる文章は保存のときと同じ長さで切る
+        val text = stringOrNull("text")?.let { NoteText.cleanText(it) } ?: return null
+        val createdAt = longOrNull("createdAt") ?: 0L
+        return BookmarkNoteEntity(
+            bookmarkId = longOrNull("bookmarkId") ?: return null,
+            text = text,
+            quote = NoteText.cleanQuote(stringOrNull("quote")),
+            createdAt = createdAt,
+            updatedAt = (longOrNull("updatedAt") ?: createdAt).coerceAtLeast(createdAt)
         )
     }
 

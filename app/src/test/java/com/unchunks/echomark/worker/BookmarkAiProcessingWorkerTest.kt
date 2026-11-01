@@ -110,6 +110,7 @@ class BookmarkAiProcessingWorkerTest {
         repository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            noteDao = db.bookmarkNoteDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = VectorSearchDataSource(boxStore.embeddingBox()),
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),

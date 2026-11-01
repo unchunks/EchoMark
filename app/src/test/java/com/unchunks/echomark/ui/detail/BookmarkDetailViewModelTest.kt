@@ -18,6 +18,7 @@ import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
+import com.unchunks.echomark.testing.FakeNoteRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeCategoryRepository
 import com.unchunks.echomark.testing.FakeProcessingStatsRepository
@@ -52,9 +53,10 @@ class BookmarkDetailViewModelTest {
     private val categories = FakeCategoryRepository()
 
     private val settings = FakeAppSettingsRepository()
+    private val noteRepository = FakeNoteRepository()
 
     private fun createViewModel(id: Long = 1L) =
-        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights(), settings)
+        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights(), settings, noteRepository)
 
     @Test
     fun 処理の進み具合と段ごとの平均の所要時間を出す() = runTest {
@@ -394,5 +396,79 @@ class BookmarkDetailViewModelTest {
         advanceUntilIdle()
         assertEquals(null, viewModel.uiState.value.bookmark!!.category)
         assertEquals(listOf(1L to "旅行", 1L to null), repository.categoryCalls)
+    }
+
+    @Test
+    fun ノートは書いた順に出て_足す_直す_消すができる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.notes.isEmpty())
+
+        viewModel.addNote("あとで読む", "引用した文")
+        noteRepository.now = 2_000L
+        viewModel.addNote("  二つ目  ", null)
+        advanceUntilIdle()
+        val notes = viewModel.uiState.value.notes
+        assertEquals(listOf("あとで読む", "二つ目"), notes.map { it.text })
+        assertEquals("引用した文", notes[0].quote)
+
+        viewModel.updateNote(notes[1].id, "直した", null)
+        advanceUntilIdle()
+        assertEquals("直した", viewModel.uiState.value.notes[1].text)
+
+        viewModel.deleteNote(notes[0])
+        advanceUntilIdle()
+        assertEquals(listOf("直した"), viewModel.uiState.value.notes.map { it.text })
+    }
+
+    @Test
+    fun ほかのブックマークのノートは出さない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1), testBookmark(2))
+        noteRepository.addNote(2, "別のブックマーク", null)
+        val viewModel = createViewModel(1L)
+        start(viewModel)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.notes.isEmpty())
+    }
+
+    @Test
+    fun 空のノートは足さず_失敗は知らせる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        noteRepository.existingBookmarkIds = emptySet()
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.addNote("   ", null)
+        advanceUntilIdle()
+        assertTrue(messages.isEmpty())
+
+        // ブックマークが無い(削除済み)ときは、保存できなかったと知らせる
+        viewModel.addNote("書いた", null)
+        advanceUntilIdle()
+        assertTrue(messages.single() is BookmarkDetailMessage.Failed)
+        assertTrue(viewModel.uiState.value.notes.isEmpty())
+    }
+
+    @Test
+    fun ノートを消すと元に戻せるよう知らせる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        noteRepository.addNote(1, "消すノート", "引用")
+        val note = noteRepository.notes.value.single()
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.deleteNote(note)
+        advanceUntilIdle()
+        assertEquals(listOf<BookmarkDetailMessage>(BookmarkDetailMessage.NoteDeleted(note)), messages)
+        assertTrue(viewModel.uiState.value.notes.isEmpty())
+
+        viewModel.restoreNote(note)
+        advanceUntilIdle()
+        assertEquals(listOf(note), viewModel.uiState.value.notes)
     }
 }

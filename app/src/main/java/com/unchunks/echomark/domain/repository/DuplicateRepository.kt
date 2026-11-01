@@ -41,7 +41,9 @@ data class MergeUndo(
     /** 統合で消した方 */
     val removed: Bookmark,
     /** 残した方に足したタグ(元に戻すときに外す) */
-    val addedTags: List<String>
+    val addedTags: List<String>,
+    /** 残した方へ移したノートの ID(元に戻すときに消した方へ戻す) */
+    val movedNoteIds: List<Long> = emptyList()
 )
 
 /**

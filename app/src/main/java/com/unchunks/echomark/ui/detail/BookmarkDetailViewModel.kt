@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkNote
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -15,6 +16,7 @@ import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.CategoryRepository
+import com.unchunks.echomark.domain.repository.NoteRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import com.unchunks.echomark.ui.common.SearchHighlights
@@ -59,7 +61,9 @@ data class BookmarkDetailUiState(
     /** 検索結果から開いたときの検索語。タイトル・要約・本文で一致した文字を強調する(#57)。空なら強調しない */
     val highlightTerms: List<String> = emptyList(),
     /** 読書モードの見た目(文字の大きさ・背景・書体。#59) */
-    val readingStyle: ReadingStyle = ReadingStyle()
+    val readingStyle: ReadingStyle = ReadingStyle(),
+    /** 自分のノート・注釈(書いた順。#95)。AI の要約・本文とは別 */
+    val notes: List<BookmarkNote> = emptyList()
 )
 
 /** 要約の翻訳の状態(#24)。翻訳は保存せず、画面を閉じたら消える。 */
@@ -84,6 +88,9 @@ sealed interface BookmarkDetailMessage {
     /** タグを外した(元に戻せる) */
     data class TagRemoved(val name: String) : BookmarkDetailMessage
 
+    /** ノートを削除した(元に戻せる) */
+    data class NoteDeleted(val note: BookmarkNote) : BookmarkDetailMessage
+
     /** AI の再処理を始めた */
     data object ReprocessStarted : BookmarkDetailMessage
 
@@ -107,7 +114,8 @@ class BookmarkDetailViewModel @Inject constructor(
     private val translator: SummaryTranslator,
     categoryRepository: CategoryRepository,
     searchHighlights: SearchHighlights,
-    private val appSettings: AppSettingsRepository
+    private val appSettings: AppSettingsRepository,
+    private val noteRepository: NoteRepository
 ) : ViewModel() {
 
     // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
@@ -176,6 +184,14 @@ class BookmarkDetailViewModel @Inject constructor(
             emit(ReadingStyle())
         }
 
+    /** 自分のノート。補助的な表示なので、読めなければ空にする */
+    private val notesFlow = noteRepository.observeNotes(bookmarkId)
+        .catch { e ->
+            if (e is CancellationException) throw e
+            Timber.w(e, "ノートの読み込みに失敗")
+            emit(emptyList())
+        }
+
     private val translation = MutableStateFlow<TranslationState>(TranslationState.Idle)
     private var translationJob: Job? = null
 
@@ -192,11 +208,11 @@ class BookmarkDetailViewModel @Inject constructor(
     val uiState: StateFlow<BookmarkDetailUiState> =
         combine(
             baseState, summaryHistoryFlow, translation, categoryChoicesFlow,
-            combine(highlightTermsFlow, readingStyleFlow, ::Pair)
-        ) { state, history, translation, categories, (terms, readingStyle) ->
+            combine(highlightTermsFlow, readingStyleFlow, notesFlow, ::Triple)
+        ) { state, history, translation, categories, (terms, readingStyle, notes) ->
             state.copy(
                 summaryHistory = history, translation = translation, categoryChoices = categories,
-                highlightTerms = terms, readingStyle = readingStyle
+                highlightTerms = terms, readingStyle = readingStyle, notes = notes
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
@@ -227,6 +243,35 @@ class BookmarkDetailViewModel @Inject constructor(
             repository.removeTag(bookmarkId, name)
             messageChannel.send(BookmarkDetailMessage.TagRemoved(name))
         }
+    }
+
+    /** ノート(注釈)を足す。[quote] は引用した文章。空白だけのノートは足さない */
+    fun addNote(text: String, quote: String?) {
+        viewModelScope.launch {
+            if (noteRepository.addNote(bookmarkId, text, quote) == null && text.isNotBlank()) {
+                messageChannel.send(BookmarkDetailMessage.Failed("ノートを保存できませんでした。"))
+            }
+        }
+    }
+
+    fun updateNote(id: Long, text: String, quote: String?) {
+        viewModelScope.launch {
+            if (!noteRepository.updateNote(id, text, quote)) {
+                messageChannel.send(BookmarkDetailMessage.Failed("ノートを保存できませんでした。"))
+            }
+        }
+    }
+
+    /** ノートを削除する。Snackbar の「元に戻す」で [restoreNote] できるよう知らせる */
+    fun deleteNote(note: BookmarkNote) {
+        viewModelScope.launch {
+            noteRepository.deleteNote(note.id)
+            messageChannel.send(BookmarkDetailMessage.NoteDeleted(note))
+        }
+    }
+
+    fun restoreNote(note: BookmarkNote) {
+        viewModelScope.launch { noteRepository.restoreNote(note) }
     }
 
     fun toggleFavorite() {

@@ -12,6 +12,7 @@ import com.unchunks.echomark.data.mapper.smartFolderEntity
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
@@ -70,8 +71,9 @@ class BackupDaoTest {
         removedTags: List<RemovedTagEntity> = emptyList(),
         categories: List<CategoryEntity> = emptyList(),
         smartFolders: List<SmartFolderBackup> = emptyList(),
-        subscriptions: List<SubscriptionEntity> = emptyList()
-    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders, subscriptions)
+        subscriptions: List<SubscriptionEntity> = emptyList(),
+        notes: List<BookmarkNoteEntity> = emptyList()
+    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders, subscriptions, notes)
 
     @Test
     fun 空のDBに統合すると全件入り_書き出すと同じ内容になる() = runTest {
@@ -569,5 +571,49 @@ class BackupDaoTest {
         assertEquals(null, added.lastCheckedAt)
         assertEquals("", added.seenKeys)
         assertEquals("ファイル内の1つ目", all.getValue("https://example.com/dup-in-file").title)
+    }
+
+    @Test
+    fun ノートは書き出され_全データ削除で消える() = runTest {
+        db.bookmarkDao().insert(urlBookmark(1, "https://a"))
+        db.bookmarkNoteDao().insert(BookmarkNoteEntity(bookmarkId = 1, text = "ノート", quote = "引用", createdAt = 5, updatedAt = 6))
+
+        val exported = dao.snapshot(exportedAt = 1).notes.single()
+
+        assertEquals("ノート", exported.text)
+        assertEquals("引用", exported.quote)
+
+        dao.deleteAll()
+        assertEquals(emptyList<BookmarkNoteEntity>(), dao.snapshot(exportedAt = 1).notes)
+    }
+
+    @Test
+    fun ノートを読み込むと追加したブックマークにも既にあるブックマークにも付き_同じノートは増えない() = runTest {
+        // 同じ URL のブックマークが既にあり(書き出し元の ID 2)、ブックマーク 1 は新しく入る
+        val existingId = db.bookmarkDao().insert(urlBookmark(50, "https://existing"))
+        val source = backup(
+            bookmarks = listOf(urlBookmark(1, "https://new"), urlBookmark(2, "https://existing")),
+            notes = listOf(
+                BookmarkNoteEntity(id = 9, bookmarkId = 1, text = "新しい方のノート", quote = "引用", createdAt = 5, updatedAt = 5),
+                BookmarkNoteEntity(id = 8, bookmarkId = 2, text = "既にある方のノート", createdAt = 6, updatedAt = 7),
+                // 書き出し元に無いブックマークのノートは付け先が無いので読み飛ばす
+                BookmarkNoteEntity(id = 7, bookmarkId = 99, text = "孤児", createdAt = 8, updatedAt = 8)
+            )
+        )
+
+        val first = dao.merge(source)
+        val second = dao.merge(source)
+
+        assertEquals(2, first.notesAdded)
+        assertEquals(0, second.notesAdded)
+        val newId = db.bookmarkDao().getAllIds().first { it != existingId }
+        val onNew = db.bookmarkNoteDao().getByBookmark(newId).single()
+        assertEquals("新しい方のノート", onNew.text)
+        assertEquals("引用", onNew.quote)
+        // ID は振り直す
+        assertTrue(onNew.id != 9L)
+        val onExisting = db.bookmarkNoteDao().getByBookmark(existingId).single()
+        assertEquals("既にある方のノート", onExisting.text)
+        assertEquals(7L, onExisting.updatedAt)
     }
 }

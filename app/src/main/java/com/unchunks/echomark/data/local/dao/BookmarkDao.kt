@@ -353,7 +353,7 @@ interface BookmarkDao {
     suspend fun getByIdsWithTags(ids: List<Long>): List<BookmarkWithTags>
 
     /**
-     * キーワード検索(タイトル・要約・本文・ファイル名・URL・サイト名・タグ名の部分一致)。
+     * キーワード検索(タイトル・要約・本文・ファイル名・URL・サイト名・タグ名・ノートの部分一致)。
      * :pattern は呼び出し側で LIKE 用にエスケープ済み(エスケープ文字は '\')の検索語(1語)。
      */
     @Transaction
@@ -370,6 +370,11 @@ interface BookmarkDao {
                 SELECT r.bookmarkId FROM bookmark_tag_cross_ref AS r
                 INNER JOIN tags AS t ON t.id = r.tagId
                 WHERE t.name LIKE '%' || :pattern || '%' ESCAPE '\'
+            )
+            OR id IN (
+                SELECT n.bookmarkId FROM bookmark_notes AS n
+                WHERE n.text LIKE '%' || :pattern || '%' ESCAPE '\'
+                    OR n.quote LIKE '%' || :pattern || '%' ESCAPE '\'
             )
         )
         ORDER BY createdAt DESC

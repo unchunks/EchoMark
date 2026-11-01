@@ -11,6 +11,7 @@ import com.unchunks.echomark.data.backup.toEntity
 import com.unchunks.echomark.data.backup.formatReferencedIds
 import com.unchunks.echomark.data.backup.parseReferencedIds
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
@@ -38,7 +39,9 @@ data class BackupMergeResult(
     /** 追加したスマートフォルダの数(同じ名前のフォルダが既にあれば追加しない) */
     val smartFoldersAdded: Int = 0,
     /** 追加した購読の数(同じフィードの URL が既にあれば追加しない) */
-    val subscriptionsAdded: Int = 0
+    val subscriptionsAdded: Int = 0,
+    /** 追加したノートの数(同じブックマークに同じ文章・同じ作成日時のノートが既にあれば追加しない) */
+    val notesAdded: Int = 0
 )
 
 /**
@@ -71,6 +74,9 @@ abstract class BackupDao {
     @Query("SELECT * FROM smart_folders ORDER BY createdAt, id")
     abstract suspend fun getAllSmartFolders(): List<SmartFolderEntity>
 
+    @Query("SELECT * FROM bookmark_notes ORDER BY bookmarkId, createdAt, id")
+    abstract suspend fun getAllNotes(): List<BookmarkNoteEntity>
+
     @Query("SELECT * FROM subscriptions ORDER BY createdAt, id")
     abstract suspend fun getAllSubscriptions(): List<SubscriptionEntity>
 
@@ -96,7 +102,8 @@ abstract class BackupDao {
             removedTags = getAllRemovedTags(),
             categories = getAllCategories(),
             smartFolders = getAllSmartFolders().map { it.toBackup(tagNameById) },
-            subscriptions = getAllSubscriptions()
+            subscriptions = getAllSubscriptions(),
+            notes = getAllNotes()
         )
     }
 
@@ -156,6 +163,12 @@ abstract class BackupDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertSmartFolder(folder: SmartFolderEntity): Long
+
+    @Query("SELECT COUNT(*) FROM bookmark_notes WHERE bookmarkId = :bookmarkId AND text = :text AND createdAt = :createdAt")
+    abstract suspend fun countSameNote(bookmarkId: Long, text: String, createdAt: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertNote(note: BookmarkNoteEntity): Long
 
     @Query("SELECT feedUrl FROM subscriptions")
     abstract suspend fun getAllSubscriptionFeedUrls(): List<String>
@@ -337,6 +350,16 @@ abstract class BackupDao {
             if (insertSubscription(subscription.copy(id = 0)) >= 0) subscriptionsAdded++
         }
 
+        // ノート: 書き出し元のブックマークに対応するブックマーク(追加したものも、同じ URL で既にあったものも)に付ける。
+        // 同じ文章・同じ作成日時のノートが既にあれば追加しない(同じバックアップを2回読み込んでも増えない)
+        var notesAdded = 0
+        for (note in data.notes) {
+            val bookmarkId = bookmarkIds[note.bookmarkId] ?: continue
+            if (countSameNote(bookmarkId, note.text, note.createdAt) > 0) continue
+            insertNote(note.copy(id = 0, bookmarkId = bookmarkId))
+            notesAdded++
+        }
+
         var messagesAdded = 0
         for (message in data.messages) {
             val conversationId = conversationIds[message.conversationId] ?: continue
@@ -359,7 +382,8 @@ abstract class BackupDao {
             conversationsSkipped = conversationsSkipped,
             messagesAdded = messagesAdded,
             smartFoldersAdded = smartFoldersAdded,
-            subscriptionsAdded = subscriptionsAdded
+            subscriptionsAdded = subscriptionsAdded,
+            notesAdded = notesAdded
         )
     }
 
@@ -386,6 +410,9 @@ abstract class BackupDao {
     @Query("DELETE FROM smart_folders")
     abstract suspend fun deleteAllSmartFolders()
 
+    @Query("DELETE FROM bookmark_notes")
+    abstract suspend fun deleteAllNotes()
+
     @Query("DELETE FROM subscriptions")
     abstract suspend fun deleteAllSubscriptions()
 
@@ -393,6 +420,7 @@ abstract class BackupDao {
     @Transaction
     open suspend fun deleteAll() {
         deleteAllMessages()
+        deleteAllNotes()
         deleteAllConversations()
         deleteAllCrossRefs()
         deleteAllTags()

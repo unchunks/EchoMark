@@ -227,7 +227,7 @@ fun DuplicatesContent(
             text = {
                 Text(
                     "「${removed.title.shortened()}」を削除して、「${confirmKeep.title.shortened()}」にまとめます。\n\n" +
-                        "タグ・お気に入り・読んだ記録・オフラインコピーは、残す方に足されます。まとめたあとも「元に戻す」で戻せます。"
+                        "タグ・ノート・お気に入り・読んだ記録・オフラインコピーは、残す方に足されます。まとめたあとも「元に戻す」で戻せます。"
                 )
             },
             confirmButton = {

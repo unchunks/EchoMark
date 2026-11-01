@@ -115,6 +115,7 @@ import coil3.compose.AsyncImage
 import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkNote
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ReadingBlocks
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
@@ -231,6 +232,14 @@ fun BookmarkDetailScreen(
                     }
                     BookmarkDetailMessage.SummaryEdited -> snackbarHostState.showSnackbar("要約を保存しました。前の要約は履歴に残っています")
                     BookmarkDetailMessage.SummaryRestored -> snackbarHostState.showSnackbar("要約を戻しました")
+                    is BookmarkDetailMessage.NoteDeleted -> {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "ノートを削除しました",
+                            actionLabel = "元に戻す",
+                            duration = SnackbarDuration.Long
+                        )
+                        if (result == SnackbarResult.ActionPerformed) viewModel.restoreNote(message.note)
+                    }
                     is BookmarkDetailMessage.TagRemoved -> {
                         val result = snackbarHostState.showSnackbar(
                             message = "タグ「${message.name}」を外しました",
@@ -273,6 +282,9 @@ fun BookmarkDetailScreen(
             onClearTranslation = viewModel::clearTranslation,
             onAddTag = viewModel::addTag,
             onRemoveTag = viewModel::removeTag,
+            onAddNote = viewModel::addNote,
+            onUpdateNote = viewModel::updateNote,
+            onDeleteNote = viewModel::deleteNote,
             snapshot = PageSnapshotCallbacks(
                 onSave = { uiState.bookmark?.let(snapshotViewModel::start) },
                 onOpen = { uiState.bookmark?.let { context.startActivity(SnapshotViewerActivity.intent(context, it.id)) } },
@@ -348,6 +360,10 @@ class BookmarkDetailCallbacks(
     val onClearTranslation: () -> Unit = {},
     val onAddTag: (String) -> Unit = {},
     val onRemoveTag: (String) -> Unit = {},
+    /** ノート(注釈)を足す・直す・消す(#95)。第2引数は引用した文章 */
+    val onAddNote: (text: String, quote: String?) -> Unit = { _, _ -> },
+    val onUpdateNote: (id: Long, text: String, quote: String?) -> Unit = { _, _, _ -> },
+    val onDeleteNote: (BookmarkNote) -> Unit = {},
     /** ページのオフラインコピー(#80)の操作 */
     val snapshot: PageSnapshotCallbacks = PageSnapshotCallbacks(),
     /** オフラインコピーを作っている(または保存している)最中 */
@@ -377,6 +393,15 @@ fun BookmarkDetailContent(
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     var showEditSheet by rememberSaveable { mutableStateOf(false) }
     var readingMode by rememberSaveable { mutableStateOf(false) }
+    // ノートの編集シート。開いているか・直すノートの ID(新規なら null)・引用する文章(読書モードの段落の長押しなど)
+    var noteEditorOpen by rememberSaveable { mutableStateOf(false) }
+    var noteEditorId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var noteEditorQuote by rememberSaveable { mutableStateOf<String?>(null) }
+    val openNoteEditor: (BookmarkNote?, String?) -> Unit = { note, quote ->
+        noteEditorId = note?.id
+        noteEditorQuote = note?.quote ?: quote
+        noteEditorOpen = true
+    }
     val readingBlocks = remember(bookmark?.content) { ReadingBlocks.from(bookmark?.content) }
     // 本文が無い(または消えた)なら、読書モードのままにしない
     val inReadingMode = readingMode && bookmark != null && readingBlocks.isNotEmpty()
@@ -391,6 +416,11 @@ fun BookmarkDetailContent(
             highlightTerms = uiState.highlightTerms,
             onStyleChange = callbacks.onReadingStyleChange,
             onClose = { readingMode = false },
+            // 段落を長押しすると、閉じてその文章を引用したノートの編集シートを開く
+            onQuote = { quote ->
+                readingMode = false
+                openNoteEditor(null, quote)
+            },
             modifier = modifier
         )
     } else {
@@ -424,6 +454,7 @@ fun BookmarkDetailContent(
                     uiState = uiState,
                     callbacks = callbacks,
                     nowMillis = nowMillis,
+                    onOpenNoteEditor = openNoteEditor,
                     contentPadding = innerPadding
                 )
             }
@@ -447,6 +478,22 @@ fun BookmarkDetailContent(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("キャンセル") }
+            }
+        )
+    }
+
+    val editingNote = uiState.notes.firstOrNull { it.id == noteEditorId }
+    // 直そうとしたノートが消えていた(別の画面で削除したなど)ときは、シートを出さない
+    if (noteEditorOpen && bookmark != null && (noteEditorId == null || editingNote != null)) {
+        val editing = editingNote
+        NoteEditorSheet(
+            noteId = editing?.id,
+            initialText = editing?.text.orEmpty(),
+            initialQuote = if (editing != null) editing.quote else noteEditorQuote,
+            onDismiss = { noteEditorOpen = false },
+            onSave = { text, quote ->
+                noteEditorOpen = false
+                if (editing != null) callbacks.onUpdateNote(editing.id, text, quote) else callbacks.onAddNote(text, quote)
             }
         )
     }
@@ -584,6 +631,7 @@ private fun DetailBody(
     uiState: BookmarkDetailUiState,
     callbacks: BookmarkDetailCallbacks,
     nowMillis: Long,
+    onOpenNoteEditor: (BookmarkNote?, String?) -> Unit,
     contentPadding: PaddingValues
 ) {
     Column(
@@ -649,6 +697,14 @@ private fun DetailBody(
                 allTagNames = uiState.allTagNames,
                 onAddTag = callbacks.onAddTag,
                 onRemoveTag = callbacks.onRemoveTag
+            )
+            Spacer(Modifier.height(24.dp))
+            NotesSection(
+                notes = uiState.notes,
+                nowMillis = nowMillis,
+                onAdd = { onOpenNoteEditor(null, null) },
+                onEdit = { onOpenNoteEditor(it, null) },
+                onDelete = callbacks.onDeleteNote
             )
             val content = bookmark.content
             if (!content.isNullOrBlank()) {
@@ -1272,7 +1328,7 @@ private fun ContentSection(label: String, text: String, highlightTerms: List<Str
 }
 
 @Composable
-private fun DetailSectionTitle(text: String, modifier: Modifier = Modifier) {
+internal fun DetailSectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleSmall,

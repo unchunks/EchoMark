@@ -11,6 +11,7 @@ import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
+import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
@@ -61,6 +62,7 @@ class DataManagementRepositoryImplTest {
         bookmarkRepository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            noteDao = db.bookmarkNoteDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = dispatcherProvider,
@@ -121,6 +123,35 @@ class DataManagementRepositoryImplTest {
         repository.deleteAllData(resetSettings = false)
 
         assertEquals(emptyList<ChatTemplate>(), settings.chatTemplatesFlow.value)
+    }
+
+    @Test
+    fun 全データ削除はノートも消す() = runBlocking {
+        val id = bookmarkRepository.saveUrlBookmark("https://example.com/a", null, null).id
+        db.bookmarkNoteDao().insert(BookmarkNoteEntity(bookmarkId = id, text = "ノート", createdAt = 1, updatedAt = 1))
+
+        repository.deleteAllData(resetSettings = false)
+
+        assertEquals(0, db.backupDao().getAllNotes().size)
+    }
+
+    @Test
+    fun ノートはバックアップに書き出され_読み込むと付く() = runBlocking {
+        val id = bookmarkRepository.saveUrlBookmark("https://example.com/a", null, null).id
+        db.bookmarkNoteDao().insert(BookmarkNoteEntity(bookmarkId = id, text = "残すノート", quote = "引用", createdAt = 4, updatedAt = 5))
+        val exported = db.backupDao().snapshot(exportedAt = 1)
+        val text = com.unchunks.echomark.data.backup.BackupJson.encode(exported)
+
+        repository.deleteAllData(resetSettings = false)
+        val decoded = com.unchunks.echomark.data.backup.BackupJson.decode(text).data
+        val result = db.backupDao().merge(decoded)
+
+        assertEquals(1, result.notesAdded)
+        val newId = bookmarkRepository.getAllBookmarkIds().single()
+        val note = db.bookmarkNoteDao().getByBookmark(newId).single()
+        assertEquals("残すノート", note.text)
+        assertEquals("引用", note.quote)
+        assertEquals(5L, note.updatedAt)
     }
 
     @Test

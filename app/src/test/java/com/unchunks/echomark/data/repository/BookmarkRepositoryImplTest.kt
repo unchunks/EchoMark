@@ -11,6 +11,7 @@ import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
+import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
@@ -75,6 +76,7 @@ class BookmarkRepositoryImplTest {
         repository = BookmarkRepositoryImpl(
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
+            noteDao = db.bookmarkNoteDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
@@ -1072,5 +1074,22 @@ class BookmarkRepositoryImplTest {
 
         assertEquals(0, result.added)
         assertFalse(result.processingStarted)
+    }
+
+    @Test
+    fun ブックマークを削除するとノートも消え_元に戻すとノートも戻る() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        val noteDao = db.bookmarkNoteDao()
+        noteDao.insert(BookmarkNoteEntity(bookmarkId = id, text = "一つ目", quote = "引用", createdAt = 5, updatedAt = 6))
+        noteDao.insert(BookmarkNoteEntity(bookmarkId = id, text = "二つ目", createdAt = 7, updatedAt = 7))
+        val before = noteDao.getByBookmark(id)
+        val bookmark = repository.getBookmarkById(id)!!
+
+        repository.deleteBookmark(bookmark)
+        assertTrue(noteDao.getByBookmark(id).isEmpty())
+        repository.restoreBookmark(bookmark)
+
+        // ID・文章・引用・日時が削除前と同じ
+        assertEquals(before, noteDao.getByBookmark(id))
     }
 }

@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.backup
 
+import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
@@ -12,6 +13,7 @@ import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.data.backup.SmartFolderBackup
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.NoteText
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
@@ -601,5 +603,55 @@ class BackupJsonTest {
         assertEquals("https://example.com/other", second.title)
         assertEquals(null, second.siteUrl)
         assertEquals(3, decoded.invalidRecords)
+    }
+
+    @Test
+    fun ノートは引用つきで書き出して読み戻せ_引用が無ければ省く() {
+        val notes = listOf(
+            BookmarkNoteEntity(id = 3, bookmarkId = 1, text = "引用つき", quote = "本文の一部", createdAt = 10, updatedAt = 20),
+            BookmarkNoteEntity(id = 4, bookmarkId = 1, text = "引用なし", createdAt = 30, updatedAt = 30)
+        )
+
+        val text = BackupJson.encode(sample.copy(notes = notes))
+        val decoded = BackupJson.decode(text).data.notes
+
+        // ID は書き出さない(読み込み側で振り直す)。読み戻すと 0
+        assertEquals(listOf(0L, 0L), decoded.map { it.id })
+        assertEquals(listOf(1L, 1L), decoded.map { it.bookmarkId })
+        assertEquals(listOf("引用つき", "引用なし"), decoded.map { it.text })
+        assertEquals(listOf<String?>("本文の一部", null), decoded.map { it.quote })
+        assertEquals(listOf(10L, 30L), decoded.map { it.createdAt })
+        assertEquals(listOf(20L, 30L), decoded.map { it.updatedAt })
+        assertFalse(text.substringAfter("\"notes\"").substringAfter("引用なし").contains("quote"))
+    }
+
+    @Test
+    fun ノートの無い古い版は空として読み_空や壊れたノートは読み飛ばし_長すぎる文章は切る() {
+        val old = BackupJson.decode("""{"format":"echomark-backup","version":14,"exportedAt":1}""")
+        assertEquals(emptyList<BookmarkNoteEntity>(), old.data.notes)
+
+        val long = "あ".repeat(NoteText.MAX_TEXT + 50)
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":15,"exportedAt":1,"notes":[
+              {"bookmarkId":1,"text":"  良い  ","quote":"  ","createdAt":5},
+              {"bookmarkId":1,"text":"   ","createdAt":6},
+              {"text":"ブックマークの指定なし"},
+              {"bookmarkId":2,"text":"$long","createdAt":9,"updatedAt":3}
+            ]}
+            """.trimIndent()
+        )
+
+        assertEquals(2, decoded.data.notes.size)
+        val first = decoded.data.notes[0]
+        // 前後の空白を除く。空白だけの引用は引用なし。更新日時が無ければ作成日時
+        assertEquals("良い", first.text)
+        assertEquals(null, first.quote)
+        assertEquals(5L, first.updatedAt)
+        val second = decoded.data.notes[1]
+        assertEquals(NoteText.MAX_TEXT, second.text.length)
+        // 更新日時が作成日時より前なら作成日時にそろえる
+        assertEquals(9L, second.updatedAt)
+        assertEquals(2, decoded.invalidRecords)
     }
 }
