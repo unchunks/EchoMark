@@ -17,6 +17,7 @@ import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.echomark.data.local.entity.SmartFolderEntity
+import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
@@ -35,7 +36,9 @@ data class BackupMergeResult(
     val conversationsSkipped: Int,
     val messagesAdded: Int,
     /** 追加したスマートフォルダの数(同じ名前のフォルダが既にあれば追加しない) */
-    val smartFoldersAdded: Int = 0
+    val smartFoldersAdded: Int = 0,
+    /** 追加した購読の数(同じフィードの URL が既にあれば追加しない) */
+    val subscriptionsAdded: Int = 0
 )
 
 /**
@@ -68,6 +71,9 @@ abstract class BackupDao {
     @Query("SELECT * FROM smart_folders ORDER BY createdAt, id")
     abstract suspend fun getAllSmartFolders(): List<SmartFolderEntity>
 
+    @Query("SELECT * FROM subscriptions ORDER BY createdAt, id")
+    abstract suspend fun getAllSubscriptions(): List<SubscriptionEntity>
+
     @Query("SELECT * FROM conversations ORDER BY id")
     abstract suspend fun getAllConversations(): List<ConversationEntity>
 
@@ -89,7 +95,8 @@ abstract class BackupDao {
             tagAliases = getAllTagAliases(),
             removedTags = getAllRemovedTags(),
             categories = getAllCategories(),
-            smartFolders = getAllSmartFolders().map { it.toBackup(tagNameById) }
+            smartFolders = getAllSmartFolders().map { it.toBackup(tagNameById) },
+            subscriptions = getAllSubscriptions()
         )
     }
 
@@ -149,6 +156,12 @@ abstract class BackupDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertSmartFolder(folder: SmartFolderEntity): Long
+
+    @Query("SELECT feedUrl FROM subscriptions")
+    abstract suspend fun getAllSubscriptionFeedUrls(): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertSubscription(subscription: SubscriptionEntity): Long
 
     @Query("SELECT id FROM conversations WHERE createdAt = :createdAt AND title = :title LIMIT 1")
     abstract suspend fun findSameConversationId(title: String, createdAt: Long): Long?
@@ -316,6 +329,14 @@ abstract class BackupDao {
             if (insertSmartFolder(folder.toEntity(folderTagIds)) >= 0) smartFoldersAdded++
         }
 
+        // 購読: 同じフィードの URL が今の DB にあれば追加しない。確認の状態は含まれないので、最初の確認から始める
+        val feedUrls = getAllSubscriptionFeedUrls().toHashSet()
+        var subscriptionsAdded = 0
+        for (subscription in data.subscriptions) {
+            if (!feedUrls.add(subscription.feedUrl)) continue
+            if (insertSubscription(subscription.copy(id = 0)) >= 0) subscriptionsAdded++
+        }
+
         var messagesAdded = 0
         for (message in data.messages) {
             val conversationId = conversationIds[message.conversationId] ?: continue
@@ -337,7 +358,8 @@ abstract class BackupDao {
             conversationsAdded = conversationIds.size,
             conversationsSkipped = conversationsSkipped,
             messagesAdded = messagesAdded,
-            smartFoldersAdded = smartFoldersAdded
+            smartFoldersAdded = smartFoldersAdded,
+            subscriptionsAdded = subscriptionsAdded
         )
     }
 
@@ -364,6 +386,9 @@ abstract class BackupDao {
     @Query("DELETE FROM smart_folders")
     abstract suspend fun deleteAllSmartFolders()
 
+    @Query("DELETE FROM subscriptions")
+    abstract suspend fun deleteAllSubscriptions()
+
     /** ブックマーク・タグ・会話・クラウド API の使用量の記録をすべて削除する(外部キーの子から順に消す)。 */
     @Transaction
     open suspend fun deleteAll() {
@@ -375,5 +400,7 @@ abstract class BackupDao {
         deleteAllApiUsage()
         // スマートフォルダは、消えたタグ・ブックマークを前提にした条件なので、いっしょに消す
         deleteAllSmartFolders()
+        // 購読も利用者のデータなので、いっしょに消す(確認の状態も含めて)
+        deleteAllSubscriptions()
     }
 }

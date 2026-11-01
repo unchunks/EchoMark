@@ -1,5 +1,6 @@
 package com.unchunks.echomark.di
 
+import com.unchunks.echomark.worker.FeedCheckNightlyTask
 import com.unchunks.echomark.worker.NightlyProcessingTask
 import com.unchunks.echomark.worker.NightlyTask
 import com.unchunks.echomark.worker.ProcessingScheduleController
@@ -30,4 +31,9 @@ abstract class SchedulerModule {
     @Binds
     @IntoSet
     abstract fun bindNightlyProcessingTask(impl: NightlyProcessingTask): NightlyTask
+
+    /** 購読しているフィードの確認(#78)。充電中・Wi-Fi の設定を条件にしたワークとして積む */
+    @Binds
+    @IntoSet
+    abstract fun bindFeedCheckNightlyTask(impl: FeedCheckNightlyTask): NightlyTask
 }
