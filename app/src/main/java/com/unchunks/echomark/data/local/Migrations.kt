@@ -250,6 +250,22 @@ val MIGRATION_21_22 = object : Migration(21, 22) {
 }
 
 /**
+ * v22 → v23: 購読するフィード(subscriptions、#78)のテーブルを足す。空で始める。既存のテーブルは変わらない。
+ */
+val MIGRATION_22_23 = object : Migration(22, 23) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // スキーマ JSON(23.json)の createSql と同じ
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `subscriptions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `type` TEXT NOT NULL, " +
+                "`feedUrl` TEXT NOT NULL, `title` TEXT NOT NULL, `siteUrl` TEXT, `createdAt` INTEGER NOT NULL, " +
+                "`enabled` INTEGER NOT NULL DEFAULT 1, `lastCheckedAt` INTEGER, `lastSuccessAt` INTEGER, `etag` TEXT, " +
+                "`lastModified` TEXT, `failureCount` INTEGER NOT NULL DEFAULT 0, `lastError` TEXT, `seenKeys` TEXT NOT NULL DEFAULT '')"
+        )
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_subscriptions_feedUrl` ON `subscriptions` (`feedUrl`)")
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
@@ -258,7 +274,7 @@ val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
-        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22
+        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

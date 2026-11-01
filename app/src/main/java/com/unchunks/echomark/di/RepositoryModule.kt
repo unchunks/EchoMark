@@ -90,6 +90,11 @@ abstract class RepositoryModule {
     ): com.unchunks.echomark.domain.importer.LinkImportSource
 
     @Binds
+    abstract fun bindSubscriptionRepository(
+        impl: com.unchunks.echomark.data.subscription.SubscriptionRepositoryImpl
+    ): com.unchunks.echomark.domain.repository.SubscriptionRepository
+
+    @Binds
     abstract fun bindPageSnapshotRepository(
         impl: com.unchunks.echomark.data.snapshot.PageSnapshotRepositoryImpl
     ): com.unchunks.echomark.domain.snapshot.PageSnapshotRepository

@@ -17,6 +17,7 @@ import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
+import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
@@ -68,8 +69,9 @@ class BackupDaoTest {
         tagAliases: List<TagAliasEntity> = emptyList(),
         removedTags: List<RemovedTagEntity> = emptyList(),
         categories: List<CategoryEntity> = emptyList(),
-        smartFolders: List<SmartFolderBackup> = emptyList()
-    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders)
+        smartFolders: List<SmartFolderBackup> = emptyList(),
+        subscriptions: List<SubscriptionEntity> = emptyList()
+    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders, subscriptions)
 
     @Test
     fun 空のDBに統合すると全件入り_書き出すと同じ内容になる() = runTest {
@@ -525,5 +527,47 @@ class BackupDaoTest {
         val branch = dao.getAllConversations().single()
         assertEquals(null, branch.branchedFromId)
         assertEquals(null, branch.branchedAt)
+    }
+
+    @Test
+    fun 購読は書き出され_全データ削除で消える() = runTest {
+        db.subscriptionDao().insertIgnore(
+            SubscriptionEntity(type = "RSS", feedUrl = "https://example.com/feed", title = "ブログ", createdAt = 5, seenKeys = "a\nb", failureCount = 2)
+        )
+
+        val exported = dao.snapshot(exportedAt = 1).subscriptions.single()
+
+        assertEquals("https://example.com/feed", exported.feedUrl)
+
+        dao.deleteAll()
+        assertEquals(emptyList<SubscriptionEntity>(), dao.snapshot(exportedAt = 1).subscriptions)
+    }
+
+    @Test
+    fun 購読を読み込むと確認の状態は空で入り_同じフィードのURLは追加しない() = runTest {
+        db.subscriptionDao().insertIgnore(SubscriptionEntity(type = "RSS", feedUrl = "https://example.com/existing", title = "既存", createdAt = 1))
+        val source = backup(
+            subscriptions = listOf(
+                SubscriptionEntity(id = 99, type = "YOUTUBE", feedUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=X", title = "新しい", createdAt = 2, enabled = false),
+                SubscriptionEntity(id = 98, type = "RSS", feedUrl = "https://example.com/existing", title = "同じ URL", createdAt = 3),
+                SubscriptionEntity(id = 97, type = "RSS", feedUrl = "https://example.com/dup-in-file", title = "ファイル内の1つ目", createdAt = 4),
+                SubscriptionEntity(id = 96, type = "RSS", feedUrl = "https://example.com/dup-in-file", title = "ファイル内の2つ目", createdAt = 5)
+            )
+        )
+
+        val result = dao.merge(source)
+
+        assertEquals(2, result.subscriptionsAdded)
+        val all = db.subscriptionDao().getAll().associateBy { it.feedUrl }
+        assertEquals(3, all.size)
+        assertEquals("既存", all.getValue("https://example.com/existing").title)
+        val added = all.getValue("https://www.youtube.com/feeds/videos.xml?channel_id=X")
+        assertEquals("YOUTUBE", added.type)
+        assertEquals(false, added.enabled)
+        // ID は振り直し、確認の状態は空
+        assertTrue(added.id != 99L)
+        assertEquals(null, added.lastCheckedAt)
+        assertEquals("", added.seenKeys)
+        assertEquals("ファイル内の1つ目", all.getValue("https://example.com/dup-in-file").title)
     }
 }

@@ -9,6 +9,7 @@ import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.echomark.data.local.entity.SmartFolderEntity
+import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.mapper.SmartFolderCodec
 import com.unchunks.echomark.data.mapper.smartFolderEntity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
@@ -48,7 +49,9 @@ data class BackupData(
     /** ユーザーが作ったカテゴリ(名前と説明)。ID は持たない(読み込み側で振り直す) */
     val categories: List<CategoryEntity> = emptyList(),
     /** スマートフォルダ(保存した絞り込み条件)。タグは ID が端末ごとに変わるので、名前で持つ */
-    val smartFolders: List<SmartFolderBackup> = emptyList()
+    val smartFolders: List<SmartFolderBackup> = emptyList(),
+    /** 購読しているフィード。種類・URL・タイトル・サイトの URL・登録日時・有効かどうかだけ入れる(確認の状態は端末の中のもの) */
+    val subscriptions: List<SubscriptionEntity> = emptyList()
 )
 
 /**
@@ -117,7 +120,8 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ],
  *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ],
  *   "categories": [ {name, description, createdAt} ],
- *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ] }
+ *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ],
+ *   "subscriptions": [ {type("RSS" / "YOUTUBE"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -146,10 +150,13 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 12: ブックマークに readAt(読んだ日時。無ければ未読)を追加。11 以前は、保存したあとに開いたことがあるものだけ既読として読む
  * - 13: スマートフォルダ(smartFolders。DB v21 の smart_folders)を追加。12 以前は無いものとして読む。
  *   タグは ID ではなく名前で持ち、読み込むときに名前でこの端末のタグを探す(無ければ作る)。同じ名前のフォルダが既にあれば追加しない
+ * - 14: 購読しているフィード(subscriptions。DB v23 の subscriptions)を追加。13 以前は無いものとして読む。
+ *   確認の状態(最後に確認した日時・ETag・見た記事の目印・失敗の回数)は端末の中のものなので含めず、読み込んだ端末では最初の確認から始める
+ *   (最新の数件だけ保存し、ほかは「見た」ことにする)。同じフィードの URL が既にあれば追加しない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 13
+    const val CURRENT_VERSION = 14
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -177,6 +184,8 @@ object BackupJson {
         writeArray(writer, "categories", data.categories) { it.toJson() }
         writer.write(",")
         writeArray(writer, "smartFolders", data.smartFolders) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "subscriptions", data.subscriptions) { it.toJson() }
         writer.write("}")
         writer.flush()
     }
@@ -227,7 +236,8 @@ object BackupJson {
             tagAliases = readArray("tagAliases") { it.toTagAlias() },
             removedTags = readArray("removedTags") { it.toRemovedTag() },
             categories = readArray("categories") { it.toCategory() },
-            smartFolders = readArray("smartFolders") { it.toSmartFolder() }
+            smartFolders = readArray("smartFolders") { it.toSmartFolder() },
+            subscriptions = readArray("subscriptions") { it.toSubscription() }
         )
         return DecodedBackup(data, invalid)
     }
@@ -410,6 +420,28 @@ object BackupJson {
             readState = stringOrNull("readState"),
             sortOrder = stringOrNull("sortOrder"),
             createdAt = longOrNull("createdAt") ?: 0L
+        )
+    }
+
+    private fun SubscriptionEntity.toJson() = JSONObject()
+        .put("type", type)
+        .put("feedUrl", feedUrl)
+        .put("title", title)
+        .apply { siteUrl?.let { put("siteUrl", it) } }
+        .put("createdAt", createdAt)
+        .put("enabled", enabled)
+
+    private fun JSONObject.toSubscription(): SubscriptionEntity? {
+        // フィードの URL は http / https だけ(バックアップを書き換えて、別の種類の URL を入れられても取り込まない)
+        val feedUrl = stringOrNull("feedUrl")?.trim()?.takeIf { it.isNotEmpty() && isWebUrl(it) } ?: return null
+        return SubscriptionEntity(
+            // 読めない種類(将来の版で増えたもの)は RSS として読む
+            type = stringOrNull("type")?.takeIf { it == "YOUTUBE" } ?: "RSS",
+            feedUrl = feedUrl,
+            title = stringOrNull("title")?.trim()?.takeIf { it.isNotEmpty() } ?: feedUrl,
+            siteUrl = stringOrNull("siteUrl")?.trim()?.takeIf { it.isNotEmpty() && isWebUrl(it) },
+            createdAt = longOrNull("createdAt") ?: 0L,
+            enabled = if (has("enabled")) optBoolean("enabled", true) else true
         )
     }
 

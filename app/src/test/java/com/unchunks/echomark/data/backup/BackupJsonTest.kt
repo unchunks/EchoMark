@@ -8,6 +8,7 @@ import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.data.backup.SmartFolderBackup
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
@@ -546,5 +547,59 @@ class BackupJsonTest {
 
         assertEquals(listOf(CategoryEntity(name = "旅行", description = "説明", createdAt = 5)), decoded.data.categories)
         assertEquals(2, decoded.invalidRecords)
+    }
+
+    @Test
+    fun 購読は種類_URL_タイトル_サイト_登録日時_有効かどうかだけ書き出し_確認の状態は含めない() {
+        val subscription = SubscriptionEntity(
+            id = 7, type = "YOUTUBE", feedUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=UCabcdefghijklmnopqrstuv",
+            title = "チャンネル", siteUrl = "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv", createdAt = 123L, enabled = false,
+            lastCheckedAt = 999L, lastSuccessAt = 998L, etag = "\"e\"", lastModified = "Mon", failureCount = 3, lastError = "失敗", seenKeys = "a\nb"
+        )
+
+        val text = BackupJson.encode(sample.copy(subscriptions = listOf(subscription)))
+        val decoded = BackupJson.decode(text).data.subscriptions.single()
+
+        listOf("lastCheckedAt", "etag", "lastError", "seenKeys", "failureCount").forEach { assertFalse(it, text.contains(it)) }
+        assertEquals("YOUTUBE", decoded.type)
+        assertEquals(subscription.feedUrl, decoded.feedUrl)
+        assertEquals("チャンネル", decoded.title)
+        assertEquals(subscription.siteUrl, decoded.siteUrl)
+        assertEquals(123L, decoded.createdAt)
+        assertFalse(decoded.enabled)
+        // 確認の状態は空で、読み込んだ端末では最初の確認から始まる
+        assertEquals(null, decoded.lastCheckedAt)
+        assertEquals("", decoded.seenKeys)
+        assertEquals(0, decoded.failureCount)
+    }
+
+    @Test
+    fun 購読の無い古い版は空として読み_http以外のURLや壊れたものは読み飛ばす() {
+        val old = BackupJson.decode("""{"format":"echomark-backup","version":13,"exportedAt":1}""")
+        assertEquals(emptyList<SubscriptionEntity>(), old.data.subscriptions)
+
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":14,"exportedAt":1,"subscriptions":[
+              {"type":"SOMETHING_NEW","feedUrl":"https://example.com/feed","title":"  良い  ","createdAt":5},
+              {"type":"RSS","feedUrl":"javascript:alert(1)","title":"悪い"},
+              {"type":"RSS","feedUrl":"file:///data/data/x","title":"ファイル"},
+              {"type":"RSS","title":"URL なし"},
+              {"type":"RSS","feedUrl":"https://example.com/other","siteUrl":"ftp://example.com"}
+            ]}
+            """.trimIndent()
+        )
+
+        assertEquals(2, decoded.data.subscriptions.size)
+        val first = decoded.data.subscriptions[0]
+        // 知らない種類は RSS、タイトルは前後の空白を除く、enabled が無ければ有効
+        assertEquals("RSS", first.type)
+        assertEquals("良い", first.title)
+        assertTrue(first.enabled)
+        // タイトルが無ければ URL、http 以外のサイトの URL は捨てる
+        val second = decoded.data.subscriptions[1]
+        assertEquals("https://example.com/other", second.title)
+        assertEquals(null, second.siteUrl)
+        assertEquals(3, decoded.invalidRecords)
     }
 }

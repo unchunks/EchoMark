@@ -555,6 +555,45 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate22To23_addsEmptySubscriptionsWithDefaultsAndKeepsBookmarks() {
+        helper.createDatabase(22).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited) " +
+                    "VALUES (1, 'TEXT', 't', 1, 1, 'DONE', 1, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v23 と一致するか(列・既定値・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(23, listOf(MIGRATION_22_23))
+
+        connection.prepare("SELECT COUNT(*) FROM subscriptions").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        connection.prepare("SELECT title, isFavorite FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("t", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+        }
+        // 必須の列だけで入れると、既定値(有効・失敗0回・見た記事の目印は空)が入る
+        connection.execSQL("INSERT INTO subscriptions (type, feedUrl, title, createdAt) VALUES ('RSS', 'https://example.com/feed', 'ブログ', 5)")
+        connection.prepare("SELECT enabled, failureCount, seenKeys, lastCheckedAt FROM subscriptions").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals(1L, stmt.getLong(0))
+            assertEquals(0L, stmt.getLong(1))
+            assertEquals("", stmt.getText(2))
+            assertTrue(stmt.isNull(3))
+        }
+        // フィードの URL は1つだけ(一意インデックス)
+        val duplicate = runCatching {
+            connection.execSQL("INSERT INTO subscriptions (type, feedUrl, title, createdAt) VALUES ('RSS', 'https://example.com/feed', '別', 6)")
+        }
+        assertTrue(duplicate.isFailure)
+        connection.close()
+    }
+
+    @Test
     fun migrate21To22_addsEmptySmartFoldersAndKeepsBookmarks() {
         helper.createDatabase(21).apply {
             execSQL(

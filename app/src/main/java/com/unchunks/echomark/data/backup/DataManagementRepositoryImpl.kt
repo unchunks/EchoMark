@@ -23,6 +23,7 @@ import com.unchunks.echomark.domain.repository.DataOperationException
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import com.unchunks.echomark.worker.RediscoverDigestScheduler
+import com.unchunks.echomark.worker.FeedCheckWorker
 import com.unchunks.echomark.worker.ReembedAllWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.objectbox.BoxStore
@@ -150,6 +151,7 @@ class DataManagementRepositoryImpl @Inject constructor(
         // 処理待ち・実行中の本文取得・AI 処理・埋め込みの作り直しを止める(削除後にクラウドへ送ったり、書き込んだりしない)
         workScheduler.cancelAll()
         workManager.cancelUniqueWork(ReembedAllWorker.WORK_NAME)
+        workManager.cancelUniqueWork(FeedCheckWorker.WORK_NAME)
         backupDao.deleteAll()
         vectorSearch.deleteAll()
         // 添付ファイルは参照が無くなったので、掃除を待たずにすぐ消す

@@ -189,11 +189,19 @@ class FakeBookmarkRepository : BookmarkRepository {
     val importedLinks = mutableListOf<com.unchunks.echomark.domain.importer.ImportedLink>()
     var importedFolderAsTag: Boolean? = null
 
+    /** 設定すると importLinks がこの例外で失敗する */
+    var failImportLinks: Throwable? = null
+
+    /** importLinks を呼んだ回数 */
+    var importLinksCalls = 0
+
     override suspend fun importLinks(
         links: List<com.unchunks.echomark.domain.importer.ImportedLink>,
         folderAsTag: Boolean,
         onProgress: (done: Int, total: Int) -> Unit
     ): com.unchunks.echomark.domain.importer.ImportResult {
+        importLinksCalls++
+        failImportLinks?.let { throw it }
         importedFolderAsTag = folderAsTag
         var added = 0
         var duplicates = 0

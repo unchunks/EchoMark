@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoveToInbox
+import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Palette
@@ -65,6 +66,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.ui.importer.LinkImportDialog
 import com.unchunks.echomark.ui.importer.LinkImportViewModel
+import com.unchunks.echomark.ui.subscription.SubscriptionsSheet
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.components.composeui.ReadableLazyColumn
@@ -114,6 +116,8 @@ class SettingsActions(
     val onImportBackup: () -> Unit = {},
     /** 他のサービス(Pocket・Raindrop.io・ブラウザなど)の書き出しファイルを取り込む(ファイルを選ぶ) */
     val onImportFromServices: () -> Unit = {},
+    /** 購読するフィード(RSS・YouTube のチャンネル)の管理を開く */
+    val onOpenSubscriptions: () -> Unit = {},
     val onDeleteAllData: (resetSettings: Boolean) -> Unit = {},
     val onDataResultDismissed: () -> Unit = {},
     val onShareCrashLog: () -> Unit = {},
@@ -173,6 +177,8 @@ fun SettingsScreen(
         if (uri != null) importViewModel.onFilePicked(uri.toString())
     }
     val importState by importViewModel.state.collectAsState()
+    var showSubscriptions by rememberSaveable { mutableStateOf(false) }
+    if (showSubscriptions) SubscriptionsSheet(onDismiss = { showSubscriptions = false })
     LinkImportDialog(
         state = importState,
         onFolderAsTagChange = importViewModel::setFolderAsTag,
@@ -220,6 +226,7 @@ fun SettingsScreen(
             onExportBackup = { exportLauncher.launch("echomark-backup-${LocalDate.now()}.json") },
             onImportBackup = { importLauncher.launch(arrayOf(BACKUP_MIME_TYPE, "text/plain", "application/octet-stream")) },
             onImportFromServices = { linkImportLauncher.launch(arrayOf("*/*")) },
+            onOpenSubscriptions = { showSubscriptions = true },
             onDeleteAllData = viewModel::deleteAllData,
             onDataResultDismissed = viewModel::onDataResultDismissed,
             onShareCrashLog = {
@@ -407,6 +414,14 @@ fun SettingsContent(
                     icon = Icons.Outlined.MoveToInbox,
                     summary = "Pocket・Raindrop.io・Instapaper・Pinboard・ブラウザの書き出しファイル(HTML・CSV・JSON)から、リンクを追加します",
                     onClick = actions.onImportFromServices
+                )
+            }
+            item {
+                SettingsItem(
+                    title = "購読(RSS・YouTube)",
+                    icon = Icons.Outlined.RssFeed,
+                    summary = "ブログやチャンネルの新着を、毎晩確認して自動で保存します",
+                    onClick = actions.onOpenSubscriptions
                 )
             }
             item {
