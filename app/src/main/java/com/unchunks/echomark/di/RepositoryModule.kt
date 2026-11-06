@@ -19,6 +19,10 @@ import com.unchunks.echomark.data.repository.ExportRepositoryImpl
 import com.unchunks.echomark.data.repository.LinkCheckRepositoryImpl
 import com.unchunks.echomark.data.repository.NoteRepositoryImpl
 import com.unchunks.echomark.data.repository.PlaceRepositoryImpl
+import com.unchunks.echomark.data.repository.ReadingListRepositoryImpl
+import com.unchunks.echomark.data.repository.ReviewRepositoryImpl
+import com.unchunks.echomark.domain.repository.ReadingListRepository
+import com.unchunks.echomark.domain.repository.ReviewRepository
 import com.unchunks.echomark.data.place.AndroidCurrentLocationProvider
 import com.unchunks.echomark.data.place.ExifPhotoLocationReader
 import com.unchunks.echomark.data.place.PhotoLocationReader
@@ -114,6 +118,16 @@ abstract class RepositoryModule {
     abstract fun bindPlaceRepository(
         impl: PlaceRepositoryImpl
     ): PlaceRepository
+
+    @Binds
+    abstract fun bindReviewRepository(
+        impl: ReviewRepositoryImpl
+    ): ReviewRepository
+
+    @Binds
+    abstract fun bindReadingListRepository(
+        impl: ReadingListRepositoryImpl
+    ): ReadingListRepository
 
     @Binds
     abstract fun bindPhotoLocationReader(

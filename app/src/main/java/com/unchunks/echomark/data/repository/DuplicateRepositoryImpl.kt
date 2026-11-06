@@ -5,6 +5,7 @@ import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.CollectionDao
+import com.unchunks.echomark.data.local.dao.ReviewCardDao
 import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
@@ -37,6 +38,7 @@ class DuplicateRepositoryImpl @Inject constructor(
     private val tagDao: TagDao,
     private val noteDao: BookmarkNoteDao,
     private val collectionDao: CollectionDao,
+    private val reviewCardDao: ReviewCardDao,
     private val vectorSearch: VectorSearchDataSource,
     private val embeddingProvider: EmbeddingProvider,
     private val appSettings: AppSettingsRepository,
@@ -121,6 +123,11 @@ class DuplicateRepositoryImpl @Inject constructor(
         val addedCollectionIds = removedItems.map { it.collectionId }.filter { it !in keepCollectionIds }
         collectionDao.insertItems(removedItems.filter { it.collectionId in addedCollectionIds }.map { it.copy(bookmarkId = keepId) })
 
+        // 復習のカードは、残す方に無いときだけ消す方のものを移す(消す方を削除すると連鎖して消えるため)。元に戻すときのために覚える
+        val removedCard = reviewCardDao.getByBookmark(removeId)
+        val movedReviewCard = if (removedCard != null && reviewCardDao.getByBookmark(keepId) == null) removedCard else null
+        if (movedReviewCard != null) reviewCardDao.moveToBookmark(removeId, keepId)
+
         // オフラインコピーを残す方へ移したときは、消す方の削除でファイルの掃除を始めないよう、参照を外して渡す
         val movedSnapshot = fields.snapshotPath != keep.snapshotPath
         val toDelete = if (movedSnapshot) remove.copy(snapshotPath = null, snapshotPdfPath = null, snapshotAt = null) else remove
@@ -128,7 +135,8 @@ class DuplicateRepositoryImpl @Inject constructor(
         Timber.i("重複を統合: 残す id=$keepId / 消す id=$removeId")
         MergeUndo(
             keptBefore = keep, removed = remove, addedTags = tagsToAdd.filter { it !in keep.tags }, movedNoteIds = movedNoteIds,
-            removedMemberships = removedItems.map { it.collectionId to it.addedAt }, addedCollectionIds = addedCollectionIds
+            removedMemberships = removedItems.map { it.collectionId to it.addedAt }, addedCollectionIds = addedCollectionIds,
+            movedReviewCard = movedReviewCard?.toDomain()
         )
     }
 
@@ -146,6 +154,11 @@ class DuplicateRepositoryImpl @Inject constructor(
                 undo.removedMemberships.filter { it.first in existingCollections }
                     .map { (collectionId, addedAt) -> CollectionItemEntity(collectionId, undo.removed.id, addedAt) }
             )
+            // 復習のカード: 残した方へ移した分を、消した方へ戻す(消した方の復習の状態は、統合前のまま戻る)
+            undo.movedReviewCard?.let { card ->
+                reviewCardDao.delete(keepId)
+                reviewCardDao.insert(card.toEntity())
+            }
             // 統合で足したタグを外す。「外した」とは覚えさせない(AI が付け直せるように)
             undo.addedTags.forEach { name ->
                 tagDao.getTagByName(name)?.let { tagDao.deleteCrossRef(keepId, it.id) }
@@ -160,7 +173,8 @@ class DuplicateRepositoryImpl @Inject constructor(
             isFavorite = fields.isFavorite, isArchived = fields.isArchived, readAt = fields.readAt,
             content = fields.content, snapshotPath = fields.snapshotPath,
             snapshotPdfPath = fields.snapshotPdfPath, snapshotAt = fields.snapshotAt,
-            latitude = fields.latitude, longitude = fields.longitude, placeName = fields.placeName
+            latitude = fields.latitude, longitude = fields.longitude, placeName = fields.placeName,
+            readingListAt = fields.readingListAt
         )
     }
 

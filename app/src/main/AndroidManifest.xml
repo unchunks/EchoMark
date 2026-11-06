@@ -82,6 +82,17 @@
                     android:scheme="echomark" />
             </intent-filter>
 
+            <!-- 週1回の通知(今週のふり返り) → echomark://review でふり返りの画面へ -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data
+                    android:host="review"
+                    android:scheme="echomark" />
+            </intent-filter>
+
             <!-- ホーム画面に置いたコレクションのショートカット → echomark://collection/{id} でコレクションの画面へ -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

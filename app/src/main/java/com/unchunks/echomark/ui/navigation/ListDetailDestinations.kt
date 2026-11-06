@@ -113,6 +113,7 @@ internal fun BookmarkListDetailDestination(
     onOpenDiscover: () -> Unit = {},
     onOpenDuplicates: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
+    onOpenReview: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
     onOpenBrokenLinks: () -> Unit = {}
 ) {
@@ -141,6 +142,7 @@ internal fun BookmarkListDetailDestination(
                 onOpenDiscover = onOpenDiscover,
                 onOpenDuplicates = onOpenDuplicates,
                 onOpenInsights = onOpenInsights,
+                onOpenReview = onOpenReview,
                 onOpenCollections = onOpenCollections,
                 onOpenBrokenLinks = onOpenBrokenLinks,
                 selectedBookmarkId = if (twoPane) selectedId else null,

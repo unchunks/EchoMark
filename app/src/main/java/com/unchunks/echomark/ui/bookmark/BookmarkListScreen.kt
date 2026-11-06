@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
@@ -167,6 +168,7 @@ fun BookmarkListScreen(
     onOpenDiscover: () -> Unit = {},
     onOpenDuplicates: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
+    onOpenReview: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
     onOpenBrokenLinks: () -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
@@ -294,6 +296,7 @@ fun BookmarkListScreen(
             onOpenDiscover = onOpenDiscover,
             onOpenDuplicates = onOpenDuplicates,
             onOpenInsights = onOpenInsights,
+            onOpenReview = onOpenReview,
             onOpenCollections = onOpenCollections,
             onOpenBrokenLinks = onOpenBrokenLinks,
             onRetry = viewModel::retry
@@ -387,6 +390,7 @@ class BookmarkListCallbacks(
     val onOpenDiscover: () -> Unit = {},
     val onOpenDuplicates: () -> Unit = {},
     val onOpenInsights: () -> Unit = {},
+    val onOpenReview: () -> Unit = {},
     val onOpenCollections: () -> Unit = {},
     val onOpenBrokenLinks: () -> Unit = {},
     val onRetry: () -> Unit = {}
@@ -520,6 +524,7 @@ fun BookmarkListContent(
                     onOpenDiscover = callbacks.onOpenDiscover,
                     onOpenDuplicates = callbacks.onOpenDuplicates,
                     onOpenInsights = callbacks.onOpenInsights,
+                    onOpenReview = callbacks.onOpenReview,
                     onOpenCollections = callbacks.onOpenCollections,
                     onOpenBrokenLinks = callbacks.onOpenBrokenLinks
                 )
@@ -737,6 +742,7 @@ private fun ListTopBar(
     onOpenDiscover: () -> Unit,
     onOpenDuplicates: () -> Unit,
     onOpenInsights: () -> Unit,
+    onOpenReview: () -> Unit,
     onOpenCollections: () -> Unit,
     onOpenBrokenLinks: () -> Unit
 ) {
@@ -848,6 +854,14 @@ private fun ListTopBar(
                         onClick = {
                             overflowOpen = false
                             onOpenInsights()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("読む・ふり返る") },
+                        leadingIcon = { Icon(Icons.Outlined.AutoStories, contentDescription = null) },
+                        onClick = {
+                            overflowOpen = false
+                            onOpenReview()
                         }
                     )
                 }

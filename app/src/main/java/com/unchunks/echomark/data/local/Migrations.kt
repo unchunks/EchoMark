@@ -336,6 +336,25 @@ val MIGRATION_26_27 = object : Migration(26, 27) {
 }
 
 /**
+ * v27 → v28: 「あとで読む」(#92)と復習(#90)の列・テーブルを足す。
+ * - bookmarks.readingListAt: 「あとで読む」に入れた日時(NULL = 入れていない)。既存の行はどれも NULL
+ * - review_cards: 復習に入れたブックマークの、次に復習する日時などの状態。空で始める。
+ *   ブックマークを削除すると連鎖して消える
+ */
+val MIGRATION_27_28 = object : Migration(27, 28) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bookmarks` ADD COLUMN `readingListAt` INTEGER")
+        // スキーマ JSON(28.json)の createSql と同じ
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `review_cards` (`bookmarkId` INTEGER NOT NULL, `dueAt` INTEGER NOT NULL, " +
+                "`intervalDays` INTEGER NOT NULL, `easePermille` INTEGER NOT NULL, `repetitions` INTEGER NOT NULL, " +
+                "`lapses` INTEGER NOT NULL, `lastReviewedAt` INTEGER, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`bookmarkId`), " +
+                "FOREIGN KEY(`bookmarkId`) REFERENCES `bookmarks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
@@ -344,7 +363,7 @@ val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
-        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27
+        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

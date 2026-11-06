@@ -9,6 +9,7 @@ import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.SmartFolderEntity
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.mapper.SmartFolderCodec
@@ -27,6 +28,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.echomark.domain.review.SpacedRepetition
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
 import org.json.JSONArray
@@ -61,7 +63,9 @@ data class BackupData(
     /** コレクションと、入れているブックマーク。ブックマークは書き出し元の ID、コレクションは名前で持つ */
     val collections: List<CollectionBackup> = emptyList(),
     /** リンク切れの確認で「確認しない」を選んだブックマークの ID(書き出し元の ID)。確認の状態そのものは端末の中のもので含めない */
-    val linkCheckMutedBookmarkIds: List<Long> = emptyList()
+    val linkCheckMutedBookmarkIds: List<Long> = emptyList(),
+    /** 復習に入れたブックマークの状態(#90)。[ReviewCardEntity.bookmarkId] は [bookmarks] の ID */
+    val reviewCards: List<ReviewCardEntity> = emptyList()
 )
 
 /** バックアップに入れるコレクション(#91)。ID は持たず、名前で同じコレクションかを見分ける。 */
@@ -145,7 +149,8 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "subscriptions": [ {type("RSS" / "YOUTUBE"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ],
  *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ],
  *   "collections": [ {name, description は無ければ省略, createdAt, items: [ {bookmarkId, addedAt} ]} ],
- *   "linkCheckMuted": [ リンク切れの確認で「確認しない」を選んだブックマークの ID ] }
+ *   "linkCheckMuted": [ リンク切れの確認で「確認しない」を選んだブックマークの ID ],
+ *   "reviewCards": [ {bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, lastReviewedAt は無ければ省略, createdAt} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -186,13 +191,20 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   ID は書き出し元のもので、読み込むときに付け替える。確認の状態(失敗の回数・切れた日時)は端末の中のもので含めない
  * - 18: ブックマークの場所(latitude・longitude・placeName。DB v27 の bookmarks の列)を追加。17 以前は場所が無いものとして読む。
  *   座標は緯度 -90〜90・経度 -180〜180 の有限の値で、緯度か経度の片方だけがあるもの・範囲外のものは座標なしとして読む。名前は 100 文字までにする
+ * - 19: ブックマークの readingListAt(「あとで読む」に入れた日時。DB v28 の bookmarks の列)と、復習のカード(reviewCards。review_cards)を追加。
+ *   18 以前は「あとで読む」も復習も無いものとして読む。カードの bookmarkId は書き出し元の ID で、読み込むときに付け替える。
+ *   間隔・伸びやすさ・回数が範囲外・負のカードは、範囲内に丸めて読む。すでに同じブックマークにカードがあれば、読み込んだものは足さない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 18
+    const val CURRENT_VERSION = 19
 
     /** 場所の名前の長さの上限(文字) */
     private const val MAX_PLACE_NAME_LENGTH = 100
+
+    /** 復習のカードの伸びやすさ・回数の上限(壊れた値を丸める) */
+    private const val MAX_EASE_PERMILLE = 3_500L
+    private const val MAX_COUNT = 100_000L
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -226,6 +238,8 @@ object BackupJson {
         writeArray(writer, "notes", data.notes) { it.toJson() }
         writer.write(",")
         writeArray(writer, "collections", data.collections) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "reviewCards", data.reviewCards) { it.toJson() }
         writer.write(",")
         writer.write("\"linkCheckMuted\":")
         writer.write(JSONArray(data.linkCheckMutedBookmarkIds).toString())
@@ -283,6 +297,7 @@ object BackupJson {
             subscriptions = readArray("subscriptions") { it.toSubscription() },
             notes = readArray("notes") { it.toNote() },
             collections = readArray("collections") { it.toCollection() },
+            reviewCards = readArray("reviewCards") { it.toReviewCard() },
             linkCheckMutedBookmarkIds = root.optJSONArray("linkCheckMuted")?.let { array ->
                 (0 until array.length()).mapNotNull { index -> array.optLong(index, -1L).takeIf { it >= 0 } }
             }.orEmpty()
@@ -327,6 +342,7 @@ object BackupJson {
         .apply { latitude?.let { put("latitude", it) } }
         .apply { longitude?.let { put("longitude", it) } }
         .putNullable("placeName", placeName)
+        .apply { readingListAt?.let { put("readingListAt", it) } }
 
     private fun TagEntity.toJson() = JSONObject()
         .put("id", id)
@@ -422,6 +438,8 @@ object BackupJson {
             } else {
                 (longOrNull("lastAccessedAt") ?: createdAt).takeIf { it > createdAt }
             },
+            // version 18 以前には無い(「あとで読む」に入れていないものとして読む)
+            readingListAt = if (version >= 19) longOrNull("readingListAt") else null,
             latitude = geoPoint?.latitude,
             longitude = geoPoint?.longitude,
             placeName = if (version >= 18) stringOrNull("placeName")?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_PLACE_NAME_LENGTH) else null,
@@ -532,6 +550,32 @@ object BackupJson {
             quote = NoteText.cleanQuote(stringOrNull("quote")),
             createdAt = createdAt,
             updatedAt = (longOrNull("updatedAt") ?: createdAt).coerceAtLeast(createdAt)
+        )
+    }
+
+    private fun ReviewCardEntity.toJson() = JSONObject()
+        .put("bookmarkId", bookmarkId)
+        .put("dueAt", dueAt)
+        .put("intervalDays", intervalDays)
+        .put("easePermille", easePermille)
+        .put("repetitions", repetitions)
+        .put("lapses", lapses)
+        .apply { lastReviewedAt?.let { put("lastReviewedAt", it) } }
+        .put("createdAt", createdAt)
+
+    /** 壊れた値は範囲内に丸めて読む(間隔・伸びやすさ・回数が範囲外でも、復習できるようにする)。日時が無いカードは読まない。 */
+    private fun JSONObject.toReviewCard(): ReviewCardEntity? {
+        val dueAt = longOrNull("dueAt") ?: return null
+        return ReviewCardEntity(
+            bookmarkId = longOrNull("bookmarkId") ?: return null,
+            dueAt = dueAt,
+            intervalDays = (longOrNull("intervalDays") ?: 0L).coerceIn(0L, SpacedRepetition.MAX_INTERVAL_DAYS.toLong()).toInt(),
+            easePermille = (longOrNull("easePermille") ?: SpacedRepetition.DEFAULT_EASE.toLong())
+                .coerceIn(SpacedRepetition.MIN_EASE.toLong(), MAX_EASE_PERMILLE).toInt(),
+            repetitions = (longOrNull("repetitions") ?: 0L).coerceIn(0L, MAX_COUNT).toInt(),
+            lapses = (longOrNull("lapses") ?: 0L).coerceIn(0L, MAX_COUNT).toInt(),
+            lastReviewedAt = longOrNull("lastReviewedAt"),
+            createdAt = longOrNull("createdAt") ?: dueAt
         )
     }
 

@@ -505,7 +505,7 @@ class FakeBookmarkRepository : BookmarkRepository {
         waitingProcessingCalls += nightly
         return 0
     }
-    override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> = TODO("not used")
+    override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> = bookmarks.value.filter { it.id in ids }
     override suspend fun getAllBookmarkIds(): List<Long> = TODO("not used")
     override suspend fun getEmbeddingModelVersion(bookmarkId: Long): String? = TODO("not used")
 

@@ -5,6 +5,7 @@ import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateReason
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.review.ReviewCard
 
 /** 重複の候補1組([first] と [second])。おすすめの残し方は [suggestedKeepId]。 */
 data class DuplicateMatch(
@@ -47,7 +48,9 @@ data class MergeUndo(
     /** 消した方が入っていたコレクションと入れた日時(コレクションの ID, 日時)。元に戻すときに入れ直す */
     val removedMemberships: List<Pair<Long, Long>> = emptyList(),
     /** 残した方にも入れたコレクションの ID(残した方が元々入っていたものは含まない。元に戻すときに外す) */
-    val addedCollectionIds: List<Long> = emptyList()
+    val addedCollectionIds: List<Long> = emptyList(),
+    /** 残した方へ移した、消した方の復習のカード(元に戻すときに消した方へ戻す。残した方が元々持っていたときは移さないので null) */
+    val movedReviewCard: ReviewCard? = null
 )
 
 /**

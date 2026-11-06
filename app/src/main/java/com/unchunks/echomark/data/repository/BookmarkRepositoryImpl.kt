@@ -9,6 +9,7 @@ import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.CategoryDao
 import com.unchunks.echomark.data.local.dao.CollectionDao
+import com.unchunks.echomark.data.local.dao.ReviewCardDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
@@ -68,6 +69,7 @@ class BookmarkRepositoryImpl @Inject constructor(
     private val tagDao: TagDao,
     private val noteDao: BookmarkNoteDao,
     private val collectionDao: CollectionDao,
+    private val reviewCardDao: ReviewCardDao,
     private val categoryDao: CategoryDao,
     private val vectorSearch: VectorSearchDataSource,
     private val dispatcherProvider: DispatcherProvider,
@@ -536,9 +538,10 @@ class BookmarkRepositoryImpl @Inject constructor(
                     processing = ProcessingInfo(queuedAt = System.currentTimeMillis())
                 ).toEntity()
             )
-            // 削除のときに預かったノートとコレクションへの所属も戻す(コレクションが消えていた分は外部キーで入らないので除く)
+            // 削除のときに預かったノート・コレクションへの所属・復習のカードも戻す(コレクションが消えていた分は外部キーで入らないので除く)
             val extras = deletedExtras.take(bookmark.id)
             noteDao.insertAll(extras.notes)
+            extras.reviewCard?.let { reviewCardDao.insert(it) }
             if (extras.collectionItems.isNotEmpty()) {
                 val existing = collectionDao.getAll().mapTo(HashSet()) { it.id }
                 collectionDao.insertItems(extras.collectionItems.filter { it.collectionId in existing })
@@ -630,10 +633,12 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             // 処理待ち・実行中の本文取得・AI 処理を止める(削除後にクラウドへ送ったり、書き込んだりしない)
             workScheduler.cancel(bookmark.id)
-            // ノートとコレクションへの所属は削除で連鎖して消えるので、「元に戻す」に備えて先に預ける
+            // ノート・コレクションへの所属・復習のカードは削除で連鎖して消えるので、「元に戻す」に備えて先に預ける
             deletedExtras.put(
                 bookmark.id,
-                DeletedBookmarkExtras(noteDao.getByBookmark(bookmark.id), collectionDao.getItemsOfBookmark(bookmark.id))
+                DeletedBookmarkExtras(
+                    noteDao.getByBookmark(bookmark.id), collectionDao.getItemsOfBookmark(bookmark.id), reviewCardDao.getByBookmark(bookmark.id)
+                )
             )
             bookmarkDao.delete(bookmark.toEntity())
             // 紐付けは連鎖して消えるため、AI だけが付けていてどこにも付かなくなったタグを消す

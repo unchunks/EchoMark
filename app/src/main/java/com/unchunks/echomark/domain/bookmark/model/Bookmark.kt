@@ -53,13 +53,18 @@ data class Bookmark(
     /** 場所の経度(度) */
     val longitude: Double? = null,
     /** 場所の名前(利用者が入れたもの)。名前だけで座標が無いこともある */
-    val placeName: String? = null
+    val placeName: String? = null,
+    /** 「あとで読む」に入れた日時。null なら入れていない。読むと(詳細画面を開く・読んだことにする)外れる */
+    val readingListAt: Long? = null
 ) {
     /** 読んだか(詳細画面を開いたか、読んだことにしたか) */
     val isRead: Boolean get() = readAt != null
 
     /** ページのオフラインコピー(MHTML)を保存してある */
     val hasSnapshot: Boolean get() = snapshotPath != null
+
+    /** 「あとで読む」に入れている */
+    val isInReadingList: Boolean get() = readingListAt != null
 
     /** 座標のある場所(地図に出せる)。座標が無ければ null */
     val geoPoint: GeoPoint?

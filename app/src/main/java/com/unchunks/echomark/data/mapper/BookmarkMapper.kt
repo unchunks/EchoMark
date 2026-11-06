@@ -17,7 +17,7 @@ fun BookmarkEntity.toDomain(): Bookmark = Bookmark(
     filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize,
     contentFetchedAt = contentFetchedAt, readAt = readAt,
     snapshotPath = snapshotPath, snapshotPdfPath = snapshotPdfPath, snapshotAt = snapshotAt,
-    latitude = latitude, longitude = longitude, placeName = placeName,
+    latitude = latitude, longitude = longitude, placeName = placeName, readingListAt = readingListAt,
     processing = ProcessingInfo(
         stage = processingStage, queuedAt = queuedAt, startedAt = processingStartedAt,
         stageStartedAt = stageStartedAt, finishedAt = processingFinishedAt, failureReason = failureReason
@@ -32,7 +32,7 @@ fun Bookmark.toEntity(): BookmarkEntity = BookmarkEntity(
     filePath = filePath, mimeType = mimeType, fileName = fileName, fileSize = fileSize,
     contentFetchedAt = contentFetchedAt, readAt = readAt,
     snapshotPath = snapshotPath, snapshotPdfPath = snapshotPdfPath, snapshotAt = snapshotAt,
-    latitude = latitude, longitude = longitude, placeName = placeName,
+    latitude = latitude, longitude = longitude, placeName = placeName, readingListAt = readingListAt,
     processingStage = processing.stage, queuedAt = processing.queuedAt, processingStartedAt = processing.startedAt,
     stageStartedAt = processing.stageStartedAt, processingFinishedAt = processing.finishedAt,
     failureReason = processing.failureReason

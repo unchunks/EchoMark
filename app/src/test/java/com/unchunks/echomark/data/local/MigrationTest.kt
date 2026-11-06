@@ -849,4 +849,42 @@ class MigrationTest {
         assertEquals(listOf("記事", "https://www.google.com/maps/@35.68,139.76,15z", 1L, true, true, true), row)
         connection.close()
     }
+
+    @Test
+    fun migrate27To28_addsReadingListColumnAndEmptyReviewCards() {
+        helper.createDatabase(27).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited, readAt) " +
+                    "VALUES (1, 'TEXT', '読んだ', 100, 200, 'DONE', 1, 0, 0, 0, 150)"
+            )
+            close()
+        }
+
+        // スキーマ v28 と一致するか(列・テーブル・主キー・外部キー)も検証される
+        val connection = helper.runMigrationsAndValidate(28, listOf(MIGRATION_27_28))
+
+        // 既存の行の値は変わらず、「あとで読む」はどれも入っていない(NULL)
+        connection.prepare("SELECT title, isFavorite, readAt, readingListAt FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("読んだ", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+            assertEquals(150L, stmt.getLong(2))
+            assertTrue(stmt.isNull(3))
+        }
+        connection.prepare("SELECT COUNT(*) FROM review_cards").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        // カードは 1 件のブックマークに 1 つだけ(主キー)。ブックマークを削除すると連鎖して消える
+        connection.execSQL("INSERT INTO review_cards (bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, createdAt) VALUES (1, 5, 0, 2500, 0, 0, 5)")
+        val twice = runCatching {
+            connection.execSQL("INSERT INTO review_cards (bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, createdAt) VALUES (1, 6, 0, 2500, 0, 0, 6)")
+        }
+        assertTrue(twice.isFailure)
+        connection.prepare("SELECT lastReviewedAt FROM review_cards").use { stmt ->
+            assertTrue(stmt.step())
+            assertTrue(stmt.isNull(0))
+        }
+        connection.close()
+    }
 }

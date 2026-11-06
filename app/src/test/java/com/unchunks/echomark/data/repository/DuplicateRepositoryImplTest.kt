@@ -10,6 +10,7 @@ import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.CollectionEntity
+import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
@@ -76,6 +77,7 @@ class DuplicateRepositoryImplTest {
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
             collectionDao = db.collectionDao(),
+            reviewCardDao = db.reviewCardDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = dispatcherProvider,
@@ -88,6 +90,7 @@ class DuplicateRepositoryImplTest {
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
             collectionDao = db.collectionDao(),
+            reviewCardDao = db.reviewCardDao(),
             vectorSearch = vectorSearch,
             embeddingProvider = embedding,
             appSettings = settings,
@@ -365,5 +368,57 @@ class DuplicateRepositoryImplTest {
         val merged = load(keep)!!
         assertEquals(1.0, merged.latitude!!, 0.0)
         assertEquals("残す", merged.placeName)
+    }
+
+    @Test
+    fun 統合すると消す方の復習のカードが残す方に移り_元に戻すと戻る() = runBlocking {
+        val keep = save("https://example.com/keep")
+        val remove = save("https://example.com/remove")
+        val card = ReviewCardEntity(remove, dueAt = 9_000, intervalDays = 8, easePermille = 2350, repetitions = 3, lapses = 1, lastReviewedAt = 4_000, createdAt = 100)
+        db.reviewCardDao().insert(card)
+
+        val undo = repository.merge(keep, remove)!!
+
+        // 復習の状態はそのまま残す方に付く
+        assertEquals(card.copy(bookmarkId = keep), db.reviewCardDao().getByBookmark(keep))
+        assertEquals(null, db.reviewCardDao().getByBookmark(remove))
+
+        repository.undoMerge(undo)
+
+        assertEquals(null, db.reviewCardDao().getByBookmark(keep))
+        assertEquals(card, db.reviewCardDao().getByBookmark(remove))
+    }
+
+    @Test
+    fun 残す方に復習のカードがあれば_そのまま残し_消す方のカードは移さない() = runBlocking {
+        val keep = save("https://example.com/keep")
+        val remove = save("https://example.com/remove")
+        val keepCard = ReviewCardEntity(keep, dueAt = 1, intervalDays = 30, easePermille = 2500, repetitions = 5, lapses = 0, lastReviewedAt = 1, createdAt = 1)
+        db.reviewCardDao().insert(keepCard)
+        db.reviewCardDao().insert(keepCard.copy(bookmarkId = remove, intervalDays = 2, repetitions = 1))
+
+        val undo = repository.merge(keep, remove)!!
+
+        assertEquals(keepCard, db.reviewCardDao().getByBookmark(keep))
+        assertEquals(null, undo.movedReviewCard)
+        repository.undoMerge(undo)
+        // 元に戻すと、残した方のカードは変わらず、消した方は(削除のときに預かった)自分のカードが戻る
+        assertEquals(keepCard, db.reviewCardDao().getByBookmark(keep))
+        assertEquals(keepCard.copy(bookmarkId = remove, intervalDays = 2, repetitions = 1), db.reviewCardDao().getByBookmark(remove))
+    }
+
+    @Test
+    fun 統合するとあとで読むは_未読なら古い入れた日時で残り_元に戻すと統合前になる() = runBlocking {
+        val keep = save("https://example.com/keep")
+        val remove = save("https://example.com/remove")
+        db.bookmarkDao().setReadingListAt(keep, 500L)
+        db.bookmarkDao().setReadingListAt(remove, 200L)
+
+        val undo = repository.merge(keep, remove)!!
+        assertEquals(200L, load(keep)!!.readingListAt)
+
+        repository.undoMerge(undo)
+        assertEquals(500L, load(keep)!!.readingListAt)
+        assertEquals(200L, load(remove)!!.readingListAt)
     }
 }

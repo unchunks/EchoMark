@@ -6,6 +6,7 @@ import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
@@ -784,5 +785,72 @@ class BackupJsonTest {
             """{"format":"echomark-backup","version":18,"exportedAt":1,"bookmarks":[{"id":1,"type":"TEXT","title":"t","createdAt":5,"placeName":"$long"}]}"""
         ).data.bookmarks.single()
         assertEquals(100, decoded.placeName!!.length)
+    }
+
+    // ---- あとで読む・復習(version 19) ----
+
+    @Test
+    fun あとで読むと復習のカードは書き出して読み込める() {
+        val bookmark = sample.bookmarks[0].copy(readingListAt = 1234L)
+        val card = ReviewCardEntity(
+            bookmarkId = 1, dueAt = 5_000, intervalDays = 8, easePermille = 2350, repetitions = 3, lapses = 1,
+            lastReviewedAt = 4_000, createdAt = 100
+        )
+        val decoded = BackupJson.decode(BackupJson.encode(sample.copy(bookmarks = listOf(bookmark), reviewCards = listOf(card)))).data
+        assertEquals(1234L, decoded.bookmarks.single().readingListAt)
+        assertEquals(listOf(card), decoded.reviewCards)
+    }
+
+    @Test
+    fun 一度も復習していないカードは最後の復習の日時を省略する() {
+        val card = ReviewCardEntity(1, 5_000, 0, 2500, 0, 0, null, 100)
+        val text = BackupJson.encode(sample.copy(reviewCards = listOf(card)))
+        assertFalse(text.contains("lastReviewedAt"))
+        assertEquals(listOf(card), BackupJson.decode(text).data.reviewCards)
+    }
+
+    @Test
+    fun あとで読むにも復習にも入れていなければ項目を書かない() {
+        val text = BackupJson.encode(sample)
+        assertFalse(text.contains("readingListAt"))
+        assertEquals(emptyList<ReviewCardEntity>(), BackupJson.decode(text).data.reviewCards)
+    }
+
+    @Test
+    fun 古い版のバックアップはあとで読むも復習も無いものとして読む() {
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":18,"exportedAt":1,"bookmarks":[
+              {"id":1,"type":"TEXT","title":"t","createdAt":5,"readingListAt":99}
+            ],"reviewCards":[{"bookmarkId":1,"dueAt":5,"createdAt":1}]}
+            """.trimIndent()
+        )
+        // version 18 以前に項目があっても(あり得ないが)ブックマークの「あとで読む」は読まない。カードの配列は版に関係なく読む
+        assertEquals(null, decoded.data.bookmarks.single().readingListAt)
+    }
+
+    @Test
+    fun 壊れたカードは範囲内に丸めて読み_日時の無いものは読まない() {
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":19,"exportedAt":1,"reviewCards":[
+              {"bookmarkId":1,"dueAt":10,"intervalDays":9999,"easePermille":1,"repetitions":-5,"lapses":9999999,"createdAt":3},
+              {"bookmarkId":2,"dueAt":10,"intervalDays":-4,"easePermille":99999},
+              {"bookmarkId":3},
+              {"dueAt":10}
+            ]}
+            """.trimIndent()
+        ).data.reviewCards
+        assertEquals(2, decoded.size)
+        val first = decoded[0]
+        assertEquals(365, first.intervalDays)
+        assertEquals(1300, first.easePermille)
+        assertEquals(0, first.repetitions)
+        assertEquals(100_000, first.lapses)
+        val second = decoded[1]
+        assertEquals(0, second.intervalDays)
+        assertEquals(3500, second.easePermille)
+        // 作成日時が無ければ、次の復習の日時と同じにする
+        assertEquals(10L, second.createdAt)
     }
 }

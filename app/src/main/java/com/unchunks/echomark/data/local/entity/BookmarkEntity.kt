@@ -66,5 +66,7 @@ data class BookmarkEntity (
     // 名前だけで座標が無いこともある(利用者が名前だけ入れたとき)
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val placeName: String? = null
+    val placeName: String? = null,
+    // v28 で追加。「あとで読む」に入れた日時(#92)。null なら入れていない。読むと(詳細画面を開く・読んだことにする)外れる
+    val readingListAt: Long? = null
 )
