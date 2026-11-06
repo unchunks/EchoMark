@@ -1239,4 +1239,30 @@ class BookmarkViewModelTest {
         assertEquals(TagMatch.ALL, state.tagMatch)
         assertEquals(listOf(1L), state.bookmarks.map { it.id })
     }
+
+    @Test
+    fun 未読のショートカットで起動すると_絞り込みと検索を外して未読だけを出す() = runTest {
+        repository.bookmarks.value = listOf(
+            testBookmark(1, "未読"),
+            testBookmark(2, "既読").copy(readAt = 10),
+            testBookmark(3, "お気に入りの未読").copy(isFavorite = true),
+            testBookmark(4, "アーカイブの未読").copy(isArchived = true)
+        )
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+        // 先に別の絞り込み(お気に入り・既読)をかけておく
+        viewModel.onFilterChange(BookmarkFilter.FAVORITES)
+        viewModel.onReadStateToggled(ReadState.READ)
+        advanceUntilIdle()
+        assertEquals(emptyList<Long>(), viewModel.uiState.value.bookmarks.map { it.id })
+
+        viewModel.handleLaunchAction(ListLaunchAction.UNREAD)
+        advanceUntilIdle()
+
+        // 通常の一覧(アーカイブを除く)の未読だけ
+        assertEquals(BookmarkFilter.ACTIVE, viewModel.uiState.value.filter)
+        assertEquals(ReadState.UNREAD, viewModel.uiState.value.readState)
+        assertEquals(setOf(1L, 3L), viewModel.uiState.value.bookmarks.map { it.id }.toSet())
+    }
 }

@@ -12,6 +12,9 @@ enum class LaunchTarget(val intentValue: String) {
 
     /** 一覧を開いて検索モードにする。 */
     SEARCH("search"),
+
+    /** 一覧を開いて、未読だけに絞る(次に読むものを探す)。 */
+    UNREAD("unread"),
     NEW_CHAT("new_chat"),
     AI_SETTINGS("ai_settings");
 

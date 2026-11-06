@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -34,6 +35,7 @@ class RediscoverWidgetUpdater @Inject constructor(
     // アプリ起動時(メインスレッド)に DB などを作らないよう、使うときに取り出す
     private val bookmarkRepository: Lazy<BookmarkRepository>,
     private val appSettingsRepository: Lazy<AppSettingsRepository>,
+    private val processingSource: WidgetProcessingSource,
     dispatcherProvider: DispatcherProvider
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.default)
@@ -44,6 +46,7 @@ class RediscoverWidgetUpdater @Inject constructor(
             widgetContentChanges(
                 bookmarks = bookmarkRepository.get().observeBookmarks(),
                 dynamicColor = appSettingsRepository.get().dynamicColor,
+                processing = processingSource.observe(),
                 clock = System::currentTimeMillis
             )
                 .catch { e ->
@@ -70,19 +73,28 @@ class RediscoverWidgetUpdater @Inject constructor(
         /** まとめて保存・削除したときに、何度も描き直さないための待ち時間 */
         private const val DEBOUNCE_MS = 1_000L
 
+        /** ウィジェットの表示内容。これが変わったときだけ描き直す。 */
+        internal data class WidgetSnapshot(
+            val items: List<RediscoverWidgetItem>,
+            val dynamicColor: Boolean,
+            val processing: WidgetProcessing?
+        )
+
         /**
-         * ウィジェットの表示内容(出すブックマークと配色)が変わったときだけ流す。
-         * AI の要約が付いたなど、表示に関係ない変更では流さない。
+         * ウィジェットの表示内容(出すブックマーク・配色・AI 処理の進み具合)が変わったときだけ流す。
+         * AI の要約が付いたなど、表示に関係ない変更では流さない([WidgetProcessing] は画面に出す粒度にそろえてあるので、
+         * 進み具合が数%動いただけでも流さない)。
          */
         @OptIn(FlowPreview::class)
         internal fun widgetContentChanges(
             bookmarks: Flow<List<Bookmark>>,
             dynamicColor: Flow<Boolean>,
+            processing: Flow<WidgetProcessing?> = flowOf(null),
             clock: () -> Long,
             debounceMs: Long = DEBOUNCE_MS
-        ): Flow<Pair<List<RediscoverWidgetItem>, Boolean>> =
-            combine(bookmarks, dynamicColor) { list, dynamic ->
-                RediscoverWidgetData.toItems(RediscoverWidgetData.select(list, clock())) to dynamic
+        ): Flow<WidgetSnapshot> =
+            combine(bookmarks, dynamicColor, processing) { list, dynamic, progress ->
+                WidgetSnapshot(RediscoverWidgetData.toItems(RediscoverWidgetData.select(list, clock())), dynamic, progress)
             }
                 .debounce(debounceMs)
                 .distinctUntilChanged()

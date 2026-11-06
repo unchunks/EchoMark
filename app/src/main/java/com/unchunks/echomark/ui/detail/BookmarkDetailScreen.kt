@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AddToHomeScreen
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BookmarkRemove
@@ -153,6 +154,7 @@ import com.unchunks.echomark.ui.places.PlaceCallbacks
 import com.unchunks.echomark.ui.places.PlaceEditViewModel
 import com.unchunks.echomark.ui.places.PlaceSection
 import com.unchunks.echomark.ui.places.openInMapApp
+import com.unchunks.echomark.ui.shortcut.PinnedShortcuts
 import com.unchunks.echomark.ui.snapshot.SnapshotMessage
 import com.unchunks.echomark.ui.snapshot.SnapshotOperation
 import com.unchunks.echomark.ui.snapshot.SnapshotViewerActivity
@@ -295,6 +297,7 @@ fun BookmarkDetailScreen(
             onAskAi = onAskAi,
             onOpenAiSettings = onOpenAiSettings,
             onShare = { shareBookmark(context, it) },
+            onPinShortcut = { PinnedShortcuts.request(context, PinnedShortcuts.forBookmark(it)) },
             onToggleFavorite = viewModel::toggleFavorite,
             onToggleRead = viewModel::toggleRead,
             onReadingStyleChange = viewModel::setReadingStyle,
@@ -381,6 +384,8 @@ class BookmarkDetailCallbacks(
     val onAskAi: (Long) -> Unit = {},
     val onOpenAiSettings: () -> Unit = {},
     val onShare: (Bookmark) -> Unit = {},
+    /** ホーム画面にショートカットを置く */
+    val onPinShortcut: (Bookmark) -> Unit = {},
     val onToggleFavorite: () -> Unit = {},
     /** 読んだことにする / 未読に戻す */
     val onToggleRead: () -> Unit = {},
@@ -699,6 +704,14 @@ private fun DetailTopBar(
                     onClick = {
                         menuOpen = false
                         onAddToCollection()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("ホーム画面に追加") },
+                    leadingIcon = { Icon(Icons.Outlined.AddToHomeScreen, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.onPinShortcut(bookmark)
                     }
                 )
                 DropdownMenuItem(

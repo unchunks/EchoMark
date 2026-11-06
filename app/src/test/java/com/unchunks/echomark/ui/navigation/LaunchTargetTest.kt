@@ -22,6 +22,7 @@ class LaunchTargetTest {
         assertEquals(LaunchTarget.AI_SETTINGS, LaunchTarget.fromIntent(intentWith("ai_settings")))
         assertEquals(LaunchTarget.ADD_BOOKMARK, LaunchTarget.fromIntent(intentWith("add_bookmark")))
         assertEquals(LaunchTarget.SEARCH, LaunchTarget.fromIntent(intentWith("search")))
+        assertEquals(LaunchTarget.UNREAD, LaunchTarget.fromIntent(intentWith("unread")))
     }
 
     @Test

@@ -18,6 +18,7 @@ import com.unchunks.echomark.ui.widget.RediscoverWidgetContent
 import com.unchunks.echomark.ui.widget.RediscoverWidgetData
 import com.unchunks.echomark.ui.widget.RediscoverWidgetItem
 import com.unchunks.echomark.ui.widget.RediscoverWidgetTheme
+import com.unchunks.echomark.ui.widget.WidgetProcessing
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,12 +56,40 @@ class RediscoverWidgetScreenshotTest {
     @Test
     fun empty() = capture("rediscover_widget_empty", DpSize(260.dp, RediscoverWidgetData.MEDIUM_SIZE.height), emptyList())
 
+    // ---- AI 処理の進み具合の欄 ----
+
+    private val processing = WidgetProcessing(running = 2, waiting = 3, fraction = 0.4f, remainingMinutes = 5)
+
+    @Test
+    fun largeProcessing() =
+        capture("rediscover_widget_large_processing", DpSize(260.dp, RediscoverWidgetData.LARGE_SIZE.height), items, processing)
+
+    @Test
+    fun mediumProcessing() =
+        capture("rediscover_widget_medium_processing", DpSize(260.dp, RediscoverWidgetData.MEDIUM_SIZE.height), items, processing)
+
+    @Test
+    fun mediumMinimumWidthProcessing() =
+        capture("rediscover_widget_medium_narrow_processing", RediscoverWidgetData.MEDIUM_SIZE, items, processing)
+
+    @Test
+    fun waitingOnlyProcessing() = capture(
+        "rediscover_widget_medium_waiting",
+        DpSize(260.dp, RediscoverWidgetData.MEDIUM_SIZE.height), items,
+        WidgetProcessing(running = 0, waiting = 12, fraction = null, remainingMinutes = null)
+    )
+
+    @Test
+    fun emptyWithProcessing() = capture(
+        "rediscover_widget_empty_processing", DpSize(260.dp, RediscoverWidgetData.MEDIUM_SIZE.height), emptyList(), processing
+    )
+
     /** ライト・ダーク(ブランド配色)とダイナミックカラー(ライト)で撮る。 */
-    private fun capture(name: String, size: DpSize, items: List<RediscoverWidgetItem>) {
+    private fun capture(name: String, size: DpSize, items: List<RediscoverWidgetItem>, processing: WidgetProcessing? = null) {
         val base: Context = ApplicationProvider.getApplicationContext()
-        render(base, night = false, dynamicColor = false, size, items).captureRoboImage("${name}_light.png")
-        render(base, night = true, dynamicColor = false, size, items).captureRoboImage("${name}_dark.png")
-        render(base, night = false, dynamicColor = true, size, items).captureRoboImage("${name}_dynamic.png")
+        render(base, night = false, dynamicColor = false, size, items, processing).captureRoboImage("${name}_light.png")
+        render(base, night = true, dynamicColor = false, size, items, processing).captureRoboImage("${name}_dark.png")
+        render(base, night = false, dynamicColor = true, size, items, processing).captureRoboImage("${name}_dynamic.png")
     }
 
     private fun render(
@@ -68,7 +97,8 @@ class RediscoverWidgetScreenshotTest {
         night: Boolean,
         dynamicColor: Boolean,
         size: DpSize,
-        items: List<RediscoverWidgetItem>
+        items: List<RediscoverWidgetItem>,
+        processing: WidgetProcessing? = null
     ): Bitmap {
         val config = Configuration(base.resources.configuration).apply {
             uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
@@ -77,7 +107,9 @@ class RediscoverWidgetScreenshotTest {
         val context = base.createConfigurationContext(config)
         val remoteViews = runBlocking {
             GlanceRemoteViews().compose(context, size) {
-                RediscoverWidgetTheme(dynamicColor) { RediscoverWidgetContent(items, RediscoverWidgetData.layoutFor(size)) }
+                RediscoverWidgetTheme(dynamicColor) {
+                    RediscoverWidgetContent(items, RediscoverWidgetData.layoutFor(size, hasProcessing = processing != null), processing)
+                }
             }.remoteViews
         }
         val density = context.resources.displayMetrics.density

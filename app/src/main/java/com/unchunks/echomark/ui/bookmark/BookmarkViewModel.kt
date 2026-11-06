@@ -494,11 +494,23 @@ class BookmarkViewModel @Inject constructor(
         searchQueryFlow.value = ""
     }
 
+    /** 条件をすべて外し、アーカイブ・お気に入りの絞り込みも通常に戻して、未読だけを出す(ショートカットから) */
+    private fun showUnread() {
+        controlsFlow.update {
+            it.copy(
+                query = it.query.clearConditions().copy(filter = BookmarkFilter.ACTIVE, readState = ReadState.UNREAD),
+                sortOverride = null, folderId = null, searchActive = false
+            )
+        }
+        searchQueryFlow.value = ""
+    }
+
     /** ショートカット・ウィジェットから起動したとき、追加シートや検索モードを開く */
     fun handleLaunchAction(action: ListLaunchAction) {
         when (action) {
             ListLaunchAction.ADD_BOOKMARK -> addSheetRequestChannel.trySend(Unit)
             ListLaunchAction.SEARCH -> onSearchActiveChange(true)
+            ListLaunchAction.UNREAD -> showUnread()
         }
     }
 
@@ -799,5 +811,8 @@ enum class ListLaunchAction {
     ADD_BOOKMARK,
 
     /** 検索モードにする */
-    SEARCH
+    SEARCH,
+
+    /** 検索・絞り込みを外し、未読だけにする */
+    UNREAD
 }

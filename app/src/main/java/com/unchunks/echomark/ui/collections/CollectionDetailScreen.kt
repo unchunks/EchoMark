@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AddToHomeScreen
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.Folder
@@ -36,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -47,6 +49,7 @@ import com.unchunks.echomark.ui.components.CompactBookmarkRow
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
+import com.unchunks.echomark.ui.shortcut.PinnedShortcuts
 import kotlinx.coroutines.launch
 
 /**
@@ -60,6 +63,7 @@ fun CollectionDetailScreen(
     viewModel: CollectionDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val title = uiState.collection?.name.orEmpty()
 
@@ -97,6 +101,9 @@ fun CollectionDetailScreen(
         onBack = onBack,
         onOpenBookmark = onOpenBookmark,
         onRemove = viewModel::remove,
+        onPinShortcut = {
+            uiState.collection?.let { PinnedShortcuts.request(context, PinnedShortcuts.forCollection(it.id, it.name)) }
+        },
         onExport = { format ->
             val fileName = BookmarkExporter.fileName(title, format)
             when (format) {
@@ -122,7 +129,8 @@ fun CollectionDetailContent(
     onRemove: (Bookmark) -> Unit,
     onExport: (ExportFormat) -> Unit,
     modifier: Modifier = Modifier,
-    nowMillis: Long = System.currentTimeMillis()
+    nowMillis: Long = System.currentTimeMillis(),
+    onPinShortcut: () -> Unit = {}
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var exportMenuOpen by remember { mutableStateOf(false) }
@@ -140,6 +148,9 @@ fun CollectionDetailContent(
                 },
                 actions = {
                     if (collection != null) {
+                        IconButton(onClick = onPinShortcut) {
+                            Icon(Icons.Outlined.AddToHomeScreen, contentDescription = "ホーム画面にショートカットを置く")
+                        }
                         Box {
                             IconButton(onClick = { exportMenuOpen = true }, enabled = uiState.bookmarks.isNotEmpty()) {
                                 Icon(Icons.Outlined.FileUpload, contentDescription = "ファイルに書き出す")

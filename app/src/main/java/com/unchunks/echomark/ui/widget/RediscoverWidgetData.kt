@@ -20,8 +20,16 @@ data class RediscoverWidgetItem(
  * @param maxItems 出す件数(小: 1件、中: 2件、大: 3件)
  * @param showTitle ヘッダーに「再発見」の文字を出すか(狭いとボタンに押されて切れるため、出さない)
  * @param showSource 各行にサイト名・ドメインを出すか(1件だけの小さいサイズでは高さが足りないため、タイトルだけ)
+ * @param showProcessing AI 処理の進み具合の欄を出すか(処理中・処理待ちがあり、高さが中くらい以上のときだけ)
+ * @param showSearch ヘッダーに検索ボタンを出すか(幅が足りないと「＋」・チャットのボタンが切れるため、ヘッダーに文字を出せる幅のときだけ)
  */
-data class RediscoverWidgetLayout(val maxItems: Int, val showTitle: Boolean, val showSource: Boolean)
+data class RediscoverWidgetLayout(
+    val maxItems: Int,
+    val showTitle: Boolean,
+    val showSource: Boolean,
+    val showProcessing: Boolean = false,
+    val showSearch: Boolean = true
+)
 
 /**
  * 「EchoMark 再発見」ウィジェットに出す内容を決める純粋な処理。
@@ -67,17 +75,24 @@ object RediscoverWidgetData {
     fun toItems(bookmarks: List<Bookmark>): List<RediscoverWidgetItem> =
         bookmarks.map { RediscoverWidgetItem(it.id, it.title, it.displaySource()) }
 
-    /** ウィジェットの大きさから出し方を決める(件数は高さ、ヘッダーの文字は幅で決める)。 */
-    fun layoutFor(size: DpSize): RediscoverWidgetLayout {
-        val maxItems = when {
+    /**
+     * ウィジェットの大きさから出し方を決める(件数は高さ、ヘッダーの文字は幅で決める)。
+     * [hasProcessing](AI 処理中・処理待ちがある)で、高さが中くらい以上なら進み具合の欄を出し、ブックマークは1件減らす(1件は残す)。
+     */
+    fun layoutFor(size: DpSize, hasProcessing: Boolean = false): RediscoverWidgetLayout {
+        val base = when {
             size.height >= LARGE_SIZE.height -> RediscoverSelector.MAX_ITEMS
             size.height >= MEDIUM_SIZE.height -> 2
             else -> 1
         }
+        val showProcessing = hasProcessing && size.height >= MEDIUM_SIZE.height
+        val maxItems = if (showProcessing) (base - 1).coerceAtLeast(1) else base
         return RediscoverWidgetLayout(
             maxItems = maxItems,
             showTitle = size.width >= TITLE_MIN_WIDTH,
-            showSource = maxItems > 1
+            showSource = maxItems > 1,
+            showProcessing = showProcessing,
+            showSearch = size.width >= TITLE_MIN_WIDTH
         )
     }
 }
