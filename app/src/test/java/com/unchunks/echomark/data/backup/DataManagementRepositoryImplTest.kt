@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.CollectionEntity
 import com.unchunks.echomark.data.local.entity.CollectionItemEntity
+import com.unchunks.echomark.data.local.entity.LinkCheckEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
@@ -159,6 +160,19 @@ class DataManagementRepositoryImplTest {
         assertEquals("既存の説明", collections.single().description)
         val newBookmarkId = bookmarkRepository.getAllBookmarkIds().single()
         assertEquals(listOf(existing to newBookmarkId), db.collectionDao().getAllItems().map { it.collectionId to it.bookmarkId })
+    }
+
+    @Test
+    fun 全データ削除はリンク切れの確認の状態も消す_設定を残す場合も() = runBlocking {
+        val id = bookmarkRepository.saveUrlBookmark("https://example.com/a", null, null).id
+        db.linkCheckDao().upsert(LinkCheckEntity(bookmarkId = id, checkedAt = 5, muted = true))
+        settings.linkCheckEnabledFlow.value = false
+
+        repository.deleteAllData(resetSettings = false)
+
+        assertEquals(0, db.linkCheckDao().getAll().size)
+        // 夜の確認のオンオフは設定なので残る
+        assertEquals(false, settings.linkCheckEnabledFlow.value)
     }
 
     @Test

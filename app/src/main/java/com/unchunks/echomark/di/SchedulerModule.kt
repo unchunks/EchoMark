@@ -1,6 +1,7 @@
 package com.unchunks.echomark.di
 
 import com.unchunks.echomark.worker.FeedCheckNightlyTask
+import com.unchunks.echomark.worker.LinkCheckNightlyTask
 import com.unchunks.echomark.worker.NightlyProcessingTask
 import com.unchunks.echomark.worker.NightlyTask
 import com.unchunks.echomark.worker.ProcessingScheduleController
@@ -36,4 +37,9 @@ abstract class SchedulerModule {
     @Binds
     @IntoSet
     abstract fun bindFeedCheckNightlyTask(impl: FeedCheckNightlyTask): NightlyTask
+
+    /** リンク切れの確認(#94)。充電中・Wi-Fi の設定を条件にしたワークとして積む */
+    @Binds
+    @IntoSet
+    abstract fun bindLinkCheckNightlyTask(impl: LinkCheckNightlyTask): NightlyTask
 }

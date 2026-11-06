@@ -305,6 +305,22 @@ val MIGRATION_24_25 = object : Migration(24, 25) {
 }
 
 /**
+ * v25 → v26: リンク切れの確認(link_checks、#94)の状態のテーブルを足す。空で始める。既存のテーブルは変わらない。
+ * 確認した行だけが作られ、ブックマークを削除すると連鎖して消える。
+ */
+val MIGRATION_25_26 = object : Migration(25, 26) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // スキーマ JSON(26.json)の createSql と同じ
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `link_checks` (`bookmarkId` INTEGER NOT NULL, `checkedAt` INTEGER NOT NULL, " +
+                "`failureCount` INTEGER NOT NULL DEFAULT 0, `firstFailedAt` INTEGER, `deadAt` INTEGER, `lastReason` TEXT, " +
+                "`muted` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`bookmarkId`), " +
+                "FOREIGN KEY(`bookmarkId`) REFERENCES `bookmarks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+    }
+}
+
+/**
  * v26 → v27: ブックマークの場所(#85)の列を足す。
  * - bookmarks.latitude / longitude: 緯度・経度(度。どちらも NULL か、両方ある)
  * - bookmarks.placeName: 場所の名前(利用者が入れたもの。名前だけで座標が無いこともある)
@@ -328,7 +344,7 @@ val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
-        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_26_27
+        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

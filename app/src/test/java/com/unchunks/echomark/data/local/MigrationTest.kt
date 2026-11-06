@@ -791,6 +791,44 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate25To26_addsEmptyLinkChecksWithDefaultsAndKeepsBookmarks() {
+        helper.createDatabase(25).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited) " +
+                    "VALUES (1, 'URL', 't', 1, 1, 'DONE', 1, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v26 と一致するか(列・既定値・主キー・外部キー)も検証される
+        val connection = helper.runMigrationsAndValidate(26, listOf(MIGRATION_25_26))
+
+        connection.prepare("SELECT COUNT(*) FROM link_checks").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        connection.prepare("SELECT title, isFavorite FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("t", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+        }
+        // 必須の列だけで入れると、失敗 0 回・「確認しない」ではない、切れた日時は無い
+        connection.execSQL("INSERT INTO link_checks (bookmarkId, checkedAt) VALUES (1, 5)")
+        connection.prepare("SELECT failureCount, muted, deadAt, firstFailedAt, lastReason FROM link_checks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals(0L, stmt.getLong(0))
+            assertEquals(0L, stmt.getLong(1))
+            assertTrue(stmt.isNull(2))
+            assertTrue(stmt.isNull(3))
+            assertTrue(stmt.isNull(4))
+        }
+        // 1つのブックマークの行は1つだけ(主キー)
+        val twice = runCatching { connection.execSQL("INSERT INTO link_checks (bookmarkId, checkedAt) VALUES (1, 6)") }
+        assertTrue(twice.isFailure)
+        connection.close()
+    }
+
+    @Test
     fun migrate26To27_addsEmptyPlaceColumnsAndKeepsRows() {
         helper.createDatabase(26).apply {
             execSQL(

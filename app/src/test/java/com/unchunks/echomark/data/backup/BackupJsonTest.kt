@@ -693,6 +693,25 @@ class BackupJsonTest {
         assertEquals(2, decoded.invalidRecords)
     }
 
+    @Test
+    fun リンク切れの確認をしないブックマークのIDを書き出して読み戻せる() {
+        val text = BackupJson.encode(sample.copy(linkCheckMutedBookmarkIds = listOf(3, 7)))
+
+        assertEquals(listOf(3L, 7L), BackupJson.decode(text).data.linkCheckMutedBookmarkIds)
+        // 確認の状態(失敗の回数・切れた日時)は端末の中のもので、書き出さない
+        listOf("failureCount", "deadAt", "lastReason", "firstFailedAt").forEach { assertFalse(it, text.contains(it)) }
+    }
+
+    @Test
+    fun 確認しないの無い古い版は空として読み_壊れたIDは読み飛ばす() {
+        val old = BackupJson.decode("""{"format":"echomark-backup","version":16,"exportedAt":1}""")
+        assertEquals(emptyList<Long>(), old.data.linkCheckMutedBookmarkIds)
+
+        val decoded = BackupJson.decode("""{"format":"echomark-backup","version":17,"exportedAt":1,"linkCheckMuted":[4,"x",-1,9]}""")
+
+        assertEquals(listOf(4L, 9L), decoded.data.linkCheckMutedBookmarkIds)
+    }
+
     // ---- 場所(version 18) ----
 
     @Test

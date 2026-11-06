@@ -21,9 +21,11 @@ import com.unchunks.echomark.domain.bookmark.model.CollectionResult
 import com.unchunks.echomark.domain.export.ExportException
 import com.unchunks.echomark.domain.export.ExportFormat
 import com.unchunks.echomark.domain.export.ExportResult
+import com.unchunks.echomark.domain.linkcheck.LinkCheckState
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeCollectionRepository
 import com.unchunks.echomark.testing.FakeExportRepository
+import com.unchunks.echomark.testing.FakeLinkCheckRepository
 import com.unchunks.echomark.testing.FakeNoteRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeCategoryRepository
@@ -62,9 +64,10 @@ class BookmarkDetailViewModelTest {
     private val noteRepository = FakeNoteRepository()
     private val collectionRepository = FakeCollectionRepository()
     private val exportRepository = FakeExportRepository()
+    private val linkCheckRepository = FakeLinkCheckRepository()
 
     private fun createViewModel(id: Long = 1L) =
-        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights(), settings, noteRepository, collectionRepository, exportRepository)
+        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights(), settings, noteRepository, collectionRepository, exportRepository, linkCheckRepository)
 
     @Test
     fun 処理の進み具合と段ごとの平均の所要時間を出す() = runTest {
@@ -546,5 +549,82 @@ class BookmarkDetailViewModelTest {
         assertEquals(listOf(Triple(1L, ExportFormat.MARKDOWN, "content://out/1"), Triple(1L, ExportFormat.BROWSER_HTML, "content://out/2")), exportRepository.bookmarkExports)
         assertEquals(BookmarkDetailMessage.Exported(ExportResult(1, 0)), messages[0])
         assertEquals(BookmarkDetailMessage.Failed("保存先にアクセスできませんでした"), messages[1])
+    }
+
+    @Test
+    fun リンク切れの確認の状態を出し_切れていれば切れたと分かる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val dead = LinkCheckState(checkedAt = 5, failureCount = 3, firstFailedAt = 1, deadAt = 5, lastReason = "ページが見つかりません(HTTP 404)")
+        linkCheckRepository.states.value = mapOf(1L to dead)
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(dead, viewModel.uiState.value.linkState)
+        assertTrue(viewModel.uiState.value.linkState!!.isDead)
+    }
+
+    @Test
+    fun まだ確認していないブックマークの状態はnull() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.linkState)
+        assertFalse(viewModel.uiState.value.linkChecking)
+    }
+
+    @Test
+    fun もう一度確認すると結果を知らせ_開けていれば切れの状態が消える() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        linkCheckRepository.states.value = mapOf(1L to LinkCheckState(checkedAt = 5, failureCount = 3, firstFailedAt = 1, deadAt = 5))
+        linkCheckRepository.checkResult = LinkCheckState(checkedAt = 10)
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.recheckLink()
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L), linkCheckRepository.checkCalls)
+        assertEquals(listOf<BookmarkDetailMessage>(BookmarkDetailMessage.LinkChecked(LinkCheckState(checkedAt = 10))), messages)
+        assertFalse(viewModel.uiState.value.linkState!!.isDead)
+        assertFalse(viewModel.uiState.value.linkChecking)
+    }
+
+    @Test
+    fun もう一度確認で通信できなかったり失敗したりしたら結果なしで知らせる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        linkCheckRepository.checkResult = null
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.recheckLink()
+        advanceUntilIdle()
+        linkCheckRepository.failure = IllegalStateException("想定外")
+        viewModel.recheckLink()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf<BookmarkDetailMessage>(BookmarkDetailMessage.LinkChecked(null), BookmarkDetailMessage.LinkChecked(null)),
+            messages
+        )
+        assertFalse(viewModel.uiState.value.linkChecking)
+    }
+
+    @Test
+    fun 確認しないにするとその印が付く() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        linkCheckRepository.states.value = mapOf(1L to LinkCheckState(checkedAt = 5, failureCount = 3, firstFailedAt = 1, deadAt = 5))
+        val viewModel = createViewModel()
+        start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.muteLinkCheck()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.linkState!!.muted)
     }
 }

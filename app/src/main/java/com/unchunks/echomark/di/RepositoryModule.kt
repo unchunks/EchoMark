@@ -13,7 +13,10 @@ import com.unchunks.echomark.data.repository.ProcessingStatsRepositoryImpl
 import com.unchunks.echomark.data.repository.CategoryRepositoryImpl
 import com.unchunks.echomark.data.repository.CollectionRepositoryImpl
 import com.unchunks.echomark.data.repository.DuplicateRepositoryImpl
+import com.unchunks.echomark.data.linkcheck.ConnectivityNetworkStatus
+import com.unchunks.echomark.data.linkcheck.NetworkStatus
 import com.unchunks.echomark.data.repository.ExportRepositoryImpl
+import com.unchunks.echomark.data.repository.LinkCheckRepositoryImpl
 import com.unchunks.echomark.data.repository.NoteRepositoryImpl
 import com.unchunks.echomark.data.repository.PlaceRepositoryImpl
 import com.unchunks.echomark.data.place.AndroidCurrentLocationProvider
@@ -34,6 +37,7 @@ import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.CollectionRepository
 import com.unchunks.echomark.domain.repository.DuplicateRepository
 import com.unchunks.echomark.domain.repository.ExportRepository
+import com.unchunks.echomark.domain.repository.LinkCheckRepository
 import com.unchunks.echomark.domain.repository.NoteRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.domain.usage.ApiUsageRepository
@@ -90,6 +94,16 @@ abstract class RepositoryModule {
     abstract fun bindExportRepository(
         impl: ExportRepositoryImpl
     ): ExportRepository
+
+    @Binds
+    abstract fun bindLinkCheckRepository(
+        impl: LinkCheckRepositoryImpl
+    ): LinkCheckRepository
+
+    @Binds
+    abstract fun bindNetworkStatus(
+        impl: ConnectivityNetworkStatus
+    ): NetworkStatus
 
     @Binds
     abstract fun bindNoteRepository(
