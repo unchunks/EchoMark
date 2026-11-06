@@ -132,4 +132,28 @@ class BookmarkMergeTest {
         assertEquals(35.0, fields.latitude!!, 0.0)
         assertEquals("名前", fields.placeName)
     }
+
+    // ---- あとで読む(#92) ----
+
+    private fun listed(id: Long, listedAt: Long?, readAt: Long? = null) = bookmark(id).copy(readingListAt = listedAt, readAt = readAt)
+
+    @Test
+    fun あとで読むは_未読のままなら入れた日時の古い方で残る() {
+        assertEquals(100L, BookmarkMerge.merge(listed(1, 300), listed(2, 100)).readingListAt)
+        assertEquals(300L, BookmarkMerge.merge(listed(1, 300), listed(2, null)).readingListAt)
+        assertEquals(100L, BookmarkMerge.merge(listed(1, null), listed(2, 100)).readingListAt)
+        assertNull(BookmarkMerge.merge(listed(1, null), listed(2, null)).readingListAt)
+    }
+
+    @Test
+    fun 統合した結果が既読なら_あとで読むから外す() {
+        // どちらかが読んでいれば、統合したあとは読んだことになる
+        assertNull(BookmarkMerge.merge(listed(1, 300), listed(2, null, readAt = 50)).readingListAt)
+        assertNull(BookmarkMerge.merge(listed(1, 300, readAt = 50), listed(2, 100)).readingListAt)
+    }
+
+    @Test
+    fun Fieldsのofはあとで読むもそのまま写す() {
+        assertEquals(300L, BookmarkMerge.Fields.of(listed(1, 300)).readingListAt)
+    }
 }

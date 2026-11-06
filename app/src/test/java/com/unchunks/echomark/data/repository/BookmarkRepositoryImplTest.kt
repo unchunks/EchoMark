@@ -17,6 +17,7 @@ import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
+import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
@@ -80,6 +81,7 @@ class BookmarkRepositoryImplTest {
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
             collectionDao = db.collectionDao(),
+            reviewCardDao = db.reviewCardDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
@@ -1159,5 +1161,35 @@ class BookmarkRepositoryImplTest {
         val saved = repository.getBookmarkById(id)!!
         assertEquals(1.0, saved.latitude!!, 0.0)
         assertEquals("自分で入れた", saved.placeName)
+    }
+
+    // ---- あとで読む・復習(#92・#90) ----
+
+    @Test
+    fun ブックマークを削除すると復習のカードも消え_元に戻すと同じカードが戻る() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        val cardDao = db.reviewCardDao()
+        val card = ReviewCardEntity(id, dueAt = 5_000, intervalDays = 8, easePermille = 2350, repetitions = 3, lapses = 1, lastReviewedAt = 4_000, createdAt = 100)
+        cardDao.insert(card)
+        val bookmark = repository.getBookmarkById(id)!!
+
+        repository.deleteBookmark(bookmark)
+        assertEquals(null, cardDao.getByBookmark(id))
+        repository.restoreBookmark(bookmark)
+
+        // 次の復習の日時・間隔・回数も削除前と同じ
+        assertEquals(card, cardDao.getByBookmark(id))
+    }
+
+    @Test
+    fun 削除を元に戻すとあとで読むに入れていたことも戻る() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        db.bookmarkDao().setReadingListAt(id, 777L)
+        val bookmark = repository.getBookmarkById(id)!!
+
+        repository.deleteBookmark(bookmark)
+        repository.restoreBookmark(bookmark)
+
+        assertEquals(777L, repository.getBookmarkById(id)!!.readingListAt)
     }
 }

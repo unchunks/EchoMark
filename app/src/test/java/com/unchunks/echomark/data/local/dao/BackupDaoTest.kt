@@ -22,6 +22,7 @@ import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
+import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
@@ -706,5 +707,64 @@ class BackupDaoTest {
         // 既にある確認の記録(失敗の回数)は消さない
         assertEquals(2, kept.failureCount)
         assertEquals(2, db.linkCheckDao().getAll().size)
+    }
+
+    // ---- 復習のカード(#90) ----
+
+    private fun card(bookmarkId: Long, dueAt: Long = 5_000) = ReviewCardEntity(
+        bookmarkId = bookmarkId, dueAt = dueAt, intervalDays = 8, easePermille = 2350, repetitions = 3, lapses = 1,
+        lastReviewedAt = 4_000, createdAt = 100
+    )
+
+    @Test
+    fun 復習のカードは書き出され_全データ削除で消える() = runTest {
+        db.bookmarkDao().insert(urlBookmark(1, "https://a"))
+        db.reviewCardDao().insert(card(1))
+
+        assertEquals(listOf(card(1)), dao.snapshot(exportedAt = 1).reviewCards)
+
+        dao.deleteAll()
+        assertEquals(emptyList<ReviewCardEntity>(), dao.snapshot(exportedAt = 1).reviewCards)
+        assertEquals(emptyList<ReviewCardEntity>(), db.reviewCardDao().getAll())
+    }
+
+    @Test
+    fun 復習のカードを読み込むと追加したブックマークにも既にあるブックマークにも付き_既にあるカードは変えない() = runTest {
+        // 同じ URL のブックマークが既にあり(書き出し元の ID 2)、ブックマーク 1 は新しく入る。既にあるほうには別のカードが付いている
+        val existingId = db.bookmarkDao().insert(urlBookmark(50, "https://existing"))
+        val existingCard = card(existingId, dueAt = 111)
+        db.reviewCardDao().insert(existingCard)
+        val data = backup(
+            bookmarks = listOf(urlBookmark(1, "https://new"), urlBookmark(2, "https://existing")),
+        ).copy(reviewCards = listOf(card(1, dueAt = 222), card(2, dueAt = 333), card(99, dueAt = 444)))
+
+        val result = dao.merge(data)
+
+        assertEquals(1, result.reviewCardsAdded)
+        val newId = db.bookmarkDao().getByContentUri("https://new")!!.id
+        assertEquals(222L, db.reviewCardDao().getByBookmark(newId)!!.dueAt)
+        // すでにあるカードの今の復習の状態を残す
+        assertEquals(existingCard, db.reviewCardDao().getByBookmark(existingId))
+        // バックアップに無いブックマーク(99)のカードは読み込まない
+        assertEquals(2, db.reviewCardDao().getAll().size)
+    }
+
+    @Test
+    fun 同じバックアップを2回読み込んでも_カードは増えない() = runTest {
+        val data = backup(bookmarks = listOf(urlBookmark(1, "https://new"))).copy(reviewCards = listOf(card(1)))
+        assertEquals(1, dao.merge(data).reviewCardsAdded)
+        assertEquals(0, dao.merge(data).reviewCardsAdded)
+        assertEquals(1, db.reviewCardDao().getAll().size)
+    }
+
+    @Test
+    fun あとで読むに入れた日時はブックマークと一緒に書き出し_読み込める() = runTest {
+        db.bookmarkDao().insert(urlBookmark(1, "https://a").copy(readingListAt = 4321L))
+        val exported = dao.snapshot(exportedAt = 1)
+        assertEquals(4321L, exported.bookmarks.single().readingListAt)
+
+        dao.deleteAll()
+        dao.merge(exported)
+        assertEquals(4321L, db.bookmarkDao().getByContentUri("https://a")!!.readingListAt)
     }
 }

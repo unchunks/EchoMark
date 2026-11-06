@@ -350,7 +350,7 @@ fun SettingsContent(
                 SettingsSwitchItem(
                     title = "再発見通知",
                     icon = Icons.Outlined.NotificationsActive,
-                    summary = "週に1回、忘れかけたブックマークをお知らせ",
+                    summary = "週に1回、今週のふり返りと忘れかけたブックマークをお知らせ",
                     checked = uiState.rediscover.enabled,
                     onCheckedChange = actions.onRediscoverToggle
                 )

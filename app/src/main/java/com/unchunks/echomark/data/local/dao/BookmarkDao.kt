@@ -34,17 +34,21 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET lastAccessedAt = :lastAccessedAt WHERE id = :id")
     suspend fun updateLastAccessedAt(id: Long, lastAccessedAt: Long)
 
-    /** 詳細画面を開いた: 最後に開いた日時を更新し、まだなら既読にする(読んだ日時は最初に読んだときのまま)。 */
-    @Query("UPDATE bookmarks SET lastAccessedAt = :now, readAt = COALESCE(readAt, :now) WHERE id = :id")
+    /** 詳細画面を開いた: 最後に開いた日時を更新し、まだなら既読にする(読んだ日時は最初に読んだときのまま)。「あとで読む」からは外す。 */
+    @Query("UPDATE bookmarks SET lastAccessedAt = :now, readAt = COALESCE(readAt, :now), readingListAt = NULL WHERE id = :id")
     suspend fun markOpened(id: Long, now: Long)
 
-    /** 読んだことにする(すでに読んでいれば、読んだ日時はそのまま)。 */
-    @Query("UPDATE bookmarks SET readAt = COALESCE(readAt, :now) WHERE id = :id")
+    /** 読んだことにする(すでに読んでいれば、読んだ日時はそのまま)。「あとで読む」からは外す。 */
+    @Query("UPDATE bookmarks SET readAt = COALESCE(readAt, :now), readingListAt = NULL WHERE id = :id")
     suspend fun markRead(id: Long, now: Long)
 
     /** 未読に戻す。 */
     @Query("UPDATE bookmarks SET readAt = NULL WHERE id = :id")
     suspend fun markUnread(id: Long)
+
+    /** 「あとで読む」に入れる([at] は入れた日時)・外す(null)。#92 */
+    @Query("UPDATE bookmarks SET readingListAt = :at WHERE id = :id")
+    suspend fun setReadingListAt(id: Long, at: Long?)
 
     /** まだ読んでいない(アーカイブ以外の)ブックマーク。新しい順に [limit] 件。「次に読む」の候補 */
     @Transaction
@@ -257,14 +261,14 @@ interface BookmarkDao {
         UPDATE bookmarks SET createdAt = :createdAt, lastAccessedAt = :lastAccessedAt, isFavorite = :isFavorite,
             isArchived = :isArchived, readAt = :readAt, content = :content,
             snapshotPath = :snapshotPath, snapshotPdfPath = :snapshotPdfPath, snapshotAt = :snapshotAt,
-            latitude = :latitude, longitude = :longitude, placeName = :placeName
+            latitude = :latitude, longitude = :longitude, placeName = :placeName, readingListAt = :readingListAt
         WHERE id = :id
         """
     )
     suspend fun updateMergedFields(
         id: Long, createdAt: Long, lastAccessedAt: Long, isFavorite: Boolean, isArchived: Boolean, readAt: Long?,
         content: String?, snapshotPath: String?, snapshotPdfPath: String?, snapshotAt: Long?,
-        latitude: Double?, longitude: Double?, placeName: String?
+        latitude: Double?, longitude: Double?, placeName: String?, readingListAt: Long?
     )
 
     /** 場所(座標と名前)を書く。すべて null なら場所を消す(#85)。 */

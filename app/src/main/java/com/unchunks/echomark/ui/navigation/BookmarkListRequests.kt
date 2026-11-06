@@ -88,6 +88,7 @@ internal fun BookmarkListDestination(
     onOpenDiscover: () -> Unit = {},
     onOpenDuplicates: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
+    onOpenReview: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
     onOpenBrokenLinks: () -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
@@ -103,6 +104,7 @@ internal fun BookmarkListDestination(
         onOpenDiscover = onOpenDiscover,
         onOpenDuplicates = onOpenDuplicates,
         onOpenInsights = onOpenInsights,
+        onOpenReview = onOpenReview,
         onOpenCollections = onOpenCollections,
         onOpenBrokenLinks = onOpenBrokenLinks,
         selectedBookmarkId = selectedBookmarkId,

@@ -17,6 +17,7 @@ import com.unchunks.echomark.data.local.dao.CategoryDao
 import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.CollectionDao
 import com.unchunks.echomark.data.local.dao.LinkCheckDao
+import com.unchunks.echomark.data.local.dao.ReviewCardDao
 import com.unchunks.echomark.data.local.dao.SmartFolderDao
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.dao.TagDao
@@ -74,6 +75,11 @@ object DatabaseModule {
     @Provides
     fun provideLinkCheckDao(database: AppDatabase): LinkCheckDao {
         return database.linkCheckDao()
+    }
+
+    @Provides
+    fun provideReviewCardDao(database: AppDatabase): ReviewCardDao {
+        return database.reviewCardDao()
     }
 
     @Provides

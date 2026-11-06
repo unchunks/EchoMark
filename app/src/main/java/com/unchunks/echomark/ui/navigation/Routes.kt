@@ -17,6 +17,15 @@ object Routes {
     /** 重複の整理と関連のまとまり(ブックマーク一覧のメニューから開くサブ画面) */
     const val DUPLICATES = "duplicates"
 
+    /** 読む・ふり返る(今週のふり返り・あとで読む・復習。ブックマーク一覧のメニュー・週1回の通知から開くサブ画面) */
+    const val REVIEW = "review"
+
+    /** 復習(ふり返りの画面から開く) */
+    const val REVIEW_SESSION = "review/session"
+
+    /** 通知から今週のふり返りを開くディープリンク。MainActivity の intent-filter と一致させること */
+    const val REVIEW_DEEP_LINK = "echomark://review"
+
     /** ナレッジグラフ(ブックマークのつながり。ライブラリの分析の画面から開くサブ画面) */
     const val GRAPH = "insights/graph"
 

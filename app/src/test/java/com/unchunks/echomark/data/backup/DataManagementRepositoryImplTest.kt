@@ -67,6 +67,7 @@ class DataManagementRepositoryImplTest {
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
             collectionDao = db.collectionDao(),
+            reviewCardDao = db.reviewCardDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = dispatcherProvider,

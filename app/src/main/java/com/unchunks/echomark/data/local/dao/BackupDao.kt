@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.backup.formatReferencedIds
 import com.unchunks.echomark.data.backup.parseReferencedIds
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
+import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.CollectionEntity
 import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.entity.LinkCheckEntity
@@ -49,7 +50,9 @@ data class BackupMergeResult(
     /** 追加したノートの数(同じブックマークに同じ文章・同じ作成日時のノートが既にあれば追加しない) */
     val notesAdded: Int = 0,
     /** 追加したコレクションの数(同じ名前のコレクションが既にあれば、追加せずそこへブックマークを足す) */
-    val collectionsAdded: Int = 0
+    val collectionsAdded: Int = 0,
+    /** 追加した復習のカードの数(同じブックマークにカードが既にあれば追加しない) */
+    val reviewCardsAdded: Int = 0
 )
 
 /**
@@ -123,6 +126,18 @@ abstract class BackupDao {
     @Query("DELETE FROM collections")
     abstract suspend fun deleteAllCollections()
 
+    @Query("SELECT * FROM review_cards ORDER BY bookmarkId")
+    abstract suspend fun getAllReviewCards(): List<ReviewCardEntity>
+
+    @Query("SELECT COUNT(*) FROM review_cards WHERE bookmarkId = :bookmarkId")
+    abstract suspend fun countReviewCards(bookmarkId: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertReviewCard(card: ReviewCardEntity)
+
+    @Query("DELETE FROM review_cards")
+    abstract suspend fun deleteAllReviewCards()
+
     @Query("SELECT * FROM bookmark_notes ORDER BY bookmarkId, createdAt, id")
     abstract suspend fun getAllNotes(): List<BookmarkNoteEntity>
 
@@ -154,7 +169,8 @@ abstract class BackupDao {
             subscriptions = getAllSubscriptions(),
             notes = getAllNotes(),
             collections = collectionBackups(),
-            linkCheckMutedBookmarkIds = getMutedLinkCheckBookmarkIds()
+            linkCheckMutedBookmarkIds = getMutedLinkCheckBookmarkIds(),
+            reviewCards = getAllReviewCards()
         )
     }
 
@@ -411,6 +427,16 @@ abstract class BackupDao {
             notesAdded++
         }
 
+        // 復習のカード: 書き出し元のブックマークに対応するブックマーク(追加したものも、同じ URL で既にあったものも)に付ける。
+        // すでにカードがあれば、今の復習の状態を残して追加しない(同じバックアップを2回読み込んでも変わらない)
+        var reviewCardsAdded = 0
+        for (card in data.reviewCards) {
+            val bookmarkId = bookmarkIds[card.bookmarkId] ?: continue
+            if (countReviewCards(bookmarkId) > 0) continue
+            insertReviewCard(card.copy(bookmarkId = bookmarkId))
+            reviewCardsAdded++
+        }
+
         // コレクション: 名前(大文字小文字・全角半角を区別しない)が同じコレクションが今の DB にあれば、そこへブックマークを足す
         // (説明は変えない)。無ければ作る。入れるブックマークは書き出し元の ID から付け替える(追加したものも、同じ URL で既にあったものも)
         val collectionIds = getAllCollections().associateTo(HashMap()) { CollectionNames.key(it.name) to it.id }
@@ -460,7 +486,8 @@ abstract class BackupDao {
             smartFoldersAdded = smartFoldersAdded,
             subscriptionsAdded = subscriptionsAdded,
             notesAdded = notesAdded,
-            collectionsAdded = collectionsAdded
+            collectionsAdded = collectionsAdded,
+            reviewCardsAdded = reviewCardsAdded
         )
     }
 
@@ -498,6 +525,8 @@ abstract class BackupDao {
     open suspend fun deleteAll() {
         deleteAllMessages()
         deleteAllNotes()
+        // 復習のカードも利用者のデータ(ブックマークの削除で連鎖して消えるが、明示的に消す)
+        deleteAllReviewCards()
         // コレクションも利用者のデータ(入れた記録は、ブックマークの削除で連鎖して消えるが、空のコレクションは残るので明示的に消す)
         deleteAllCollections()
         deleteAllLinkChecks()

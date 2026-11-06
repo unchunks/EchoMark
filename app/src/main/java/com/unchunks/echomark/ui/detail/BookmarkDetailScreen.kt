@@ -38,6 +38,8 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AddToHomeScreen
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BookmarkRemove
@@ -155,6 +157,7 @@ import com.unchunks.echomark.ui.places.PlaceEditViewModel
 import com.unchunks.echomark.ui.places.PlaceSection
 import com.unchunks.echomark.ui.places.openInMapApp
 import com.unchunks.echomark.ui.shortcut.PinnedShortcuts
+import com.unchunks.echomark.ui.review.ReadLaterViewModel
 import com.unchunks.echomark.ui.snapshot.SnapshotMessage
 import com.unchunks.echomark.ui.snapshot.SnapshotOperation
 import com.unchunks.echomark.ui.snapshot.SnapshotViewerActivity
@@ -198,13 +201,23 @@ fun BookmarkDetailScreen(
     showBackButton: Boolean = true,
     viewModel: BookmarkDetailViewModel = hiltViewModel(),
     snapshotViewModel: PageSnapshotViewModel = hiltViewModel(),
-    placeViewModel: PlaceEditViewModel = hiltViewModel()
+    placeViewModel: PlaceEditViewModel = hiltViewModel(),
+    readLaterViewModel: ReadLaterViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val snapshotOperation by snapshotViewModel.operation.collectAsState()
+    val reviewIds by readLaterViewModel.reviewIds.collectAsState()
     var confirmRemoveSnapshot by rememberSaveable { mutableStateOf(false) }
+
+    // 「あとで読む」「復習に入れる」の結果
+    LaunchedEffect(readLaterViewModel, snackbarHostState) {
+        readLaterViewModel.messages.collect { message ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch { snackbarHostState.showSnackbar(message) }
+        }
+    }
 
     // オフラインコピーの結果(保存した・消した・失敗)
     LaunchedEffect(snapshotViewModel, snackbarHostState) {
@@ -298,6 +311,11 @@ fun BookmarkDetailScreen(
             onOpenAiSettings = onOpenAiSettings,
             onShare = { shareBookmark(context, it) },
             onPinShortcut = { PinnedShortcuts.request(context, PinnedShortcuts.forBookmark(it)) },
+            readLater = ReadLaterCallbacks(
+                isInReview = uiState.bookmark?.id in reviewIds,
+                onToggleReadingList = readLaterViewModel::toggleReadingList,
+                onToggleReview = readLaterViewModel::toggleReview
+            ),
             onToggleFavorite = viewModel::toggleFavorite,
             onToggleRead = viewModel::toggleRead,
             onReadingStyleChange = viewModel::setReadingStyle,
@@ -386,6 +404,8 @@ class BookmarkDetailCallbacks(
     val onShare: (Bookmark) -> Unit = {},
     /** ホーム画面にショートカットを置く */
     val onPinShortcut: (Bookmark) -> Unit = {},
+    /** 「あとで読む」(#92)・復習(#90)に入れる・外す */
+    val readLater: ReadLaterCallbacks = ReadLaterCallbacks(),
     val onToggleFavorite: () -> Unit = {},
     /** 読んだことにする / 未読に戻す */
     val onToggleRead: () -> Unit = {},
@@ -704,6 +724,22 @@ private fun DetailTopBar(
                     onClick = {
                         menuOpen = false
                         onAddToCollection()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(if (bookmark.isInReadingList) "「あとで読む」から外す" else "あとで読む") },
+                    leadingIcon = { Icon(Icons.Outlined.AutoStories, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.readLater.onToggleReadingList(bookmark)
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(if (callbacks.readLater.isInReview) "復習から外す" else "復習に入れる") },
+                    leadingIcon = { Icon(Icons.Outlined.Quiz, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.readLater.onToggleReview(bookmark)
                     }
                 )
                 DropdownMenuItem(
@@ -1481,3 +1517,10 @@ internal fun linkCheckedText(state: com.unchunks.echomark.domain.linkcheck.LinkC
     state.isDead -> "まだ開けません"
     else -> "今回は開けませんでした。続けて開けないときに、リンク切れとしてお知らせします"
 }
+
+/** 詳細画面のメニューの「あとで読む」「復習に入れる」の操作。[isInReview] は復習に入れているか。 */
+class ReadLaterCallbacks(
+    val isInReview: Boolean = false,
+    val onToggleReadingList: (Bookmark) -> Unit = {},
+    val onToggleReview: (Bookmark) -> Unit = {}
+)

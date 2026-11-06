@@ -249,7 +249,8 @@ object BookmarkMerge {
         val snapshotAt: Long?,
         val latitude: Double?,
         val longitude: Double?,
-        val placeName: String?
+        val placeName: String?,
+        val readingListAt: Long?
     ) {
         companion object {
             fun of(bookmark: Bookmark) = Fields(
@@ -264,7 +265,8 @@ object BookmarkMerge {
                 snapshotAt = bookmark.snapshotAt,
                 latitude = bookmark.latitude,
                 longitude = bookmark.longitude,
-                placeName = bookmark.placeName
+                placeName = bookmark.placeName,
+                readingListAt = bookmark.readingListAt
             )
         }
     }
@@ -275,16 +277,18 @@ object BookmarkMerge {
      * - 読んだ日時はどちらかが読んでいれば古い方。本文が空なら [remove] の本文(メモ)を引き継ぐ
      * - オフラインコピーは、[keep] に無いときだけ [remove] のものを引き継ぐ
      * - 場所の座標は、[keep] に無いときだけ [remove] のものを引き継ぐ。名前は [keep] のものを主に、無ければ [remove] のもの
+     * - 「あとで読む」は、統合した結果が未読で、どちらかが入れていれば入れたまま(入れた日時は古い方)。読んでいれば外す
      */
     fun merge(keep: Bookmark, remove: Bookmark): Fields {
         val moveSnapshot = keep.snapshotPath == null && remove.snapshotPath != null
         val moveLocation = keep.geoPoint == null && remove.geoPoint != null
+        val mergedReadAt = listOfNotNull(keep.readAt, remove.readAt).minOrNull()
         return Fields(
             createdAt = minOf(keep.createdAt, remove.createdAt),
             lastAccessedAt = maxOf(keep.lastAccessedAt, remove.lastAccessedAt),
             isFavorite = keep.isFavorite || remove.isFavorite,
             isArchived = keep.isArchived && remove.isArchived,
-            readAt = listOfNotNull(keep.readAt, remove.readAt).minOrNull(),
+            readAt = mergedReadAt,
             content = keep.content?.takeIf { it.isNotBlank() } ?: remove.content?.takeIf { it.isNotBlank() } ?: keep.content,
             snapshotPath = if (moveSnapshot) remove.snapshotPath else keep.snapshotPath,
             snapshotPdfPath = if (moveSnapshot) remove.snapshotPdfPath else keep.snapshotPdfPath,
@@ -292,7 +296,9 @@ object BookmarkMerge {
             // 座標は keep に無いときだけ remove のもの。名前は keep を主に、無ければ remove のもの
             latitude = if (moveLocation) remove.latitude else keep.latitude,
             longitude = if (moveLocation) remove.longitude else keep.longitude,
-            placeName = keep.placeName?.takeIf { it.isNotBlank() } ?: remove.placeName?.takeIf { it.isNotBlank() }
+            placeName = keep.placeName?.takeIf { it.isNotBlank() } ?: remove.placeName?.takeIf { it.isNotBlank() },
+            // 「あとで読む」は、どちらかが入れていて、統合した結果がまだ未読なら残す(入れた日時は古い方)
+            readingListAt = if (mergedReadAt != null) null else listOfNotNull(keep.readingListAt, remove.readingListAt).minOrNull()
         )
     }
 

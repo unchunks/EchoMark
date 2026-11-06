@@ -6,8 +6,8 @@
     <!-- クイック設定のタイル -->
     <string name="tile_clipboard_save_label">クリップボードを保存</string>
     <string name="tile_clipboard_save_subtitle">EchoMark</string>
-    <string name="notification_channel_rediscover">再発見ダイジェスト</string>
-    <string name="notification_channel_rediscover_desc">しばらく開いていないブックマークをお知らせします</string>
+    <string name="notification_channel_rediscover">週1回のお知らせ(ふり返り・再発見)</string>
+    <string name="notification_channel_rediscover_desc">今週のふり返りと、しばらく開いていないブックマークをお知らせします</string>
     <string name="rediscover_notification_title">こんなブックマーク、忘れていませんか?</string>
     <!-- ランチャーのアプリショートカット(res/xml/shortcuts.xml) -->
     <string name="shortcut_new_chat_short">新しいチャット</string>

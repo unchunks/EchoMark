@@ -72,6 +72,8 @@ import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.graph.GraphScreen
 import com.unchunks.echomark.ui.insights.InsightsScreen
 import com.unchunks.echomark.ui.places.PlacesScreen
+import com.unchunks.echomark.ui.review.ReviewHubScreen
+import com.unchunks.echomark.ui.review.ReviewSessionScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
@@ -227,6 +229,7 @@ fun EchoMarkNavHost(
                     onOpenDiscover = { navController.navigate(Routes.DISCOVER) },
                     onOpenDuplicates = { navController.navigate(Routes.DUPLICATES) },
                     onOpenInsights = { navController.navigate(Routes.INSIGHTS) },
+                    onOpenReview = { navController.navigate(Routes.REVIEW) },
                     onOpenCollections = { navController.navigate(Routes.COLLECTIONS) },
                     onOpenBrokenLinks = { navController.navigate(Routes.BROKEN_LINKS) }
                 )
@@ -294,6 +297,30 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 PlacesScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
+                )
+            }
+            // 読む・ふり返る(今週のふり返り・あとで読む・復習)。通知のディープリンクから開くと今週のふり返りの表示になる
+            composable(
+                route = Routes.REVIEW,
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.REVIEW_DEEP_LINK }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                ReviewHubScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) },
+                    onStartReview = dropUnlessResumed { navController.navigate(Routes.REVIEW_SESSION) }
+                )
+            }
+            // 復習。元のブックマークを開けるが、戻ると復習の続きに戻る
+            composable(
+                route = Routes.REVIEW_SESSION,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                ReviewSessionScreen(
                     onBack = navController.popBackAction(),
                     onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )
