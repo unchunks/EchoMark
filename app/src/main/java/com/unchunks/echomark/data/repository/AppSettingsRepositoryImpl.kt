@@ -127,6 +127,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override val linkCheckEnabled: Flow<Boolean> = data.map { it[KEY_LINK_CHECK_ENABLED] ?: true }.distinctUntilChanged()
 
+    override val placesMapBackground: Flow<Boolean> = data.map { it[KEY_PLACES_MAP_BACKGROUND] ?: false }.distinctUntilChanged()
+
+    override suspend fun setPlacesMapBackground(enabled: Boolean) {
+        dataStore.edit { it[KEY_PLACES_MAP_BACKGROUND] = enabled }
+    }
+
     override suspend fun setLinkCheckEnabled(enabled: Boolean) {
         dataStore.edit { it[KEY_LINK_CHECK_ENABLED] = enabled }
     }
@@ -338,6 +344,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
         val KEY_DUPLICATE_SENSITIVITY = stringPreferencesKey("duplicate_sensitivity")
         val KEY_LINK_CHECK_ENABLED = booleanPreferencesKey("link_check_enabled")
+        val KEY_PLACES_MAP_BACKGROUND = booleanPreferencesKey("places_map_background")
         val KEY_DISMISSED_DUPLICATES = stringPreferencesKey("dismissed_duplicates")
         val KEY_BOOKMARK_LIST_DISPLAY = stringPreferencesKey("bookmark_list_display")
         val KEY_READING_FONT_SIZE = stringPreferencesKey("reading_font_size")

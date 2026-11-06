@@ -10,6 +10,7 @@ import com.unchunks.echomark.domain.repository.CurrentLocationResult
 import com.unchunks.echomark.domain.repository.PlaceDetection
 import com.unchunks.echomark.domain.repository.PlaceRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -61,6 +62,7 @@ class PlacesViewModelTest {
 
     private val bookmarks = FakeBookmarkRepository()
     private val places = FakePlaceRepository()
+    private val settings = FakeAppSettingsRepository()
 
     private fun bookmark(id: Long, lat: Double? = null, lng: Double? = null, place: String? = null) = Bookmark(
         id = id, type = BookmarkType.URL, title = "題$id", createdAt = id, lastAccessedAt = id,
@@ -68,7 +70,7 @@ class PlacesViewModelTest {
     )
 
     private fun TestScope.viewModel(): PlacesViewModel {
-        val vm = PlacesViewModel(bookmarks, places, TestDispatcherProvider(UnconfinedTestDispatcher(testScheduler)))
+        val vm = PlacesViewModel(bookmarks, places, settings, TestDispatcherProvider(UnconfinedTestDispatcher(testScheduler)))
         backgroundScope.launch { vm.uiState.collect {} }
         return vm
     }
@@ -188,5 +190,35 @@ class PlacesViewModelTest {
 
         assertEquals(CurrentLocationResult.Found(GeoPoint(35.0, 139.0)), vm.currentLocation())
         assertEquals(1, provider.calls)
+    }
+
+    // ---- 地図の背景のスイッチ ----
+
+    @Test
+    fun 地図の背景は既定でオフ_スイッチで切り替わり保存される() = runTest {
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.mapBackgroundEnabled)
+
+        vm.setMapBackground(true)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.mapBackgroundEnabled)
+        assertTrue(settings.placesMapBackgroundFlow.value)
+
+        vm.setMapBackground(false)
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.mapBackgroundEnabled)
+    }
+
+    @Test
+    fun 設定を初期化すると地図の背景はオフに戻る() = runTest {
+        settings.setPlacesMapBackground(true)
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.mapBackgroundEnabled)
+
+        settings.resetToDefaults()
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.mapBackgroundEnabled)
     }
 }

@@ -4,6 +4,7 @@
 
 - 確認日: 2026-10-19
 - 対象: `refactor/app-cleanup`(13ed26b)の依存。`releaseRuntimeClasspath` の 287 個と、assets のモデル
+- 追記(2026-11-07): 場所の画面の「地図の背景」で MapLibre Native(O24・O25)を足した(付録の表にも足した)。MapLibre の推移的な依存で、`androidx.fragment` は 1.5.4 から 1.8.9 に上がる
 
 ## 確かめ方
 
@@ -49,6 +50,8 @@
 | O21 | Protocol Buffers | BSD 3-Clause License | 可 | バイナリで配布するときは、著作権表示・条件・免責を文書などに含める | `com.google.protobuf:protobuf-javalite` の親 POM と、DataStore・Glance の中に入っている protobuf(`datastore-preferences-external-protobuf`・`glance-appwidget-external-protobuf`)の POM |
 | O22 | Bouncy Castle | Bouncy Castle Licence | 可 | 著作権表示と許諾文を含める | 各 POM と <https://www.bouncycastle.org/licence.html>(配布元が「MIT ライセンスと同じに読む」と説明している)。PdfBox-Android が使う |
 | O23 | LMDB(ObjectBox のネイティブライブラリに含まれる) | OpenLDAP Public License 2.8 | 可 | バイナリで配布するときは著作権表示と通知を再現し、このライセンスの写しを含める。作者の名前を宣伝に使わない | `objectbox-android-db` の POM と、ObjectBox Binary Licence の Schedule A |
+| O24 | MapLibre Native(場所の画面の「地図の背景」。タイルの地図の描画) | BSD 2-Clause License | 可 | バイナリで配布するときは、著作権表示・条件・免責を文書などに含める(下の「MapLibre のライセンス文」) | `org.maplibre.gl:android-sdk-opengl:13.7.1` と `maplibre-android-gestures:0.0.4` の POM(どちらも BSD-2-Clause)と、<https://github.com/maplibre/maplibre-native/blob/main/platform/android/LICENSE.md>(2026-11-07 に確認)。AAR 自体にはライセンスのファイルが入っていない |
+| O25 | MapLibre の Java ユーティリティ(`android-sdk-turf`・`android-sdk-geojson`) | Apache License 2.0 | 可 | O1 と同じ | 各 POM(MapLibre Native が使う) |
 
 ### オープンソースでないもの(利用規約)
 
@@ -70,6 +73,54 @@
 | arXiv(論文) | arXiv API(`export.arxiv.org/api/query`) | 3 秒に 1 回まで・同時に 1 接続まで。メタデータ(タイトル・概要・著者)は CC0。arXiv が後援しているように見せない(<https://info.arxiv.org/help/api/tou.html>) | 規約の文面を確かめた。検索はユーザーの操作ごとに 1 回なので、上限は超えない |
 | YouTube(動画) | InnerTube の検索(`youtubei/v1/search`。字幕の取得と同じ非公開の窓口) | 公開 API ではない。YouTube の利用規約は自動化された手段での利用を制限している | 字幕の取得(`YouTubeTranscriptFetcher`)と同じ扱いにした。規約との関係は**確かめていない**(要確認)。仕様が変わったときは検索先の失敗として扱い、ほかの検索先の結果は出す |
 
+### MapLibre のライセンス文
+
+MapLibre Native(O24)は BSD 2-Clause License。上流の <https://github.com/maplibre/maplibre-native/blob/main/platform/android/LICENSE.md> の文面(2026-11-07 に確認)をそのまま写す。
+
+```text
+BSD 2-Clause License
+
+Copyright (c) 2021 MapLibre contributors
+
+Copyright (c) 2014-2020 Mapbox
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+* Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright
+  notice, this list of conditions and the following disclaimer in
+  the documentation and/or other materials provided with the
+  distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+リポジトリのトップの `LICENSE.md` には、上の 2 行に加えて「Copyright (c) 2018-2021 MapTiler.com」もある。Android 版の `LICENSE.md` は上の 2 行だけで、どちらも BSD 2-Clause で条件は同じ。
+
+## 地図のタイルと地図のデータ(場所の画面の「地図の背景」)
+
+「地図の背景」(`PlacesTileMap`・`PlaceTileMap`)は、スイッチをオンにして場所の画面を開いている間だけ、OpenFreeMap のタイルを取りに行く。アプリに同梱するものではないが、利用の条件と表示の義務をここに記録する。確認日: 2026-11-07。
+
+| 項目 | 内容 | 確かめたこと / 確かめていないこと |
+|---|---|---|
+| タイルの提供元 | OpenFreeMap の公開サーバー(`https://tiles.openfreemap.org/styles/liberty`。URL は `PlacesTileMap.STYLE_URL` の 1 か所) | キーも登録も要らない。<https://openfreemap.org/> は「as is」で提供し、寄付で運営し、将来サービスをやめることがあると書いている。オフラインのダウンロード(地図の持ち帰り)は制限されているので、アプリはタイルを保存して配る機能を持たない |
+| 帰属表示の文言 | 「OpenFreeMap © OpenMapTiles Data from OpenStreetMap」。OpenFreeMap の公式ページ(Quick Start の「Attribution」)の指定で、`https://tiles.openfreemap.org/planet` の TileJSON の `attribution` にも入っている。リンク先はそれぞれ <https://openfreemap.org>・<https://www.openmaptiles.org/>・<https://www.openstreetmap.org/copyright> | 公式ページは「© OpenMapTiles」と「OpenStreetMap のデータ」の部分は必須、「OpenFreeMap」の部分は任意と書いている。アプリは 3 つとも出し、OSM には「© OpenStreetMap contributors」と書いて OSM の著作権のページへリンクする(OSM の帰属表示の指定)。**OpenMapTiles 側の帰属表示のページ(openmaptiles.org の attribution の説明)は取得できなかった(404)ので、そちらの文言は公式ページの引用を通して確かめた範囲** |
+| 画面の表示 | 地図の右下に、帰属表示を常に出す(`MapAttribution`)。MapLibre の組み込みの帰属表示(ボタンで開く形)は使わない | 見た目は Robolectric のスクリーンショットで確かめた(`places_tile_map`)。リンクを押して外のブラウザが開くことは**実機で確かめていない** |
+| 送られる情報 | 見ている範囲のタイルの番号(z/x/y)・スタイルと文字・アイコンの取得・端末の IP アドレス・User-Agent(`EchoMark/<版> (Android; +https://github.com/unchunks/EchoMark)`) | ブックマークのタイトル・URL・メモ・場所の名前・座標は、地図の中(端末の中)の GeoJSON にだけ置き、どこにも送らない(`PlacesTileMapTest` で、点にこれらが入らないことを確かめた)。MapLibre の jar とネイティブライブラリに、利用状況の送信らしい文字列・クラスが無いことをローカルで調べたが、公式の文書にテレメトリーの方針は**書かれていない**ので、実機での通信の確認(プロキシなど)を勧める |
+
 ## ライブラリに含まれる部品(画面には載せていない)
 
 画面は artifact(POM)の単位でまとめている。artifact の中に入っている、別のライセンスの部品は次のとおり。
@@ -81,6 +132,8 @@
 - **PdfBox-Android**: リポジトリの LICENSE.txt に、PDFBox / FontBox への寄稿(BSD 形式)、Adobe Font Metrics(AFM。Adobe の許諾文)、Adobe の CMap(BSD 形式)、PaDaF PDF/A preflight(Apache 2.0)の条件がある。AAR の assets には、これらのほかに次のものが入っている。
   - Liberation Sans 2.1.5(`assets/com/tom_roush/pdfbox/resources/ttf/LiberationSans-Regular.ttf`): フォントの name テーブルに「Licensed under the SIL Open Font License, Version 1.1」、著作権は Google Corporation(2010)と Red Hat, Inc.(2012)。LICENSE.txt には書かれていない。SIL OFL 1.1 は、ソフトウェアに同梱して配布するときに著作権表示とライセンス文を含めることを求める。
   - グリフ一覧(`glyphlist/*.txt`)と Unicode のデータ(`Scripts.txt`・`BidiMirroring.txt`): ライセンスは確かめていない。
+- **MapLibre Native**(`libmaplibre.so`): 上流の <https://github.com/maplibre/maplibre-native/blob/main/LICENSES.core.md>(2026-11-07 に確認)に、中で使う C++ の部品のライセンス文がある。Boost・FreeType・HarfBuzz・RapidJSON・nlohmann/json・earcut.hpp・protozero・polylabel・csscolorparser・parsedate(curl)・SIMDe・FSST・FastPFOR・expected-lite・unique_resource・metal-cpp(Apple 向けだけ)と、Mapbox の各ライブラリ(kdbush・supercluster・geojson-vt・shelf-pack・cheap-ruler・vector-tile・wagyu・variant など)。ビルドに実際に入るものと、各ライセンスの対応は**まだ確かめていない**。RapidJSON の項には、JSON License(JSON.org の JSON_checker。「善のために使え」の一文を含むことで知られる)のコードが `bin/jsonchecker/` にあるとだけ書かれている。テスト用のコードでライブラリには入らないと読めるが、**ネイティブライブラリの中身では確かめていない**。
+  - Java 側の推移的な依存: `maplibre-android-gestures`(BSD-2)・`android-sdk-turf`・`android-sdk-geojson`(Apache 2.0)。`androidx.fragment` が 1.8.9 に上がり、MapLibre の OkHttp 4.12.0 はアプリの OkHttp 5.5.0 に解決される。
 - **ObjectBox のネイティブライブラリ**: Binary Licence の Schedule A に、LMDB(OpenLDAP Public License)のほか、FlatBuffers・FreeMarker・greenDAO・Javassist・Moshi・Kotlin(Apache 2.0)がある。
 
 ## ビルド時だけ使うもの(アプリには入らない)
@@ -371,6 +424,10 @@
 | O22 Bouncy Castle | `org.bouncycastle:bcpkix-jdk15to18` | 1.72 | Bouncy Castle Licence | Maven Central |
 | O22 Bouncy Castle | `org.bouncycastle:bcprov-jdk15to18` | 1.72 | Bouncy Castle Licence | Maven Central |
 | O22 Bouncy Castle | `org.bouncycastle:bcutil-jdk15to18` | 1.72 | Bouncy Castle Licence | Maven Central |
+| O24 MapLibre Native | `org.maplibre.gl:android-sdk-opengl` | 13.7.1 | BSD | Maven Central |
+| O24 MapLibre Native | `org.maplibre.gl:maplibre-android-gestures` | 0.0.4 | BSD | Maven Central |
+| O25 MapLibre Java ユーティリティ | `org.maplibre.gl:android-sdk-geojson` | 6.0.1 | The Apache Software License, Version 2.0 | Maven Central |
+| O25 MapLibre Java ユーティリティ | `org.maplibre.gl:android-sdk-turf` | 6.0.1 | The Apache Software License, Version 2.0 | Maven Central |
 | N1 ML Kit | `com.google.android.gms:play-services-mlkit-image-labeling` | 16.0.8 | ML Kit Terms of Service | Google Maven |
 | N1 ML Kit | `com.google.android.gms:play-services-mlkit-text-recognition-common` | 19.1.0 | ML Kit Terms of Service | Google Maven |
 | N1 ML Kit | `com.google.android.gms:play-services-mlkit-text-recognition-japanese` | 16.0.1 | ML Kit Terms of Service | Google Maven |

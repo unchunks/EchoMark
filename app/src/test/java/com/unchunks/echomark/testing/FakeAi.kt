@@ -65,6 +65,7 @@ class FakeAppSettingsRepository(
     val searchHistoryFlow = MutableStateFlow<List<String>>(emptyList())
     val duplicateSensitivityFlow = MutableStateFlow(DuplicateSensitivity.DEFAULT)
     val linkCheckEnabledFlow = MutableStateFlow(true)
+    val placesMapBackgroundFlow = MutableStateFlow(false)
     val dismissedDuplicatesFlow = MutableStateFlow<Set<DuplicatePair>>(emptySet())
     var resetCalls = 0
     val processingFlow = MutableStateFlow(ProcessingSettings())
@@ -111,6 +112,8 @@ class FakeAppSettingsRepository(
     override val duplicateSensitivity: Flow<DuplicateSensitivity> = duplicateSensitivityFlow
     override val linkCheckEnabled: Flow<Boolean> = linkCheckEnabledFlow
     override suspend fun setLinkCheckEnabled(enabled: Boolean) { linkCheckEnabledFlow.value = enabled }
+    override val placesMapBackground: Flow<Boolean> = placesMapBackgroundFlow
+    override suspend fun setPlacesMapBackground(enabled: Boolean) { placesMapBackgroundFlow.value = enabled }
     override val dismissedDuplicates: Flow<Set<DuplicatePair>> = dismissedDuplicatesFlow
     override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) { duplicateSensitivityFlow.value = sensitivity }
     override suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>) {
@@ -143,6 +146,7 @@ class FakeAppSettingsRepository(
         readingStyleFlow.value = ReadingStyle()
         duplicateSensitivityFlow.value = DuplicateSensitivity.DEFAULT
         linkCheckEnabledFlow.value = true
+        placesMapBackgroundFlow.value = false
         processingFlow.value = ProcessingSettings()
         summaryStyleFlow.value = SummaryStyle()
         chatTemplatesFlow.value = emptyList()

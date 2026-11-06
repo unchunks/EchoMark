@@ -271,7 +271,9 @@ private val OPEN_SOURCE_LIBRARIES = listOf(
     "Checker Framework のアノテーション" to "MIT License / GPL 2.0 with Classpath Exception",
     "Protocol Buffers" to "BSD 3-Clause License",
     "Bouncy Castle" to "Bouncy Castle Licence",
-    "LMDB(ObjectBox のネイティブライブラリに含まれる)" to "OpenLDAP Public License 2.8"
+    "LMDB(ObjectBox のネイティブライブラリに含まれる)" to "OpenLDAP Public License 2.8",
+    "MapLibre Native(場所の画面の地図の背景)" to "BSD 2-Clause License",
+    "MapLibre の Java ユーティリティ(turf・geojson)" to "Apache License 2.0"
 )
 
 /** アプリに同梱される、オープンソースでないライブラリ・モデルと利用規約。 */
