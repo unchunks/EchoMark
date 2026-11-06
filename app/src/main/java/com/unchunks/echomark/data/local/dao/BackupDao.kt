@@ -16,6 +16,7 @@ import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.CollectionEntity
 import com.unchunks.echomark.data.local.entity.CollectionItemEntity
+import com.unchunks.echomark.data.local.entity.LinkCheckEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
@@ -81,6 +82,18 @@ abstract class BackupDao {
     @Query("SELECT * FROM smart_folders ORDER BY createdAt, id")
     abstract suspend fun getAllSmartFolders(): List<SmartFolderEntity>
 
+    @Query("SELECT bookmarkId FROM link_checks WHERE muted = 1 ORDER BY bookmarkId")
+    abstract suspend fun getMutedLinkCheckBookmarkIds(): List<Long>
+
+    @Query("UPDATE link_checks SET muted = 1 WHERE bookmarkId = :bookmarkId")
+    abstract suspend fun muteLinkCheck(bookmarkId: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertLinkCheck(entity: LinkCheckEntity): Long
+
+    @Query("DELETE FROM link_checks")
+    abstract suspend fun deleteAllLinkChecks()
+
     @Query("SELECT * FROM collections ORDER BY createdAt, id")
     abstract suspend fun getAllCollections(): List<CollectionEntity>
 
@@ -140,7 +153,8 @@ abstract class BackupDao {
             smartFolders = getAllSmartFolders().map { it.toBackup(tagNameById) },
             subscriptions = getAllSubscriptions(),
             notes = getAllNotes(),
-            collections = collectionBackups()
+            collections = collectionBackups(),
+            linkCheckMutedBookmarkIds = getMutedLinkCheckBookmarkIds()
         )
     }
 
@@ -416,6 +430,12 @@ abstract class BackupDao {
             }
         }
 
+        // リンク切れの確認で「確認しない」を選んだブックマーク: 付け替えた先(追加したものも、同じ URL で既にあったものも)で「確認しない」にする
+        for (exportedId in data.linkCheckMutedBookmarkIds) {
+            val bookmarkId = bookmarkIds[exportedId] ?: continue
+            if (muteLinkCheck(bookmarkId) == 0) insertLinkCheck(LinkCheckEntity(bookmarkId = bookmarkId, muted = true))
+        }
+
         var messagesAdded = 0
         for (message in data.messages) {
             val conversationId = conversationIds[message.conversationId] ?: continue
@@ -480,6 +500,7 @@ abstract class BackupDao {
         deleteAllNotes()
         // コレクションも利用者のデータ(入れた記録は、ブックマークの削除で連鎖して消えるが、空のコレクションは残るので明示的に消す)
         deleteAllCollections()
+        deleteAllLinkChecks()
         deleteAllConversations()
         deleteAllCrossRefs()
         deleteAllTags()

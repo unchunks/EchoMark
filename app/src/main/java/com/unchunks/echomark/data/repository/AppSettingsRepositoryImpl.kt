@@ -125,6 +125,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
             ?: DuplicateSensitivity.DEFAULT
     }.distinctUntilChanged()
 
+    override val linkCheckEnabled: Flow<Boolean> = data.map { it[KEY_LINK_CHECK_ENABLED] ?: true }.distinctUntilChanged()
+
+    override suspend fun setLinkCheckEnabled(enabled: Boolean) {
+        dataStore.edit { it[KEY_LINK_CHECK_ENABLED] = enabled }
+    }
+
     override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) {
         dataStore.edit { it[KEY_DUPLICATE_SENSITIVITY] = sensitivity.name }
     }
@@ -331,6 +337,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_CHAT_TEMPLATES = stringPreferencesKey("chat_templates")
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
         val KEY_DUPLICATE_SENSITIVITY = stringPreferencesKey("duplicate_sensitivity")
+        val KEY_LINK_CHECK_ENABLED = booleanPreferencesKey("link_check_enabled")
         val KEY_DISMISSED_DUPLICATES = stringPreferencesKey("dismissed_duplicates")
         val KEY_BOOKMARK_LIST_DISPLAY = stringPreferencesKey("bookmark_list_display")
         val KEY_READING_FONT_SIZE = stringPreferencesKey("reading_font_size")

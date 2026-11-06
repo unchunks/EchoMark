@@ -64,6 +64,7 @@ class FakeAppSettingsRepository(
     val chatTemplatesFlow = MutableStateFlow<List<ChatTemplate>>(emptyList())
     val searchHistoryFlow = MutableStateFlow<List<String>>(emptyList())
     val duplicateSensitivityFlow = MutableStateFlow(DuplicateSensitivity.DEFAULT)
+    val linkCheckEnabledFlow = MutableStateFlow(true)
     val dismissedDuplicatesFlow = MutableStateFlow<Set<DuplicatePair>>(emptySet())
     var resetCalls = 0
     val processingFlow = MutableStateFlow(ProcessingSettings())
@@ -108,6 +109,8 @@ class FakeAppSettingsRepository(
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) { localLlmUseGpuFlow.value = enabled }
     override suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder) { bookmarkSortOrderFlow.value = sortOrder }
     override val duplicateSensitivity: Flow<DuplicateSensitivity> = duplicateSensitivityFlow
+    override val linkCheckEnabled: Flow<Boolean> = linkCheckEnabledFlow
+    override suspend fun setLinkCheckEnabled(enabled: Boolean) { linkCheckEnabledFlow.value = enabled }
     override val dismissedDuplicates: Flow<Set<DuplicatePair>> = dismissedDuplicatesFlow
     override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) { duplicateSensitivityFlow.value = sensitivity }
     override suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>) {
@@ -139,6 +142,7 @@ class FakeAppSettingsRepository(
         bookmarkListDisplayFlow.value = BookmarkListDisplay.CARD
         readingStyleFlow.value = ReadingStyle()
         duplicateSensitivityFlow.value = DuplicateSensitivity.DEFAULT
+        linkCheckEnabledFlow.value = true
         processingFlow.value = ProcessingSettings()
         summaryStyleFlow.value = SummaryStyle()
         chatTemplatesFlow.value = emptyList()

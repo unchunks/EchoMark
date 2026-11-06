@@ -23,6 +23,9 @@ object Routes {
     /** コレクションの一覧(ブックマーク一覧のメニューから開くサブ画面) */
     const val COLLECTIONS = "collections"
 
+    /** リンク切れの一覧(ブックマーク一覧のメニューから開くサブ画面) */
+    const val BROKEN_LINKS = "broken-links"
+
     /** コレクションの中身(コレクションの一覧から開く) */
     const val COLLECTION_DETAIL = "collections/{collectionId}"
     fun collectionDetail(id: Long) = "collections/$id"

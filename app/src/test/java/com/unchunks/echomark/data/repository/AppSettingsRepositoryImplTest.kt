@@ -145,6 +145,18 @@ class AppSettingsRepositoryImplTest {
     }
 
     @Test
+    fun 夜のリンク切れの確認は既定でオンで_切り替えて保存できる() = runTest {
+        val repository = createRepository()
+        assertTrue(repository.linkCheckEnabled.first())
+
+        repository.setLinkCheckEnabled(false)
+        assertFalse(repository.linkCheckEnabled.first())
+
+        repository.setLinkCheckEnabled(true)
+        assertTrue(repository.linkCheckEnabled.first())
+    }
+
+    @Test
     fun 重複の見分け方は既定が標準で_保存でき_読めない名前は既定に戻る() = runTest {
         val dataStore = InMemorySettingsDataStore()
         val repository = createRepository(dataStore)

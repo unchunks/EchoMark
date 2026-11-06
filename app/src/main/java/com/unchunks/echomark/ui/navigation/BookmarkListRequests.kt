@@ -89,6 +89,7 @@ internal fun BookmarkListDestination(
     onOpenDuplicates: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
+    onOpenBrokenLinks: () -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
 ) {
     BookmarkListRequestsEffect(
@@ -103,6 +104,7 @@ internal fun BookmarkListDestination(
         onOpenDuplicates = onOpenDuplicates,
         onOpenInsights = onOpenInsights,
         onOpenCollections = onOpenCollections,
+        onOpenBrokenLinks = onOpenBrokenLinks,
         selectedBookmarkId = selectedBookmarkId,
         onBookmarkRemoved = onBookmarkRemoved,
         viewModel = viewModel

@@ -11,6 +11,7 @@ import com.unchunks.echomark.domain.bookmark.model.CollectionResult
 import com.unchunks.echomark.domain.export.ExportException
 import com.unchunks.echomark.domain.export.ExportFormat
 import com.unchunks.echomark.domain.export.ExportResult
+import com.unchunks.echomark.domain.linkcheck.LinkCheckState
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -24,6 +25,7 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.CategoryRepository
 import com.unchunks.echomark.domain.repository.CollectionRepository
 import com.unchunks.echomark.domain.repository.ExportRepository
+import com.unchunks.echomark.domain.repository.LinkCheckRepository
 import com.unchunks.echomark.domain.repository.NoteRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
@@ -75,7 +77,11 @@ data class BookmarkDetailUiState(
     /** 作ってあるコレクション(追加のシートに出す。#91) */
     val collections: List<BookmarkCollection> = emptyList(),
     /** このブックマークが入っているコレクションの ID */
-    val collectionIds: Set<Long> = emptySet()
+    val collectionIds: Set<Long> = emptySet(),
+    /** リンク切れの確認の状態(#94)。まだ確認していなければ null */
+    val linkState: LinkCheckState? = null,
+    /** リンクを今すぐ確認している */
+    val linkChecking: Boolean = false
 )
 
 /** 要約の翻訳の状態(#24)。翻訳は保存せず、画面を閉じたら消える。 */
@@ -109,6 +115,9 @@ sealed interface BookmarkDetailMessage {
     /** ファイルに書き出した */
     data class Exported(val result: ExportResult) : BookmarkDetailMessage
 
+    /** リンクを確認した。[state] は結果(通信できなかったときは null) */
+    data class LinkChecked(val state: LinkCheckState?) : BookmarkDetailMessage
+
     /** AI の再処理を始めた */
     data object ReprocessStarted : BookmarkDetailMessage
 
@@ -135,7 +144,8 @@ class BookmarkDetailViewModel @Inject constructor(
     private val appSettings: AppSettingsRepository,
     private val noteRepository: NoteRepository,
     private val collectionRepository: CollectionRepository,
-    private val exportRepository: ExportRepository
+    private val exportRepository: ExportRepository,
+    private val linkCheckRepository: LinkCheckRepository
 ) : ViewModel() {
 
     // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
@@ -227,13 +237,33 @@ class BookmarkDetailViewModel @Inject constructor(
             emit(emptySet())
         }
 
+    /** コレクションへの所属とリンク切れの確認の状態(補助的な表示。[Extras] にまとめる) */
+    private class Membership(
+        val collections: List<BookmarkCollection>,
+        val collectionIds: Set<Long>,
+        val linkState: LinkCheckState?,
+        val linkChecking: Boolean
+    )
+
+    /** リンクを今すぐ確認している間 true */
+    private val linkChecking = MutableStateFlow(false)
+
+    /** リンク切れの確認の状態。補助的な表示なので、読めなければ無いものとして扱う */
+    private val linkStateFlow = linkCheckRepository.observeState(bookmarkId)
+        .catch { e ->
+            if (e is CancellationException) throw e
+            Timber.w(e, "リンクの確認の状態の読み込みに失敗")
+            emit(null)
+        }
+
+    private val membershipFlow = combine(collectionsFlow, collectionIdsFlow, linkStateFlow, linkChecking, ::Membership)
+
     /** [uiState] に合わせる補助的な状態(5つ以内の Flow にまとめるための入れ物) */
     private class Extras(
         val terms: List<String>,
         val readingStyle: ReadingStyle,
         val notes: List<BookmarkNote>,
-        val collections: List<BookmarkCollection>,
-        val collectionIds: Set<Long>
+        val membership: Membership
     )
 
     private val translation = MutableStateFlow<TranslationState>(TranslationState.Idle)
@@ -252,12 +282,13 @@ class BookmarkDetailViewModel @Inject constructor(
     val uiState: StateFlow<BookmarkDetailUiState> =
         combine(
             baseState, summaryHistoryFlow, translation, categoryChoicesFlow,
-            combine(highlightTermsFlow, readingStyleFlow, notesFlow, collectionsFlow, collectionIdsFlow, ::Extras)
+            combine(highlightTermsFlow, readingStyleFlow, notesFlow, membershipFlow, ::Extras)
         ) { state, history, translation, categories, extras ->
             state.copy(
                 summaryHistory = history, translation = translation, categoryChoices = categories,
                 highlightTerms = extras.terms, readingStyle = extras.readingStyle, notes = extras.notes,
-                collections = extras.collections, collectionIds = extras.collectionIds
+                collections = extras.membership.collections, collectionIds = extras.membership.collectionIds,
+                linkState = extras.membership.linkState, linkChecking = extras.membership.linkChecking
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
@@ -353,6 +384,29 @@ class BookmarkDetailViewModel @Inject constructor(
                 messageChannel.send(BookmarkDetailMessage.Failed("書き出せませんでした。"))
             }
         }
+    }
+
+    /** リンクが今も開けるかを今すぐ確認する(「もう一度確認」)。結果は Snackbar で知らせる */
+    fun recheckLink() {
+        if (linkChecking.value) return
+        viewModelScope.launch {
+            linkChecking.value = true
+            try {
+                messageChannel.send(BookmarkDetailMessage.LinkChecked(linkCheckRepository.checkNow(bookmarkId)))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "リンクの確認に失敗")
+                messageChannel.send(BookmarkDetailMessage.LinkChecked(null))
+            } finally {
+                linkChecking.value = false
+            }
+        }
+    }
+
+    /** このリンクの夜の確認をやめる(リンク切れの知らせも出さない) */
+    fun muteLinkCheck() {
+        viewModelScope.launch { linkCheckRepository.setMuted(bookmarkId, true) }
     }
 
     fun toggleFavorite() {

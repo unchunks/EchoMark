@@ -48,6 +48,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.SearchOff
@@ -167,6 +168,7 @@ fun BookmarkListScreen(
     onOpenDuplicates: () -> Unit = {},
     onOpenInsights: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
+    onOpenBrokenLinks: () -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -293,6 +295,7 @@ fun BookmarkListScreen(
             onOpenDuplicates = onOpenDuplicates,
             onOpenInsights = onOpenInsights,
             onOpenCollections = onOpenCollections,
+            onOpenBrokenLinks = onOpenBrokenLinks,
             onRetry = viewModel::retry
         ),
         selectedBookmarkId = selectedBookmarkId
@@ -385,6 +388,7 @@ class BookmarkListCallbacks(
     val onOpenDuplicates: () -> Unit = {},
     val onOpenInsights: () -> Unit = {},
     val onOpenCollections: () -> Unit = {},
+    val onOpenBrokenLinks: () -> Unit = {},
     val onRetry: () -> Unit = {}
 )
 
@@ -516,7 +520,8 @@ fun BookmarkListContent(
                     onOpenDiscover = callbacks.onOpenDiscover,
                     onOpenDuplicates = callbacks.onOpenDuplicates,
                     onOpenInsights = callbacks.onOpenInsights,
-                    onOpenCollections = callbacks.onOpenCollections
+                    onOpenCollections = callbacks.onOpenCollections,
+                    onOpenBrokenLinks = callbacks.onOpenBrokenLinks
                 )
             }
         },
@@ -732,7 +737,8 @@ private fun ListTopBar(
     onOpenDiscover: () -> Unit,
     onOpenDuplicates: () -> Unit,
     onOpenInsights: () -> Unit,
-    onOpenCollections: () -> Unit
+    onOpenCollections: () -> Unit,
+    onOpenBrokenLinks: () -> Unit
 ) {
     var sortMenuOpen by remember { mutableStateOf(false) }
     var displayMenuOpen by remember { mutableStateOf(false) }
@@ -818,6 +824,14 @@ private fun ListTopBar(
                         onClick = {
                             overflowOpen = false
                             onOpenTagManagement()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("リンク切れ") },
+                        leadingIcon = { Icon(Icons.Outlined.LinkOff, contentDescription = null) },
+                        onClick = {
+                            overflowOpen = false
+                            onOpenBrokenLinks()
                         }
                     )
                     DropdownMenuItem(
