@@ -77,15 +77,15 @@ class RediscoverWidgetDataTest {
     @Test
     fun 件数は高さで_ヘッダーの文字は幅で決める() {
         assertEquals(
-            RediscoverWidgetLayout(maxItems = 1, showTitle = false, showSource = false),
+            RediscoverWidgetLayout(maxItems = 1, showTitle = false, showSource = false, showSearch = false),
             RediscoverWidgetData.layoutFor(RediscoverWidgetData.SMALL_SIZE)
         )
         assertEquals(
-            RediscoverWidgetLayout(maxItems = 2, showTitle = false, showSource = true),
+            RediscoverWidgetLayout(maxItems = 2, showTitle = false, showSource = true, showSearch = false),
             RediscoverWidgetData.layoutFor(RediscoverWidgetData.MEDIUM_SIZE)
         )
         assertEquals(
-            RediscoverWidgetLayout(maxItems = 3, showTitle = true, showSource = true),
+            RediscoverWidgetLayout(maxItems = 3, showTitle = true, showSource = true, showSearch = true),
             RediscoverWidgetData.layoutFor(DpSize(260.dp, 260.dp))
         )
         assertEquals(1, RediscoverWidgetData.layoutFor(DpSize(300.dp, 150.dp)).maxItems)
