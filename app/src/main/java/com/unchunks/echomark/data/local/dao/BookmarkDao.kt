@@ -256,14 +256,33 @@ interface BookmarkDao {
         """
         UPDATE bookmarks SET createdAt = :createdAt, lastAccessedAt = :lastAccessedAt, isFavorite = :isFavorite,
             isArchived = :isArchived, readAt = :readAt, content = :content,
-            snapshotPath = :snapshotPath, snapshotPdfPath = :snapshotPdfPath, snapshotAt = :snapshotAt
+            snapshotPath = :snapshotPath, snapshotPdfPath = :snapshotPdfPath, snapshotAt = :snapshotAt,
+            latitude = :latitude, longitude = :longitude, placeName = :placeName
         WHERE id = :id
         """
     )
     suspend fun updateMergedFields(
         id: Long, createdAt: Long, lastAccessedAt: Long, isFavorite: Boolean, isArchived: Boolean, readAt: Long?,
-        content: String?, snapshotPath: String?, snapshotPdfPath: String?, snapshotAt: Long?
+        content: String?, snapshotPath: String?, snapshotPdfPath: String?, snapshotAt: Long?,
+        latitude: Double?, longitude: Double?, placeName: String?
     )
+
+    /** 場所(座標と名前)を書く。すべて null なら場所を消す(#85)。 */
+    @Query("UPDATE bookmarks SET latitude = :latitude, longitude = :longitude, placeName = :placeName WHERE id = :id")
+    suspend fun updateLocation(id: Long, latitude: Double?, longitude: Double?, placeName: String?)
+
+    /** 座標だけを書く。すでに座標がある行は変えない(自動で見つけた座標が、利用者が入れたものを上書きしないため)。 */
+    @Query("UPDATE bookmarks SET latitude = :latitude, longitude = :longitude WHERE id = :id AND latitude IS NULL AND longitude IS NULL")
+    suspend fun updateCoordinatesIfEmpty(id: Long, latitude: Double, longitude: Double): Int
+
+    /** 座標がまだ無く、リンクか写真から座標を探せるブックマーク(利用者が「場所を探す」を押したときに使う)。 */
+    @Query(
+        """
+        SELECT * FROM bookmarks WHERE latitude IS NULL AND longitude IS NULL
+            AND ((type = 'URL' AND contentUri IS NOT NULL) OR (type = 'IMAGE' AND filePath IS NOT NULL))
+        """
+    )
+    suspend fun getPlaceCandidates(): List<BookmarkEntity>
 
 
     @Query("SELECT id FROM bookmarks WHERE aiStatus = :status")

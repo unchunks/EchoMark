@@ -61,5 +61,10 @@ data class BookmarkEntity (
     // ファイルはバックアップに含めない(大きく、リンク先から取り直せる)ので、これらの列もバックアップには含めない
     val snapshotPath: String? = null,
     val snapshotPdfPath: String? = null,
-    val snapshotAt: Long? = null
+    val snapshotAt: Long? = null,
+    // v27 で追加。場所(#85)。緯度・経度は端末の中の情報(写真の EXIF・地図のリンク・利用者が入れたもの)だけから入れる。
+    // 名前だけで座標が無いこともある(利用者が名前だけ入れたとき)
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val placeName: String? = null
 )

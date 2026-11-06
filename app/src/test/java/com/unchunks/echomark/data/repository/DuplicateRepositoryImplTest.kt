@@ -330,4 +330,40 @@ class DuplicateRepositoryImplTest {
             collectionDao.getItemsOfBookmark(remove).map { it.collectionId to it.addedAt }
         )
     }
+
+    @Test
+    fun 統合すると消す方の場所が残す方に引き継がれ_元に戻すと戻る() = runBlocking {
+        val keep = save("https://example.com/keep")
+        val remove = save("https://example.com/remove")
+        db.bookmarkDao().updateLocation(remove, 35.68, 139.76, "東京駅")
+
+        val undo = repository.merge(keep, remove)!!
+
+        val merged = load(keep)!!
+        assertEquals(35.68, merged.latitude!!, 0.0)
+        assertEquals(139.76, merged.longitude!!, 0.0)
+        assertEquals("東京駅", merged.placeName)
+
+        repository.undoMerge(undo)
+
+        // 残した方は統合前(場所なし)に戻り、消した方は場所つきで戻る
+        assertEquals(null, load(keep)!!.latitude)
+        assertEquals(null, load(keep)!!.placeName)
+        assertEquals(35.68, load(remove)!!.latitude!!, 0.0)
+        assertEquals("東京駅", load(remove)!!.placeName)
+    }
+
+    @Test
+    fun 統合しても残す方に場所があればそのまま() = runBlocking {
+        val keep = save("https://example.com/keep")
+        val remove = save("https://example.com/remove")
+        db.bookmarkDao().updateLocation(keep, 1.0, 2.0, "残す")
+        db.bookmarkDao().updateLocation(remove, 35.68, 139.76, "消す")
+
+        repository.merge(keep, remove)
+
+        val merged = load(keep)!!
+        assertEquals(1.0, merged.latitude!!, 0.0)
+        assertEquals("残す", merged.placeName)
+    }
 }

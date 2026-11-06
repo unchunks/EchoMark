@@ -15,7 +15,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -82,6 +84,8 @@ fun InsightsScreen(
     onBack: () -> Unit,
     onOpenTag: (Long) -> Unit,
     onOpenBookmark: (Long) -> Unit,
+    onOpenGraph: () -> Unit = {},
+    onOpenPlaces: () -> Unit = {},
     viewModel: InsightsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -91,7 +95,9 @@ fun InsightsScreen(
         onOpenTag = onOpenTag,
         onOpenBookmark = onOpenBookmark,
         onTimelineBasis = viewModel::setTimelineBasis,
-        onInterestMonths = viewModel::setInterestMonths
+        onInterestMonths = viewModel::setInterestMonths,
+        onOpenGraph = onOpenGraph,
+        onOpenPlaces = onOpenPlaces
     )
 }
 
@@ -105,6 +111,8 @@ fun InsightsContent(
     onOpenBookmark: (Long) -> Unit,
     onTimelineBasis: (TimelineBasis) -> Unit,
     onInterestMonths: (Int) -> Unit,
+    onOpenGraph: () -> Unit = {},
+    onOpenPlaces: () -> Unit = {},
     modifier: Modifier = Modifier,
     initialTab: InsightsTab = InsightsTab.CLOUD
 ) {
@@ -119,6 +127,10 @@ fun InsightsContent(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
                     }
+                },
+                actions = {
+                    IconButton(onClick = onOpenGraph) { Icon(Icons.Outlined.Hub, contentDescription = "ブックマークのつながりを見る") }
+                    IconButton(onClick = onOpenPlaces) { Icon(Icons.Outlined.Place, contentDescription = "場所を見る") }
                 },
                 scrollBehavior = scrollBehavior
             )

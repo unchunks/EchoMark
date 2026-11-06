@@ -64,6 +64,6 @@ abstract class AppDatabase : RoomDatabase() {
          * DB のスキーマの版。テーブル・列・インデックスを変えたら 1 つ上げ、Migrations.kt にマイグレーションを足す
          * (手順は docs/database-migrations.md)。
          */
-        const val VERSION = 26
+        const val VERSION = 27
     }
 }

@@ -69,7 +69,9 @@ import com.unchunks.echomark.ui.collections.CollectionsScreen
 import com.unchunks.echomark.ui.discover.DiscoverScreen
 import com.unchunks.echomark.ui.linkcheck.BrokenLinksScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
+import com.unchunks.echomark.ui.graph.GraphScreen
 import com.unchunks.echomark.ui.insights.InsightsScreen
+import com.unchunks.echomark.ui.places.PlacesScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
@@ -269,6 +271,30 @@ fun EchoMarkNavHost(
                 InsightsScreen(
                     onBack = navController.popBackAction(),
                     onOpenTag = dropUnlessResumedWith { tagId: Long -> navController.returnToBookmarkListWithTag(tagId) },
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) },
+                    onOpenGraph = dropUnlessResumed { navController.navigate(Routes.GRAPH) },
+                    onOpenPlaces = dropUnlessResumed { navController.navigate(Routes.PLACES) }
+                )
+            }
+            // ナレッジグラフ。ブックマークをタップしたら詳細を開く
+            composable(
+                route = Routes.GRAPH,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                GraphScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
+                )
+            }
+            // 場所のあるブックマークの分布図と一覧。ブックマークをタップしたら詳細を開く
+            composable(
+                route = Routes.PLACES,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                PlacesScreen(
+                    onBack = navController.popBackAction(),
                     onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )
             }
