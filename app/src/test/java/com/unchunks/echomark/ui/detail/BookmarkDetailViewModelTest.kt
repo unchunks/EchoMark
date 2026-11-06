@@ -17,7 +17,13 @@ import com.unchunks.echomark.domain.model.SummarySource
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.bookmark.model.CollectionResult
+import com.unchunks.echomark.domain.export.ExportException
+import com.unchunks.echomark.domain.export.ExportFormat
+import com.unchunks.echomark.domain.export.ExportResult
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
+import com.unchunks.echomark.testing.FakeCollectionRepository
+import com.unchunks.echomark.testing.FakeExportRepository
 import com.unchunks.echomark.testing.FakeNoteRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeCategoryRepository
@@ -54,9 +60,11 @@ class BookmarkDetailViewModelTest {
 
     private val settings = FakeAppSettingsRepository()
     private val noteRepository = FakeNoteRepository()
+    private val collectionRepository = FakeCollectionRepository()
+    private val exportRepository = FakeExportRepository()
 
     private fun createViewModel(id: Long = 1L) =
-        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights(), settings, noteRepository)
+        BookmarkDetailViewModel(SavedStateHandle(mapOf("bookmarkId" to id)), repository, recentlyDeleted, stats, translator, categories, SearchHighlights(), settings, noteRepository, collectionRepository, exportRepository)
 
     @Test
     fun 処理の進み具合と段ごとの平均の所要時間を出す() = runTest {
@@ -470,5 +478,73 @@ class BookmarkDetailViewModelTest {
         viewModel.restoreNote(note)
         advanceUntilIdle()
         assertEquals(listOf(note), viewModel.uiState.value.notes)
+    }
+
+    @Test
+    fun コレクションの一覧とこのブックマークが入っているものを出し_入れる_外すを知らせる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        val a = (collectionRepository.create("A") as CollectionResult.Saved).id
+        collectionRepository.create("B")
+        collectionRepository.add(a, 1)
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(listOf("A", "B"), viewModel.uiState.value.collections.map { it.name })
+        assertEquals(setOf(a), viewModel.uiState.value.collectionIds)
+
+        val b = viewModel.uiState.value.collections.first { it.name == "B" }
+        viewModel.setInCollection(b, true)
+        advanceUntilIdle()
+        assertEquals(2, viewModel.uiState.value.collectionIds.size)
+
+        viewModel.setInCollection(viewModel.uiState.value.collections.first { it.name == "A" }, false)
+        advanceUntilIdle()
+        assertEquals(setOf(b.id), viewModel.uiState.value.collectionIds)
+        assertEquals(
+            listOf(
+                BookmarkDetailMessage.CollectionChanged("B", true),
+                BookmarkDetailMessage.CollectionChanged("A", false)
+            ),
+            messages
+        )
+    }
+
+    @Test
+    fun 新しいコレクションを作って入れる_名前が重複すれば入れず結果を返す() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        collectionRepository.create("既存")
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+        val results = mutableListOf<CollectionResult>()
+
+        viewModel.createCollectionAndAdd(" 新しい ") { results += it }
+        viewModel.createCollectionAndAdd("既存") { results += it }
+        advanceUntilIdle()
+
+        assertTrue(results[0] is CollectionResult.Saved)
+        assertEquals(CollectionResult.NameTaken, results[1])
+        assertEquals(setOf((results[0] as CollectionResult.Saved).id), viewModel.uiState.value.collectionIds)
+        assertEquals(listOf<BookmarkDetailMessage>(BookmarkDetailMessage.CollectionChanged("新しい", true)), messages)
+    }
+
+    @Test
+    fun ブックマークを書き出すと結果を知らせ_失敗は理由を知らせる() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1))
+        exportRepository.result = ExportResult(exported = 1, skipped = 0)
+        val viewModel = createViewModel()
+        val messages = start(viewModel)
+        advanceUntilIdle()
+
+        viewModel.exportBookmark(ExportFormat.MARKDOWN, "content://out/1")
+        advanceUntilIdle()
+        exportRepository.failure = ExportException("保存先にアクセスできませんでした")
+        viewModel.exportBookmark(ExportFormat.BROWSER_HTML, "content://out/2")
+        advanceUntilIdle()
+
+        assertEquals(listOf(Triple(1L, ExportFormat.MARKDOWN, "content://out/1"), Triple(1L, ExportFormat.BROWSER_HTML, "content://out/2")), exportRepository.bookmarkExports)
+        assertEquals(BookmarkDetailMessage.Exported(ExportResult(1, 0)), messages[0])
+        assertEquals(BookmarkDetailMessage.Failed("保存先にアクセスできませんでした"), messages[1])
     }
 }

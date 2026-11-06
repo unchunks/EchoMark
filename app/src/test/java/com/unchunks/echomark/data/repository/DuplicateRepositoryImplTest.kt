@@ -9,6 +9,8 @@ import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
+import com.unchunks.echomark.data.local.entity.CollectionEntity
+import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateReason
@@ -73,6 +75,7 @@ class DuplicateRepositoryImplTest {
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
+            collectionDao = db.collectionDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = dispatcherProvider,
@@ -84,6 +87,7 @@ class DuplicateRepositoryImplTest {
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
+            collectionDao = db.collectionDao(),
             vectorSearch = vectorSearch,
             embeddingProvider = embedding,
             appSettings = settings,
@@ -295,5 +299,35 @@ class DuplicateRepositoryImplTest {
 
         assertEquals(listOf("残す方のノート"), noteDao.getByBookmark(keep).map { it.text })
         assertEquals(listOf(movedBefore), noteDao.getByBookmark(remove))
+    }
+
+    @Test
+    fun 統合すると消す方のコレクションの所属が残す方に足され_元に戻すと戻る() = runBlocking {
+        val keep = save("https://example.com/keep")
+        val remove = save("https://example.com/remove")
+        val collectionDao = db.collectionDao()
+        val both = collectionDao.insert(CollectionEntity(name = "両方", createdAt = 1))
+        val onlyRemove = collectionDao.insert(CollectionEntity(name = "消す方だけ", createdAt = 2))
+        val onlyKeep = collectionDao.insert(CollectionEntity(name = "残す方だけ", createdAt = 3))
+        collectionDao.insertItem(CollectionItemEntity(both, keep, addedAt = 10))
+        collectionDao.insertItem(CollectionItemEntity(both, remove, addedAt = 11))
+        collectionDao.insertItem(CollectionItemEntity(onlyRemove, remove, addedAt = 12))
+        collectionDao.insertItem(CollectionItemEntity(onlyKeep, keep, addedAt = 13))
+
+        val undo = repository.merge(keep, remove)!!
+
+        // 残す方は3つとも入り、元から入っていた「両方」の日時は変わらない
+        assertEquals(setOf(both, onlyRemove, onlyKeep), collectionDao.getItemsOfBookmark(keep).map { it.collectionId }.toSet())
+        assertEquals(10L, collectionDao.getItemsOfBookmark(keep).first { it.collectionId == both }.addedAt)
+        assertTrue(collectionDao.getItemsOfBookmark(remove).isEmpty())
+        assertEquals(listOf(onlyRemove), undo.addedCollectionIds)
+
+        repository.undoMerge(undo)
+
+        assertEquals(setOf(both, onlyKeep), collectionDao.getItemsOfBookmark(keep).map { it.collectionId }.toSet())
+        assertEquals(
+            listOf(both to 11L, onlyRemove to 12L),
+            collectionDao.getItemsOfBookmark(remove).map { it.collectionId to it.addedAt }
+        )
     }
 }

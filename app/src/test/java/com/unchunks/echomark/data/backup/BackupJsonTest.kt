@@ -654,4 +654,42 @@ class BackupJsonTest {
         assertEquals(9L, second.updatedAt)
         assertEquals(2, decoded.invalidRecords)
     }
+
+    @Test
+    fun コレクションは名前と入れているブックマークを書き出して読み戻せ_説明が無ければ省く() {
+        val collections = listOf(
+            CollectionBackup("旅行の計画", "夏の旅行", 10, listOf(CollectionItemBackup(1, 11), CollectionItemBackup(2, 12))),
+            CollectionBackup("空のコレクション", null, 20, emptyList())
+        )
+
+        val text = BackupJson.encode(sample.copy(collections = collections))
+        val decoded = BackupJson.decode(text).data.collections
+
+        assertEquals(collections, decoded)
+        assertFalse(text.substringAfter("空のコレクション").substringBefore("}").contains("description"))
+    }
+
+    @Test
+    fun コレクションの無い古い版は空として読み_名前の無い物や壊れた入れ方は読み飛ばす() {
+        val old = BackupJson.decode("""{"format":"echomark-backup","version":15,"exportedAt":1}""")
+        assertEquals(emptyList<CollectionBackup>(), old.data.collections)
+
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":16,"exportedAt":1,"collections":[
+              {"name":"  良い  ","description":"  ","createdAt":5,"items":[{"bookmarkId":1,"addedAt":6},{"addedAt":7},{"bookmarkId":3}]},
+              {"name":"   ","items":[]},
+              {"description":"名前なし"}
+            ]}
+            """.trimIndent()
+        )
+
+        assertEquals(1, decoded.data.collections.size)
+        val collection = decoded.data.collections.single()
+        // 前後の空白を除く。空白だけの説明は説明なし。bookmarkId の無い入れ方は読み飛ばし、日時が無ければ 0
+        assertEquals("良い", collection.name)
+        assertEquals(null, collection.description)
+        assertEquals(listOf(CollectionItemBackup(1, 6), CollectionItemBackup(3, 0)), collection.items)
+        assertEquals(2, decoded.invalidRecords)
+    }
 }

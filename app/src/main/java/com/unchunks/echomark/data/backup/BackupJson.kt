@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.mapper.SmartFolderCodec
 import com.unchunks.echomark.data.mapper.smartFolderEntity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
+import com.unchunks.echomark.domain.bookmark.model.CollectionNames
 import com.unchunks.echomark.domain.bookmark.model.NoteText
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
@@ -55,8 +56,21 @@ data class BackupData(
     /** 購読しているフィード。種類・URL・タイトル・サイトの URL・登録日時・有効かどうかだけ入れる(確認の状態は端末の中のもの) */
     val subscriptions: List<SubscriptionEntity> = emptyList(),
     /** ブックマークのノート・注釈。[BookmarkNoteEntity.bookmarkId] は [bookmarks] の ID */
-    val notes: List<BookmarkNoteEntity> = emptyList()
+    val notes: List<BookmarkNoteEntity> = emptyList(),
+    /** コレクションと、入れているブックマーク。ブックマークは書き出し元の ID、コレクションは名前で持つ */
+    val collections: List<CollectionBackup> = emptyList()
 )
+
+/** バックアップに入れるコレクション(#91)。ID は持たず、名前で同じコレクションかを見分ける。 */
+data class CollectionBackup(
+    val name: String,
+    val description: String? = null,
+    val createdAt: Long = 0L,
+    val items: List<CollectionItemBackup> = emptyList()
+)
+
+/** コレクションに入れているブックマーク([bookmarkId] は書き出し元の ID)と、入れた日時。 */
+data class CollectionItemBackup(val bookmarkId: Long, val addedAt: Long)
 
 /**
  * バックアップに入れるスマートフォルダ(#34)。DB の行([SmartFolderEntity])と違い、タグを ID ではなく名前で持つ
@@ -126,7 +140,8 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "categories": [ {name, description, createdAt} ],
  *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ],
  *   "subscriptions": [ {type("RSS" / "YOUTUBE"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ],
- *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ] }
+ *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ],
+ *   "collections": [ {name, description は無ければ省略, createdAt, items: [ {bookmarkId, addedAt} ]} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -160,10 +175,13 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   (最新の数件だけ保存し、ほかは「見た」ことにする)。同じフィードの URL が既にあれば追加しない
  * - 15: ブックマークのノート・注釈(notes。DB v24 の bookmark_notes)を追加。14 以前は無いものとして読む。
  *   bookmarkId は書き出し元の ID で、読み込むときに付け替える。同じブックマークに同じ文章・同じ作成日時のノートが既にあれば追加しない
+ * - 16: コレクション(collections。DB v25 の collections と collection_items)を追加。15 以前は無いものとして読む。
+ *   コレクションは名前で持ち、入れているブックマークは書き出し元の ID(読み込むときに付け替える)。同じ名前(大文字小文字・全角半角を区別しない)の
+ *   コレクションが既にあれば、そのコレクションに足す(説明は変えない)
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 15
+    const val CURRENT_VERSION = 16
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -195,6 +213,8 @@ object BackupJson {
         writeArray(writer, "subscriptions", data.subscriptions) { it.toJson() }
         writer.write(",")
         writeArray(writer, "notes", data.notes) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "collections", data.collections) { it.toJson() }
         writer.write("}")
         writer.flush()
     }
@@ -247,7 +267,8 @@ object BackupJson {
             categories = readArray("categories") { it.toCategory() },
             smartFolders = readArray("smartFolders") { it.toSmartFolder() },
             subscriptions = readArray("subscriptions") { it.toSubscription() },
-            notes = readArray("notes") { it.toNote() }
+            notes = readArray("notes") { it.toNote() },
+            collections = readArray("collections") { it.toCollection() }
         )
         return DecodedBackup(data, invalid)
     }
@@ -430,6 +451,36 @@ object BackupJson {
             readState = stringOrNull("readState"),
             sortOrder = stringOrNull("sortOrder"),
             createdAt = longOrNull("createdAt") ?: 0L
+        )
+    }
+
+    private fun CollectionBackup.toJson() = JSONObject()
+        .put("name", name)
+        .apply { description?.let { put("description", it) } }
+        .put("createdAt", createdAt)
+        .put(
+            "items",
+            JSONArray().also { array ->
+                items.forEach { array.put(JSONObject().put("bookmarkId", it.bookmarkId).put("addedAt", it.addedAt)) }
+            }
+        )
+
+    private fun JSONObject.toCollection(): CollectionBackup? {
+        val name = stringOrNull("name")?.let { CollectionNames.normalize(it) } ?: return null
+        val items = optJSONArray("items")?.let { array ->
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                CollectionItemBackup(
+                    bookmarkId = item.longOrNull("bookmarkId") ?: return@mapNotNull null,
+                    addedAt = item.longOrNull("addedAt") ?: 0L
+                )
+            }
+        }.orEmpty()
+        return CollectionBackup(
+            name = name,
+            description = CollectionNames.cleanDescription(stringOrNull("description")),
+            createdAt = longOrNull("createdAt") ?: 0L,
+            items = items
         )
     }
 

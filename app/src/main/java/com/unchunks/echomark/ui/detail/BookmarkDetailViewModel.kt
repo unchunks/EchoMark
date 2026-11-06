@@ -4,7 +4,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkCollection
 import com.unchunks.echomark.domain.bookmark.model.BookmarkNote
+import com.unchunks.echomark.domain.bookmark.model.CollectionNames
+import com.unchunks.echomark.domain.bookmark.model.CollectionResult
+import com.unchunks.echomark.domain.export.ExportException
+import com.unchunks.echomark.domain.export.ExportFormat
+import com.unchunks.echomark.domain.export.ExportResult
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -16,6 +22,8 @@ import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.CategoryRepository
+import com.unchunks.echomark.domain.repository.CollectionRepository
+import com.unchunks.echomark.domain.repository.ExportRepository
 import com.unchunks.echomark.domain.repository.NoteRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
@@ -63,7 +71,11 @@ data class BookmarkDetailUiState(
     /** 読書モードの見た目(文字の大きさ・背景・書体。#59) */
     val readingStyle: ReadingStyle = ReadingStyle(),
     /** 自分のノート・注釈(書いた順。#95)。AI の要約・本文とは別 */
-    val notes: List<BookmarkNote> = emptyList()
+    val notes: List<BookmarkNote> = emptyList(),
+    /** 作ってあるコレクション(追加のシートに出す。#91) */
+    val collections: List<BookmarkCollection> = emptyList(),
+    /** このブックマークが入っているコレクションの ID */
+    val collectionIds: Set<Long> = emptySet()
 )
 
 /** 要約の翻訳の状態(#24)。翻訳は保存せず、画面を閉じたら消える。 */
@@ -91,6 +103,12 @@ sealed interface BookmarkDetailMessage {
     /** ノートを削除した(元に戻せる) */
     data class NoteDeleted(val note: BookmarkNote) : BookmarkDetailMessage
 
+    /** コレクションに入れた・外した */
+    data class CollectionChanged(val name: String, val added: Boolean) : BookmarkDetailMessage
+
+    /** ファイルに書き出した */
+    data class Exported(val result: ExportResult) : BookmarkDetailMessage
+
     /** AI の再処理を始めた */
     data object ReprocessStarted : BookmarkDetailMessage
 
@@ -115,7 +133,9 @@ class BookmarkDetailViewModel @Inject constructor(
     categoryRepository: CategoryRepository,
     searchHighlights: SearchHighlights,
     private val appSettings: AppSettingsRepository,
-    private val noteRepository: NoteRepository
+    private val noteRepository: NoteRepository,
+    private val collectionRepository: CollectionRepository,
+    private val exportRepository: ExportRepository
 ) : ViewModel() {
 
     // ルート "bookmark/{bookmarkId}" の引数。2 画面表示の詳細ペインでは、ペインを開くときに同じキーで渡す
@@ -192,6 +212,30 @@ class BookmarkDetailViewModel @Inject constructor(
             emit(emptyList())
         }
 
+    /** 作ってあるコレクション。補助的な表示なので、読めなければ空にする */
+    private val collectionsFlow = collectionRepository.observeCollections()
+        .catch { e ->
+            if (e is CancellationException) throw e
+            Timber.w(e, "コレクションの読み込みに失敗")
+            emit(emptyList())
+        }
+
+    private val collectionIdsFlow = collectionRepository.observeCollectionIdsOf(bookmarkId)
+        .catch { e ->
+            if (e is CancellationException) throw e
+            Timber.w(e, "コレクションへの所属の読み込みに失敗")
+            emit(emptySet())
+        }
+
+    /** [uiState] に合わせる補助的な状態(5つ以内の Flow にまとめるための入れ物) */
+    private class Extras(
+        val terms: List<String>,
+        val readingStyle: ReadingStyle,
+        val notes: List<BookmarkNote>,
+        val collections: List<BookmarkCollection>,
+        val collectionIds: Set<Long>
+    )
+
     private val translation = MutableStateFlow<TranslationState>(TranslationState.Idle)
     private var translationJob: Job? = null
 
@@ -208,11 +252,12 @@ class BookmarkDetailViewModel @Inject constructor(
     val uiState: StateFlow<BookmarkDetailUiState> =
         combine(
             baseState, summaryHistoryFlow, translation, categoryChoicesFlow,
-            combine(highlightTermsFlow, readingStyleFlow, notesFlow, ::Triple)
-        ) { state, history, translation, categories, (terms, readingStyle, notes) ->
+            combine(highlightTermsFlow, readingStyleFlow, notesFlow, collectionsFlow, collectionIdsFlow, ::Extras)
+        ) { state, history, translation, categories, extras ->
             state.copy(
                 summaryHistory = history, translation = translation, categoryChoices = categories,
-                highlightTerms = terms, readingStyle = readingStyle, notes = notes
+                highlightTerms = extras.terms, readingStyle = extras.readingStyle, notes = extras.notes,
+                collections = extras.collections, collectionIds = extras.collectionIds
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarkDetailUiState())
 
@@ -272,6 +317,42 @@ class BookmarkDetailViewModel @Inject constructor(
 
     fun restoreNote(note: BookmarkNote) {
         viewModelScope.launch { noteRepository.restoreNote(note) }
+    }
+
+    /** このブックマークをコレクションに入れる・外す。名前は Snackbar で知らせるためのもの */
+    fun setInCollection(collection: BookmarkCollection, inCollection: Boolean) {
+        viewModelScope.launch {
+            if (inCollection) collectionRepository.add(collection.id, bookmarkId) else collectionRepository.remove(collection.id, bookmarkId)
+            messageChannel.send(BookmarkDetailMessage.CollectionChanged(collection.name, inCollection))
+        }
+    }
+
+    /** 新しいコレクションを作り、このブックマークを入れる。結果は [onResult] に返す(重複・不正な名前は、シートに理由を出す) */
+    fun createCollectionAndAdd(name: String, onResult: (CollectionResult) -> Unit) {
+        viewModelScope.launch {
+            val result = collectionRepository.create(name)
+            if (result is CollectionResult.Saved) {
+                collectionRepository.add(result.id, bookmarkId)
+                messageChannel.send(BookmarkDetailMessage.CollectionChanged(CollectionNames.normalize(name).orEmpty(), true))
+            }
+            onResult(result)
+        }
+    }
+
+    /** このブックマークを [format] で [uri] に書き出す(ノートも入る) */
+    fun exportBookmark(format: ExportFormat, uri: String) {
+        viewModelScope.launch {
+            try {
+                messageChannel.send(BookmarkDetailMessage.Exported(exportRepository.exportBookmark(bookmarkId, format, uri)))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ExportException) {
+                messageChannel.send(BookmarkDetailMessage.Failed(e.message ?: "書き出せませんでした。"))
+            } catch (e: Exception) {
+                Timber.w(e, "ブックマークの書き出しに失敗")
+                messageChannel.send(BookmarkDetailMessage.Failed("書き出せませんでした。"))
+            }
+        }
     }
 
     fun toggleFavorite() {
