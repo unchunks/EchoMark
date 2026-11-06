@@ -261,6 +261,7 @@ fun BookmarkDetailScreen(
                         snackbarHostState.showSnackbar(
                             if (message.added) "コレクション「${message.name}」に入れました" else "コレクション「${message.name}」から外しました"
                         )
+                    is BookmarkDetailMessage.LinkChecked -> snackbarHostState.showSnackbar(linkCheckedText(message.state))
                     is BookmarkDetailMessage.Exported ->
                         snackbarHostState.showSnackbar(exportedText(message.result.exported, message.result.skipped))
                     is BookmarkDetailMessage.TagRemoved -> {
@@ -310,6 +311,8 @@ fun BookmarkDetailScreen(
             onDeleteNote = viewModel::deleteNote,
             onSetInCollection = viewModel::setInCollection,
             onCreateCollection = viewModel::createCollectionAndAdd,
+            onRecheckLink = viewModel::recheckLink,
+            onMuteLink = viewModel::muteLinkCheck,
             onExport = { format ->
                 val fileName = BookmarkExporter.fileName(uiState.bookmark?.title.orEmpty(), format)
                 when (format) {
@@ -401,6 +404,9 @@ class BookmarkDetailCallbacks(
     val onCreateCollection: (name: String, onResult: (CollectionResult) -> Unit) -> Unit = { _, _ -> },
     /** このブックマークをファイルに書き出す(保存先を選ぶ画面を開く) */
     val onExport: (ExportFormat) -> Unit = {},
+    /** リンク切れの確認(#94): 今すぐ確認し直す / この夜の確認をやめる */
+    val onRecheckLink: () -> Unit = {},
+    val onMuteLink: () -> Unit = {},
     /** ページのオフラインコピー(#80)の操作 */
     val snapshot: PageSnapshotCallbacks = PageSnapshotCallbacks(),
     /** オフラインコピーを作っている(または保存している)最中 */
@@ -761,6 +767,19 @@ private fun DetailBody(
             }
             Spacer(Modifier.height(16.dp))
             PrimaryActions(bookmark, hasFile = file != null, callbacks = callbacks)
+            // 続けて開けなかったと判断したリンクだけに出す(1回の失敗では出さない)
+            uiState.linkState?.takeIf { it.isDead && !it.muted }?.let { linkState ->
+                Spacer(Modifier.height(16.dp))
+                DeadLinkSection(
+                    state = linkState,
+                    hasOfflineCopy = bookmark.hasSnapshot,
+                    checking = uiState.linkChecking,
+                    onOpenOfflineCopy = callbacks.snapshot.onOpen,
+                    onSearchArchive = { bookmark.contentUri?.let { callbacks.onOpenInBrowser(archiveSearchUrl(it)) } },
+                    onRecheck = callbacks.onRecheckLink,
+                    onMute = callbacks.onMuteLink
+                )
+            }
             // http / https のリンクだけに出す(それ以外では何も描かない)
             if (canSnapshot(bookmark.contentUri)) {
                 Spacer(Modifier.height(16.dp))
@@ -1426,3 +1445,11 @@ private val DATE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("y
 
 private fun formatDateTime(millis: Long): String =
     DATE_TIME_FORMAT.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+
+/** 「もう一度確認」の結果を知らせる文言 */
+internal fun linkCheckedText(state: com.unchunks.echomark.domain.linkcheck.LinkCheckState?): String = when {
+    state == null -> "確認できませんでした。通信できるか確かめてください"
+    state.failureCount == 0 -> "リンクは開けました"
+    state.isDead -> "まだ開けません"
+    else -> "今回は開けませんでした。続けて開けないときに、リンク切れとしてお知らせします"
+}

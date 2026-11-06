@@ -67,6 +67,7 @@ import com.unchunks.echomark.ui.collections.CollectionDetailScreen
 import com.unchunks.echomark.ui.collections.CollectionDetailViewModel
 import com.unchunks.echomark.ui.collections.CollectionsScreen
 import com.unchunks.echomark.ui.discover.DiscoverScreen
+import com.unchunks.echomark.ui.linkcheck.BrokenLinksScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.insights.InsightsScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
@@ -224,7 +225,8 @@ fun EchoMarkNavHost(
                     onOpenDiscover = { navController.navigate(Routes.DISCOVER) },
                     onOpenDuplicates = { navController.navigate(Routes.DUPLICATES) },
                     onOpenInsights = { navController.navigate(Routes.INSIGHTS) },
-                    onOpenCollections = { navController.navigate(Routes.COLLECTIONS) }
+                    onOpenCollections = { navController.navigate(Routes.COLLECTIONS) },
+                    onOpenBrokenLinks = { navController.navigate(Routes.BROKEN_LINKS) }
                 )
             }
             // 資料を探す。AI が選んだ資料をまとめて追加し、戻ると一覧に追加したものが並ぶ
@@ -288,6 +290,17 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 CollectionDetailScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
+                )
+            }
+            // リンク切れの一覧。ブックマークをタップしたら詳細を開く
+            composable(
+                route = Routes.BROKEN_LINKS,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                BrokenLinksScreen(
                     onBack = navController.popBackAction(),
                     onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )

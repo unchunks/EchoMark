@@ -17,6 +17,7 @@ import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.CollectionEntity
 import com.unchunks.echomark.data.local.entity.CollectionItemEntity
+import com.unchunks.echomark.data.local.entity.LinkCheckEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
@@ -77,8 +78,9 @@ class BackupDaoTest {
         smartFolders: List<SmartFolderBackup> = emptyList(),
         subscriptions: List<SubscriptionEntity> = emptyList(),
         notes: List<BookmarkNoteEntity> = emptyList(),
-        collections: List<CollectionBackup> = emptyList()
-    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders, subscriptions, notes, collections)
+        collections: List<CollectionBackup> = emptyList(),
+        linkCheckMutedBookmarkIds: List<Long> = emptyList()
+    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders, subscriptions, notes, collections, linkCheckMutedBookmarkIds)
 
     @Test
     fun 空のDBに統合すると全件入り_書き出すと同じ内容になる() = runTest {
@@ -670,5 +672,39 @@ class BackupDaoTest {
             ),
             items
         )
+    }
+
+    @Test
+    fun リンク切れの確認をしないブックマークだけが書き出され_全データ削除で消える() = runTest {
+        db.bookmarkDao().insert(urlBookmark(1, "https://a"))
+        db.bookmarkDao().insert(urlBookmark(2, "https://b"))
+        db.bookmarkDao().insert(urlBookmark(3, "https://c"))
+        db.linkCheckDao().upsert(LinkCheckEntity(bookmarkId = 1, checkedAt = 5, muted = true))
+        db.linkCheckDao().upsert(LinkCheckEntity(bookmarkId = 2, checkedAt = 5, failureCount = 3, firstFailedAt = 1, deadAt = 5))
+
+        assertEquals(listOf(1L), dao.snapshot(exportedAt = 1).linkCheckMutedBookmarkIds)
+
+        dao.deleteAll()
+        assertEquals(emptyList<LinkCheckEntity>(), db.linkCheckDao().getAll())
+    }
+
+    @Test
+    fun 確認しないの印は付け替えた先に付き_既に確認の記録があるブックマークはその記録を残す() = runTest {
+        val existing = db.bookmarkDao().insert(urlBookmark(50, "https://existing"))
+        db.linkCheckDao().upsert(LinkCheckEntity(bookmarkId = existing, checkedAt = 9, failureCount = 2, firstFailedAt = 1))
+        val source = backup(
+            bookmarks = listOf(urlBookmark(1, "https://new"), urlBookmark(2, "https://existing")),
+            linkCheckMutedBookmarkIds = listOf(1, 2, 99)
+        )
+
+        dao.merge(source)
+
+        val newId = db.bookmarkDao().getAllIds().first { it != existing }
+        assertEquals(true, db.linkCheckDao().get(newId)!!.muted)
+        val kept = db.linkCheckDao().get(existing)!!
+        assertEquals(true, kept.muted)
+        // 既にある確認の記録(失敗の回数)は消さない
+        assertEquals(2, kept.failureCount)
+        assertEquals(2, db.linkCheckDao().getAll().size)
     }
 }

@@ -58,7 +58,9 @@ data class BackupData(
     /** ブックマークのノート・注釈。[BookmarkNoteEntity.bookmarkId] は [bookmarks] の ID */
     val notes: List<BookmarkNoteEntity> = emptyList(),
     /** コレクションと、入れているブックマーク。ブックマークは書き出し元の ID、コレクションは名前で持つ */
-    val collections: List<CollectionBackup> = emptyList()
+    val collections: List<CollectionBackup> = emptyList(),
+    /** リンク切れの確認で「確認しない」を選んだブックマークの ID(書き出し元の ID)。確認の状態そのものは端末の中のもので含めない */
+    val linkCheckMutedBookmarkIds: List<Long> = emptyList()
 )
 
 /** バックアップに入れるコレクション(#91)。ID は持たず、名前で同じコレクションかを見分ける。 */
@@ -141,7 +143,8 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ],
  *   "subscriptions": [ {type("RSS" / "YOUTUBE"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ],
  *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ],
- *   "collections": [ {name, description は無ければ省略, createdAt, items: [ {bookmarkId, addedAt} ]} ] }
+ *   "collections": [ {name, description は無ければ省略, createdAt, items: [ {bookmarkId, addedAt} ]} ],
+ *   "linkCheckMuted": [ リンク切れの確認で「確認しない」を選んだブックマークの ID ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -178,10 +181,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 16: コレクション(collections。DB v25 の collections と collection_items)を追加。15 以前は無いものとして読む。
  *   コレクションは名前で持ち、入れているブックマークは書き出し元の ID(読み込むときに付け替える)。同じ名前(大文字小文字・全角半角を区別しない)の
  *   コレクションが既にあれば、そのコレクションに足す(説明は変えない)
+ * - 17: リンク切れの確認で「確認しない」を選んだブックマークの ID(linkCheckMuted。DB v26 の link_checks の muted)を追加。16 以前は無いものとして読む。
+ *   ID は書き出し元のもので、読み込むときに付け替える。確認の状態(失敗の回数・切れた日時)は端末の中のもので含めない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 16
+    const val CURRENT_VERSION = 17
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -215,6 +220,9 @@ object BackupJson {
         writeArray(writer, "notes", data.notes) { it.toJson() }
         writer.write(",")
         writeArray(writer, "collections", data.collections) { it.toJson() }
+        writer.write(",")
+        writer.write("\"linkCheckMuted\":")
+        writer.write(JSONArray(data.linkCheckMutedBookmarkIds).toString())
         writer.write("}")
         writer.flush()
     }
@@ -268,7 +276,10 @@ object BackupJson {
             smartFolders = readArray("smartFolders") { it.toSmartFolder() },
             subscriptions = readArray("subscriptions") { it.toSubscription() },
             notes = readArray("notes") { it.toNote() },
-            collections = readArray("collections") { it.toCollection() }
+            collections = readArray("collections") { it.toCollection() },
+            linkCheckMutedBookmarkIds = root.optJSONArray("linkCheckMuted")?.let { array ->
+                (0 until array.length()).mapNotNull { index -> array.optLong(index, -1L).takeIf { it >= 0 } }
+            }.orEmpty()
         )
         return DecodedBackup(data, invalid)
     }

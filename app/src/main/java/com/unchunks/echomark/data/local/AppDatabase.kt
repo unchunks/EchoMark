@@ -8,6 +8,7 @@ import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.CollectionDao
+import com.unchunks.echomark.data.local.dao.LinkCheckDao
 import com.unchunks.echomark.data.local.dao.CategoryDao
 import com.unchunks.echomark.data.local.dao.SmartFolderDao
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
@@ -19,6 +20,7 @@ import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.CollectionEntity
 import com.unchunks.echomark.data.local.entity.CollectionItemEntity
+import com.unchunks.echomark.data.local.entity.LinkCheckEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.SmartFolderEntity
@@ -36,7 +38,8 @@ import com.unchunks.echomark.data.local.entity.TagEntity
         BookmarkEntity::class, TagEntity::class, BookmarkTagCrossRef::class,
         ConversationEntity::class, ChatMessageEntity::class, ApiUsageEntity::class, SummaryHistoryEntity::class,
         TagAliasEntity::class, RemovedTagEntity::class, CategoryEntity::class, SmartFolderEntity::class, SubscriptionEntity::class,
-        BookmarkNoteEntity::class, CollectionEntity::class, CollectionItemEntity::class
+        BookmarkNoteEntity::class, CollectionEntity::class, CollectionItemEntity::class,
+        LinkCheckEntity::class
     ],
     version = AppDatabase.VERSION,
     exportSchema = true
@@ -50,6 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun bookmarkNoteDao(): BookmarkNoteDao
     abstract fun collectionDao(): CollectionDao
+    abstract fun linkCheckDao(): LinkCheckDao
     abstract fun conversationDao(): ConversationDao
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun backupDao(): BackupDao
@@ -60,6 +64,6 @@ abstract class AppDatabase : RoomDatabase() {
          * DB のスキーマの版。テーブル・列・インデックスを変えたら 1 つ上げ、Migrations.kt にマイグレーションを足す
          * (手順は docs/database-migrations.md)。
          */
-        const val VERSION = 25
+        const val VERSION = 26
     }
 }
