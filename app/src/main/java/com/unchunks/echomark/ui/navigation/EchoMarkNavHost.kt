@@ -65,6 +65,7 @@ import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailViewModel
 import com.unchunks.echomark.ui.discover.DiscoverScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
+import com.unchunks.echomark.ui.insights.InsightsScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
@@ -218,7 +219,8 @@ fun EchoMarkNavHost(
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                     onOpenDiscover = { navController.navigate(Routes.DISCOVER) },
-                    onOpenDuplicates = { navController.navigate(Routes.DUPLICATES) }
+                    onOpenDuplicates = { navController.navigate(Routes.DUPLICATES) },
+                    onOpenInsights = { navController.navigate(Routes.INSIGHTS) }
                 )
             }
             // 資料を探す。AI が選んだ資料をまとめて追加し、戻ると一覧に追加したものが並ぶ
@@ -249,6 +251,18 @@ fun EchoMarkNavHost(
             ) {
                 DuplicatesScreen(
                     onBack = navController.popBackAction(),
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
+                )
+            }
+            // ライブラリの分析。タグをタップしたらそのタグの一覧へ、ブックマークをタップしたら詳細を開く
+            composable(
+                route = Routes.INSIGHTS,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                InsightsScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenTag = dropUnlessResumedWith { tagId: Long -> navController.returnToBookmarkListWithTag(tagId) },
                     onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )
             }
