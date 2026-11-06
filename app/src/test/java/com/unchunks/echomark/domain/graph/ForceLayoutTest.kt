@@ -91,4 +91,20 @@ class ForceLayoutTest {
         // 余裕を見た上限(実際は 1 秒前後)。極端に遅くなる変更を検知するためのもの
         assertTrue("所要 ${seconds}秒", seconds < 20)
     }
+
+    @Test
+    fun 密なまとまりが_いくつかあっても点が重ならない() {
+        // 8 点ずつの 3 つのまとまり。まとまりの中は全部の組がつながっている(同じタグが付いた記事の塊)
+        val n = 24
+        val edges = (0 until 3).flatMap { c ->
+            val base = c * 8
+            (0 until 8).flatMap { i -> (i + 1 until 8).map { j -> (base + i) to (base + j) } }
+        }
+        val layout = ForceLayout.layout(graphOf(n, edges))
+        val nearest = (0 until n).map { i ->
+            (0 until n).filter { it != i }.minOf { j -> hypot(layout.x[i] - layout.x[j], layout.y[i] - layout.y[j]) }
+        }
+        // 図の幅を 360dp とすると、0.04 は約 14dp(点の半径 5〜13dp に対して、かろうじて重ならない)
+        assertTrue("最も近い点どうしの距離の最小 ${nearest.min()} 平均 ${nearest.average()}", nearest.min() > 0.04f)
+    }
 }

@@ -38,6 +38,9 @@ private const val MAX_SCALE = 6f
 private const val LABEL_ALL_SCALE = 2.2f
 private const val LABELED_NODES = 8
 
+/** 選んだ点の相手のタイトルを図に出す倍率(それより小さいと、重なって読めないので、下の詳細の一覧で見せる) */
+private const val LABEL_NEIGHBORS_SCALE = 1.8f
+
 /**
  * ナレッジグラフの絵。ピンチで拡大・縮小、ドラッグで移動、点をタップで選ぶ。
  * 点の位置は [layout](0〜1)で、画面の大きさに合わせて広げる。選んだ点とそのつながりは濃く、ほかは薄くする。
@@ -112,12 +115,13 @@ fun GraphCanvas(
         graph.nodes.forEachIndexed { i, node ->
             val highlighted = !dimmed || i == selectedIndex || i in neighborIndexes
             val center = position(i)
-            val radius = (5f + minOf(node.degree, 10) * 0.8f).dp.toPx()
+            val radius = (4f + minOf(node.degree, 10) * 0.5f).dp.toPx()
             drawCircle(palette(node.cluster).copy(alpha = if (highlighted) 1f else 0.25f), radius, center)
             if (i == selectedIndex) drawCircle(ringColor, radius + 3.dp.toPx(), center, style = Stroke(2.dp.toPx()))
         }
         graph.nodes.forEachIndexed { i, node ->
-            val showLabel = i == selectedIndex || i in neighborIndexes || (!dimmed && (scale >= LABEL_ALL_SCALE || i in mostConnected))
+            val showLabel = i == selectedIndex || (i in neighborIndexes && scale >= LABEL_NEIGHBORS_SCALE) ||
+                (!dimmed && (scale >= LABEL_ALL_SCALE || i in mostConnected))
             if (!showLabel) return@forEachIndexed
             val center = position(i)
             val label = measurer.measure(

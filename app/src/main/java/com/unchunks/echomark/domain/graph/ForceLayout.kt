@@ -28,6 +28,9 @@ object ForceLayout {
     /** 画面の端に点が張り付かないよう、0〜1 の外側に空ける余白 */
     private const val MARGIN = 0.06f
 
+    /** 中心への引力の強さ。弱いと、つながっていないまとまりが遠く離れ、まとまりの中の点が詰まって見える */
+    private const val GRAVITY = 1.5f
+
     fun layout(
         graph: KnowledgeGraph,
         iterations: Int = DEFAULT_ITERATIONS,
@@ -49,6 +52,12 @@ object ForceLayout {
         }
 
         val k = sqrt(1.0 / n).toFloat()
+        // 線の多い点(密なまとまりの中の点)に引力が集まりすぎて重ならないよう、引力は両端の点のつながりの数で割る
+        val degree = IntArray(n)
+        for (edge in graph.edges) {
+            degree[edge.a]++
+            degree[edge.b]++
+        }
         val dx = FloatArray(n)
         val dy = FloatArray(n)
         for (iteration in 0 until iterations) {
@@ -80,7 +89,8 @@ object ForceLayout {
                 val vy = py[edge.a] - py[edge.b]
                 val dist = sqrt(vx * vx + vy * vy) + 1e-6f
                 // 引力の大きさは dist² / k(重い線ほど強く)。向きを含めた変位は v に dist / k を掛けたもの
-                val pull = dist / k * (0.5f + 0.5f * edge.weight.coerceAtMost(4f))
+                val share = sqrt(max(degree[edge.a], 1).toFloat() * max(degree[edge.b], 1).toFloat())
+                val pull = dist / k * (0.5f + 0.5f * edge.weight.coerceAtMost(4f)) / share
                 dx[edge.a] -= vx * pull
                 dy[edge.a] -= vy * pull
                 dx[edge.b] += vx * pull
@@ -88,8 +98,8 @@ object ForceLayout {
             }
             // 中心へのゆるい引力
             for (i in 0 until n) {
-                dx[i] += (0.5f - px[i]) * 0.5f * k
-                dy[i] += (0.5f - py[i]) * 0.5f * k
+                dx[i] += (0.5f - px[i]) * GRAVITY * k
+                dy[i] += (0.5f - py[i]) * GRAVITY * k
             }
             // 動かせる距離を、だんだん小さくして落ち着かせる
             val temperature = 0.1f * (1f - iteration.toFloat() / iterations).coerceAtLeast(0.02f)
