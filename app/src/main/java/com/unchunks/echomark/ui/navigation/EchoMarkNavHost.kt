@@ -312,6 +312,7 @@ fun EchoMarkNavHost(
             composable(
                 route = Routes.COLLECTION_DETAIL,
                 arguments = listOf(navArgument(CollectionDetailViewModel.ARG_COLLECTION_ID) { type = NavType.LongType }),
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.COLLECTION_DEEP_LINK }),
                 enterTransition = subScreenEnter,
                 popExitTransition = subScreenPopExit
             ) {
@@ -564,6 +565,7 @@ internal fun NavController.openLaunchTarget(target: LaunchTarget) {
     when (target) {
         LaunchTarget.ADD_BOOKMARK -> openBookmarkListWith(ListLaunchAction.ADD_BOOKMARK)
         LaunchTarget.SEARCH -> openBookmarkListWith(ListLaunchAction.SEARCH)
+        LaunchTarget.UNREAD -> openBookmarkListWith(ListLaunchAction.UNREAD)
         LaunchTarget.NEW_CHAT -> {
             navigate(TopLevelDestination.CHAT.route)
             navigate(CHAT_NEW_ROUTE)

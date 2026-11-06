@@ -51,6 +51,21 @@
     </shortcut>
     <shortcut
         android:enabled="true"
+        android:icon="@drawable/ic_shortcut_unread"
+        android:shortcutId="unread"
+        android:shortcutLongLabel="@string/shortcut_unread_long"
+        android:shortcutShortLabel="@string/shortcut_unread_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.unchunks.echomark.MainActivity"
+            android:targetPackage="com.unchunks.echomark">
+            <extra
+                android:name="com.unchunks.echomark.extra.LAUNCH_TARGET"
+                android:value="unread" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
         android:icon="@drawable/ic_shortcut_ai"
         android:shortcutId="ai_settings"
         android:shortcutLongLabel="@string/shortcut_ai_settings_long"

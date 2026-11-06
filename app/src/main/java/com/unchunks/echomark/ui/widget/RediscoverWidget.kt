@@ -19,6 +19,7 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.LinearProgressIndicator
 import androidx.glance.appwidget.components.CircleIconButton
 import androidx.glance.appwidget.components.Scaffold
 import androidx.glance.appwidget.components.TitleBar
@@ -35,6 +36,8 @@ import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.material3.ColorProviders
+import androidx.glance.semantics.contentDescription
+import androidx.glance.semantics.semantics
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
@@ -71,14 +74,26 @@ class RediscoverWidget : GlanceAppWidget() {
         val entryPoint = EntryPointAccessors.fromApplication(context, RediscoverWidgetEntryPoint::class.java)
         val itemsFlow = rediscoverItems(entryPoint.bookmarkRepository())
         val dynamicColorFlow = entryPoint.appSettingsRepository().dynamicColor.catch { emit(false) }
+        // AI 処理の進み具合(処理中・処理待ちが無ければ null)。読めなければ出さない
+        val processingFlow = entryPoint.widgetProcessingSource().observe().catch { e ->
+            if (e is CancellationException) throw e
+            Timber.w(e, "再発見ウィジェットの AI 処理の進み具合を読み込めませんでした")
+            emit(null)
+        }
         // 表示中(セッションが生きている間)は DB の変化に追従する。最初の値は描画前に読んでおき、空の表示を挟まない
         val initialItems = itemsFlow.first()
         val initialDynamicColor = dynamicColorFlow.first()
+        val initialProcessing = processingFlow.first()
         provideContent {
             val items by itemsFlow.collectAsState(initialItems)
             val dynamicColor by dynamicColorFlow.collectAsState(initialDynamicColor)
+            val processing by processingFlow.collectAsState(initialProcessing)
             RediscoverWidgetTheme(dynamicColor) {
-                RediscoverWidgetContent(items = items, layout = RediscoverWidgetData.layoutFor(LocalSize.current))
+                RediscoverWidgetContent(
+                    items = items,
+                    layout = RediscoverWidgetData.layoutFor(LocalSize.current, hasProcessing = processing != null),
+                    processing = processing
+                )
             }
         }
     }
@@ -105,6 +120,7 @@ class RediscoverWidgetReceiver : GlanceAppWidgetReceiver() {
 interface RediscoverWidgetEntryPoint {
     fun bookmarkRepository(): BookmarkRepository
     fun appSettingsRepository(): AppSettingsRepository
+    fun widgetProcessingSource(): WidgetProcessingSource
 }
 
 /** アプリと同じく、ブランド配色(既定)か壁紙に合わせたダイナミックカラー。ライト/ダークは端末に合わせる。 */
@@ -116,11 +132,16 @@ internal fun RediscoverWidgetTheme(dynamicColor: Boolean, content: @Composable (
 private val BrandColors = ColorProviders(light = LightColorScheme, dark = DarkColorScheme)
 
 /**
- * ウィジェットの中身。ヘッダー(「＋」で URL を追加、チャット)と、大きさに応じた件数([layout])のブックマーク。
+ * ウィジェットの中身。ヘッダー(「＋」で URL を追加、検索、チャット)と、AI 処理の進み具合([processing]。出すかどうかは [layout] で決まる)、
+ * 大きさに応じた件数([layout])のブックマーク。
  * 状態を受け取るだけにして、ユニットテスト(glance-appwidget-testing)やスクリーンショットで中身を確認できるようにしている。
  */
 @Composable
-internal fun RediscoverWidgetContent(items: List<RediscoverWidgetItem>, layout: RediscoverWidgetLayout) {
+internal fun RediscoverWidgetContent(
+    items: List<RediscoverWidgetItem>,
+    layout: RediscoverWidgetLayout,
+    processing: WidgetProcessing? = null
+) {
     val context = LocalContext.current
     Scaffold(
         titleBar = {
@@ -137,6 +158,15 @@ internal fun RediscoverWidgetContent(items: List<RediscoverWidgetItem>, layout: 
                         backgroundColor = null,
                         contentColor = GlanceTheme.colors.onSurface
                     )
+                    if (layout.showSearch) {
+                        CircleIconButton(
+                            imageProvider = ImageProvider(R.drawable.ic_widget_search),
+                            contentDescription = SEARCH_LABEL,
+                            onClick = actionStartActivity(launchTargetIntent(context, LaunchTarget.SEARCH)),
+                            backgroundColor = null,
+                            contentColor = GlanceTheme.colors.onSurface
+                        )
+                    }
                     CircleIconButton(
                         imageProvider = ImageProvider(R.drawable.ic_widget_chat),
                         contentDescription = CHAT_LABEL,
@@ -149,24 +179,72 @@ internal fun RediscoverWidgetContent(items: List<RediscoverWidgetItem>, layout: 
         },
         modifier = GlanceModifier.padding(bottom = 12.dp)
     ) {
-        if (items.isEmpty()) {
-            Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = EMPTY_MESSAGE,
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurfaceVariant,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
-                    )
-                )
+        Column(modifier = GlanceModifier.fillMaxSize()) {
+            if (layout.showProcessing && processing != null) {
+                WidgetProcessingStrip(processing)
+                Spacer(GlanceModifier.height(6.dp))
             }
-        } else {
-            Column(modifier = GlanceModifier.fillMaxSize()) {
+            if (items.isEmpty()) {
+                Box(modifier = GlanceModifier.fillMaxWidth().defaultWeight(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = EMPTY_MESSAGE,
+                        style = TextStyle(
+                            color = GlanceTheme.colors.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    )
+                }
+            } else {
                 items.take(layout.maxItems).forEachIndexed { index, item ->
                     if (index > 0) Spacer(GlanceModifier.height(6.dp))
                     RediscoverWidgetRow(item, showSource = layout.showSource)
                 }
             }
+        }
+    }
+}
+
+/**
+ * AI 処理の進み具合の欄(処理中・処理待ちの件数、進み具合の棒、残り時間の目安)。押すと処理の状況の画面を開く。
+ * 棒は処理中のものの進み具合の平均で、処理中のものが無い(待ちだけ)ときは出さない。
+ */
+@Composable
+private fun WidgetProcessingStrip(processing: WidgetProcessing) {
+    val context = LocalContext.current
+    Column(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .cornerRadius(12.dp)
+            .background(GlanceTheme.colors.secondaryContainer)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .semantics { contentDescription = processing.description() }
+            .clickable(actionStartActivity(processingQueueIntent(context)))
+    ) {
+        Text(
+            text = processing.title(),
+            maxLines = 1,
+            style = TextStyle(
+                color = GlanceTheme.colors.onSecondaryContainer,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        )
+        processing.fraction?.let { fraction ->
+            Spacer(GlanceModifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = fraction,
+                modifier = GlanceModifier.fillMaxWidth(),
+                color = GlanceTheme.colors.primary,
+                backgroundColor = GlanceTheme.colors.surface
+            )
+        }
+        processing.detail()?.let { detail ->
+            Text(
+                text = detail,
+                maxLines = 1,
+                style = TextStyle(color = GlanceTheme.colors.onSecondaryContainer, fontSize = 12.sp)
+            )
         }
     }
 }
@@ -211,6 +289,12 @@ internal fun launchTargetIntent(context: Context, target: LaunchTarget): Intent 
     LaunchTarget.putInto(Intent(context, MainActivity::class.java), target)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
+/** 処理の状況の画面を開く(まとめての処理の通知と同じディープリンク echomark://processing-queue)。 */
+internal fun processingQueueIntent(context: Context): Intent =
+    Intent(Intent.ACTION_VIEW, Routes.PROCESSING_QUEUE_DEEP_LINK.toUri(), context, MainActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
 internal const val EMPTY_MESSAGE = "保存するとここに再発見が表示されます"
+internal const val SEARCH_LABEL = "検索"
 internal const val ADD_LABEL = "URL を追加"
 internal const val CHAT_LABEL = "新しいチャット"

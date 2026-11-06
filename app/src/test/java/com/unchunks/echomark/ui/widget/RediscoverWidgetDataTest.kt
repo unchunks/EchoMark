@@ -77,15 +77,15 @@ class RediscoverWidgetDataTest {
     @Test
     fun 件数は高さで_ヘッダーの文字は幅で決める() {
         assertEquals(
-            RediscoverWidgetLayout(maxItems = 1, showTitle = false, showSource = false),
+            RediscoverWidgetLayout(maxItems = 1, showTitle = false, showSource = false, showSearch = false),
             RediscoverWidgetData.layoutFor(RediscoverWidgetData.SMALL_SIZE)
         )
         assertEquals(
-            RediscoverWidgetLayout(maxItems = 2, showTitle = false, showSource = true),
+            RediscoverWidgetLayout(maxItems = 2, showTitle = false, showSource = true, showSearch = false),
             RediscoverWidgetData.layoutFor(RediscoverWidgetData.MEDIUM_SIZE)
         )
         assertEquals(
-            RediscoverWidgetLayout(maxItems = 3, showTitle = true, showSource = true),
+            RediscoverWidgetLayout(maxItems = 3, showTitle = true, showSource = true, showSearch = true),
             RediscoverWidgetData.layoutFor(DpSize(260.dp, 260.dp))
         )
         assertEquals(1, RediscoverWidgetData.layoutFor(DpSize(300.dp, 150.dp)).maxItems)
@@ -98,7 +98,7 @@ class RediscoverWidgetDataTest {
     fun 表示が変わるときだけ更新を流す() = runTest {
         val bookmarks = MutableStateFlow(listOf(testBookmark(1, lastAccessedAt = now - 30 * day)))
         val dynamicColor = MutableStateFlow(false)
-        val changes = mutableListOf<Pair<List<RediscoverWidgetItem>, Boolean>>()
+        val changes = mutableListOf<RediscoverWidgetUpdater.Companion.WidgetSnapshot>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             RediscoverWidgetUpdater.widgetContentChanges(bookmarks, dynamicColor, clock = { now }, debounceMs = 100)
                 .toList(changes)
@@ -115,7 +115,7 @@ class RediscoverWidgetDataTest {
         bookmarks.value = listOf(bookmarks.value.single().copy(lastAccessedAt = now))
         advanceTimeBy(200); runCurrent()
         assertEquals(2, changes.size)
-        assertTrue(changes.last().first.isEmpty())
+        assertTrue(changes.last().items.isEmpty())
 
         // 配色の設定が変わったら描き直す
         dynamicColor.value = true
@@ -127,6 +127,41 @@ class RediscoverWidgetDataTest {
         bookmarks.value = listOf(testBookmark(6, lastAccessedAt = now - 30 * day))
         advanceTimeBy(200); runCurrent()
         assertEquals(4, changes.size)
-        assertEquals(listOf(6L), changes.last().first.map { it.bookmarkId })
+        assertEquals(listOf(6L), changes.last().items.map { it.bookmarkId })
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun AI処理の進み具合が変わったときも更新を流す_同じ値なら流さない() = runTest {
+        val bookmarks = MutableStateFlow(listOf(testBookmark(1, lastAccessedAt = now - 30 * day)))
+        val processing = MutableStateFlow<WidgetProcessing?>(null)
+        val changes = mutableListOf<RediscoverWidgetUpdater.Companion.WidgetSnapshot>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            RediscoverWidgetUpdater.widgetContentChanges(bookmarks, MutableStateFlow(false), processing, clock = { now }, debounceMs = 100)
+                .toList(changes)
+        }
+        advanceTimeBy(200); runCurrent()
+        assertEquals(1, changes.size)
+        assertEquals(null, changes.last().processing)
+
+        // 処理が始まった
+        processing.value = WidgetProcessing(running = 1, waiting = 0, fraction = 0.0f, remainingMinutes = 2)
+        advanceTimeBy(200); runCurrent()
+        assertEquals(2, changes.size)
+        assertEquals(1, changes.last().processing!!.running)
+
+        // 同じ値が来ても描き直さない
+        processing.value = WidgetProcessing(running = 1, waiting = 0, fraction = 0.0f, remainingMinutes = 2)
+        advanceTimeBy(200); runCurrent()
+        assertEquals(2, changes.size)
+
+        // 進んだら描き直す。終わったら(null)も描き直して、欄を消す
+        processing.value = WidgetProcessing(running = 1, waiting = 0, fraction = 0.5f, remainingMinutes = 1)
+        advanceTimeBy(200); runCurrent()
+        assertEquals(3, changes.size)
+        processing.value = null
+        advanceTimeBy(200); runCurrent()
+        assertEquals(4, changes.size)
+        assertEquals(null, changes.last().processing)
     }
 }

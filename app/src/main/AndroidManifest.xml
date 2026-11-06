@@ -82,7 +82,18 @@
                     android:scheme="echomark" />
             </intent-filter>
 
-            <!-- ランチャーのアイコン長押しで出るショートカット(URL を追加・検索・新しいチャット・AI の設定) -->
+            <!-- ホーム画面に置いたコレクションのショートカット → echomark://collection/{id} でコレクションの画面へ -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data
+                    android:host="collection"
+                    android:scheme="echomark" />
+            </intent-filter>
+
+            <!-- ランチャーのアイコン長押しで出るショートカット(URL を追加・検索・新しいチャット・未読を読む・AI の設定) -->
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />

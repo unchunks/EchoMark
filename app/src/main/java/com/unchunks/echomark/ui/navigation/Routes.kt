@@ -36,6 +36,10 @@ object Routes {
     const val COLLECTION_DETAIL = "collections/{collectionId}"
     fun collectionDetail(id: Long) = "collections/$id"
 
+    /** ホーム画面のショートカットなど外部からコレクションを開くディープリンク。MainActivity の intent-filter と一致させること。 */
+    const val COLLECTION_DEEP_LINK = "echomark://collection/{collectionId}"
+    fun collectionDeepLink(id: Long) = "echomark://collection/$id"
+
     /** 一覧ページのリンク・端末内のファイルから資料を探す(資料を探す画面から開く) */
     const val DISCOVER_FROM_PAGE_OR_FILES = "discover/page-or-files"
 
