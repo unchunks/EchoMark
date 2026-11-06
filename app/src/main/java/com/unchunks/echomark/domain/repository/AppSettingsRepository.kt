@@ -160,6 +160,9 @@ interface AppSettingsRepository {
     /** 夜間にリンク切れを確認する(#94)。確認は処理の設定(充電中だけ・Wi-Fi のときだけ)に従う。既定はオン */
     val linkCheckEnabled: Flow<Boolean>
 
+    /** 場所の画面で「地図の背景」を出す(#85)。オンにすると、画面を開いている間だけ地図のタイルをネットワークから読む。既定はオフ */
+    val placesMapBackground: Flow<Boolean>
+
     /** 一覧の並び順。アプリを開き直しても前回選んだ順で出す。既定は新しい順。 */
     val bookmarkSortOrder: Flow<BookmarkSortOrder>
 
@@ -189,6 +192,7 @@ interface AppSettingsRepository {
     suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity)
 
     suspend fun setLinkCheckEnabled(enabled: Boolean)
+    suspend fun setPlacesMapBackground(enabled: Boolean)
 
     /** [transform] で「両方残す」と答えた重複の組を書き換える */
     suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>)

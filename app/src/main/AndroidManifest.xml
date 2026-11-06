@@ -11,6 +11,10 @@
          位置情報の無い端末でも入れられるようにする(現在地を入れるボタンだけ使えない) -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
+    <!-- 地図のライブラリ(MapLibre)が足す、正確な位置情報と Wi-Fi の状態の権限は使わない(おおよその位置だけ、押したときにだけ)。
+         地図は現在地を表示しないので、ライブラリ側の位置情報の機能は使っていない -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" tools:node="remove" />
     <!-- 再発見通知用。Android 13+ のみ実行時に要求する(設定でオンにしたとき) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 長い処理をフォアグラウンドで実行する(WorkManager の setForeground)。

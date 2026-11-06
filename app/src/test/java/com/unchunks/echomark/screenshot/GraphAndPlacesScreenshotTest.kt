@@ -1,6 +1,9 @@
 package com.unchunks.echomark.screenshot
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -109,8 +112,20 @@ class GraphAndPlacesScreenshotTest {
         lastDetection = PlaceDetection(checked = 6, fromLinks = 1, fromPhotos = 2)
     )
 
-    private fun placesContent(state: PlacesUiState): @androidx.compose.runtime.Composable () -> Unit = {
-        PlacesContent(uiState = state, onBack = {}, onOpenBookmark = {}, onSelect = {}, onDetect = {}, onOpenInMap = { _, _ -> })
+    /** タイルの地図の代わりの仮の描画(地図のライブラリはこのテストでは動かさない)。帰属表示は本物。 */
+    private val fakeTileMap: com.unchunks.echomark.ui.places.TileMapSlot = { _, _, _, _, modifier ->
+        androidx.compose.foundation.layout.Box(
+            modifier.fillMaxWidth().height(260.dp).background(androidx.compose.ui.graphics.Color(0xFFCFE3F0))
+        ) {
+            com.unchunks.echomark.ui.places.MapAttribution(Modifier.align(androidx.compose.ui.Alignment.BottomEnd).padding(4.dp))
+        }
+    }
+
+    private fun placesContent(state: PlacesUiState, online: Boolean = true): @androidx.compose.runtime.Composable () -> Unit = {
+        PlacesContent(
+            uiState = state, onBack = {}, onOpenBookmark = {}, onSelect = {}, onDetect = {}, onOpenInMap = { _, _ -> },
+            isOnline = online, tileMap = fakeTileMap
+        )
     }
 
     @Test
@@ -122,6 +137,16 @@ class GraphAndPlacesScreenshotTest {
         content = placesContent(placesState.copy(selectedKey = placesState.groups.first().key))
     )
 
+
+    @Test
+    fun placesTileMap() = screenshot.captureScreenLightDark(
+        "places_tile_map", content = placesContent(placesState.copy(mapBackgroundEnabled = true))
+    )
+
+    @Test
+    fun placesTileMapOffline() = screenshot.captureScreenLightDark(
+        "places_tile_map_offline", content = placesContent(placesState.copy(mapBackgroundEnabled = true), online = false)
+    )
     @Test
     fun placesEmpty() = screenshot.captureScreenLightDark("places_empty", content = placesContent(PlacesUiState(isLoading = false)))
 

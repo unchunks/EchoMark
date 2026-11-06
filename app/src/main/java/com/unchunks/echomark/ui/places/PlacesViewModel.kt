@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.domain.place.PlaceGroup
 import com.unchunks.echomark.domain.place.Places
+import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.PlaceDetection
 import com.unchunks.echomark.domain.repository.PlaceRepository
@@ -35,6 +36,8 @@ data class PlacesUiState(
     val detecting: Boolean = false,
     /** 直前の「場所を探す」の結果(まだ押していなければ null) */
     val lastDetection: PlaceDetection? = null,
+    /** 「地図の背景」のスイッチ(オンの間、画面を開いていればタイルの地図を出す。既定はオフ) */
+    val mapBackgroundEnabled: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -46,6 +49,7 @@ data class PlacesUiState(
 class PlacesViewModel @Inject constructor(
     bookmarkRepository: BookmarkRepository,
     private val placeRepository: PlaceRepository,
+    private val appSettings: AppSettingsRepository,
     dispatchers: DispatcherProvider
 ) : ViewModel() {
 
@@ -58,7 +62,9 @@ class PlacesViewModel @Inject constructor(
 
     private val extras = MutableStateFlow(Extras())
 
-    val uiState: StateFlow<PlacesUiState> = combine(bookmarkRepository.observeBookmarks(), extras) { bookmarks, extras ->
+    val uiState: StateFlow<PlacesUiState> = combine(
+        bookmarkRepository.observeBookmarks(), extras, appSettings.placesMapBackground
+    ) { bookmarks, extras, mapBackground ->
         val placed = bookmarks.filter { it.hasPlace }
         val groups = Places.group(placed)
         PlacesUiState(
@@ -70,6 +76,7 @@ class PlacesViewModel @Inject constructor(
             selectedKey = extras.selectedKey?.takeIf { key -> groups.any { it.key == key } },
             detecting = extras.detecting,
             lastDetection = extras.lastDetection,
+            mapBackgroundEnabled = mapBackground,
             errorMessage = extras.errorMessage
         )
     }
@@ -82,6 +89,11 @@ class PlacesViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlacesUiState())
 
     fun select(key: String?) = extras.update { it.copy(selectedKey = key) }
+
+    /** 「地図の背景」のスイッチを切り替える(オンにしたときだけ、地図のタイルを読む) */
+    fun setMapBackground(enabled: Boolean) {
+        viewModelScope.launch { appSettings.setPlacesMapBackground(enabled) }
+    }
 
     /** 座標の無いリンクと写真から、座標を探す。押されている間は続けて押せない。 */
     fun detect() {

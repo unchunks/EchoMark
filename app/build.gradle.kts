@@ -144,6 +144,8 @@ dependencies {
 
     // ネットワーク・HTML解析(URL本文取得)
     implementation(libs.okhttp)
+    // 場所の画面の「地図の背景」(タイルの地図。OpenFreeMap のタイルを、画面を開いていてスイッチがオンの間だけ読む)
+    implementation(libs.maplibre.android)
     implementation(libs.jsoup)
 
     // ファイルの中身の取り出し(端末内)

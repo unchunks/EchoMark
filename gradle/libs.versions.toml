@@ -21,6 +21,7 @@ datastore = "1.2.1"
 mediapipeTasksText = "1.0.0"
 litertlm = "0.18.1"
 okhttp = "5.5.0"
+maplibre = "13.7.1"
 jsoup = "1.23.2"
 coroutines = "1.11.0"
 orgJson = "20260814"
@@ -69,6 +70,8 @@ work-testing = { group = "androidx.work", name = "work-testing", version.ref = "
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+# 場所の画面の「地図の背景」(タイルの地図。#85)。BSD-2-Clause。Vulkan 版でなく OpenGL ES 版を使う(Vulkan を必須にする宣言が入らず、ライブラリも小さい)。ネイティブライブラリを含むので、release では arm64-v8a・x86_64 だけを入れる(app の abiFilters)
+maplibre-android = { group = "org.maplibre.gl", name = "android-sdk-opengl", version.ref = "maplibre" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 okhttp-mockwebserver3 = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }

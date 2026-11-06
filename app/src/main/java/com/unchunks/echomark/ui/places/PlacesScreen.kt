@@ -23,11 +23,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,7 +85,8 @@ fun PlacesScreen(
         onOpenBookmark = onOpenBookmark,
         onSelect = viewModel::select,
         onDetect = viewModel::detect,
-        onOpenInMap = { point, title -> openInMapApp(context, point, title) }
+        onOpenInMap = { point, title -> openInMapApp(context, point, title) },
+        onMapBackgroundChange = viewModel::setMapBackground
     )
 }
 
@@ -91,7 +100,10 @@ fun PlacesContent(
     onSelect: (String?) -> Unit,
     onDetect: () -> Unit,
     onOpenInMap: (GeoPoint, String?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onMapBackgroundChange: (Boolean) -> Unit = {},
+    isOnline: Boolean = rememberIsOnline(),
+    tileMap: TileMapSlot = DefaultTileMap
 ) {
     Scaffold(
         modifier = modifier,
@@ -108,59 +120,146 @@ fun PlacesContent(
     ) { innerPadding ->
         when {
             uiState.isLoading -> LoadingState(modifier = Modifier.padding(innerPadding))
-            else -> ReadableLazyColumn(
-                modifier = Modifier.padding(innerPadding),
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                if (uiState.groups.isEmpty()) {
-                    item(key = "empty") {
-                        EmptyState(
-                            icon = Icons.Outlined.Place,
-                            title = "場所のあるブックマークがありません",
-                            description = "詳細画面で場所を入れるか、下の「場所を探す」で、地図のリンクや写真の位置情報から読み取れます。",
-                            modifier = Modifier.height(240.dp)
-                        )
-                    }
-                } else {
-                    item(key = "map") {
-                        PlaceMap(
-                            groups = uiState.groups,
-                            selectedKey = uiState.selectedKey,
-                            onSelect = onSelect,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-                    item(key = "summary") {
-                        Text(
-                            buildString {
-                                append("座標のあるブックマーク ${uiState.locatedCount}件")
-                                if (uiState.nameOnlyCount > 0) append("・名前だけのもの ${uiState.nameOnlyCount}件")
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-                        )
-                        Text(
-                            "地図の画像は使わず、位置の分布だけを描いています。実際の地図は「地図アプリで開く」で見られます(北が上)。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-                        )
-                    }
+            else -> Column(Modifier.padding(innerPadding)) {
+                // 地図は一覧の外(上)に固定する。タイルの地図は指で動かすので、スクロールする一覧の中に置くと操作が取り合いになる
+                if (uiState.groups.isNotEmpty()) {
+                    MapArea(uiState, onSelect, isOnline, tileMap)
                 }
-                item(key = "detect") {
-                    DetectSection(uiState, onDetect)
-                }
-                items(uiState.groups, key = { it.key }) { group ->
-                    PlaceGroupCard(
-                        group = group,
-                        selected = group.key == uiState.selectedKey,
-                        onToggle = { onSelect(if (group.key == uiState.selectedKey) null else group.key) },
-                        onOpenBookmark = onOpenBookmark,
-                        onOpenInMap = onOpenInMap
-                    )
+                ReadableLazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    if (uiState.groups.isEmpty()) {
+                        item(key = "empty") {
+                            EmptyState(
+                                icon = Icons.Outlined.Place,
+                                title = "場所のあるブックマークがありません",
+                                description = "詳細画面で場所を入れるか、下の「場所を探す」で、地図のリンクや写真の位置情報から読み取れます。",
+                                modifier = Modifier.height(240.dp)
+                            )
+                        }
+                    } else {
+                        item(key = "summary") {
+                            Text(
+                                buildString {
+                                    append("座標のあるブックマーク ${uiState.locatedCount}件")
+                                    if (uiState.nameOnlyCount > 0) append("・名前だけのもの ${uiState.nameOnlyCount}件")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                            )
+                        }
+                        item(key = "map-background") {
+                            MapBackgroundSwitch(uiState.mapBackgroundEnabled, onMapBackgroundChange)
+                        }
+                    }
+                    item(key = "detect") {
+                        DetectSection(uiState, onDetect)
+                    }
+                    items(uiState.groups, key = { it.key }) { group ->
+                        PlaceGroupCard(
+                            group = group,
+                            selected = group.key == uiState.selectedKey,
+                            onToggle = { onSelect(if (group.key == uiState.selectedKey) null else group.key) },
+                            onOpenBookmark = onOpenBookmark,
+                            onOpenInMap = onOpenInMap
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+/** タイルの地図を描く部分。テストでは、地図のライブラリを使わない Fake に差し替える。 */
+typealias TileMapSlot = @Composable (
+    groups: List<PlaceGroup>,
+    selectedKey: String?,
+    onSelect: (String?) -> Unit,
+    onFailed: (String) -> Unit,
+    modifier: Modifier
+) -> Unit
+
+/** 実際のタイルの地図([PlaceTileMap])。 */
+val DefaultTileMap: TileMapSlot = { groups, selectedKey, onSelect, onFailed, modifier ->
+    PlaceTileMap(groups, selectedKey, onSelect, onFailed, modifier)
+}
+
+/** 地図の高さ */
+private val MAP_HEIGHT = 260.dp
+
+/**
+ * 地図の部分。「地図の背景」がオンで、ネットワークがあり、読み込みに失敗していなければタイルの地図を出す。
+ * オフのとき・オフラインのとき・読み込みに失敗したときは、分布図(タイルの無い図)を出し、理由を一言添える
+ * (オフラインから戻ったら自動でもう一度試し、失敗したときは「もう一度試す」を出す)。
+ */
+@Composable
+private fun MapArea(uiState: PlacesUiState, onSelect: (String?) -> Unit, isOnline: Boolean, tileMap: TileMapSlot) {
+    var failure by remember { mutableStateOf<String?>(null) }
+    var attempt by remember { mutableIntStateOf(0) }
+    // スイッチを入れ直したとき・ネットワークが戻ったときは、失敗の記録を外してもう一度試す
+    LaunchedEffect(uiState.mapBackgroundEnabled, isOnline) { failure = null }
+    val useTiles = uiState.mapBackgroundEnabled && isOnline && failure == null
+
+    Column {
+        if (useTiles) {
+            // 試し直すたびに作り直す(前の地図は組みから外れて、通信も止まる)
+            key(attempt) {
+                tileMap(
+                    uiState.groups, uiState.selectedKey, onSelect, { failure = it },
+                    Modifier.fillMaxWidth().height(MAP_HEIGHT).padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+        } else {
+            PlaceMap(
+                groups = uiState.groups,
+                selectedKey = uiState.selectedKey,
+                onSelect = onSelect,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+        if (uiState.mapBackgroundEnabled && !useTiles) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (!isOnline) "オフラインのため、地図の背景は出せません。分布図を表示しています。"
+                    else "地図の背景を読み込めませんでした。分布図を表示しています。",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (isOnline) {
+                    TextButton(onClick = { failure = null; attempt++ }) { Text("もう一度試す") }
+                }
+            }
+        }
+    }
+}
+
+/** 「地図の背景を表示」のスイッチ(既定はオフ)と、通信の説明。 */
+@Composable
+private fun MapBackgroundSwitch(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("地図の背景を表示", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Switch(checked = enabled, onCheckedChange = onChange)
+        }
+        Text(
+            "オンにすると、この画面を開いている間だけ、見ている範囲の地図(OpenFreeMap のタイル)をネットワークから読み込みます。" +
+                "送るのは、見ている範囲のタイルの番号・IP アドレス・アプリ名だけで、ブックマークの内容や場所は送りません。" +
+                "オフラインのときや読み込めないときは、分布図を表示します。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (!enabled) {
+            Text(
+                "いまは地図の画像を使わず、位置の分布だけを描いています(北が上)。実際の地図は「地図アプリで開く」で見られます。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
