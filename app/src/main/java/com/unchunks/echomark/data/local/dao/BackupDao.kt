@@ -6,12 +6,16 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.unchunks.echomark.data.backup.BackupData
+import com.unchunks.echomark.data.backup.CollectionBackup
+import com.unchunks.echomark.data.backup.CollectionItemBackup
 import com.unchunks.echomark.data.backup.toBackup
 import com.unchunks.echomark.data.backup.toEntity
 import com.unchunks.echomark.data.backup.formatReferencedIds
 import com.unchunks.echomark.data.backup.parseReferencedIds
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
+import com.unchunks.echomark.data.local.entity.CollectionEntity
+import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
@@ -22,6 +26,7 @@ import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.CollectionNames
 import com.unchunks.echomark.domain.bookmark.model.SmartFolderNames
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
@@ -41,7 +46,9 @@ data class BackupMergeResult(
     /** 追加した購読の数(同じフィードの URL が既にあれば追加しない) */
     val subscriptionsAdded: Int = 0,
     /** 追加したノートの数(同じブックマークに同じ文章・同じ作成日時のノートが既にあれば追加しない) */
-    val notesAdded: Int = 0
+    val notesAdded: Int = 0,
+    /** 追加したコレクションの数(同じ名前のコレクションが既にあれば、追加せずそこへブックマークを足す) */
+    val collectionsAdded: Int = 0
 )
 
 /**
@@ -74,6 +81,35 @@ abstract class BackupDao {
     @Query("SELECT * FROM smart_folders ORDER BY createdAt, id")
     abstract suspend fun getAllSmartFolders(): List<SmartFolderEntity>
 
+    @Query("SELECT * FROM collections ORDER BY createdAt, id")
+    abstract suspend fun getAllCollections(): List<CollectionEntity>
+
+    @Query("SELECT * FROM collection_items ORDER BY collectionId, addedAt, bookmarkId")
+    abstract suspend fun getAllCollectionItems(): List<CollectionItemEntity>
+
+    /** 書き出し用に、コレクションを入れているブックマークごとにまとめる */
+    @Transaction
+    open suspend fun collectionBackups(): List<CollectionBackup> {
+        val itemsByCollection = getAllCollectionItems().groupBy { it.collectionId }
+        return getAllCollections().map { collection ->
+            CollectionBackup(
+                name = collection.name,
+                description = collection.description,
+                createdAt = collection.createdAt,
+                items = itemsByCollection[collection.id].orEmpty().map { CollectionItemBackup(it.bookmarkId, it.addedAt) }
+            )
+        }
+    }
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertCollection(collection: CollectionEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertCollectionItem(item: CollectionItemEntity): Long
+
+    @Query("DELETE FROM collections")
+    abstract suspend fun deleteAllCollections()
+
     @Query("SELECT * FROM bookmark_notes ORDER BY bookmarkId, createdAt, id")
     abstract suspend fun getAllNotes(): List<BookmarkNoteEntity>
 
@@ -103,7 +139,8 @@ abstract class BackupDao {
             categories = getAllCategories(),
             smartFolders = getAllSmartFolders().map { it.toBackup(tagNameById) },
             subscriptions = getAllSubscriptions(),
-            notes = getAllNotes()
+            notes = getAllNotes(),
+            collections = collectionBackups()
         )
     }
 
@@ -360,6 +397,25 @@ abstract class BackupDao {
             notesAdded++
         }
 
+        // コレクション: 名前(大文字小文字・全角半角を区別しない)が同じコレクションが今の DB にあれば、そこへブックマークを足す
+        // (説明は変えない)。無ければ作る。入れるブックマークは書き出し元の ID から付け替える(追加したものも、同じ URL で既にあったものも)
+        val collectionIds = getAllCollections().associateTo(HashMap()) { CollectionNames.key(it.name) to it.id }
+        var collectionsAdded = 0
+        for (collection in data.collections) {
+            val name = CollectionNames.normalize(collection.name) ?: continue
+            val key = CollectionNames.key(name)
+            val collectionId = collectionIds[key] ?: insertCollection(
+                CollectionEntity(name = name, description = collection.description, createdAt = collection.createdAt)
+            ).takeIf { it >= 0 }?.also {
+                collectionIds[key] = it
+                collectionsAdded++
+            } ?: continue
+            for (item in collection.items) {
+                val bookmarkId = bookmarkIds[item.bookmarkId] ?: continue
+                insertCollectionItem(CollectionItemEntity(collectionId, bookmarkId, item.addedAt))
+            }
+        }
+
         var messagesAdded = 0
         for (message in data.messages) {
             val conversationId = conversationIds[message.conversationId] ?: continue
@@ -383,7 +439,8 @@ abstract class BackupDao {
             messagesAdded = messagesAdded,
             smartFoldersAdded = smartFoldersAdded,
             subscriptionsAdded = subscriptionsAdded,
-            notesAdded = notesAdded
+            notesAdded = notesAdded,
+            collectionsAdded = collectionsAdded
         )
     }
 
@@ -421,6 +478,8 @@ abstract class BackupDao {
     open suspend fun deleteAll() {
         deleteAllMessages()
         deleteAllNotes()
+        // コレクションも利用者のデータ(入れた記録は、ブックマークの削除で連鎖して消えるが、空のコレクションは残るので明示的に消す)
+        deleteAllCollections()
         deleteAllConversations()
         deleteAllCrossRefs()
         deleteAllTags()

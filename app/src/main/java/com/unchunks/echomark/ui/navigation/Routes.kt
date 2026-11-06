@@ -17,6 +17,13 @@ object Routes {
     /** 重複の整理と関連のまとまり(ブックマーク一覧のメニューから開くサブ画面) */
     const val DUPLICATES = "duplicates"
 
+    /** コレクションの一覧(ブックマーク一覧のメニューから開くサブ画面) */
+    const val COLLECTIONS = "collections"
+
+    /** コレクションの中身(コレクションの一覧から開く) */
+    const val COLLECTION_DETAIL = "collections/{collectionId}"
+    fun collectionDetail(id: Long) = "collections/$id"
+
     /** 一覧ページのリンク・端末内のファイルから資料を探す(資料を探す画面から開く) */
     const val DISCOVER_FROM_PAGE_OR_FILES = "discover/page-or-files"
 

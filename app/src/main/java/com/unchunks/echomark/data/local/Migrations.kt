@@ -283,6 +283,28 @@ val MIGRATION_23_24 = object : Migration(23, 24) {
 }
 
 /**
+ * v24 → v25: コレクション(collections、#91)と、入れたブックマーク(collection_items)のテーブルを足す。空で始める。
+ * 既存のテーブルは変わらない。コレクションかブックマークを削除すると、入れた記録は連鎖して消える。
+ */
+val MIGRATION_24_25 = object : Migration(24, 25) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // スキーマ JSON(25.json)の createSql と同じ
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `collections` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                "`description` TEXT, `createdAt` INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_collections_name` ON `collections` (`name`)")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `collection_items` (`collectionId` INTEGER NOT NULL, `bookmarkId` INTEGER NOT NULL, " +
+                "`addedAt` INTEGER NOT NULL, PRIMARY KEY(`collectionId`, `bookmarkId`), " +
+                "FOREIGN KEY(`collectionId`) REFERENCES `collections`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                "FOREIGN KEY(`bookmarkId`) REFERENCES `bookmarks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_collection_items_bookmarkId` ON `collection_items` (`bookmarkId`)")
+    }
+}
+
+/**
  * アプリで使う正式なマイグレーション一覧。DatabaseModule とマイグレーションテストで共有する。
  * [OLDEST_MIGRATABLE_VERSION] から [AppDatabase.VERSION] までの各版から、ここにあるものだけで現在の版へ上がれること
  * (MigrationPathTest で確認している)。
@@ -291,7 +313,7 @@ val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
-        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24
+        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

@@ -4,6 +4,8 @@ import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
+import com.unchunks.echomark.data.local.dao.CollectionDao
+import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.mapper.toDomain
@@ -34,6 +36,7 @@ class DuplicateRepositoryImpl @Inject constructor(
     private val bookmarkDao: BookmarkDao,
     private val tagDao: TagDao,
     private val noteDao: BookmarkNoteDao,
+    private val collectionDao: CollectionDao,
     private val vectorSearch: VectorSearchDataSource,
     private val embeddingProvider: EmbeddingProvider,
     private val appSettings: AppSettingsRepository,
@@ -112,13 +115,20 @@ class DuplicateRepositoryImpl @Inject constructor(
         val movedNoteIds = noteDao.getByBookmark(removeId).map { it.id }
         if (movedNoteIds.isNotEmpty()) noteDao.moveToBookmark(movedNoteIds, keepId)
 
+        // コレクションは、残す方がまだ入っていないものに入れる(消す方を削除すると、入れた記録は連鎖して消えるため)
+        val removedItems = collectionDao.getItemsOfBookmark(removeId)
+        val keepCollectionIds = collectionDao.getItemsOfBookmark(keepId).mapTo(HashSet()) { it.collectionId }
+        val addedCollectionIds = removedItems.map { it.collectionId }.filter { it !in keepCollectionIds }
+        collectionDao.insertItems(removedItems.filter { it.collectionId in addedCollectionIds }.map { it.copy(bookmarkId = keepId) })
+
         // オフラインコピーを残す方へ移したときは、消す方の削除でファイルの掃除を始めないよう、参照を外して渡す
         val movedSnapshot = fields.snapshotPath != keep.snapshotPath
         val toDelete = if (movedSnapshot) remove.copy(snapshotPath = null, snapshotPdfPath = null, snapshotAt = null) else remove
         bookmarkRepository.deleteBookmark(toDelete)
         Timber.i("重複を統合: 残す id=$keepId / 消す id=$removeId")
         MergeUndo(
-            keptBefore = keep, removed = remove, addedTags = tagsToAdd.filter { it !in keep.tags }, movedNoteIds = movedNoteIds
+            keptBefore = keep, removed = remove, addedTags = tagsToAdd.filter { it !in keep.tags }, movedNoteIds = movedNoteIds,
+            removedMemberships = removedItems.map { it.collectionId to it.addedAt }, addedCollectionIds = addedCollectionIds
         )
     }
 
@@ -129,6 +139,13 @@ class DuplicateRepositoryImpl @Inject constructor(
             bookmarkRepository.restoreBookmark(undo.removed)
             // 移したノートを消した方へ戻す
             if (undo.movedNoteIds.isNotEmpty()) noteDao.moveToBookmark(undo.movedNoteIds, undo.removed.id)
+            // コレクション: 残した方に入れた分を外し、消した方の所属を入れ直す(削除の預かりが残っていれば復元済みで、重ねても変わらない)
+            undo.addedCollectionIds.forEach { collectionDao.deleteItem(it, keepId) }
+            val existingCollections = collectionDao.getAll().mapTo(HashSet()) { it.id }
+            collectionDao.insertItems(
+                undo.removedMemberships.filter { it.first in existingCollections }
+                    .map { (collectionId, addedAt) -> CollectionItemEntity(collectionId, undo.removed.id, addedAt) }
+            )
             // 統合で足したタグを外す。「外した」とは覚えさせない(AI が付け直せるように)
             undo.addedTags.forEach { name ->
                 tagDao.getTagByName(name)?.let { tagDao.deleteCrossRef(keepId, it.id) }

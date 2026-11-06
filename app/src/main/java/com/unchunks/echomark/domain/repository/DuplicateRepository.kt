@@ -43,7 +43,11 @@ data class MergeUndo(
     /** 残した方に足したタグ(元に戻すときに外す) */
     val addedTags: List<String>,
     /** 残した方へ移したノートの ID(元に戻すときに消した方へ戻す) */
-    val movedNoteIds: List<Long> = emptyList()
+    val movedNoteIds: List<Long> = emptyList(),
+    /** 消した方が入っていたコレクションと入れた日時(コレクションの ID, 日時)。元に戻すときに入れ直す */
+    val removedMemberships: List<Pair<Long, Long>> = emptyList(),
+    /** 残した方にも入れたコレクションの ID(残した方が元々入っていたものは含まない。元に戻すときに外す) */
+    val addedCollectionIds: List<Long> = emptyList()
 )
 
 /**

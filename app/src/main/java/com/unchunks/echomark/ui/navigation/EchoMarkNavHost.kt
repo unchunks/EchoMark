@@ -63,6 +63,9 @@ import com.unchunks.echomark.ui.chat.ChatScreen
 import com.unchunks.echomark.ui.chat.ChatViewModel
 import com.unchunks.echomark.ui.detail.BookmarkDetailScreen
 import com.unchunks.echomark.ui.detail.BookmarkDetailViewModel
+import com.unchunks.echomark.ui.collections.CollectionDetailScreen
+import com.unchunks.echomark.ui.collections.CollectionDetailViewModel
+import com.unchunks.echomark.ui.collections.CollectionsScreen
 import com.unchunks.echomark.ui.discover.DiscoverScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
@@ -218,7 +221,8 @@ fun EchoMarkNavHost(
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                     onOpenDiscover = { navController.navigate(Routes.DISCOVER) },
-                    onOpenDuplicates = { navController.navigate(Routes.DUPLICATES) }
+                    onOpenDuplicates = { navController.navigate(Routes.DUPLICATES) },
+                    onOpenCollections = { navController.navigate(Routes.COLLECTIONS) }
                 )
             }
             // 資料を探す。AI が選んだ資料をまとめて追加し、戻ると一覧に追加したものが並ぶ
@@ -248,6 +252,28 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 DuplicatesScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
+                )
+            }
+            // コレクションの一覧と中身。中身のブックマークをタップしたら詳細を開く
+            composable(
+                route = Routes.COLLECTIONS,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                CollectionsScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenCollection = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.collectionDetail(id)) }
+                )
+            }
+            composable(
+                route = Routes.COLLECTION_DETAIL,
+                arguments = listOf(navArgument(CollectionDetailViewModel.ARG_COLLECTION_ID) { type = NavType.LongType }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                CollectionDetailScreen(
                     onBack = navController.popBackAction(),
                     onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )

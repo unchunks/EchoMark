@@ -748,4 +748,45 @@ class MigrationTest {
         }
         connection.close()
     }
+
+    @Test
+    fun migrate24To25_addsEmptyCollectionsAndKeepsBookmarks() {
+        helper.createDatabase(24).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited) " +
+                    "VALUES (1, 'TEXT', 't', 1, 1, 'DONE', 1, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v25 と一致するか(列・複合主キー・外部キー・インデックス)も検証される
+        val connection = helper.runMigrationsAndValidate(25, listOf(MIGRATION_24_25))
+
+        connection.prepare("SELECT COUNT(*) FROM collections").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        connection.prepare("SELECT COUNT(*) FROM collection_items").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        connection.prepare("SELECT title, isFavorite FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("t", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+        }
+        // 説明は無くてよい。コレクションの名前は1つだけ(一意インデックス)
+        connection.execSQL("INSERT INTO collections (name, createdAt) VALUES ('集め物', 5)")
+        connection.prepare("SELECT description FROM collections").use { stmt ->
+            assertTrue(stmt.step())
+            assertTrue(stmt.isNull(0))
+        }
+        val duplicate = runCatching { connection.execSQL("INSERT INTO collections (name, createdAt) VALUES ('集め物', 6)") }
+        assertTrue(duplicate.isFailure)
+        // 同じブックマークを同じコレクションに2回は入れられない(複合主キー)
+        connection.execSQL("INSERT INTO collection_items (collectionId, bookmarkId, addedAt) VALUES (1, 1, 7)")
+        val twice = runCatching { connection.execSQL("INSERT INTO collection_items (collectionId, bookmarkId, addedAt) VALUES (1, 1, 8)") }
+        assertTrue(twice.isFailure)
+        connection.close()
+    }
 }
