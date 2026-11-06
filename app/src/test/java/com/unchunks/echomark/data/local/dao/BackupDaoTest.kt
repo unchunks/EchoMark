@@ -7,12 +7,16 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.backup.BackupData
+import com.unchunks.echomark.data.backup.CollectionBackup
+import com.unchunks.echomark.data.backup.CollectionItemBackup
 import com.unchunks.echomark.data.backup.SmartFolderBackup
 import com.unchunks.echomark.data.mapper.smartFolderEntity
 import com.unchunks.echomark.data.mapper.toDomain
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
+import com.unchunks.echomark.data.local.entity.CollectionEntity
+import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
@@ -72,8 +76,9 @@ class BackupDaoTest {
         categories: List<CategoryEntity> = emptyList(),
         smartFolders: List<SmartFolderBackup> = emptyList(),
         subscriptions: List<SubscriptionEntity> = emptyList(),
-        notes: List<BookmarkNoteEntity> = emptyList()
-    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders, subscriptions, notes)
+        notes: List<BookmarkNoteEntity> = emptyList(),
+        collections: List<CollectionBackup> = emptyList()
+    ) = BackupData(0, bookmarks, tags, bookmarkTags, conversations, messages, tagAliases, removedTags, categories, smartFolders, subscriptions, notes, collections)
 
     @Test
     fun 空のDBに統合すると全件入り_書き出すと同じ内容になる() = runTest {
@@ -615,5 +620,55 @@ class BackupDaoTest {
         val onExisting = db.bookmarkNoteDao().getByBookmark(existingId).single()
         assertEquals("既にある方のノート", onExisting.text)
         assertEquals(7L, onExisting.updatedAt)
+    }
+
+    @Test
+    fun コレクションは書き出され_全データ削除で空のものも消える() = runTest {
+        db.bookmarkDao().insert(urlBookmark(1, "https://a"))
+        val collectionId = db.collectionDao().insert(CollectionEntity(name = "集め物", description = "説明", createdAt = 5))
+        db.collectionDao().insertItem(CollectionItemEntity(collectionId, 1, addedAt = 6))
+        db.collectionDao().insert(CollectionEntity(name = "空", createdAt = 7))
+
+        val exported = dao.snapshot(exportedAt = 1).collections
+
+        assertEquals(listOf("集め物", "空"), exported.map { it.name })
+        assertEquals(listOf(CollectionItemBackup(1, 6)), exported[0].items)
+        assertEquals(emptyList<CollectionItemBackup>(), exported[1].items)
+
+        dao.deleteAll()
+        assertEquals(emptyList<CollectionBackup>(), dao.snapshot(exportedAt = 1).collections)
+    }
+
+    @Test
+    fun コレクションを読み込むと新しいブックマークにも既にあるブックマークにも入り_同じ名前のコレクションには足される() = runTest {
+        val existingBookmark = db.bookmarkDao().insert(urlBookmark(50, "https://existing"))
+        val existingCollection = db.collectionDao().insert(CollectionEntity(name = "集め物", description = "既存の説明", createdAt = 1))
+        val source = backup(
+            bookmarks = listOf(urlBookmark(1, "https://new"), urlBookmark(2, "https://existing")),
+            collections = listOf(
+                CollectionBackup("集め物", "別の説明", 5, listOf(CollectionItemBackup(1, 6), CollectionItemBackup(2, 7), CollectionItemBackup(99, 8))),
+                CollectionBackup("新しいコレクション", null, 9, listOf(CollectionItemBackup(2, 10)))
+            )
+        )
+
+        val first = dao.merge(source)
+        val second = dao.merge(source)
+
+        assertEquals(1, first.collectionsAdded)
+        assertEquals(0, second.collectionsAdded)
+        val collections = db.collectionDao().getAll().associateBy { it.name }
+        // 同じ名前のコレクションは新しく作らず、説明も変えない
+        assertEquals(2, collections.size)
+        assertEquals("既存の説明", collections.getValue("集め物").description)
+        val newBookmark = db.bookmarkDao().getAllIds().first { it != existingBookmark }
+        val items = db.collectionDao().getAllItems().map { Triple(it.collectionId, it.bookmarkId, it.addedAt) }.toSet()
+        assertEquals(
+            setOf(
+                Triple(existingCollection, newBookmark, 6L),
+                Triple(existingCollection, existingBookmark, 7L),
+                Triple(collections.getValue("新しいコレクション").id, existingBookmark, 10L)
+            ),
+            items
+        )
     }
 }

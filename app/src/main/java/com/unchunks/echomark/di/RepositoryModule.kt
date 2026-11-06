@@ -11,7 +11,9 @@ import com.unchunks.echomark.data.repository.ChatRepositoryImpl
 import com.unchunks.echomark.data.repository.ApiUsageRepositoryImpl
 import com.unchunks.echomark.data.repository.ProcessingStatsRepositoryImpl
 import com.unchunks.echomark.data.repository.CategoryRepositoryImpl
+import com.unchunks.echomark.data.repository.CollectionRepositoryImpl
 import com.unchunks.echomark.data.repository.DuplicateRepositoryImpl
+import com.unchunks.echomark.data.repository.ExportRepositoryImpl
 import com.unchunks.echomark.data.repository.NoteRepositoryImpl
 import com.unchunks.echomark.data.repository.SmartFolderRepositoryImpl
 import com.unchunks.echomark.data.repository.TagRepositoryImpl
@@ -23,7 +25,9 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.DataManagementRepository
+import com.unchunks.echomark.domain.repository.CollectionRepository
 import com.unchunks.echomark.domain.repository.DuplicateRepository
+import com.unchunks.echomark.domain.repository.ExportRepository
 import com.unchunks.echomark.domain.repository.NoteRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
 import com.unchunks.echomark.domain.usage.ApiUsageRepository
@@ -70,6 +74,16 @@ abstract class RepositoryModule {
     abstract fun bindCategoryRepository(
         impl: CategoryRepositoryImpl
     ): CategoryRepository
+
+    @Binds
+    abstract fun bindCollectionRepository(
+        impl: CollectionRepositoryImpl
+    ): CollectionRepository
+
+    @Binds
+    abstract fun bindExportRepository(
+        impl: ExportRepositoryImpl
+    ): ExportRepository
 
     @Binds
     abstract fun bindNoteRepository(

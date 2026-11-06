@@ -12,6 +12,8 @@ import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
+import com.unchunks.echomark.data.local.entity.CollectionEntity
+import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
@@ -63,6 +65,7 @@ class DataManagementRepositoryImplTest {
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
+            collectionDao = db.collectionDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = dispatcherProvider,
@@ -123,6 +126,39 @@ class DataManagementRepositoryImplTest {
         repository.deleteAllData(resetSettings = false)
 
         assertEquals(emptyList<ChatTemplate>(), settings.chatTemplatesFlow.value)
+    }
+
+    @Test
+    fun 全データ削除はコレクションも消す_設定を残す場合も() = runBlocking {
+        val id = bookmarkRepository.saveUrlBookmark("https://example.com/a", null, null).id
+        val collectionId = db.collectionDao().insert(CollectionEntity(name = "集め物", createdAt = 1))
+        db.collectionDao().insertItem(CollectionItemEntity(collectionId, id, addedAt = 2))
+        // ブックマークの無い空のコレクションも消える
+        db.collectionDao().insert(CollectionEntity(name = "空", createdAt = 3))
+
+        repository.deleteAllData(resetSettings = false)
+
+        assertEquals(0, db.collectionDao().getAll().size)
+        assertEquals(0, db.collectionDao().getAllItems().size)
+    }
+
+    @Test
+    fun コレクションはバックアップに書き出され_読み込むと名前で付き_同じ名前には足される() = runBlocking {
+        val id = bookmarkRepository.saveUrlBookmark("https://example.com/a", null, null).id
+        val collectionId = db.collectionDao().insert(CollectionEntity(name = "集め物", description = "説明", createdAt = 5))
+        db.collectionDao().insertItem(CollectionItemEntity(collectionId, id, addedAt = 6))
+        val text = com.unchunks.echomark.data.backup.BackupJson.encode(db.backupDao().snapshot(exportedAt = 1))
+
+        repository.deleteAllData(resetSettings = false)
+        // 読み込む先に、同じ名前のコレクションが既にある
+        val existing = db.collectionDao().insert(CollectionEntity(name = "集め物", description = "既存の説明", createdAt = 1))
+        db.backupDao().merge(com.unchunks.echomark.data.backup.BackupJson.decode(text).data)
+
+        val collections = db.collectionDao().getAll()
+        assertEquals(listOf(existing), collections.map { it.id })
+        assertEquals("既存の説明", collections.single().description)
+        val newBookmarkId = bookmarkRepository.getAllBookmarkIds().single()
+        assertEquals(listOf(existing to newBookmarkId), db.collectionDao().getAllItems().map { it.collectionId to it.bookmarkId })
     }
 
     @Test

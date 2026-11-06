@@ -68,6 +68,7 @@ class BookmarkSearchTest {
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
+            collectionDao = db.collectionDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = VectorSearchDataSource(boxStore.embeddingBox()),
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),

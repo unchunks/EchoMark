@@ -3,6 +3,8 @@ package com.unchunks.echomark.ui.detail
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -40,6 +42,8 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.History
@@ -115,7 +119,12 @@ import coil3.compose.AsyncImage
 import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkCollection
 import com.unchunks.echomark.domain.bookmark.model.BookmarkNote
+import com.unchunks.echomark.domain.bookmark.model.CollectionResult
+import com.unchunks.echomark.domain.export.BookmarkExporter
+import com.unchunks.echomark.domain.export.ExportFormat
+import com.unchunks.echomark.ui.collections.exportedText
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ReadingBlocks
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
@@ -207,6 +216,14 @@ fun BookmarkDetailScreen(
         }
     }
 
+    // 書き出し先を選ぶ画面は MIME タイプごとに作る(形式ごとに用意)
+    val markdownExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(ExportFormat.MARKDOWN.mimeType)) { uri ->
+        if (uri != null) viewModel.exportBookmark(ExportFormat.MARKDOWN, uri.toString())
+    }
+    val htmlExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(ExportFormat.BROWSER_HTML.mimeType)) { uri ->
+        if (uri != null) viewModel.exportBookmark(ExportFormat.BROWSER_HTML, uri.toString())
+    }
+
     LaunchedEffect(viewModel, snackbarHostState) {
         viewModel.messages.collect { message ->
             snackbarHostState.currentSnackbarData?.dismiss()
@@ -240,6 +257,12 @@ fun BookmarkDetailScreen(
                         )
                         if (result == SnackbarResult.ActionPerformed) viewModel.restoreNote(message.note)
                     }
+                    is BookmarkDetailMessage.CollectionChanged ->
+                        snackbarHostState.showSnackbar(
+                            if (message.added) "コレクション「${message.name}」に入れました" else "コレクション「${message.name}」から外しました"
+                        )
+                    is BookmarkDetailMessage.Exported ->
+                        snackbarHostState.showSnackbar(exportedText(message.result.exported, message.result.skipped))
                     is BookmarkDetailMessage.TagRemoved -> {
                         val result = snackbarHostState.showSnackbar(
                             message = "タグ「${message.name}」を外しました",
@@ -285,6 +308,15 @@ fun BookmarkDetailScreen(
             onAddNote = viewModel::addNote,
             onUpdateNote = viewModel::updateNote,
             onDeleteNote = viewModel::deleteNote,
+            onSetInCollection = viewModel::setInCollection,
+            onCreateCollection = viewModel::createCollectionAndAdd,
+            onExport = { format ->
+                val fileName = BookmarkExporter.fileName(uiState.bookmark?.title.orEmpty(), format)
+                when (format) {
+                    ExportFormat.MARKDOWN -> markdownExportLauncher.launch(fileName)
+                    ExportFormat.BROWSER_HTML -> htmlExportLauncher.launch(fileName)
+                }
+            },
             snapshot = PageSnapshotCallbacks(
                 onSave = { uiState.bookmark?.let(snapshotViewModel::start) },
                 onOpen = { uiState.bookmark?.let { context.startActivity(SnapshotViewerActivity.intent(context, it.id)) } },
@@ -364,6 +396,11 @@ class BookmarkDetailCallbacks(
     val onAddNote: (text: String, quote: String?) -> Unit = { _, _ -> },
     val onUpdateNote: (id: Long, text: String, quote: String?) -> Unit = { _, _, _ -> },
     val onDeleteNote: (BookmarkNote) -> Unit = {},
+    /** コレクションに入れる・外す、新しく作って入れる(#91) */
+    val onSetInCollection: (BookmarkCollection, Boolean) -> Unit = { _, _ -> },
+    val onCreateCollection: (name: String, onResult: (CollectionResult) -> Unit) -> Unit = { _, _ -> },
+    /** このブックマークをファイルに書き出す(保存先を選ぶ画面を開く) */
+    val onExport: (ExportFormat) -> Unit = {},
     /** ページのオフラインコピー(#80)の操作 */
     val snapshot: PageSnapshotCallbacks = PageSnapshotCallbacks(),
     /** オフラインコピーを作っている(または保存している)最中 */
@@ -394,6 +431,8 @@ fun BookmarkDetailContent(
     var showEditSheet by rememberSaveable { mutableStateOf(false) }
     var readingMode by rememberSaveable { mutableStateOf(false) }
     // ノートの編集シート。開いているか・直すノートの ID(新規なら null)・引用する文章(読書モードの段落の長押しなど)
+    var showCollectionSheet by rememberSaveable { mutableStateOf(false) }
+    var showExportDialog by rememberSaveable { mutableStateOf(false) }
     var noteEditorOpen by rememberSaveable { mutableStateOf(false) }
     var noteEditorId by rememberSaveable { mutableStateOf<Long?>(null) }
     var noteEditorQuote by rememberSaveable { mutableStateOf<String?>(null) }
@@ -434,7 +473,9 @@ fun BookmarkDetailContent(
                     showBackButton = showBackButton,
                     onEdit = { showEditSheet = true },
                     onDelete = { showDeleteDialog = true },
-                    onReadingMode = if (readingBlocks.isNotEmpty()) ({ readingMode = true }) else null
+                    onReadingMode = if (readingBlocks.isNotEmpty()) ({ readingMode = true }) else null,
+                    onAddToCollection = { showCollectionSheet = true },
+                    onExport = { showExportDialog = true }
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -482,6 +523,25 @@ fun BookmarkDetailContent(
         )
     }
 
+    if (showCollectionSheet && bookmark != null) {
+        AddToCollectionSheet(
+            collections = uiState.collections,
+            memberOf = uiState.collectionIds,
+            onSetInCollection = callbacks.onSetInCollection,
+            onCreate = callbacks.onCreateCollection,
+            onDismiss = { showCollectionSheet = false }
+        )
+    }
+    if (showExportDialog && bookmark != null) {
+        ExportFormatDialog(
+            onSelect = { format ->
+                showExportDialog = false
+                callbacks.onExport(format)
+            },
+            onDismiss = { showExportDialog = false }
+        )
+    }
+
     val editingNote = uiState.notes.firstOrNull { it.id == noteEditorId }
     // 直そうとしたノートが消えていた(別の画面で削除したなど)ときは、シートを出さない
     if (noteEditorOpen && bookmark != null && (noteEditorId == null || editingNote != null)) {
@@ -520,7 +580,9 @@ private fun DetailTopBar(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     /** 読書モードを開く。本文が無いときは null(ボタンを出さない) */
-    onReadingMode: (() -> Unit)?
+    onReadingMode: (() -> Unit)?,
+    onAddToCollection: () -> Unit,
+    onExport: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     TopAppBar(
@@ -612,6 +674,22 @@ private fun DetailTopBar(
                         }
                     )
                 }
+                DropdownMenuItem(
+                    text = { Text("コレクションに追加") },
+                    leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        onAddToCollection()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("ファイルに書き出す") },
+                    leadingIcon = { Icon(Icons.Outlined.FileUpload, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        onExport()
+                    }
+                )
                 DropdownMenuItem(
                     text = { Text("削除", color = MaterialTheme.colorScheme.error) },
                     leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },

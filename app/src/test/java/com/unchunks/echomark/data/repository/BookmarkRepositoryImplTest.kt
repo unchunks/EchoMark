@@ -12,6 +12,8 @@ import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
+import com.unchunks.echomark.data.local.entity.CollectionEntity
+import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.mapper.toEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
@@ -77,6 +79,7 @@ class BookmarkRepositoryImplTest {
             bookmarkDao = db.bookmarkDao(),
             tagDao = db.tagDao(),
             noteDao = db.bookmarkNoteDao(),
+            collectionDao = db.collectionDao(),
             categoryDao = db.categoryDao(),
             vectorSearch = vectorSearch,
             dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
@@ -1091,5 +1094,40 @@ class BookmarkRepositoryImplTest {
 
         // ID・文章・引用・日時が削除前と同じ
         assertEquals(before, noteDao.getByBookmark(id))
+    }
+
+    @Test
+    fun ブックマークを削除するとコレクションから外れ_元に戻すと同じコレクションに戻る() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        val collectionDao = db.collectionDao()
+        val first = collectionDao.insert(CollectionEntity(name = "A", createdAt = 1))
+        val second = collectionDao.insert(CollectionEntity(name = "B", createdAt = 2))
+        collectionDao.insertItem(CollectionItemEntity(first, id, addedAt = 10))
+        collectionDao.insertItem(CollectionItemEntity(second, id, addedAt = 20))
+        val before = collectionDao.getItemsOfBookmark(id)
+        val bookmark = repository.getBookmarkById(id)!!
+
+        repository.deleteBookmark(bookmark)
+        assertTrue(collectionDao.getItemsOfBookmark(id).isEmpty())
+        repository.restoreBookmark(bookmark)
+
+        assertEquals(before, collectionDao.getItemsOfBookmark(id))
+    }
+
+    @Test
+    fun 削除のあとにコレクションが消えていたら_その分の所属は戻さず_戻せる分だけ戻る() = runBlocking {
+        val id = repository.saveBookmark(textBookmark()).id
+        val collectionDao = db.collectionDao()
+        val kept = collectionDao.insert(CollectionEntity(name = "残る", createdAt = 1))
+        val gone = collectionDao.insert(CollectionEntity(name = "消える", createdAt = 2))
+        collectionDao.insertItem(CollectionItemEntity(kept, id, addedAt = 10))
+        collectionDao.insertItem(CollectionItemEntity(gone, id, addedAt = 20))
+        val bookmark = repository.getBookmarkById(id)!!
+
+        repository.deleteBookmark(bookmark)
+        collectionDao.delete(gone)
+        repository.restoreBookmark(bookmark)
+
+        assertEquals(listOf(kept), collectionDao.getItemsOfBookmark(id).map { it.collectionId })
     }
 }
