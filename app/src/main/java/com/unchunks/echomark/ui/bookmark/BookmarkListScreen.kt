@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
@@ -164,6 +165,7 @@ fun BookmarkListScreen(
     onBookmarkRemoved: (Long) -> Unit = {},
     onOpenDiscover: () -> Unit = {},
     onOpenDuplicates: () -> Unit = {},
+    onOpenInsights: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
 ) {
@@ -289,6 +291,7 @@ fun BookmarkListScreen(
             onOpenTagManagement = onOpenTagManagement,
             onOpenDiscover = onOpenDiscover,
             onOpenDuplicates = onOpenDuplicates,
+            onOpenInsights = onOpenInsights,
             onOpenCollections = onOpenCollections,
             onRetry = viewModel::retry
         ),
@@ -380,6 +383,7 @@ class BookmarkListCallbacks(
     val onOpenTagManagement: () -> Unit = {},
     val onOpenDiscover: () -> Unit = {},
     val onOpenDuplicates: () -> Unit = {},
+    val onOpenInsights: () -> Unit = {},
     val onOpenCollections: () -> Unit = {},
     val onRetry: () -> Unit = {}
 )
@@ -511,6 +515,7 @@ fun BookmarkListContent(
                     onOpenTagManagement = callbacks.onOpenTagManagement,
                     onOpenDiscover = callbacks.onOpenDiscover,
                     onOpenDuplicates = callbacks.onOpenDuplicates,
+                    onOpenInsights = callbacks.onOpenInsights,
                     onOpenCollections = callbacks.onOpenCollections
                 )
             }
@@ -726,6 +731,7 @@ private fun ListTopBar(
     onOpenTagManagement: () -> Unit,
     onOpenDiscover: () -> Unit,
     onOpenDuplicates: () -> Unit,
+    onOpenInsights: () -> Unit,
     onOpenCollections: () -> Unit
 ) {
     var sortMenuOpen by remember { mutableStateOf(false) }
@@ -820,6 +826,14 @@ private fun ListTopBar(
                         onClick = {
                             overflowOpen = false
                             onOpenDuplicates()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("ライブラリの分析") },
+                        leadingIcon = { Icon(Icons.Outlined.Insights, contentDescription = null) },
+                        onClick = {
+                            overflowOpen = false
+                            onOpenInsights()
                         }
                     )
                 }

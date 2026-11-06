@@ -87,6 +87,7 @@ internal fun BookmarkListDestination(
     onBookmarkRemoved: (Long) -> Unit = {},
     onOpenDiscover: () -> Unit = {},
     onOpenDuplicates: () -> Unit = {},
+    onOpenInsights: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
 ) {
@@ -100,6 +101,7 @@ internal fun BookmarkListDestination(
         onOpenTagManagement = onOpenTagManagement,
         onOpenDiscover = onOpenDiscover,
         onOpenDuplicates = onOpenDuplicates,
+        onOpenInsights = onOpenInsights,
         onOpenCollections = onOpenCollections,
         selectedBookmarkId = selectedBookmarkId,
         onBookmarkRemoved = onBookmarkRemoved,

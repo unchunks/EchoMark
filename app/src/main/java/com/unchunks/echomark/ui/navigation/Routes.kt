@@ -17,6 +17,9 @@ object Routes {
     /** 重複の整理と関連のまとまり(ブックマーク一覧のメニューから開くサブ画面) */
     const val DUPLICATES = "duplicates"
 
+    /** ライブラリの分析(タグクラウド・統計・タイムライン・関心の変化。ブックマーク一覧のメニューから開くサブ画面) */
+    const val INSIGHTS = "insights"
+
     /** コレクションの一覧(ブックマーク一覧のメニューから開くサブ画面) */
     const val COLLECTIONS = "collections"
 

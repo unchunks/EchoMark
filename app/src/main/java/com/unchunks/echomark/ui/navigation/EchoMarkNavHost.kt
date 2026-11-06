@@ -68,6 +68,7 @@ import com.unchunks.echomark.ui.collections.CollectionDetailViewModel
 import com.unchunks.echomark.ui.collections.CollectionsScreen
 import com.unchunks.echomark.ui.discover.DiscoverScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
+import com.unchunks.echomark.ui.insights.InsightsScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
@@ -222,6 +223,7 @@ fun EchoMarkNavHost(
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                     onOpenDiscover = { navController.navigate(Routes.DISCOVER) },
                     onOpenDuplicates = { navController.navigate(Routes.DUPLICATES) },
+                    onOpenInsights = { navController.navigate(Routes.INSIGHTS) },
                     onOpenCollections = { navController.navigate(Routes.COLLECTIONS) }
                 )
             }
@@ -253,6 +255,18 @@ fun EchoMarkNavHost(
             ) {
                 DuplicatesScreen(
                     onBack = navController.popBackAction(),
+                    onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
+                )
+            }
+            // ライブラリの分析。タグをタップしたらそのタグの一覧へ、ブックマークをタップしたら詳細を開く
+            composable(
+                route = Routes.INSIGHTS,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                InsightsScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenTag = dropUnlessResumedWith { tagId: Long -> navController.returnToBookmarkListWithTag(tagId) },
                     onOpenBookmark = dropUnlessResumedWith { id: Long -> navController.navigate(Routes.bookmarkDetail(id)) }
                 )
             }
