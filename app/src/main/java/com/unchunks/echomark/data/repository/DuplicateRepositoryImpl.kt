@@ -159,7 +159,8 @@ class DuplicateRepositoryImpl @Inject constructor(
             id = id, createdAt = fields.createdAt, lastAccessedAt = fields.lastAccessedAt,
             isFavorite = fields.isFavorite, isArchived = fields.isArchived, readAt = fields.readAt,
             content = fields.content, snapshotPath = fields.snapshotPath,
-            snapshotPdfPath = fields.snapshotPdfPath, snapshotAt = fields.snapshotAt
+            snapshotPdfPath = fields.snapshotPdfPath, snapshotAt = fields.snapshotAt,
+            latitude = fields.latitude, longitude = fields.longitude, placeName = fields.placeName
         )
     }
 

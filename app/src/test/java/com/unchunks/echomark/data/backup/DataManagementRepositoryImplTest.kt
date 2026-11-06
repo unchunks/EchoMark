@@ -257,4 +257,19 @@ class DataManagementRepositoryImplTest {
         assertEquals(null, byTitle.getValue("無い").filePath)
         assertEquals("doc.pdf", byTitle.getValue("無い").fileName)
     }
+
+    @Test
+    fun 全データ削除は設定を残す場合でもブックマークの場所を消す() = runBlocking {
+        val id = bookmarkRepository.saveUrlBookmark("https://www.google.com/maps/@35.6812,139.7671,15z", null, null).id
+        db.bookmarkDao().updateLocation(id, 35.0, 139.0, "自宅の近く")
+        assertTrue(bookmarkRepository.getBookmarkById(id)!!.hasPlace)
+
+        repository.deleteAllData(resetSettings = false)
+
+        // ブックマークの行ごと消える(場所は列なので、一緒に消える)。同じ URL を保存し直しても、前の場所は残っていない
+        assertTrue(bookmarkRepository.getAllBookmarkIds().isEmpty())
+        val again = bookmarkRepository.saveUrlBookmark("https://example.com/plain", null, null).id
+        assertEquals(null, bookmarkRepository.getBookmarkById(again)!!.placeName)
+        assertEquals(null, bookmarkRepository.getBookmarkById(again)!!.latitude)
+    }
 }

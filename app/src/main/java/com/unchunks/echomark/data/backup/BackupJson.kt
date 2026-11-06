@@ -26,6 +26,7 @@ import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.place.GeoPoint
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
 import org.json.JSONArray
@@ -178,10 +179,15 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 16: コレクション(collections。DB v25 の collections と collection_items)を追加。15 以前は無いものとして読む。
  *   コレクションは名前で持ち、入れているブックマークは書き出し元の ID(読み込むときに付け替える)。同じ名前(大文字小文字・全角半角を区別しない)の
  *   コレクションが既にあれば、そのコレクションに足す(説明は変えない)
+ * - 18: ブックマークの場所(latitude・longitude・placeName。DB v27 の bookmarks の列)を追加。17 以前は場所が無いものとして読む。
+ *   座標は緯度 -90〜90・経度 -180〜180 の有限の値で、緯度か経度の片方だけがあるもの・範囲外のものは座標なしとして読む。名前は 100 文字までにする
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 16
+    const val CURRENT_VERSION = 18
+
+    /** 場所の名前の長さの上限(文字) */
+    private const val MAX_PLACE_NAME_LENGTH = 100
 
     /**
      * [writer] へ書き出す。要素ごとに文字列化して書くので、全体を1つの巨大な文字列にしない。
@@ -307,6 +313,9 @@ object BackupJson {
         .apply { fileSize?.let { put("fileSize", it) } }
         .apply { contentFetchedAt?.let { put("contentFetchedAt", it) } }
         .apply { readAt?.let { put("readAt", it) } }
+        .apply { latitude?.let { put("latitude", it) } }
+        .apply { longitude?.let { put("longitude", it) } }
+        .putNullable("placeName", placeName)
 
     private fun TagEntity.toJson() = JSONObject()
         .put("id", id)
@@ -362,6 +371,14 @@ object BackupJson {
         val contentUri = stringOrNull("contentUri")?.takeIf { it.isNotBlank() }
         // URL はブラウザで開く・本文を取得するため、http/https 以外(intent:, file:, content: など)は受け付けない
         if (type == BookmarkType.URL && (contentUri == null || !isWebUrl(contentUri))) return null
+        // version 17 以前には無い。座標は両方そろって範囲内のときだけ読む(壊れた値・片方だけの値は座標なし)
+        val geoPoint = if (version >= 18) {
+            val lat = doubleOrNull("latitude")
+            val lng = doubleOrNull("longitude")
+            if (lat != null && lng != null) GeoPoint.of(lat, lng) else null
+        } else {
+            null
+        }
         return BookmarkEntity(
             id = longOrNull("id") ?: return null,
             type = type,
@@ -394,6 +411,9 @@ object BackupJson {
             } else {
                 (longOrNull("lastAccessedAt") ?: createdAt).takeIf { it > createdAt }
             },
+            latitude = geoPoint?.latitude,
+            longitude = geoPoint?.longitude,
+            placeName = if (version >= 18) stringOrNull("placeName")?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_PLACE_NAME_LENGTH) else null,
             contentFetchedAt = if (version >= 5) {
                 longOrNull("contentFetchedAt")
             } else {
@@ -591,6 +611,9 @@ object BackupJson {
 
     private fun JSONObject.stringOrNull(name: String): String? =
         if (isNull(name)) null else opt(name) as? String
+
+    private fun JSONObject.doubleOrNull(name: String): Double? =
+        if (isNull(name)) null else (opt(name) as? Number)?.toDouble()
 
     private fun JSONObject.longOrNull(name: String): Long? =
         if (isNull(name)) null else (opt(name) as? Number)?.toLong()

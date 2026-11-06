@@ -149,6 +149,10 @@ import com.unchunks.echomark.ui.snapshot.PageSnapshotCallbacks
 import com.unchunks.echomark.ui.snapshot.PageSnapshotDialog
 import com.unchunks.echomark.ui.snapshot.PageSnapshotSection
 import com.unchunks.echomark.ui.snapshot.PageSnapshotViewModel
+import com.unchunks.echomark.ui.places.PlaceCallbacks
+import com.unchunks.echomark.ui.places.PlaceEditViewModel
+import com.unchunks.echomark.ui.places.PlaceSection
+import com.unchunks.echomark.ui.places.openInMapApp
 import com.unchunks.echomark.ui.snapshot.SnapshotMessage
 import com.unchunks.echomark.ui.snapshot.SnapshotOperation
 import com.unchunks.echomark.ui.snapshot.SnapshotViewerActivity
@@ -191,7 +195,8 @@ fun BookmarkDetailScreen(
     onOpenAiSettings: () -> Unit = {},
     showBackButton: Boolean = true,
     viewModel: BookmarkDetailViewModel = hiltViewModel(),
-    snapshotViewModel: PageSnapshotViewModel = hiltViewModel()
+    snapshotViewModel: PageSnapshotViewModel = hiltViewModel(),
+    placeViewModel: PlaceEditViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
@@ -323,6 +328,12 @@ fun BookmarkDetailScreen(
                 onOpenPdf = { uiState.bookmark?.let { openSnapshotPdf(context, it) } },
                 onRemove = { confirmRemoveSnapshot = true }
             ),
+            place = PlaceCallbacks(
+                onSave = { name, point -> uiState.bookmark?.let { placeViewModel.save(it.id, name, point) } },
+                onClear = { uiState.bookmark?.let { placeViewModel.clear(it.id) } },
+                fetchCurrentLocation = placeViewModel::currentLocation,
+                onOpenInMap = { point, title -> openInMapApp(context, point, title) }
+            ),
             snapshotBusy = snapshotOperation != SnapshotOperation.Idle
         ),
         showBackButton = showBackButton
@@ -403,6 +414,8 @@ class BookmarkDetailCallbacks(
     val onExport: (ExportFormat) -> Unit = {},
     /** ページのオフラインコピー(#80)の操作 */
     val snapshot: PageSnapshotCallbacks = PageSnapshotCallbacks(),
+    /** 場所(#85)の操作 */
+    val place: PlaceCallbacks = PlaceCallbacks(),
     /** オフラインコピーを作っている(または保存している)最中 */
     val snapshotBusy: Boolean = false
 )
@@ -784,6 +797,8 @@ private fun DetailBody(
                 onEdit = { onOpenNoteEditor(it, null) },
                 onDelete = callbacks.onDeleteNote
             )
+            Spacer(Modifier.height(24.dp))
+            PlaceSection(bookmark = bookmark, callbacks = callbacks.place)
             val content = bookmark.content
             if (!content.isNullOrBlank()) {
                 // ファイルから取り出した文字(OCR・文字起こしなど)は区切り行で本文に入っているので、メモと分けて見出しを付ける

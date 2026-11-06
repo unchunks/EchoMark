@@ -246,7 +246,10 @@ object BookmarkMerge {
         val content: String?,
         val snapshotPath: String?,
         val snapshotPdfPath: String?,
-        val snapshotAt: Long?
+        val snapshotAt: Long?,
+        val latitude: Double?,
+        val longitude: Double?,
+        val placeName: String?
     ) {
         companion object {
             fun of(bookmark: Bookmark) = Fields(
@@ -258,7 +261,10 @@ object BookmarkMerge {
                 content = bookmark.content,
                 snapshotPath = bookmark.snapshotPath,
                 snapshotPdfPath = bookmark.snapshotPdfPath,
-                snapshotAt = bookmark.snapshotAt
+                snapshotAt = bookmark.snapshotAt,
+                latitude = bookmark.latitude,
+                longitude = bookmark.longitude,
+                placeName = bookmark.placeName
             )
         }
     }
@@ -268,9 +274,11 @@ object BookmarkMerge {
      * - お気に入りはどちらかがそうなら残す。アーカイブは両方がアーカイブのときだけ(片方が通常なら通常の一覧に出す)
      * - 読んだ日時はどちらかが読んでいれば古い方。本文が空なら [remove] の本文(メモ)を引き継ぐ
      * - オフラインコピーは、[keep] に無いときだけ [remove] のものを引き継ぐ
+     * - 場所の座標は、[keep] に無いときだけ [remove] のものを引き継ぐ。名前は [keep] のものを主に、無ければ [remove] のもの
      */
     fun merge(keep: Bookmark, remove: Bookmark): Fields {
         val moveSnapshot = keep.snapshotPath == null && remove.snapshotPath != null
+        val moveLocation = keep.geoPoint == null && remove.geoPoint != null
         return Fields(
             createdAt = minOf(keep.createdAt, remove.createdAt),
             lastAccessedAt = maxOf(keep.lastAccessedAt, remove.lastAccessedAt),
@@ -280,7 +288,11 @@ object BookmarkMerge {
             content = keep.content?.takeIf { it.isNotBlank() } ?: remove.content?.takeIf { it.isNotBlank() } ?: keep.content,
             snapshotPath = if (moveSnapshot) remove.snapshotPath else keep.snapshotPath,
             snapshotPdfPath = if (moveSnapshot) remove.snapshotPdfPath else keep.snapshotPdfPath,
-            snapshotAt = if (moveSnapshot) remove.snapshotAt else keep.snapshotAt
+            snapshotAt = if (moveSnapshot) remove.snapshotAt else keep.snapshotAt,
+            // 座標は keep に無いときだけ remove のもの。名前は keep を主に、無ければ remove のもの
+            latitude = if (moveLocation) remove.latitude else keep.latitude,
+            longitude = if (moveLocation) remove.longitude else keep.longitude,
+            placeName = keep.placeName?.takeIf { it.isNotBlank() } ?: remove.placeName?.takeIf { it.isNotBlank() }
         )
     }
 

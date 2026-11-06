@@ -10,6 +10,7 @@ import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.CategoryDao
 import com.unchunks.echomark.data.local.dao.CollectionDao
 import com.unchunks.echomark.data.local.dao.TagDao
+import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
@@ -25,6 +26,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.place.GeoParser
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
@@ -81,7 +83,7 @@ class BookmarkRepositoryImpl @Inject constructor(
             // 保存すると同時に処理を積むため、処理待ちにした日時を入れる
             val entity = bookmark.toEntity().let {
                 if (it.aiStatus == AiStatus.PENDING) it.copy(queuedAt = System.currentTimeMillis()) else it
-            }
+            }.withMapLinkPlace()
             if (contentUri == null) {
                 val id = bookmarkDao.insert(entity)
                 enqueueProcessing(id, bookmark)
@@ -100,6 +102,16 @@ class BookmarkRepositoryImpl @Inject constructor(
                 SaveResult(existing.id, isDuplicate = true)
             }
         }
+
+    /**
+     * 地図のリンク(Google マップなど)なら、リンクに入っている座標を場所にする(#85)。通信はしない。
+     * 座標を持たない・すでに場所があるものは変えない。写真の位置情報は、利用者が「場所を探す」を押したときだけ読む。
+     */
+    private fun BookmarkEntity.withMapLinkPlace(): BookmarkEntity {
+        if (type != BookmarkType.URL || latitude != null || longitude != null) return this
+        val point = contentUri?.let { GeoParser.fromUrl(it) } ?: return this
+        return copy(latitude = point.latitude, longitude = point.longitude)
+    }
 
     override suspend fun saveUrlBookmark(url: String, title: String?, memo: String?): SaveResult {
         val trimmedUrl = url.trim()

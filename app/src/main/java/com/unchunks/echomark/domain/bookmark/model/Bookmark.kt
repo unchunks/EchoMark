@@ -1,5 +1,7 @@
 package com.unchunks.echomark.domain.bookmark.model
 
+import com.unchunks.echomark.domain.place.GeoPoint
+
 // ここを変更するときは、com.unchunks.echomark.data.local.entity.BookmarkEntity.kt の変更が不要か確認すること
 data class Bookmark(
     val id: Long = 0,
@@ -45,11 +47,24 @@ data class Bookmark(
     /** 同じページの PDF の保存先。PDF を作れなかった・保存していなければ null */
     val snapshotPdfPath: String? = null,
     /** オフラインコピーを保存した日時。保存していなければ null */
-    val snapshotAt: Long? = null
+    val snapshotAt: Long? = null,
+    /** 場所の緯度(度)。[longitude] と両方ある。写真の位置情報・地図のリンク・利用者が入れたものだけから入る */
+    val latitude: Double? = null,
+    /** 場所の経度(度) */
+    val longitude: Double? = null,
+    /** 場所の名前(利用者が入れたもの)。名前だけで座標が無いこともある */
+    val placeName: String? = null
 ) {
     /** 読んだか(詳細画面を開いたか、読んだことにしたか) */
     val isRead: Boolean get() = readAt != null
 
     /** ページのオフラインコピー(MHTML)を保存してある */
     val hasSnapshot: Boolean get() = snapshotPath != null
+
+    /** 座標のある場所(地図に出せる)。座標が無ければ null */
+    val geoPoint: GeoPoint?
+        get() = if (latitude != null && longitude != null) GeoPoint(latitude, longitude) else null
+
+    /** 場所の座標か名前のどちらかがある */
+    val hasPlace: Boolean get() = geoPoint != null || !placeName.isNullOrBlank()
 }

@@ -692,4 +692,78 @@ class BackupJsonTest {
         assertEquals(listOf(CollectionItemBackup(1, 6), CollectionItemBackup(3, 0)), collection.items)
         assertEquals(2, decoded.invalidRecords)
     }
+
+    // ---- 場所(version 18) ----
+
+    @Test
+    fun 場所は書き出して読み込める() {
+        val located = sample.bookmarks[0].copy(latitude = 35.6812, longitude = 139.7671, placeName = "東京駅")
+        val decoded = BackupJson.decode(BackupJson.encode(sample.copy(bookmarks = listOf(located)))).data.bookmarks.single()
+        assertEquals(35.6812, decoded.latitude!!, 0.0)
+        assertEquals(139.7671, decoded.longitude!!, 0.0)
+        assertEquals("東京駅", decoded.placeName)
+    }
+
+    @Test
+    fun 場所の無いブックマークには場所の項目を書かない() {
+        val text = BackupJson.encode(sample)
+        assertFalse(text.contains("latitude"))
+        assertFalse(text.contains("placeName"))
+    }
+
+    @Test
+    fun 名前だけの場所も残る() {
+        val nameOnly = sample.bookmarks[0].copy(placeName = "どこか")
+        val decoded = BackupJson.decode(BackupJson.encode(sample.copy(bookmarks = listOf(nameOnly)))).data.bookmarks.single()
+        assertEquals(null, decoded.latitude)
+        assertEquals("どこか", decoded.placeName)
+    }
+
+    @Test
+    fun 古い版のバックアップは場所なしとして読む() {
+        // version 17 以前に場所の項目があっても(あり得ないが)読まない
+        val decoded = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":17,"exportedAt":1,"bookmarks":[
+              {"id":1,"type":"TEXT","title":"t","createdAt":5,"latitude":35.0,"longitude":139.0,"placeName":"x"}
+            ]}
+            """.trimIndent()
+        ).data.bookmarks.single()
+        assertEquals(null, decoded.latitude)
+        assertEquals(null, decoded.longitude)
+        assertEquals(null, decoded.placeName)
+    }
+
+    @Test
+    fun 壊れた座標は座標なしとして読み_ブックマーク自体は読む() {
+        fun decode(lat: String, lng: String) = BackupJson.decode(
+            """
+            {"format":"echomark-backup","version":18,"exportedAt":1,"bookmarks":[
+              {"id":1,"type":"TEXT","title":"t","createdAt":5,$lat$lng"placeName":"  カフェ  "}
+            ]}
+            """.trimIndent()
+        ).data.bookmarks.single()
+
+        // 範囲外・片方だけ・数値でない値は、座標なし(名前は残る)
+        listOf(
+            decode("\"latitude\":91.0,", "\"longitude\":10.0,"),
+            decode("\"latitude\":10.0,", "\"longitude\":-181.0,"),
+            decode("\"latitude\":10.0,", ""),
+            decode("", "\"longitude\":10.0,"),
+            decode("\"latitude\":\"北\",", "\"longitude\":10.0,")
+        ).forEach {
+            assertEquals(null, it.latitude)
+            assertEquals(null, it.longitude)
+            assertEquals("カフェ", it.placeName)
+        }
+    }
+
+    @Test
+    fun 場所の名前は100文字までにする() {
+        val long = "あ".repeat(150)
+        val decoded = BackupJson.decode(
+            """{"format":"echomark-backup","version":18,"exportedAt":1,"bookmarks":[{"id":1,"type":"TEXT","title":"t","createdAt":5,"placeName":"$long"}]}"""
+        ).data.bookmarks.single()
+        assertEquals(100, decoded.placeName!!.length)
+    }
 }

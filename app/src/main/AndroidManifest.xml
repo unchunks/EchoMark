@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- マイクの無い端末でも入れられるようにする(音声入力だけ使えない) -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- 詳細画面で「現在地を入れる」を押したときだけ、おおよその位置を 1 回調べる(許可もそのとき初めて求める。裏では使わない)。
+         位置情報の無い端末でも入れられるようにする(現在地を入れるボタンだけ使えない) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
     <!-- 再発見通知用。Android 13+ のみ実行時に要求する(設定でオンにしたとき) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 長い処理をフォアグラウンドで実行する(WorkManager の setForeground)。

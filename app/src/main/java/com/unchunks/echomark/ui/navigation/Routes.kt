@@ -17,6 +17,12 @@ object Routes {
     /** 重複の整理と関連のまとまり(ブックマーク一覧のメニューから開くサブ画面) */
     const val DUPLICATES = "duplicates"
 
+    /** ナレッジグラフ(ブックマークのつながり。ライブラリの分析の画面から開くサブ画面) */
+    const val GRAPH = "insights/graph"
+
+    /** 場所のあるブックマークの分布図と一覧(ライブラリの分析の画面から開くサブ画面) */
+    const val PLACES = "insights/places"
+
     /** ライブラリの分析(タグクラウド・統計・タイムライン・関心の変化。ブックマーク一覧のメニューから開くサブ画面) */
     const val INSIGHTS = "insights"
 

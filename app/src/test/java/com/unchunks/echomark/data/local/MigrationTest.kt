@@ -789,4 +789,26 @@ class MigrationTest {
         assertTrue(twice.isFailure)
         connection.close()
     }
+
+    @Test
+    fun migrate26To27_addsEmptyPlaceColumnsAndKeepsRows() {
+        helper.createDatabase(26).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, contentUri, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (1, 'URL', '記事', 'https://www.google.com/maps/@35.68,139.76,15z', 100, 200, 'DONE', 1, 0, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v27 と一致するか(列・既定値)も検証される
+        val connection = helper.runMigrationsAndValidate(27, listOf(MIGRATION_26_27))
+
+        val row = connection.prepare("SELECT title, contentUri, isFavorite, latitude, longitude, placeName FROM bookmarks").use { stmt ->
+            check(stmt.step())
+            listOf(stmt.getText(0), stmt.getText(1), stmt.getLong(2), stmt.isNull(3), stmt.isNull(4), stmt.isNull(5))
+        }
+        // 既存の行の値は変わらず、場所はどれも無い(NULL)。マイグレーションでは、リンクの中の座標も読まない
+        assertEquals(listOf("記事", "https://www.google.com/maps/@35.68,139.76,15z", 1L, true, true, true), row)
+        connection.close()
+    }
 }

@@ -1130,4 +1130,34 @@ class BookmarkRepositoryImplTest {
 
         assertEquals(listOf(kept), collectionDao.getItemsOfBookmark(id).map { it.collectionId })
     }
+
+    // ---- 場所(#85) ----
+
+    @Test
+    fun 地図のリンクを保存すると_リンクの座標が場所に入る() = runBlocking {
+        val id = repository.saveUrlBookmark("https://www.google.com/maps/@35.6812,139.7671,15z", null, null).id
+        val saved = repository.getBookmarkById(id)!!
+        assertEquals(35.6812, saved.latitude!!, 0.0)
+        assertEquals(139.7671, saved.longitude!!, 0.0)
+        assertEquals(null, saved.placeName)
+    }
+
+    @Test
+    fun 地図でないリンクには場所を入れない() = runBlocking {
+        val id = repository.saveUrlBookmark("https://example.com/@35.6812,139.7671", null, null).id
+        assertEquals(null, repository.getBookmarkById(id)!!.latitude)
+    }
+
+    @Test
+    fun 保存するものにすでに場所があれば_リンクの座標で置き換えない() = runBlocking {
+        val id = repository.saveBookmark(
+            Bookmark(
+                type = BookmarkType.URL, contentUri = "https://www.google.com/maps/@35.6812,139.7671,15z", title = "t",
+                createdAt = 1L, lastAccessedAt = 1L, latitude = 1.0, longitude = 2.0, placeName = "自分で入れた"
+            )
+        ).id
+        val saved = repository.getBookmarkById(id)!!
+        assertEquals(1.0, saved.latitude!!, 0.0)
+        assertEquals("自分で入れた", saved.placeName)
+    }
 }
