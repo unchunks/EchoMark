@@ -84,15 +84,20 @@ class RediscoverWidget : GlanceAppWidget() {
         val initialItems = itemsFlow.first()
         val initialDynamicColor = dynamicColorFlow.first()
         val initialProcessing = processingFlow.first()
+        // アプリのロック中は、ホーム画面に内容(ブックマークのタイトル・処理の件数)を出さない。読めなければ隠す方に倒す
+        val hiddenFlow = entryPoint.appSettingsRepository().appLock.map { it.enabled }.catch { emit(true) }
+        val initialHidden = hiddenFlow.first()
         provideContent {
             val items by itemsFlow.collectAsState(initialItems)
             val dynamicColor by dynamicColorFlow.collectAsState(initialDynamicColor)
             val processing by processingFlow.collectAsState(initialProcessing)
+            val hidden by hiddenFlow.collectAsState(initialHidden)
             RediscoverWidgetTheme(dynamicColor) {
                 RediscoverWidgetContent(
                     items = items,
-                    layout = RediscoverWidgetData.layoutFor(LocalSize.current, hasProcessing = processing != null),
-                    processing = processing
+                    layout = RediscoverWidgetData.layoutFor(LocalSize.current, hasProcessing = processing != null && !hidden),
+                    processing = processing,
+                    hidden = hidden
                 )
             }
         }
@@ -140,7 +145,9 @@ private val BrandColors = ColorProviders(light = LightColorScheme, dark = DarkCo
 internal fun RediscoverWidgetContent(
     items: List<RediscoverWidgetItem>,
     layout: RediscoverWidgetLayout,
-    processing: WidgetProcessing? = null
+    processing: WidgetProcessing? = null,
+    /** アプリのロック中。ブックマークと処理の件数を出さず、開くと本人を確かめる */
+    hidden: Boolean = false
 ) {
     val context = LocalContext.current
     Scaffold(
@@ -180,6 +187,23 @@ internal fun RediscoverWidgetContent(
         modifier = GlanceModifier.padding(bottom = 12.dp)
     ) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
+            if (hidden) {
+                Box(
+                    modifier = GlanceModifier.fillMaxWidth().defaultWeight()
+                        .clickable(actionStartActivity(appIntent(context))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = HIDDEN_MESSAGE,
+                        style = TextStyle(
+                            color = GlanceTheme.colors.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    )
+                }
+                return@Column
+            }
             if (layout.showProcessing && processing != null) {
                 WidgetProcessingStrip(processing)
                 Spacer(GlanceModifier.height(6.dp))
@@ -284,6 +308,10 @@ internal fun bookmarkDetailIntent(context: Context, bookmarkId: Long): Intent =
     Intent(Intent.ACTION_VIEW, Routes.bookmarkDeepLink(bookmarkId).toUri(), context, MainActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
+/** アプリを開く(ロック中なら、開いたところで本人を確かめる) */
+internal fun appIntent(context: Context): Intent =
+    Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
 /** アプリショートカットと同じ起動先([LaunchTarget])でアプリを開く。 */
 internal fun launchTargetIntent(context: Context, target: LaunchTarget): Intent =
     LaunchTarget.putInto(Intent(context, MainActivity::class.java), target)
@@ -294,6 +322,7 @@ internal fun processingQueueIntent(context: Context): Intent =
     Intent(Intent.ACTION_VIEW, Routes.PROCESSING_QUEUE_DEEP_LINK.toUri(), context, MainActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
+internal const val HIDDEN_MESSAGE = "アプリのロック中は内容を表示しません。タップして開きます"
 internal const val EMPTY_MESSAGE = "保存するとここに再発見が表示されます"
 internal const val SEARCH_LABEL = "検索"
 internal const val ADD_LABEL = "URL を追加"

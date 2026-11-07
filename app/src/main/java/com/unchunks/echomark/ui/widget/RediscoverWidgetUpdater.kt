@@ -17,8 +17,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -52,6 +54,15 @@ class RediscoverWidgetUpdater @Inject constructor(
                 .catch { e ->
                     if (e is CancellationException) throw e
                     Timber.w(e, "再発見ウィジェットの更新の監視が止まりました")
+                }
+                .collect { updateWidgets() }
+        }
+        // アプリのロックを切り替えたら、内容を出す・隠すを描き直す
+        scope.launch {
+            appSettingsRepository.get().appLock.map { it.enabled }.distinctUntilChanged().drop(1)
+                .catch { e ->
+                    if (e is CancellationException) throw e
+                    Timber.w(e, "アプリのロックの設定を読めない")
                 }
                 .collect { updateWidgets() }
         }

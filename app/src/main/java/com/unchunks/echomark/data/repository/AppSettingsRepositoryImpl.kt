@@ -16,6 +16,8 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingFont
 import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
@@ -142,6 +144,23 @@ class AppSettingsRepositoryImpl @Inject constructor(
     override suspend fun setOfflineMode(enabled: Boolean) {
         dataStore.edit { it[KEY_OFFLINE_MODE] = enabled }
     }
+
+    override val appLock: Flow<AppLockSettings> = data.map { it.toAppLock() }.distinctUntilChanged()
+
+    override suspend fun updateAppLock(transform: (AppLockSettings) -> AppLockSettings) {
+        dataStore.edit { prefs ->
+            val next = transform(prefs.toAppLock())
+            prefs[KEY_APP_LOCK_ENABLED] = next.enabled
+            prefs[KEY_APP_LOCK_DELAY] = next.delay.name
+            prefs[KEY_APP_LOCK_HIDE_CONTENT] = next.hideContent
+        }
+    }
+
+    private fun Preferences.toAppLock() = AppLockSettings(
+        enabled = this[KEY_APP_LOCK_ENABLED] ?: false,
+        delay = AppLockDelay.fromName(this[KEY_APP_LOCK_DELAY]),
+        hideContent = this[KEY_APP_LOCK_HIDE_CONTENT] ?: false
+    )
 
     override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) {
         dataStore.edit { it[KEY_DUPLICATE_SENSITIVITY] = sensitivity.name }
@@ -321,10 +340,17 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { prefs ->
             val onboardingCompleted = prefs[KEY_ONBOARDING_COMPLETED]
             val offlineMode = prefs[KEY_OFFLINE_MODE]
+            val appLock = prefs.toAppLock()
             prefs.clear()
             if (onboardingCompleted != null) prefs[KEY_ONBOARDING_COMPLETED] = onboardingCompleted
             // 初期化をきっかけに通信を始めないよう、オンにしたオフラインモードは残す
             if (offlineMode == true) prefs[KEY_OFFLINE_MODE] = true
+            // 初期化をきっかけに守りを外さないよう、オンにしたロック(と内容を隠す設定)も残す
+            if (appLock.enabled) {
+                prefs[KEY_APP_LOCK_ENABLED] = true
+                prefs[KEY_APP_LOCK_DELAY] = appLock.delay.name
+            }
+            if (appLock.hideContent) prefs[KEY_APP_LOCK_HIDE_CONTENT] = true
         }
     }
 
@@ -355,6 +381,9 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_LINK_CHECK_ENABLED = booleanPreferencesKey("link_check_enabled")
         val KEY_PLACES_MAP_BACKGROUND = booleanPreferencesKey("places_map_background")
         val KEY_OFFLINE_MODE = booleanPreferencesKey("offline_mode")
+        val KEY_APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
+        val KEY_APP_LOCK_DELAY = stringPreferencesKey("app_lock_delay")
+        val KEY_APP_LOCK_HIDE_CONTENT = booleanPreferencesKey("app_lock_hide_content")
         val KEY_DISMISSED_DUPLICATES = stringPreferencesKey("dismissed_duplicates")
         val KEY_BOOKMARK_LIST_DISPLAY = stringPreferencesKey("bookmark_list_display")
         val KEY_READING_FONT_SIZE = stringPreferencesKey("reading_font_size")

@@ -7,6 +7,7 @@ import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.model.SummaryStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -180,6 +181,15 @@ interface AppSettingsRepository {
      */
     val offlineMode: Flow<Boolean>
 
+    /**
+     * アプリのロック(#100)。既定はオフ。「全データを削除」で設定を初期化しても、オンにしたロックは残す
+     * (初期化をきっかけに守りを外さないように)
+     */
+    val appLock: Flow<AppLockSettings>
+
+    /** アプリのロックの設定を書き換える(オンにする前に、画面で本人を確かめること) */
+    suspend fun updateAppLock(transform: (AppLockSettings) -> AppLockSettings)
+
     suspend fun setLlmBackend(task: AiTask, backend: LlmBackend)
     suspend fun setApiProvider(task: AiTask, provider: ApiProvider)
 
@@ -228,7 +238,7 @@ interface AppSettingsRepository {
     /**
      * 設定を既定値に戻す(全データ削除で「設定も初期化」を選んだとき)。
      * オンボーディング済みの記録は残す(削除直後に案内が再表示されないように)。
-     * オンにしたオフラインモードも残す(初期化をきっかけに通信を始めないように)。
+     * オンにしたオフラインモード・アプリのロックも残す(初期化をきっかけに通信を始めない・守りを外さないように)。
      */
     suspend fun resetToDefaults()
 }

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoveToInbox
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.NotificationsActive
@@ -36,7 +37,9 @@ import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -80,6 +83,8 @@ import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.SectionHeader
+import com.unchunks.echomark.ui.lock.rememberAppLockConfirmation
+import com.unchunks.echomark.domain.lock.AppLockDelay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,7 +99,7 @@ import java.util.Locale
 /** 設定画面で開くダイアログ。スクリーンショットテストでは最初から開いた状態を渡せる。 */
 enum class SettingsDialog {
     THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG,
-    NIGHTLY_HOUR, CONCURRENCY, API_RATE, SUMMARY_LANGUAGE, SUMMARY_FORMAT
+    NIGHTLY_HOUR, CONCURRENCY, API_RATE, SUMMARY_LANGUAGE, SUMMARY_FORMAT, APP_LOCK_DELAY
 }
 
 /** 設定画面の操作。既定は何もしない(プレビュー・スクリーンショット用)。 */
@@ -104,6 +109,11 @@ class SettingsActions(
     val onDynamicColorChange: (Boolean) -> Unit = {},
     /** オフラインモードのスイッチ */
     val onOfflineModeChange: (Boolean) -> Unit = {},
+    /** アプリのロックのスイッチ。オンにするときの本人の確認は呼び出し側で行う */
+    val onAppLockChange: (Boolean) -> Unit = {},
+    val onAppLockDelayChange: (AppLockDelay) -> Unit = {},
+    /** 最近使ったアプリの一覧に内容を出さない(FLAG_SECURE) */
+    val onAppLockHideContentChange: (Boolean) -> Unit = {},
     /** 処理の設定(充電中だけ・夜間にまとめて・同時に処理する数など)を書き換える */
     val onProcessingSettingsChange: ((ProcessingSettings) -> ProcessingSettings) -> Unit = {},
     /** 要約の言語・書き方を書き換える */
@@ -170,6 +180,11 @@ fun SettingsScreen(
         }
     }
 
+    // ロックをオンにする前に、この端末で本人を確かめられるかを試す(締め出されないように)
+    val confirmAppLock = rememberAppLockConfirmation(
+        onConfirmed = { viewModel.setAppLockEnabled(true) },
+        onUnavailable = viewModel::onAppLockUnavailable
+    )
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE)) { uri ->
         if (uri != null) viewModel.exportBackup(uri.toString())
     }
@@ -205,6 +220,9 @@ fun SettingsScreen(
             onThemeModeChange = viewModel::setThemeMode,
             onDynamicColorChange = viewModel::setDynamicColor,
             onOfflineModeChange = viewModel::setOfflineMode,
+            onAppLockChange = { enabled -> if (enabled) confirmAppLock() else viewModel.setAppLockEnabled(false) },
+            onAppLockDelayChange = viewModel::setAppLockDelay,
+            onAppLockHideContentChange = viewModel::setAppLockHideContent,
             onProcessingSettingsChange = viewModel::updateProcessingSettings,
             onSummaryStyleChange = viewModel::updateSummaryStyle,
             onOpenProcessingQueue = onOpenProcessingQueue,
@@ -344,6 +362,36 @@ fun SettingsContent(
                     summary = OFFLINE_MODE_SUMMARY,
                     checked = uiState.offlineMode,
                     onCheckedChange = actions.onOfflineModeChange
+                )
+            }
+
+            item { SectionHeader("ロック") }
+            item {
+                SettingsSwitchItem(
+                    title = "アプリのロック",
+                    icon = Icons.Outlined.Lock,
+                    summary = APP_LOCK_SUMMARY,
+                    checked = uiState.appLock.enabled,
+                    onCheckedChange = actions.onAppLockChange
+                )
+            }
+            if (uiState.appLock.enabled) {
+                item {
+                    SettingsItem(
+                        title = "ロックするまでの時間",
+                        icon = Icons.Outlined.Timer,
+                        summary = "アプリを離れてから${uiState.appLock.delay.label}",
+                        onClick = { dialog = SettingsDialog.APP_LOCK_DELAY }
+                    )
+                }
+            }
+            item {
+                SettingsSwitchItem(
+                    title = "最近使ったアプリで内容を隠す",
+                    icon = Icons.Outlined.VisibilityOff,
+                    summary = "アプリの一覧に画面の内容を出しません。この設定の間は、スクリーンショットも撮れません",
+                    checked = uiState.appLock.hideContent,
+                    onCheckedChange = actions.onAppLockHideContentChange
                 )
             }
 
@@ -583,6 +631,17 @@ fun SettingsContent(
             onChange = actions.onSummaryStyleChange,
             onDismiss = { dialog = null }
         )
+        SettingsDialog.APP_LOCK_DELAY -> ChoiceDialog(
+            title = "ロックするまでの時間",
+            options = AppLockDelay.entries,
+            selected = uiState.appLock.delay,
+            label = { "アプリを離れてから${it.label}" },
+            onSelect = { delay ->
+                actions.onAppLockDelayChange(delay)
+                dialog = null
+            },
+            onDismiss = { dialog = null }
+        )
         null -> Unit
     }
 
@@ -629,6 +688,11 @@ private suspend fun shareCrashLog(context: Context, text: String) {
         Timber.w(e, "クラッシュログの共有先がない")
     }
 }
+
+/** アプリのロックのスイッチの説明 */
+internal const val APP_LOCK_SUMMARY =
+    "開くときに、指紋・顔、または端末の画面ロック(PIN など)で本人を確かめます。" +
+        "共有・引用・クイック設定のタイル・ウィジェット・通知から開くときも確かめ、ロック中はウィジェットに内容を出しません。"
 
 /** オフラインモードのスイッチの説明。止まるものと、そのまま使えるものを並べる */
 internal const val OFFLINE_MODE_SUMMARY =

@@ -1,6 +1,8 @@
 package com.unchunks.echomark.data.repository
 
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -385,6 +387,23 @@ class AppSettingsRepositoryImplTest {
         assertEquals(SummaryStyle(qualityCheck = false), repository.summaryStyle.first())
         repository.resetToDefaults()
         assertTrue(repository.summaryStyle.first().qualityCheck)
+    }
+
+    @Test
+    fun アプリのロックは既定でオフ_保存でき_設定を初期化しても残す() = runTest {
+        val repository = createRepository()
+        assertEquals(AppLockSettings(), repository.appLock.first())
+
+        repository.updateAppLock { it.copy(enabled = true, delay = AppLockDelay.MINUTES_5, hideContent = true) }
+        assertEquals(AppLockSettings(true, AppLockDelay.MINUTES_5, hideContent = true), repository.appLock.first())
+
+        // 初期化をきっかけに守りを外さない
+        repository.resetToDefaults()
+        assertEquals(AppLockSettings(true, AppLockDelay.MINUTES_5, hideContent = true), repository.appLock.first())
+
+        repository.updateAppLock { it.copy(enabled = false, hideContent = false) }
+        repository.resetToDefaults()
+        assertEquals(AppLockSettings(), repository.appLock.first())
     }
 
 }

@@ -5,6 +5,7 @@
 - 確認日: 2026-10-19
 - 対象: `refactor/app-cleanup`(13ed26b)の依存。`releaseRuntimeClasspath` の 287 個と、assets のモデル
 - 追記(2026-11-07): 場所の画面の「地図の背景」で MapLibre Native(O24・O25)を足した(付録の表にも足した)。MapLibre の推移的な依存で、`androidx.fragment` は 1.5.4 から 1.8.9 に上がる
+- 追記(2026-11-07): アプリのロックで `androidx.biometric:biometric` 1.1.0(Apache License 2.0、Android Jetpack なので O1 に含める)を足した(付録の表にも足した)。推移的な依存の `androidx.fragment` などは、すでに入っている版に解決される
 
 ## 確かめ方
 
@@ -164,6 +165,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | O1 Android Jetpack | `androidx.arch.core:core-common` | 2.2.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.arch.core:core-runtime` | 2.2.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.autofill:autofill` | 1.0.0 | The Apache Software License, Version 2.0 | Google Maven |
+| O1 Android Jetpack | `androidx.biometric:biometric` | 1.1.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.collection:collection` | 1.5.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.collection:collection-jvm` | 1.5.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.collection:collection-ktx` | 1.5.0 | The Apache Software License, Version 2.0 | Google Maven |
