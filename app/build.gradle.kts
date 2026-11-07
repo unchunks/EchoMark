@@ -92,6 +92,8 @@ dependencies {
     // Core / Lifecycle
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    // アプリのロック(指紋・顔・端末の画面ロックで本人を確かめる)
+    implementation(libs.androidx.biometric)
 
     implementation(libs.datastore.preferences)
     implementation(libs.timber)

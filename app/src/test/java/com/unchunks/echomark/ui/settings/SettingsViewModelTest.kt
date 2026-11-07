@@ -9,6 +9,8 @@ import com.unchunks.echomark.crash.CrashEnvironment
 import com.unchunks.echomark.crash.CrashLogKind
 import com.unchunks.echomark.crash.CrashLogStore
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.model.SummaryFormat
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
@@ -91,6 +93,24 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(ApiUsagePeriods(), viewModel.uiState.value.apiUsage)
+    }
+
+    @Test
+    fun アプリのロックの設定を保存し_画面に出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.setAppLockEnabled(true)
+        viewModel.setAppLockDelay(AppLockDelay.MINUTES_15)
+        viewModel.setAppLockHideContent(true)
+        advanceUntilIdle()
+
+        val expected = AppLockSettings(enabled = true, delay = AppLockDelay.MINUTES_15, hideContent = true)
+        assertEquals(expected, settings.appLockFlow.value)
+        assertEquals(expected, viewModel.uiState.value.appLock)
+
+        viewModel.onAppLockUnavailable()
+        assertTrue(viewModel.message.value!!.contains("画面ロック"))
     }
 
     @Test

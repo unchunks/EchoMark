@@ -2,7 +2,7 @@ package com.unchunks.echomark.ui.share
 
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.unchunks.echomark.MainViewModel
@@ -16,7 +16,7 @@ import dagger.hilt.android.AndroidEntryPoint
  * 選んだ文章を引用として保存する。
  */
 @AndroidEntryPoint
-class ShareReceiverActivity : ComponentActivity() {
+class ShareReceiverActivity : FragmentActivity() {
 
     private val viewModel: ShareViewModel by viewModels()
 

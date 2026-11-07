@@ -117,6 +117,8 @@ object BackupCoverage {
         "processing_stats" to "処理の所要時間の記録は、端末の性能で決まる目安(別の端末では当てはまらない)"
     )
 
+    private const val APP_LOCK = "アプリのロックは端末の設定(端末ごとに生体認証・画面ロックが違う。読み込みで勝手にオン・オフを変えない)"
+
     private const val DEVICE_SETTING = "端末の設定(画面・処理・AI の選び方など)。端末ごとに性能・接続・好みが違うため持ち越さない"
 
     /**
@@ -130,6 +132,9 @@ object BackupCoverage {
         "rediscover_notified" to "どのブックマークを通知したかは、この端末の通知の記録",
         "onboarding_completed" to "はじめにの案内を見たかは、この端末のこと",
         "offline_mode" to "オフラインモードは端末の設定(読み込みで勝手にオン・オフを変えない)",
+        "app_lock_enabled" to APP_LOCK,
+        "app_lock_delay" to APP_LOCK,
+        "app_lock_hide_content" to APP_LOCK,
         "theme_mode" to DEVICE_SETTING,
         "dynamic_color" to DEVICE_SETTING,
         "send_files_to_cloud" to DEVICE_SETTING,

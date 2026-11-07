@@ -1,5 +1,6 @@
 package com.unchunks.echomark.testing
 
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.securestorage.SecretCipher
@@ -67,6 +68,7 @@ class FakeAppSettingsRepository(
     val linkCheckEnabledFlow = MutableStateFlow(true)
     val placesMapBackgroundFlow = MutableStateFlow(false)
     val offlineModeFlow = MutableStateFlow(false)
+    val appLockFlow = MutableStateFlow(AppLockSettings())
     val dismissedDuplicatesFlow = MutableStateFlow<Set<DuplicatePair>>(emptySet())
     var resetCalls = 0
     val processingFlow = MutableStateFlow(ProcessingSettings())
@@ -117,6 +119,8 @@ class FakeAppSettingsRepository(
     override suspend fun setPlacesMapBackground(enabled: Boolean) { placesMapBackgroundFlow.value = enabled }
     override val offlineMode: Flow<Boolean> = offlineModeFlow
     override suspend fun setOfflineMode(enabled: Boolean) { offlineModeFlow.value = enabled }
+    override val appLock: Flow<AppLockSettings> = appLockFlow
+    override suspend fun updateAppLock(transform: (AppLockSettings) -> AppLockSettings) { appLockFlow.update(transform) }
     override val dismissedDuplicates: Flow<Set<DuplicatePair>> = dismissedDuplicatesFlow
     override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) { duplicateSensitivityFlow.value = sensitivity }
     override suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>) {

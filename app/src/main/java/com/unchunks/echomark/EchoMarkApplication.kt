@@ -20,6 +20,7 @@ import com.unchunks.echomark.data.ai.local.LocalLlmProvider
 import com.unchunks.echomark.crash.CrashReporter
 import com.unchunks.echomark.crash.CrashReporter.recordWorkerFailures
 import com.unchunks.echomark.data.attachment.UnusedAttachmentCleaner
+import com.unchunks.echomark.ui.lock.AppLockManager
 import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
 import com.unchunks.echomark.worker.ReembedAllWorker
 import com.unchunks.echomark.worker.BulkProcessingNotifier
@@ -41,6 +42,7 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
     @Inject lateinit var stalledAiProcessingRecovery: StalledAiProcessingRecovery
     @Inject lateinit var bulkProcessingNotifier: BulkProcessingNotifier
     @Inject lateinit var unusedAttachmentCleaner: UnusedAttachmentCleaner
+    @Inject lateinit var appLockManager: AppLockManager
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -59,6 +61,9 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
         // 部品(components)のうち Android に依存しないもののログも Timber に流す
         ComponentLog.sink = LogSink { level, tag, message, error -> Timber.tag(tag).log(level.priority, error, message) }
+
+        // アプリのロック。最初の Activity が作られる前に、すべての Activity の出入りを見始める
+        appLockManager.install(this)
 
         createNotificationChannels()
         // ブックマークの保存・削除・閲覧に合わせて、ホーム画面ウィジェットを描き直す

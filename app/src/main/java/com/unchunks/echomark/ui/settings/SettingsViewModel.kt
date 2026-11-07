@@ -14,6 +14,8 @@ import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.data.network.OfflineModeController
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.DataOperationException
@@ -132,6 +134,8 @@ data class SettingsUiState(
     val apiUsage: ApiUsagePeriods = ApiUsagePeriods(),
     /** オフラインモード(オンの間、アプリは通信しない) */
     val offlineMode: Boolean = false,
+    /** アプリのロック(#100) */
+    val appLock: AppLockSettings = AppLockSettings(),
     val versionLabel: String = ""
 )
 
@@ -188,7 +192,7 @@ class SettingsViewModel @Inject constructor(
 
     private val display = combine(appSettings.themeMode, appSettings.dynamicColor, appSettings.offlineMode, ::Triple)
 
-    private val behavior = combine(appSettings.processingSettings, appSettings.summaryStyle, ::Pair)
+    private val behavior = combine(appSettings.processingSettings, appSettings.summaryStyle, appSettings.appLock, ::Triple)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         aiSummary,
@@ -196,7 +200,7 @@ class SettingsViewModel @Inject constructor(
         appSettings.rediscoverSettings,
         behavior,
         transient
-    ) { ai, (themeMode, dynamicColor, offlineMode), rediscover, (processing, summaryStyle), transient ->
+    ) { ai, (themeMode, dynamicColor, offlineMode), rediscover, (processing, summaryStyle, appLock), transient ->
         SettingsUiState(
             isLoaded = true,
             ai = ai,
@@ -210,6 +214,7 @@ class SettingsViewModel @Inject constructor(
             crashLog = transient.crashLog,
             apiUsage = transient.apiUsage,
             offlineMode = offlineMode,
+            appLock = appLock,
             versionLabel = VERSION_LABEL
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
@@ -249,6 +254,25 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicColor(enabled: Boolean) {
         viewModelScope.launch { appSettings.setDynamicColor(enabled) }
+    }
+
+    /** アプリのロックをオン・オフする(オンにする前に、画面で本人を確かめてから呼ぶ) */
+    fun setAppLockEnabled(enabled: Boolean) {
+        viewModelScope.launch { appSettings.updateAppLock { it.copy(enabled = enabled) } }
+    }
+
+    fun setAppLockDelay(delay: AppLockDelay) {
+        viewModelScope.launch { appSettings.updateAppLock { it.copy(delay = delay) } }
+    }
+
+    /** 最近使ったアプリの一覧に内容を出さない(スクリーンショットも撮れなくなる) */
+    fun setAppLockHideContent(hide: Boolean) {
+        viewModelScope.launch { appSettings.updateAppLock { it.copy(hideContent = hide) } }
+    }
+
+    /** 端末に画面ロックが無く、アプリのロックをオンにできない */
+    fun onAppLockUnavailable() {
+        _message.value = "端末の画面ロック(PIN・パターン・パスワード)か、指紋・顔を設定してから、オンにしてください"
     }
 
     /** オフラインモードを切り替える(オンならすぐに通信を止め、オフなら待っていた処理を積み直す) */
