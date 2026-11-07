@@ -115,9 +115,17 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
             .setDescription(getString(R.string.notification_channel_rediscover_desc))
             .build()
         NotificationManagerCompat.from(this).createNotificationChannel(channel)
+        // 自動バックアップを保存できなかったとき(保存先のフォルダを使えなくなったなど)の知らせ
+        NotificationManagerCompat.from(this).createNotificationChannel(
+            NotificationChannelCompat.Builder(AUTO_BACKUP_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT)
+                .setName(getString(R.string.notification_channel_auto_backup))
+                .setDescription(getString(R.string.notification_channel_auto_backup_desc))
+                .build()
+        )
     }
 
     companion object {
         const val REDISCOVER_CHANNEL_ID = "rediscover_digest"
+        const val AUTO_BACKUP_CHANNEL_ID = "auto_backup"
     }
 }

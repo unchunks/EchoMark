@@ -1,6 +1,7 @@
 package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.lock.AppLockSettings
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.securestorage.SecretCipher
@@ -69,6 +70,10 @@ class FakeAppSettingsRepository(
     val placesMapBackgroundFlow = MutableStateFlow(false)
     val offlineModeFlow = MutableStateFlow(false)
     val appLockFlow = MutableStateFlow(AppLockSettings())
+    val autoBackupFlow = MutableStateFlow(AutoBackupSettings())
+    /** exportBackupSettings が返す値・restoreBackupSettings で受け取った値 */
+    var backupSettings: Map<String, Any> = emptyMap()
+    val restoredSettings = mutableListOf<Map<String, Any>>()
     val dismissedDuplicatesFlow = MutableStateFlow<Set<DuplicatePair>>(emptySet())
     var resetCalls = 0
     val processingFlow = MutableStateFlow(ProcessingSettings())
@@ -120,6 +125,14 @@ class FakeAppSettingsRepository(
     override val offlineMode: Flow<Boolean> = offlineModeFlow
     override suspend fun setOfflineMode(enabled: Boolean) { offlineModeFlow.value = enabled }
     override val appLock: Flow<AppLockSettings> = appLockFlow
+    override val autoBackup: Flow<AutoBackupSettings> = autoBackupFlow
+    override suspend fun updateAutoBackup(transform: (AutoBackupSettings) -> AutoBackupSettings) { autoBackupFlow.update(transform) }
+    override suspend fun exportBackupSettings(): Map<String, Any> = backupSettings
+    override suspend fun restoreBackupSettings(values: Map<String, Any>): Int {
+        restoredSettings += values
+        backupSettings = values
+        return values.size
+    }
     override suspend fun updateAppLock(transform: (AppLockSettings) -> AppLockSettings) { appLockFlow.update(transform) }
     override val dismissedDuplicates: Flow<Set<DuplicatePair>> = dismissedDuplicatesFlow
     override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) { duplicateSensitivityFlow.value = sensitivity }

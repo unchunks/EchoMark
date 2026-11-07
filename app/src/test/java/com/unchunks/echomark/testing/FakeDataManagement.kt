@@ -2,6 +2,7 @@ package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.repository.BackupExportSummary
 import com.unchunks.echomark.domain.repository.BackupImportSummary
+import com.unchunks.echomark.domain.repository.BackupSettings
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
@@ -39,6 +40,15 @@ class FakeDataManagementRepository : DataManagementRepository {
         return importSummary
     }
 
+    /** restoreSettings で受け取った設定 */
+    val restoredSettings = mutableListOf<BackupSettings>()
+
+    override suspend fun restoreSettings(settings: BackupSettings): Int {
+        restoredSettings += settings
+        failure?.let { throw it }
+        return settings.count
+    }
+
     override suspend fun storageUsage(): StorageUsage {
         storageCalls++
         return storage
@@ -64,5 +74,13 @@ class FakeProcessingScheduleController : ProcessingScheduleController {
     override fun ensureScheduled(settings: ProcessingSettings) = Unit
     override suspend fun onSettingsChanged(previous: ProcessingSettings, current: ProcessingSettings) {
         changes += previous to current
+    }
+}
+
+/** 「今すぐバックアップ」の呼び出しを数える Fake。 */
+class FakeAutoBackupController : com.unchunks.echomark.worker.AutoBackupController {
+    var runs = 0
+    override fun runNow() {
+        runs++
     }
 }

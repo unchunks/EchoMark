@@ -117,7 +117,8 @@ class BackupCoverageTest {
         summaryHistory = listOf(
             SummaryHistoryEntity(bookmarkId = 1, summary = "前の要約", source = "AI", generator = "端末内 AI", style = "日本語・文章", createdAt = 120)
         ),
-        chatTemplates = listOf(ChatTemplate(id = "t1", title = "要点", text = "要点をまとめて"))
+        chatTemplates = listOf(ChatTemplate(id = "t1", title = "要点", text = "要点をまとめて")),
+        settings = mapOf("theme_mode" to "DARK", "dynamic_color" to true, "processing_nightly_hour" to 3, "llm_backend_summary" to "LOCAL")
     )
 
     @Test
@@ -177,31 +178,51 @@ class BackupCoverageTest {
 
     @Test
     fun DataStoreのすべてのキーの扱いが決めてある() {
-        // stringPreferencesKey("name") / stringPreferencesKey("prefix_${...}") の名前(後ろに付け足すものは prefix_*)
-        val keyPattern = Regex("""(?:boolean|string|int|long|float|double|stringSet)PreferencesKey\("([^"$]*)(\$)?""")
-        val found = mutableSetOf<String>()
+        // stringPreferencesKey("name") / stringPreferencesKey("prefix_${...}") の名前(後ろに付け足すものは prefix_*)と型
+        val keyPattern = Regex("""(boolean|string|int|long|float|double|stringSet)PreferencesKey\("([^"$]*)(\$)?""")
+        val found = mutableMapOf<String, MutableSet<String>>()
         val nonLiteral = mutableSetOf<String>()
         for ((path, text) in mainSources) {
-            keyPattern.findAll(text).forEach { match -> found += match.groupValues[1] + if (match.groupValues[2].isNotEmpty()) "*" else "" }
+            keyPattern.findAll(text).forEach { match ->
+                val name = match.groupValues[2] + if (match.groupValues[3].isNotEmpty()) "*" else ""
+                found.getOrPut(name) { mutableSetOf() } += match.groupValues[1]
+            }
             if (Regex("""PreferencesKey\((?!")""").containsMatchIn(text)) nonLiteral += path
         }
-        // 名前を組み立てるキーは、まるごと含めないと決めた DataStore(処理の所要時間の記録)のものだけ
-        assertEquals(setOf("com/unchunks/echomark/data/repository/ProcessingStatsRepositoryImpl.kt"), nonLiteral)
+        // 名前を組み立てるキーは、まるごと含めないと決めた DataStore(処理の所要時間の記録)と、バックアップの設定を戻すところだけ。
+        // 戻すところは、BackupCoverage で戻すと決めた名前だけを書く(その確かめがあること)
+        val settingsImpl = "com/unchunks/echomark/data/repository/AppSettingsRepositoryImpl.kt"
+        assertEquals(setOf("com/unchunks/echomark/data/repository/ProcessingStatsRepositoryImpl.kt", settingsImpl), nonLiteral)
+        assertTrue(mainSources.getValue(settingsImpl).contains("when (BackupCoverage.settingTypeOf(name))"))
 
         val declared = BackupCoverage.dataStoreKeys
-        val missing = found.filter { key -> key !in declared && declared.keys.none { it.endsWith("*") && key.startsWith(it.removeSuffix("*")) } }
+        val missing = found.keys.filter { BackupCoverage.keyOf(it.removeSuffix("*").let { name -> if (it.endsWith("*")) "${name}x" else name }) == null }
         assertTrue("扱いの決まっていない DataStore のキー(BackupCoverage.dataStoreKeys に足す): $missing", missing.isEmpty())
         val stale = declared.keys.filter { key ->
-            if (key.endsWith("*")) found.none { it.startsWith(key.removeSuffix("*")) } else key !in found
+            if (key.endsWith("*")) found.keys.none { it.startsWith(key.removeSuffix("*")) } else key !in found
         }
         assertTrue("もう無いキー(BackupCoverage.dataStoreKeys から外す): $stale", stale.isEmpty())
-        declared.forEach { (key, reason) -> assertTrue("$key の理由が空", reason == null || reason.isNotBlank()) }
+        declared.forEach { (key, coverage) ->
+            if (coverage is BackupCoverage.Key.Excluded) assertTrue("$key の理由が空", coverage.reason.isNotBlank())
+        }
+        // 戻す設定は、ソースのキーと同じ型で決めてある(違うと、戻した値を読めない)
+        val sourceType = mapOf("boolean" to BackupCoverage.SettingType.BOOLEAN, "int" to BackupCoverage.SettingType.INT, "string" to BackupCoverage.SettingType.STRING)
+        val wrongType = found.filter { (name, types) ->
+            val coverage = BackupCoverage.keyOf(if (name.endsWith("*")) name.removeSuffix("*") + "x" else name) as? BackupCoverage.Key.Setting
+            coverage != null && types.map { sourceType[it] }.toSet() != setOf(coverage.type)
+        }.keys
+        assertTrue("型の違う設定: $wrongType", wrongType.isEmpty())
     }
 
     @Test
-    fun 含めると決めたDataStoreのキーはバックアップに入る() {
-        // 今は chat_templates だけ。増やしたら、BackupData と BackupJson に足してここにも足す
-        assertEquals(setOf("chat_templates"), BackupCoverage.dataStoreKeys.filterValues { it == null }.keys)
-        assertTrue(JSONObject(BackupJson.encode(full)).getJSONArray("chatTemplates") is JSONArray)
+    fun 利用者のデータのキーと設定はバックアップに入り_ロックと端末だけの設定は入らない() {
+        // 利用者のデータは chat_templates だけ。増やしたら、BackupData と BackupJson に足してここにも足す
+        assertEquals(setOf("chat_templates"), BackupCoverage.dataStoreKeys.filterValues { it == BackupCoverage.Key.UserData }.keys)
+        val root = JSONObject(BackupJson.encode(full))
+        assertTrue(root.getJSONArray("chatTemplates") is JSONArray)
+        assertEquals("DARK", root.getJSONObject("settings").getString("theme_mode"))
+        // バックアップを戻して、勝手にロック・オフラインモードを変えない。端末だけの設定も戻さない
+        listOf("app_lock_enabled", "app_lock_delay", "app_lock_hide_content", "offline_mode", "local_llm_use_gpu", "local_model_summary", "auto_backup_folder")
+            .forEach { assertEquals(it, null, BackupCoverage.settingTypeOf(it)) }
     }
 }

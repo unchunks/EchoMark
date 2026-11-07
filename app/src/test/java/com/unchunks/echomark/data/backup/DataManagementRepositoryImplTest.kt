@@ -367,22 +367,48 @@ class DataManagementRepositoryImplTest {
     }
 
     @Test
-    fun 壊れたバックアップは何も読み込まず_今のデータはそのまま() = runBlocking {
+    fun 壊れた箇所だけ読み飛ばし_種類ごとに数と理由を返す() = runBlocking {
         val existing = bookmarkRepository.saveUrlBookmark("https://example.com/keep", null, null).id
-        // ノートが、ファイルに無いブックマークを指している
+        // ノートが、ファイルに無いブックマークを指している。読めない要素も 1 つある
         val json = """
-            {"format":"echomark-backup","version":20,"exportedAt":1,
-             "bookmarks":[{"id":1,"type":"TEXT","title":"新しいメモ","createdAt":1,"aiStatus":"DONE"}],
-             "notes":[{"bookmarkId":2,"text":"迷子のノート","createdAt":1,"updatedAt":1}],
-             "chatTemplates":[{"id":"t9","title":"読み込まない","text":"…"}]}
+            {"format":"echomark-backup","version":21,"exportedAt":1,
+             "bookmarks":[{"id":1,"type":"TEXT","title":"新しいメモ","createdAt":1,"aiStatus":"DONE"},{"type":"TEXT"}],
+             "notes":[{"bookmarkId":2,"text":"迷子のノート","createdAt":1,"updatedAt":1},{"bookmarkId":1,"text":"残るノート","createdAt":1,"updatedAt":1}],
+             "chatTemplates":[{"id":"t9","title":"読み込む","text":"…"}]}
         """.trimIndent()
 
-        val error = runCatching { import(json.toByteArray()) }.exceptionOrNull()
+        val summary = import(json.toByteArray())
 
-        assertTrue(error.toString(), error is com.unchunks.echomark.domain.repository.DataOperationException)
-        assertTrue(error!!.message!!.contains("今のデータはそのまま"))
-        assertEquals(listOf(existing), bookmarkRepository.getAllBookmarkIds())
-        assertTrue(settings.chatTemplatesFlow.value.isEmpty())
+        assertEquals(1, summary.bookmarksAdded)
+        assertEquals(2, bookmarkRepository.getAllBookmarkIds().size)
+        assertTrue(existing in bookmarkRepository.getAllBookmarkIds())
+        assertEquals(listOf("残るノート"), db.backupDao().getAllNotes().map { it.text })
+        assertEquals(listOf("読み込む"), settings.chatTemplatesFlow.value.map { it.title })
+        assertEquals(
+            setOf(
+                com.unchunks.echomark.domain.repository.BackupSkipped("ブックマーク", 1, BackupValidation.REASON_UNREADABLE),
+                com.unchunks.echomark.domain.repository.BackupSkipped("ノート", 1, BackupValidation.REASON_MISSING_PARENT)
+            ),
+            summary.skipped.toSet()
+        )
+        // 設定が入っていないバックアップでは、戻す設定も無い
+        assertEquals(null, summary.settings)
+    }
+
+    @Test
+    fun 設定は書き出して読み込んでも勝手には戻さず_選んだときに戻す() = runBlocking {
+        bookmarkRepository.saveUrlBookmark("https://example.com/a", null, null)
+        settings.backupSettings = mapOf("theme_mode" to "DARK", "processing_nightly_hour" to 3)
+        val bytes = export(includeFiles = false)
+        settings.backupSettings = emptyMap()
+
+        val summary = import(bytes)
+
+        assertEquals(mapOf("theme_mode" to "DARK", "processing_nightly_hour" to 3), summary.settings?.values)
+        assertTrue(settings.restoredSettings.isEmpty())
+
+        assertEquals(2, repository.restoreSettings(summary.settings!!))
+        assertEquals(listOf(mapOf<String, Any>("theme_mode" to "DARK", "processing_nightly_hour" to 3)), settings.restoredSettings)
     }
 
     @Test

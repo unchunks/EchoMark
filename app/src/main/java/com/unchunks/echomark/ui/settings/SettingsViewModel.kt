@@ -14,7 +14,9 @@ import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.data.network.OfflineModeController
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.worker.AutoBackupController
 import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.DataManagementRepository
@@ -136,6 +138,8 @@ data class SettingsUiState(
     val offlineMode: Boolean = false,
     /** アプリのロック(#100) */
     val appLock: AppLockSettings = AppLockSettings(),
+    /** 自動バックアップ(保存先・残す数・最後の結果) */
+    val autoBackup: AutoBackupSettings = AutoBackupSettings(),
     val versionLabel: String = ""
 )
 
@@ -148,6 +152,7 @@ class SettingsViewModel @Inject constructor(
     private val scheduleController: RediscoverScheduleController,
     private val processingScheduleController: ProcessingScheduleController,
     private val offlineModeController: OfflineModeController,
+    private val autoBackupController: AutoBackupController,
     private val apiUsageRepository: ApiUsageRepository,
     private val crashLogs: CrashLogStore,
     private val dispatchers: DispatcherProvider
@@ -192,7 +197,9 @@ class SettingsViewModel @Inject constructor(
 
     private val display = combine(appSettings.themeMode, appSettings.dynamicColor, appSettings.offlineMode, ::Triple)
 
-    private val behavior = combine(appSettings.processingSettings, appSettings.summaryStyle, appSettings.appLock, ::Triple)
+    private val privacy = combine(appSettings.appLock, appSettings.autoBackup, ::Pair)
+
+    private val behavior = combine(appSettings.processingSettings, appSettings.summaryStyle, privacy, ::Triple)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         aiSummary,
@@ -200,7 +207,7 @@ class SettingsViewModel @Inject constructor(
         appSettings.rediscoverSettings,
         behavior,
         transient
-    ) { ai, (themeMode, dynamicColor, offlineMode), rediscover, (processing, summaryStyle, appLock), transient ->
+    ) { ai, (themeMode, dynamicColor, offlineMode), rediscover, (processing, summaryStyle, privacySettings), transient ->
         SettingsUiState(
             isLoaded = true,
             ai = ai,
@@ -214,7 +221,8 @@ class SettingsViewModel @Inject constructor(
             crashLog = transient.crashLog,
             apiUsage = transient.apiUsage,
             offlineMode = offlineMode,
-            appLock = appLock,
+            appLock = privacySettings.first,
+            autoBackup = privacySettings.second,
             versionLabel = VERSION_LABEL
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
@@ -346,6 +354,53 @@ class SettingsViewModel @Inject constructor(
         failureTitle = "読み込めませんでした"
     ) {
         DataOperationState.Imported(dataRepository.importBackup(uri))
+    }
+
+    /** 自動バックアップの保存先を選んだ(選んだらオンにする)。フォルダの許可は画面で取り、ここでは覚えるだけ */
+    fun setAutoBackupFolder(folderUri: String, label: String) {
+        viewModelScope.launch {
+            appSettings.updateAutoBackup { it.copy(enabled = true, folderUri = folderUri, folderLabel = label, lastError = null) }
+        }
+    }
+
+    /** 自動バックアップをオン・オフする(オンにできるのは、保存先を選んであるときだけ) */
+    fun setAutoBackupEnabled(enabled: Boolean) {
+        viewModelScope.launch { appSettings.updateAutoBackup { it.copy(enabled = enabled && it.folderUri != null) } }
+    }
+
+    fun setAutoBackupKeep(keep: Int) {
+        viewModelScope.launch { appSettings.updateAutoBackup { it.copy(keep = keep) } }
+    }
+
+    fun setAutoBackupIncludeFiles(include: Boolean) {
+        viewModelScope.launch { appSettings.updateAutoBackup { it.copy(includeFiles = include) } }
+    }
+
+    /** 選んだフォルダに書き込む許可を持てなかった */
+    fun onAutoBackupFolderUnavailable() {
+        _message.value = "そのフォルダには保存できません。別のフォルダを選んでください"
+    }
+
+    /** 夜を待たずに、自動バックアップを1回行う(結果は「最後のバックアップ」の欄に出る) */
+    fun runAutoBackupNow() {
+        autoBackupController.runNow()
+        _message.value = "バックアップを始めました。終わると、自動バックアップの欄に結果が出ます"
+    }
+
+    /**
+     * 読み込んだバックアップの設定を戻す(読み込みの結果で「設定も戻す」を選んだとき)。
+     * 戻したあとに、再発見の通知と夜間の処理の予定も、戻した設定に合わせて登録し直す
+     */
+    fun restoreBackupSettings() {
+        val settings = (dataOperation.value as? DataOperationState.Imported)?.summary?.settings ?: return
+        runDataOperation(runningMessage = "設定を戻しています…", failureTitle = "設定を戻せませんでした") {
+            val previousProcessing = appSettings.processingSettings.first()
+            val restored = dataRepository.restoreSettings(settings)
+            applySchedule()
+            processingScheduleController.onSettingsChanged(previousProcessing, appSettings.processingSettings.first())
+            _message.value = "設定を ${restored} 件戻しました"
+            DataOperationState.Idle
+        }
     }
 
     /** すべてのデータを削除する。[resetSettings] なら設定と API キーも初期化する。 */

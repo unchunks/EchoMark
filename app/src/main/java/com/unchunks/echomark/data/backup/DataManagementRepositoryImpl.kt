@@ -22,6 +22,7 @@ import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupExportSummary
 import com.unchunks.echomark.domain.repository.BackupImportSummary
+import com.unchunks.echomark.domain.repository.BackupSettings
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.DataOperationException
@@ -63,7 +64,7 @@ class DataManagementRepositoryImpl @Inject constructor(
 
     override suspend fun exportBackup(uri: String, includeFiles: Boolean): BackupExportSummary = withContext(dispatcherProvider.io) {
         val data = backupDao.snapshot(exportedAt = System.currentTimeMillis())
-            .copy(chatTemplates = appSettings.chatTemplates.first())
+            .copy(chatTemplates = appSettings.chatTemplates.first(), settings = appSettings.exportBackupSettings())
         // ファイルも含めるときは、ブックマークが指している添付ファイル・オフラインコピーのうち、端末にあるものを入れる
         val files = if (includeFiles) {
             referencedFiles(data.bookmarks).mapNotNull { path -> attachmentStore.existingFile(path)?.let { path to it } }.toMap()
@@ -103,7 +104,8 @@ class DataManagementRepositoryImpl @Inject constructor(
     /**
      * バックアップを今のデータに統合する。次の順で、全体を確かめてから書き込む(途中まで読み込まない):
      * 1. ファイルを読む。zip なら、キャッシュの一時的な場所に展開する(名前・大きさ・空き容量を確かめる)
-     * 2. JSON を読み、中身がそろっているかを確かめる([BackupValidation])。問題があれば何も書かずに断る
+     * 2. JSON を読み、壊れた箇所(と、それに頼るもの)だけを外す([BackupValidation])。外したものは種類ごとに数と理由を返す
+     *    (zip の中身が決まった形でないときは、1 で全体を断る)
      * 3. 添付ファイル・オフラインコピーを置き場所に入れる → チャットのテンプレートを足す → DB に統合する(1つのトランザクション)。
      *    どこかで失敗したら、入れたファイルを消し、テンプレートを元に戻す(DB はトランザクションで元のまま)
      */
@@ -118,12 +120,13 @@ class DataManagementRepositoryImpl @Inject constructor(
             } catch (e: BackupFormatException) {
                 throw DataOperationException(e.message ?: "バックアップを読み込めませんでした", e)
             }
-            val problems = BackupValidation.problemsOf(decoded)
-            if (problems.isNotEmpty()) {
-                Timber.w("バックアップに問題があるため読み込まない: %s", problems)
-                throw DataOperationException(BackupValidation.message(problems))
-            }
-            restore(decoded.data, read.files)
+            val sanitized = BackupValidation.sanitize(decoded)
+            if (sanitized.skipped.isNotEmpty()) Timber.w("バックアップの壊れた箇所を読み飛ばす: %s", sanitized.skipped)
+            restore(sanitized.data, read.files).copy(
+                skipped = sanitized.skipped,
+                // 設定はここでは戻さない(利用者が選んだら restoreSettings で戻す)
+                settings = sanitized.data.settings.takeIf { it.isNotEmpty() }?.let { BackupSettings(it) }
+            )
         } finally {
             staging.deleteRecursively()
         }
@@ -232,6 +235,10 @@ class DataManagementRepositoryImpl @Inject constructor(
             snapshotPdfPath = snapshotPdfPath.takeIf { hasSnapshot && exists(it) },
             snapshotAt = snapshotAt.takeIf { hasSnapshot }
         )
+    }
+
+    override suspend fun restoreSettings(settings: BackupSettings): Int = withContext(dispatcherProvider.io) {
+        appSettings.restoreBackupSettings(settings.values).also { Timber.i("バックアップの設定を戻した: %d 件", it) }
     }
 
     override suspend fun storageUsage(): StorageUsage = withContext(dispatcherProvider.io) {

@@ -2,6 +2,8 @@ package com.unchunks.echomark.screenshot
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.repository.BackupImportSummary
+import com.unchunks.echomark.domain.repository.BackupSettings
+import com.unchunks.echomark.domain.repository.BackupSkipped
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.settings.CrashLogDialog
@@ -123,6 +125,25 @@ class SettingsDialogScreenshotTest {
                 BackupImportSummary(
                     bookmarksAdded = 42, bookmarksSkipped = 3, tagsAdded = 12,
                     conversationsAdded = 5, conversationsSkipped = 1, messagesAdded = 30, filesRestored = 12
+                )
+            ),
+            onDismiss = {}
+        )
+    }
+
+    /** 壊れた箇所を読み飛ばし、設定も入っていたバックアップ */
+    @Test
+    fun importResultWithSkippedAndSettings() = screenshot.captureDialogLightDark("settings_dialog_import_skipped_settings") {
+        DataOperationDialog(
+            state = DataOperationState.Imported(
+                BackupImportSummary(
+                    bookmarksAdded = 40, bookmarksSkipped = 0, tagsAdded = 12,
+                    conversationsAdded = 5, conversationsSkipped = 0, messagesAdded = 30,
+                    skipped = listOf(
+                        BackupSkipped("ブックマーク", 2, "読み取れない形でした"),
+                        BackupSkipped("ノート", 3, "もとになるもの(ブックマーク・タグ・会話)がファイルに無いか、読み飛ばしました")
+                    ),
+                    settings = BackupSettings(mapOf("theme_mode" to "DARK", "bookmark_sort_order" to "OLDEST"))
                 )
             ),
             onDismiss = {}
