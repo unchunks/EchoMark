@@ -190,6 +190,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
             // 戻す設定のうち、バックアップに無いものは既定に戻す(書き出した端末で既定のままだったもの)
             prefs.asMap().keys.filter { BackupCoverage.settingTypeOf(it.name) != null && it.name !in values }.forEach { prefs.remove(it) }
             values.forEach { (name, value) ->
+                // 型の違う値と、端末の外にデータを送る値(クラウド AI を選ぶなど)は書かない(今の値のまま)
+                if (!BackupCoverage.isRestorable(name, value)) return@forEach
                 when (BackupCoverage.settingTypeOf(name)) {
                     BackupCoverage.SettingType.BOOLEAN -> (value as? Boolean)?.let { prefs[booleanPreferencesKey(name)] = it; restored++ }
                     BackupCoverage.SettingType.INT -> (value as? Number)?.toLong()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
