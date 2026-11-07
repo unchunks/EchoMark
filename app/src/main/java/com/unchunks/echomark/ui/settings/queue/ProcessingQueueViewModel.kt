@@ -32,7 +32,9 @@ data class ProcessingQueueUiState(
     /** 段・中身の種類ごとの平均の所要時間(残り時間の目安に使う) */
     val stageAverages: Map<StageDurationKey, Long> = emptyMap(),
     /** 処理中のものの、実行中の段の進み具合(0〜1。報告している段だけ) */
-    val stageProgress: Map<Long, Float> = emptyMap()
+    val stageProgress: Map<Long, Float> = emptyMap(),
+    /** オフラインモード(通信の要る処理は処理待ちのまま待っている) */
+    val offlineMode: Boolean = false
 )
 
 /** 処理の状況の画面(#65)。処理中・処理待ち・最近の失敗を出し、やめる・今すぐ処理する・再試行を受け付ける。 */
@@ -64,14 +66,16 @@ class ProcessingQueueViewModel @Inject constructor(
         queue,
         appSettings.processingSettings,
         processingStats.averageStageDurations.catch { emit(emptyMap()) }.onStart { emit(emptyMap()) },
-        stageProgress
-    ) { queue, settings, averages, progress ->
+        stageProgress,
+        appSettings.offlineMode
+    ) { queue, settings, averages, progress, offlineMode ->
         ProcessingQueueUiState(
             isLoading = false,
             queue = queue,
             settings = settings,
             stageAverages = averages,
-            stageProgress = progress
+            stageProgress = progress,
+            offlineMode = offlineMode
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProcessingQueueUiState())
 

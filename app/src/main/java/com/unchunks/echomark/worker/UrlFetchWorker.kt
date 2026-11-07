@@ -7,6 +7,8 @@ import androidx.work.WorkerParameters
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.attachment.AttachmentStore
+import com.unchunks.echomark.data.network.NetworkGate
+import com.unchunks.echomark.data.network.isOfflineModeBlock
 import com.unchunks.echomark.data.remote.DownloadSink
 import com.unchunks.echomark.data.remote.FetchedContent
 import com.unchunks.echomark.data.remote.UrlContentFetcher
@@ -25,7 +27,8 @@ import timber.log.Timber
  * URLブックマークのページ本文を取得して title / content に反映し、OG 画像・サイト名を保存する。
  * リンク先が PDF・画像・音声・動画なら本体をダウンロードしてファイルとして保存する(種類は URL のまま。
  * 中身は後続の [ContentExtractionWorker] が取り出す)。
- * 後続の AI 処理をブロックしないよう、失敗しても Result.success() を返す。
+ * 後続の AI 処理をブロックしないよう、失敗しても Result.success() を返す(オフラインモードで止めたときだけ、後続の段も
+ * 止めるため Result.failure() を返す。ブックマークは処理待ちのまま残り、オフにしたら積み直される)。
  */
 @HiltWorker
 class UrlFetchWorker @AssistedInject constructor(
@@ -35,7 +38,8 @@ class UrlFetchWorker @AssistedInject constructor(
     private val fetcher: UrlContentFetcher,
     private val attachmentStore: AttachmentStore,
     private val aiPrewarmer: AiPrewarmer,
-    private val stats: ProcessingStatsRepository
+    private val stats: ProcessingStatsRepository,
+    private val gate: NetworkGate
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -51,13 +55,30 @@ class UrlFetchWorker @AssistedInject constructor(
             return Result.success()
         }
 
+        // オフラインモードの間は取得せず、後続の段も止めて処理待ちのまま残す(オフにしたら積み直される)。
+        // 成功で終えると、本文の無いまま AI 処理に進んでしまう
+        if (gate.isOffline()) return heldForOfflineMode(bookmarkId)
+
         // 処理中(本文の取得)にし、終えたら(中断されても)次の段を待つ処理待ちに戻す
-        withProcessingStage(repository, stats, bookmark, ProcessingStage.FETCH_CONTENT) { fetch(bookmarkId, bookmark, url) }
+        var blockedByOfflineMode = false
+        withProcessingStage(repository, stats, bookmark, ProcessingStage.FETCH_CONTENT) {
+            fetch(bookmarkId, bookmark, url) { blockedByOfflineMode = true }
+        }
+        // 取得の途中でオフラインモードにされた
+        if (blockedByOfflineMode) return heldForOfflineMode(bookmarkId)
         return Result.success()
     }
 
-    /** 本文を取得して保存する。取得できたら true(失敗・削除済みでも後続の AI 処理は続けるため、例外にはしない) */
-    private suspend fun fetch(bookmarkId: Long, bookmark: Bookmark, url: String): Boolean {
+    private fun heldForOfflineMode(bookmarkId: Long): Result {
+        Timber.i("UrlFetchWorker: オフラインモードのため処理待ちのまま残す id=%d", bookmarkId)
+        return Result.failure()
+    }
+
+    /**
+     * 本文を取得して保存する。取得できたら true(失敗・削除済みでも後続の AI 処理は続けるため、例外にはしない)。
+     * オフラインモードで断られたら [onOfflineModeBlock] を呼ぶ。
+     */
+    private suspend fun fetch(bookmarkId: Long, bookmark: Bookmark, url: String, onOfflineModeBlock: () -> Unit): Boolean {
         // 後続の AI 処理で端末内モデルを使うなら、通信している間に読み込んでおく
         if (bookmark.summary.isNullOrBlank()) aiPrewarmer.prewarmLocalLlmIfUsed()
 
@@ -69,7 +90,7 @@ class UrlFetchWorker @AssistedInject constructor(
             AiPerfLog.measure("fetch") { fetcher.fetch(url, sink) }
         }
         val fetched = fetchResult.getOrElse { e ->
-            Timber.w(e, "UrlFetchWorker: 取得に失敗 url=%s", url)
+            if (e.isOfflineModeBlock()) onOfflineModeBlock() else Timber.w(e, "UrlFetchWorker: 取得に失敗 url=%s", url)
             return false
         }
 

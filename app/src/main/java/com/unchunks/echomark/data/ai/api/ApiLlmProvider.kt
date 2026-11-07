@@ -25,6 +25,7 @@ import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.AnalysisSchema
 import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.data.ai.local.AnalysisParser
+import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
@@ -68,7 +69,8 @@ class ApiLlmProvider @Inject constructor(
     private val appSettings: AppSettingsRepository,
     private val apiKeyRepository: ApiKeyRepository,
     private val attachmentLoader: AttachmentLoader,
-    private val usageRepository: ApiUsageRepository
+    private val usageRepository: ApiUsageRepository,
+    gate: NetworkGate
 ) : ApiLlmProviderFactory {
 
     override fun forTask(task: AiTask): LlmProvider = TaskProvider(task)
@@ -112,8 +114,9 @@ class ApiLlmProvider @Inject constructor(
         }
     }
 
+    // クラウド API はすべてここを通す。オフラインモードの間は呼ばない(Claude の SDK は共通の OkHttpClient を通らない)
     private val clients: Map<ApiProvider, ApiLlmClient> =
-        listOf(claude, gemini, openAi).associateBy { it.provider }
+        listOf(claude, gemini, openAi).map { OfflineGuardedApiLlmClient(it, gate) }.associateBy { it.provider }
 
     /** [task] の現在の設定での呼び出し先。キー未設定なら [LlmException.ApiKeyMissing]。 */
     private suspend fun current(task: AiTask): Pair<ApiLlmClient, ApiCredentials> {

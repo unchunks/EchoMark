@@ -12,6 +12,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.unchunks.echomark.data.feed.FeedChecker
+import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.ProcessingSettings
@@ -31,10 +32,13 @@ import javax.inject.Inject
 class FeedCheckWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val checker: FeedChecker
+    private val checker: FeedChecker,
+    private val gate: NetworkGate
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // オフラインモードの間は確かめない(次の夜に回る)。途中でオンにされたら、FeedChecker が失敗に数えずにやめる
+        if (gate.isOffline()) return Result.success()
         val summary = checker.checkAll()
         Timber.i("フィードを確認: %d 件を確認、%d 件が失敗、%d 件を保存", summary.checked, summary.failed, summary.added)
         // すべて失敗したのは通信の問題かもしれないので、数回までやり直す(失敗は購読ごとに記録済みで、続けて失敗すると間引く)
@@ -79,6 +83,8 @@ class FeedCheckNightlyTask @Inject constructor(
 
     override suspend fun run() {
         if (subscriptionDao.get().getEnabled().isEmpty()) return
+        // オフラインモードの間は積まない(通信の条件を満たしたときに取りに行ってしまう)
+        if (appSettings.offlineMode.first()) return
         val settings = appSettings.processingSettings.first()
         workManager.enqueueUniqueWork(FeedCheckWorker.WORK_NAME, ExistingWorkPolicy.KEEP, FeedCheckWorker.requestFor(settings))
     }

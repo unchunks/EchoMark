@@ -73,6 +73,12 @@ class SettingsScreenshotTest {
         Screen(readyState, height = 2500)
     }
 
+    /** オフラインモードをオンにしている(「通信」の欄) */
+    @Test
+    fun settingsOfflineMode() = screenshot.captureLightDark("settings_offline_mode") {
+        Screen(readyState.copy(offlineMode = true), height = 1100)
+    }
+
     /** 処理の設定(充電中だけ・夜間にまとめて処理する・同時に処理する数) */
     @Test
     fun settingsProcessing() = screenshot.captureLightDark("settings_processing") {

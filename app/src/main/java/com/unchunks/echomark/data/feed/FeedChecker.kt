@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.feed
 
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
+import com.unchunks.echomark.data.network.isOfflineModeBlock
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -83,13 +84,19 @@ class FeedChecker @Inject constructor(
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: FeedFetchException) {
-                failed++
-                subscriptionDao.recordFailure(subscription.id, now, e.message ?: "取得できませんでした")
             } catch (e: Exception) {
-                Timber.w(e, "フィードの確認に失敗: %s", subscription.feedUrl)
+                // オフラインモードにされた。フィードの失敗には数えず、残りも確かめずに終える(次の確認に回る)
+                if (e.isOfflineModeBlock()) {
+                    checked--
+                    break
+                }
                 failed++
-                subscriptionDao.recordFailure(subscription.id, now, "確認できませんでした")
+                if (e is FeedFetchException) {
+                    subscriptionDao.recordFailure(subscription.id, now, e.message ?: "取得できませんでした")
+                } else {
+                    Timber.w(e, "フィードの確認に失敗: %s", subscription.feedUrl)
+                    subscriptionDao.recordFailure(subscription.id, now, "確認できませんでした")
+                }
             }
         }
 

@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.linkcheck
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import com.unchunks.echomark.data.network.NetworkGate
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
@@ -14,11 +15,16 @@ interface NetworkStatus {
     fun isOnline(): Boolean
 }
 
-/** 接続中のネットワークがインターネットに届いていると確かめられている([NetworkCapabilities.NET_CAPABILITY_VALIDATED])とき true */
+/**
+ * 接続中のネットワークがインターネットに届いていると確かめられている([NetworkCapabilities.NET_CAPABILITY_VALIDATED])とき true。
+ * オフラインモードの間は false(断った確認をリンク切れに数えず、途中でやめる)。
+ */
 class ConnectivityNetworkStatus @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val gate: NetworkGate
 ) : NetworkStatus {
     override fun isOnline(): Boolean {
+        if (gate.isOffline()) return false
         val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
         val capabilities = manager.getNetworkCapabilities(manager.activeNetwork ?: return false) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&

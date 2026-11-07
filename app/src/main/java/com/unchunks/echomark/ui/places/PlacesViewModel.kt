@@ -38,6 +38,8 @@ data class PlacesUiState(
     val lastDetection: PlaceDetection? = null,
     /** 「地図の背景」のスイッチ(オンの間、画面を開いていればタイルの地図を出す。既定はオフ) */
     val mapBackgroundEnabled: Boolean = false,
+    /** オフラインモード(オンの間は地図の背景を読まない) */
+    val offlineMode: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -63,8 +65,8 @@ class PlacesViewModel @Inject constructor(
     private val extras = MutableStateFlow(Extras())
 
     val uiState: StateFlow<PlacesUiState> = combine(
-        bookmarkRepository.observeBookmarks(), extras, appSettings.placesMapBackground
-    ) { bookmarks, extras, mapBackground ->
+        bookmarkRepository.observeBookmarks(), extras, appSettings.placesMapBackground, appSettings.offlineMode
+    ) { bookmarks, extras, mapBackground, offlineMode ->
         val placed = bookmarks.filter { it.hasPlace }
         val groups = Places.group(placed)
         PlacesUiState(
@@ -77,6 +79,7 @@ class PlacesViewModel @Inject constructor(
             detecting = extras.detecting,
             lastDetection = extras.lastDetection,
             mapBackgroundEnabled = mapBackground,
+            offlineMode = offlineMode,
             errorMessage = extras.errorMessage
         )
     }

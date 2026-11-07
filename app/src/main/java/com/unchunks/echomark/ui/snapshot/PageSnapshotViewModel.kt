@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.snapshot
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.snapshot.PageSnapshotRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -41,7 +42,8 @@ sealed interface SnapshotMessage {
 /** 詳細画面のオフラインコピー(保存・削除)。ページの読み込みと書き出しは画面の WebView([PageSnapshotter])が行い、ここは保存の記録を扱う。 */
 @HiltViewModel
 class PageSnapshotViewModel @Inject constructor(
-    private val repository: PageSnapshotRepository
+    private val repository: PageSnapshotRepository,
+    private val gate: NetworkGate
 ) : ViewModel() {
 
     private val operationFlow = MutableStateFlow<SnapshotOperation>(SnapshotOperation.Idle)
@@ -54,6 +56,11 @@ class PageSnapshotViewModel @Inject constructor(
     fun start(bookmark: Bookmark) {
         val url = bookmark.contentUri
         if (url == null || !canSnapshot(url) || operationFlow.value != SnapshotOperation.Idle) return
+        // オフラインモードの間はページを読み込まない(WebView は共通の OkHttpClient を通らない)
+        if (gate.isOffline()) {
+            messageChannel.trySend(SnapshotMessage.Failed(OFFLINE_SNAPSHOT_MESSAGE))
+            return
+        }
         operationFlow.value = SnapshotOperation.Capturing(bookmark.id, url)
     }
 
@@ -88,6 +95,9 @@ class PageSnapshotViewModel @Inject constructor(
         operationFlow.value = SnapshotOperation.Idle
         messageChannel.trySend(SnapshotMessage.Failed(message))
     }
+
+    /** オフラインモードがオンか(作っている間の画面の WebView が、ページの中の読み込みのたびに確かめる) */
+    fun isOffline(): Boolean = gate.isOffline()
 
     /** 利用者が作るのをやめた */
     fun cancel() {

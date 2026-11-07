@@ -39,6 +39,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.unchunks.echomark.domain.place.GeoPoint
 import com.unchunks.echomark.domain.place.PlaceGroup
 import com.unchunks.echomark.domain.place.PlacesTileMap
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import okhttp3.OkHttpClient
 import org.maplibre.android.MapLibre
@@ -261,15 +265,24 @@ private class MapState {
     }
 }
 
+/** 地図の通信に使う、アプリの共通の OkHttpClient(オフラインモードのインターセプターつき)を取り出す */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+internal interface MapNetworkEntryPoint {
+    fun okHttpClient(): OkHttpClient
+}
+
 /**
- * タイルを取るときの User-Agent を、アプリ名とバージョンにする(ライブラリの既定のままにしない)。
- * 送るのはこれだけで、ブックマークのデータは付けない。
+ * 地図(MapLibre)の通信を、アプリの共通の OkHttpClient から作った client にする(オフラインモードで断られるように。
+ * ライブラリの既定の client はオフラインモードを知らない)。タイルを取るときの User-Agent は、アプリ名とバージョンにする
+ * (ライブラリの既定のままにしない)。送るのはこれだけで、ブックマークのデータは付けない。
  */
 private fun installUserAgent(context: Context) {
     val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
     val userAgent = "EchoMark/$version (Android; +https://github.com/unchunks/EchoMark)".replace("/ (", "/unknown (")
+    val shared = EntryPointAccessors.fromApplication(context.applicationContext, MapNetworkEntryPoint::class.java).okHttpClient()
     HttpRequestUtil.setOkHttpClient(
-        OkHttpClient.Builder()
+        shared.newBuilder()
             .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().header("User-Agent", userAgent).build()) }
             .build()
     )

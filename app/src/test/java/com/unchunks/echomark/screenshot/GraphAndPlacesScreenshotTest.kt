@@ -147,6 +147,12 @@ class GraphAndPlacesScreenshotTest {
     fun placesTileMapOffline() = screenshot.captureScreenLightDark(
         "places_tile_map_offline", content = placesContent(placesState.copy(mapBackgroundEnabled = true), online = false)
     )
+    /** オフラインモードの間は地図の背景を出さず、分布図にして理由を添える */
+    @Test
+    fun placesTileMapOfflineMode() = screenshot.captureScreenLightDark(
+        "places_tile_map_offline_mode", content = placesContent(placesState.copy(mapBackgroundEnabled = true, offlineMode = true))
+    )
+
     @Test
     fun placesEmpty() = screenshot.captureScreenLightDark("places_empty", content = placesContent(PlacesUiState(isLoading = false)))
 

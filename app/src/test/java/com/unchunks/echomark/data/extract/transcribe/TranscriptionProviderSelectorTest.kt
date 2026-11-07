@@ -11,6 +11,7 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
+import com.unchunks.echomark.testing.FakeNetworkGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -34,11 +35,21 @@ class TranscriptionProviderSelectorTest {
             keys,
             OpenAiTranscriptionClient(OkHttpClient(), dispatchers),
             GeminiTranscriptionClient(OkHttpClient(), dispatchers),
-            OnDeviceSpeechTranscriber(ApplicationProvider.getApplicationContext())
+            OnDeviceSpeechTranscriber(ApplicationProvider.getApplicationContext()),
+            gate
         )
     }
 
+    private val gate = FakeNetworkGate()
+
     private fun names() = runBlocking { selector().providers().map { it.name } }
+
+    @Test
+    fun オフラインモードの間は端末内だけ() {
+        gate.offline = true
+
+        assertEquals(listOf("on-device"), names())
+    }
 
     @Test
     fun 条件がそろえばクラウドの後に端末内() {

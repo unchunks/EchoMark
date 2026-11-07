@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
@@ -100,6 +101,8 @@ class SettingsActions(
     val onOpenAiSettings: () -> Unit = {},
     val onThemeModeChange: (ThemeMode) -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
+    /** オフラインモードのスイッチ */
+    val onOfflineModeChange: (Boolean) -> Unit = {},
     /** 処理の設定(充電中だけ・夜間にまとめて・同時に処理する数など)を書き換える */
     val onProcessingSettingsChange: ((ProcessingSettings) -> ProcessingSettings) -> Unit = {},
     /** 要約の言語・書き方を書き換える */
@@ -194,6 +197,7 @@ fun SettingsScreen(
             onOpenAiSettings = onOpenAiSettings,
             onThemeModeChange = viewModel::setThemeMode,
             onDynamicColorChange = viewModel::setDynamicColor,
+            onOfflineModeChange = viewModel::setOfflineMode,
             onProcessingSettingsChange = viewModel::updateProcessingSettings,
             onSummaryStyleChange = viewModel::updateSummaryStyle,
             onOpenProcessingQueue = onOpenProcessingQueue,
@@ -323,6 +327,17 @@ fun SettingsContent(
                 onOpenDialog = { dialog = it },
                 onChange = actions.onSummaryStyleChange
             )
+
+            item { SectionHeader("通信") }
+            item {
+                SettingsSwitchItem(
+                    title = "オフラインモード",
+                    icon = Icons.Outlined.CloudOff,
+                    summary = OFFLINE_MODE_SUMMARY,
+                    checked = uiState.offlineMode,
+                    onCheckedChange = actions.onOfflineModeChange
+                )
+            }
 
             item { SectionHeader("表示") }
             item {
@@ -597,3 +612,9 @@ private suspend fun shareCrashLog(context: Context, text: String) {
         Timber.w(e, "クラッシュログの共有先がない")
     }
 }
+
+/** オフラインモードのスイッチの説明。止まるものと、そのまま使えるものを並べる */
+internal const val OFFLINE_MODE_SUMMARY =
+    "オンの間、アプリは一切通信しません。保存・検索・端末内 AI・オフラインコピーはそのまま使えます。" +
+        "リンクの本文の取得・フィードとリンク切れの確認・モデルのダウンロード・地図の背景は止まり、" +
+        "本文の取得などはオフにしたときに始まります。"

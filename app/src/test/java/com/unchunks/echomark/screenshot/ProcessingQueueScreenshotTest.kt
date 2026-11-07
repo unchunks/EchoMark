@@ -113,6 +113,18 @@ class ProcessingQueueScreenshotTest {
         )
     }
 
+    /** オフラインモードのときは、通信の要る処理が待っていることを添える */
+    @Test
+    fun waitingForOfflineMode() = screenshot.captureScreenLightDark("settings_queue_offline_mode") {
+        Screen(
+            ProcessingQueueUiState(
+                isLoading = false,
+                queue = ProcessingQueue(waiting = waiting),
+                offlineMode = true
+            )
+        )
+    }
+
     @Test
     fun empty() = screenshot.captureScreenLightDark("settings_queue_empty") {
         Screen(ProcessingQueueUiState(isLoading = false))

@@ -6,6 +6,7 @@ import com.unchunks.components.speech.OnDeviceSpeechTranscriber
 import com.unchunks.components.speech.OpenAiTranscriptionClient
 import com.unchunks.components.speech.PcmChunk
 import com.unchunks.components.speech.TranscriptionProvider
+import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
@@ -18,6 +19,7 @@ import javax.inject.Inject
  * 文字起こしに使う仕組みを、試す順に選ぶ。
  *
  * クラウドに音声を送るのは、次のすべてを満たすときだけ:
+ * - オフラインモードがオフ([NetworkGate])
  * - 文字起こしの結果を使う用途の AI の実行場所がクラウド API([LlmBackend.API])。ファイルの文字起こしは主に要約の材料になるため
  *   「要約」の設定に、チャットの音声入力は「チャット」の設定に合わせる(端末内で話しているつもりの声をクラウドに送らない)
  * - 「ファイルをクラウドに送る」設定([AppSettingsRepository.sendFilesToCloud])がオン
@@ -30,13 +32,16 @@ class TranscriptionProviderSelector @Inject constructor(
     private val apiKeyRepository: ApiKeyRepository,
     private val openAi: OpenAiTranscriptionClient,
     private val gemini: GeminiTranscriptionClient,
-    private val onDevice: OnDeviceSpeechTranscriber
+    private val onDevice: OnDeviceSpeechTranscriber,
+    private val gate: NetworkGate
 ) {
 
     suspend fun providers(task: AiTask = AiTask.SUMMARY): List<TranscriptionProvider> = listOfNotNull(cloudProvider(task), onDevice)
 
     /** 条件を満たせばクラウドの文字起こし。満たさなければ null。 */
     suspend fun cloudProvider(task: AiTask = AiTask.SUMMARY): TranscriptionProvider? {
+        // オフラインモードの間は送らず、端末内で文字起こしする(通信そのものは共通の OkHttpClient でも断る)
+        if (gate.isOffline()) return null
         val setting = appSettings.aiTaskSetting(task).first()
         if (setting.backend != LlmBackend.API) return null
         if (!appSettings.sendFilesToCloud.first()) return null

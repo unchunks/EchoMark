@@ -23,6 +23,7 @@ import com.unchunks.echomark.testing.FakeApiUsageRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeDataManagementRepository
+import com.unchunks.echomark.testing.FakeOfflineModeController
 import com.unchunks.echomark.testing.FakeProcessingScheduleController
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.testing.FakeRediscoverScheduleController
@@ -52,6 +53,7 @@ class SettingsViewModelTest {
     private val data = FakeDataManagementRepository()
     private val scheduler = FakeRediscoverScheduleController()
     private val processingScheduler = FakeProcessingScheduleController()
+    private val offlineController = FakeOfflineModeController(settings)
 
     private fun createViewModel(usage: FakeApiUsageRepository = FakeApiUsageRepository()) = SettingsViewModel(
         appSettings = settings,
@@ -64,6 +66,7 @@ class SettingsViewModelTest {
         dataRepository = data,
         scheduleController = scheduler,
         processingScheduleController = processingScheduler,
+        offlineModeController = offlineController,
         apiUsageRepository = usage,
         crashLogs = crashLogs,
         dispatchers = TestDispatcherProvider(mainRule.dispatcher)
@@ -88,6 +91,20 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(ApiUsagePeriods(), viewModel.uiState.value.apiUsage)
+    }
+
+    @Test
+    fun オフラインモードのスイッチは切り替えの仕組みを通して保存し_画面に出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.offlineMode)
+
+        viewModel.setOfflineMode(true)
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), offlineController.calls)
+        assertTrue(viewModel.uiState.value.offlineMode)
     }
 
     @Test
