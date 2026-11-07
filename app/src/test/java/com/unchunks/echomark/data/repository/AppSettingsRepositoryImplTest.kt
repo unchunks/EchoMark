@@ -463,6 +463,41 @@ class AppSettingsRepositoryImplTest {
         assertEquals(1, repository.autoBackup.first().keep)
     }
 
+    @Test
+    fun バックアップの設定から端末の外にデータを送る設定はオンにしない() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        repository.setSendFilesToCloud(false)
+        repository.setPlacesMapBackground(false)
+        repository.setLinkCheckEnabled(false)
+
+        // 書き換えた・人から受け取ったファイルが、データを送る設定をオンにしようとしている
+        val restored = repository.restoreBackupSettings(
+            mapOf(
+                "send_files_to_cloud" to true,
+                "places_map_background" to true,
+                "link_check_enabled" to true,
+                "llm_backend_summary" to "API",
+                "llm_backend_chat" to "LOCAL",
+                "theme_mode" to "DARK"
+            )
+        )
+
+        assertEquals(2, restored)
+        assertFalse(repository.sendFilesToCloud.first())
+        assertFalse(repository.placesMapBackground.first())
+        assertFalse(repository.linkCheckEnabled.first())
+        val prefs = dataStore.data.first()
+        assertEquals(null, prefs[stringPreferencesKey("llm_backend_summary")])
+        assertEquals("LOCAL", prefs[stringPreferencesKey("llm_backend_chat")])
+        assertEquals(ThemeMode.DARK, repository.themeMode.first())
+
+        // 書き出しにも入れない
+        repository.setPlacesMapBackground(true)
+        val exported = repository.exportBackupSettings()
+        listOf("send_files_to_cloud", "places_map_background", "link_check_enabled").forEach { assertFalse(it, it in exported) }
+    }
+
 }
 
 private class InMemorySettingsDataStore : DataStore<Preferences> {

@@ -22,6 +22,7 @@ import com.unchunks.echomark.domain.model.TagSource
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -224,5 +225,13 @@ class BackupCoverageTest {
         // バックアップを戻して、勝手にロック・オフラインモードを変えない。端末だけの設定も戻さない
         listOf("app_lock_enabled", "app_lock_delay", "app_lock_hide_content", "offline_mode", "local_llm_use_gpu", "local_model_summary", "auto_backup_folder")
             .forEach { assertEquals(it, null, BackupCoverage.settingTypeOf(it)) }
+        // 端末の外にデータを送る設定は、受け取ったファイルから勝手にオンにしない
+        listOf("send_files_to_cloud", "places_map_background", "link_check_enabled").forEach {
+            assertEquals(it, null, BackupCoverage.settingTypeOf(it))
+            assertFalse(it, BackupCoverage.isRestorable(it, true))
+        }
+        assertFalse(BackupCoverage.isRestorable("llm_backend_summary", "API"))
+        assertTrue(BackupCoverage.isRestorable("llm_backend_summary", "LOCAL"))
+        assertFalse(BackupCoverage.isRestorable("theme_mode", 1))
     }
 }

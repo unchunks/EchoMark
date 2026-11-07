@@ -124,9 +124,14 @@ object BackupCoverage {
 
         /**
          * 端末の設定。バックアップに入れ、読み込んだあとに利用者が「設定も戻す」を選んだときだけ戻す。
-         * [type] は値の型(バックアップの値の型が違えば戻さない)
+         * [type] は値の型(バックアップの値の型が違えば戻さない)。[restorableValues] があれば、その値のときだけ戻す
+         * ([valueReason] はその理由。端末の外にデータを送る値を、受け取ったファイルから勝手に選ばないため)
          */
-        data class Setting(val type: SettingType) : Key
+        data class Setting(
+            val type: SettingType,
+            val restorableValues: Set<String>? = null,
+            val valueReason: String? = null
+        ) : Key
 
         /** 入れない。[reason] は理由 */
         data class Excluded(val reason: String) : Key
@@ -136,6 +141,9 @@ object BackupCoverage {
 
     private const val APP_LOCK = "アプリのロックは端末の設定(端末ごとに生体認証・画面ロックが違う)。バックアップを戻して勝手にオン・オフを変えない"
     private const val AUTO_BACKUP = "自動バックアップの保存先は、この端末のフォルダ(別の端末では開けない)"
+    private const val SENDS_DATA =
+        "端末の外にデータを送る設定(クラウドへのファイルの送信・地図のタイル・リンクの確認・クラウド AI)。" +
+            "書き換えた・人から受け取ったバックアップで、勝手にオンにしない(この端末で自分で選ぶ)"
     private const val LEGACY = "用途を分ける前の古い形式の設定(読むだけで書かない。用途ごとの設定を戻す)"
 
     private val BOOLEAN = Key.Setting(SettingType.BOOLEAN)
@@ -151,12 +159,9 @@ object BackupCoverage {
         // 端末の設定(戻すかは利用者が決める)
         "theme_mode" to STRING,
         "dynamic_color" to BOOLEAN,
-        "send_files_to_cloud" to BOOLEAN,
         "bookmark_sort_order" to STRING,
         "bookmark_list_display" to STRING,
         "duplicate_sensitivity" to STRING,
-        "link_check_enabled" to BOOLEAN,
-        "places_map_background" to BOOLEAN,
         "reading_font" to STRING,
         "reading_font_size" to STRING,
         "reading_theme" to STRING,
@@ -173,10 +178,15 @@ object BackupCoverage {
         "processing_nightly_hour" to INT,
         "processing_max_concurrent" to INT,
         "processing_api_requests_per_minute" to INT,
-        "llm_backend_*" to STRING,
+        // 端末内で動かす(LOCAL)ときだけ戻す。クラウド API を選ぶ値は、受け取ったファイルから勝手に選ばない
+        "llm_backend_*" to Key.Setting(SettingType.STRING, restorableValues = setOf("LOCAL"), valueReason = SENDS_DATA),
         "api_provider_*" to STRING,
         "api_model_*" to STRING,
         // 入れないもの
+        // 端末の外にデータを送る設定。書き換えた・人から受け取ったファイルで、勝手にオンにしない
+        "send_files_to_cloud" to Key.Excluded(SENDS_DATA),
+        "places_map_background" to Key.Excluded(SENDS_DATA),
+        "link_check_enabled" to Key.Excluded(SENDS_DATA),
         "llm_backend" to Key.Excluded(LEGACY),
         "api_provider" to Key.Excluded(LEGACY),
         "search_history" to Key.Excluded("何を探したかは端末の中だけに残す(持ち出すファイルに入れない)"),
@@ -198,6 +208,18 @@ object BackupCoverage {
 
     /** バックアップに入れて、利用者が選んだら戻す設定の型。戻さないキーなら null */
     fun settingTypeOf(name: String): SettingType? = (keyOf(name) as? Key.Setting)?.type
+
+    /** [name] の設定を [value] で戻してよいか(型が合い、値が決めた範囲にあるとき) */
+    fun isRestorable(name: String, value: Any): Boolean {
+        val setting = keyOf(name) as? Key.Setting ?: return false
+        val typed = when (setting.type) {
+            SettingType.BOOLEAN -> value is Boolean
+            SettingType.INT -> value is Int
+            SettingType.STRING -> value is String
+        }
+        return typed && (setting.restorableValues == null || value.toString() in setting.restorableValues)
+    }
+
     /** 添付ファイル・オフラインコピーの本体の扱い */
     const val FILES = "「ファイルも含めて書き出す」(zip)のときだけ入れる。JSON だけのときは入れず、読み込む端末に無いファイルは外す"
 
