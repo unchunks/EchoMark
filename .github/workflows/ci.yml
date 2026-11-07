@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+
+# 同じ PR・ブランチへの新しい push が来たら、実行中の古い CI を止める
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # settings.gradle.kts が部品(components/android)を探す場所。部品リポジトリは private のため、
+  # リポジトリの secret COMPONENTS_REPO_TOKEN(unchunks/components の Contents: Read を持つ fine-grained PAT)で取得する
+  UNCHUNKS_COMPONENTS_DIR: ${{ github.workspace }}/components/android
+  COMPONENTS_REPO_TOKEN: ${{ secrets.COMPONENTS_REPO_TOKEN }}
+  # 埋め込みモデルや API キーはビルド・テストに要らない(モデル未配置でもビルドできる)
+
+jobs:
+  build:
+    name: ビルド (assembleDebug)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-android-build
+      - run: ./gradlew :app:assembleDebug --stacktrace
+      # ビルドが生成する Room のスキーマ JSON と ObjectBox のモデルがコミット済みと同じか(コミット漏れの検出)
+      - name: スキーマのコミット漏れを確認
+        run: git diff --exit-code -- app/schemas app/objectbox-models
+
+  test:
+    name: 単体テスト (testDebugUnitTest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-android-build
+      # Robolectric は実行環境の jar を実行中に Maven から取るため、取れないと数十のテストクラスがまとめて失敗する。
+      # Gradle のキャッシュには入らないので別に持つ(版が変わったら取り直す)
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: robolectric-
+      # Roborazzi のスクリーンショットテストも含む。task を record / verify にしない限り PNG の記録も比較もしないので、
+      # 描画エラーなく通るかだけを確認する(docs/screenshot-testing.md)
+      - run: ./gradlew :app:testDebugUnitTest --stacktrace
+      - name: テストレポートを保存
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: ignore
+
+  lint:
+    name: Lint (lintDebug)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-android-build
+      - run: ./gradlew :app:lintDebug --stacktrace
+      - name: Lint レポートを保存
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: app/build/reports/lint-results-debug.*
+          if-no-files-found: ignore

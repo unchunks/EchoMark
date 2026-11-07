@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 保存した添付ファイルを、ほかのアプリで開く・共有するときに FileProvider で渡せる範囲 -->
+<paths>
+    <files-path
+        name="attachments"
+        path="attachments/" />
+    <!-- クラッシュログを共有するときにまとめた一時ファイル -->
+    <cache-path
+        name="shared_logs"
+        path="shared-logs/" />
+    <!-- 追加シートで撮った写真・動画・録音の一時ファイル(カメラのアプリに書き込ませ、保存のときに読む) -->
+    <cache-path
+        name="captures"
+        path="captures/" />
+</paths>

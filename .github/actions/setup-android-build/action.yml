@@ -1,0 +1,28 @@
+name: Android ビルドの準備
+description: 部品リポジトリ(unchunks/components)の取得、JDK、Gradle のキャッシュを用意する
+
+runs:
+  using: composite
+  steps:
+    - name: 部品リポジトリ(components)の取得
+      uses: actions/checkout@v4
+      with:
+        repository: unchunks/components
+        # components は main の先頭を使う(EchoMark の develop は components の main に合わせて進める)
+        ref: main
+        token: ${{ env.COMPONENTS_REPO_TOKEN }}
+        path: components
+
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: 21
+
+    # キャッシュは develop への push でだけ書き込み、PR は読み取りのみ(キャッシュの肥大化を防ぐ)
+    - uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: ${{ github.ref != 'refs/heads/develop' }}
+
+    - name: gradlew に実行権限を付ける
+      shell: bash
+      run: chmod +x gradlew

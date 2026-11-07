@@ -5,5 +5,6 @@ enum class BookmarkType {
     TEXT,
     IMAGE,
     PDF,
-    AUDIO
+    AUDIO,
+    VIDEO
 }

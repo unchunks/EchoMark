@@ -1,0 +1,223 @@
+package com.unchunks.echomark.data.repository
+
+import com.unchunks.echomark.domain.repository.TagParentResult
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.data.local.AppDatabase
+import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
+import com.unchunks.echomark.data.local.entity.TagEntity
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.repository.TagRenameResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/** タグ管理(件数つき一覧・名前変更・統合・削除)を実 DB(インメモリ)で確かめる。 */
+@RunWith(AndroidJUnit4::class)
+class TagRepositoryImplTest {
+
+    private lateinit var db: AppDatabase
+    private lateinit var repository: TagRepositoryImpl
+
+    @Before
+    fun setUp() {
+        db = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            AppDatabase::class.java
+        ).allowMainThreadQueries().build()
+        repository = TagRepositoryImpl(db.tagDao(), TestDispatcherProvider(Dispatchers.Unconfined))
+    }
+
+    @After
+    fun tearDown() = db.close()
+
+    private suspend fun bookmark(id: Long) {
+        db.bookmarkDao().insert(
+            BookmarkEntity(id = id, type = BookmarkType.TEXT, title = "b$id", createdAt = id, lastAccessedAt = id)
+        )
+    }
+
+    private suspend fun tag(name: String, vararg bookmarkIds: Long): Long {
+        val id = db.tagDao().insertTag(TagEntity(name = name))
+        bookmarkIds.forEach { db.tagDao().insertCrossRef(BookmarkTagCrossRef(it, id)) }
+        return id
+    }
+
+    private suspend fun tagsOf(bookmarkId: Long): List<String> =
+        db.bookmarkDao().getByIdsWithTags(listOf(bookmarkId)).single().tags.map { it.name }.sorted()
+
+    @Test
+    fun 件数つきで名前順に並び件数0のタグも含む() = runTest {
+        bookmark(1); bookmark(2)
+        tag("kotlin", 1, 2)
+        tag("Android", 1)
+        tag("empty")
+
+        val result = repository.observeTagsWithCount().first().map { it.name to it.bookmarkCount }
+
+        assertEquals(listOf("Android" to 1, "empty" to 0, "kotlin" to 2), result)
+    }
+
+    @Test
+    fun 名前を変更できる() = runTest {
+        bookmark(1)
+        val id = tag("kotln", 1)
+
+        val result = repository.renameTag(id, "  kotlin ")
+
+        assertEquals(TagRenameResult.Renamed(id), result)
+        assertEquals(listOf("kotlin"), tagsOf(1))
+    }
+
+    @Test
+    fun 既存タグと同名に変えると統合され重複は1つになる() = runTest {
+        bookmark(1); bookmark(2); bookmark(3)
+        val from = tag("Kotlin言語", 1, 2)
+        val into = tag("kotlin", 2, 3)
+
+        val result = repository.renameTag(from, "kotlin")
+
+        assertEquals(TagRenameResult.Merged(into), result)
+        assertNull(db.tagDao().getTagById(from))
+        assertEquals(listOf("kotlin"), tagsOf(1))
+        assertEquals(listOf("kotlin"), tagsOf(2))
+        assertEquals(listOf("kotlin" to 3), repository.observeTagsWithCount().first().map { it.name to it.bookmarkCount })
+    }
+
+    @Test
+    fun AIのタグは名前を変更すると自分のタグになる() = runTest {
+        bookmark(1)
+        db.tagDao().replaceAiTags(1, listOf("andorid"))
+        val id = db.tagDao().getTagByName("andorid")!!.id
+        assertEquals(listOf(false), repository.observeTagsWithCount().first().map { it.isUserTag })
+
+        repository.renameTag(id, "Android")
+
+        assertEquals(listOf("Android" to true), repository.observeTagsWithCount().first().map { it.name to it.isUserTag })
+    }
+
+    @Test
+    fun 同じ名前や空の名前では何もしない() = runTest {
+        val id = tag("kotlin")
+
+        assertEquals(TagRenameResult.Unchanged, repository.renameTag(id, "kotlin"))
+        assertEquals(TagRenameResult.Invalid, repository.renameTag(id, "   "))
+        assertEquals(TagRenameResult.Invalid, repository.renameTag(999, "x"))
+    }
+
+    @Test
+    fun 削除するとタグだけ消えてブックマークは残る() = runTest {
+        bookmark(1)
+        val id = tag("kotlin", 1)
+        tag("android", 1)
+
+        repository.deleteTag(id)
+
+        assertEquals(listOf("android"), tagsOf(1))
+        assertEquals(listOf("android"), repository.observeTagsWithCount().first().map { it.name })
+        assertEquals(1, db.bookmarkDao().observeCount().first())
+    }
+
+
+    @Test
+    fun 名前は整えて保存し_表記ゆれの違いは既存のタグに統合する() = runTest {
+        bookmark(1); bookmark(2)
+        val from = tag("andorid", 1)
+        val into = tag("Android", 2)
+
+        assertEquals(TagRenameResult.Merged(into), repository.renameTag(from, " ａｎｄｒｏｉｄ "))
+        assertEquals(listOf("Android" to 2), repository.observeTagsWithCount().first().map { it.name to it.bookmarkCount })
+
+        val other = tag("kotln", 1)
+        assertEquals(TagRenameResult.Renamed(other), repository.renameTag(other, "＃Ｋｏｔｌｉｎ"))
+        assertEquals(listOf("Kotlin"), tagsOf(1).filter { it != "Android" })
+    }
+
+    @Test
+    fun 複数のタグを1つに統合して件数が合算される() = runTest {
+        bookmark(1); bookmark(2); bookmark(3)
+        val into = tag("Android", 1, 2)
+        val a = tag("android", 2, 3)
+        val b = tag("アンドロイド")
+
+        assertEquals(2, repository.mergeTags(into, listOf(a, b)))
+
+        assertEquals(listOf("Android" to 3), repository.observeTagsWithCount().first().map { it.name to it.bookmarkCount })
+        assertEquals(listOf("Android"), tagsOf(3))
+    }
+
+
+    @Test
+    fun 親のタグを設定して外せ_輪になる設定と存在しないタグは受け付けない() = runTest {
+        bookmark(1)
+        val parent = tag("プログラミング")
+        val child = tag("Android", 1)
+        val grandchild = tag("Compose", 1)
+
+        assertEquals(TagParentResult.Updated, repository.setParent(child, parent))
+        assertEquals(TagParentResult.Updated, repository.setParent(grandchild, child))
+        assertEquals(
+            listOf("Android" to parent, "Compose" to child, "プログラミング" to null),
+            repository.observeTagsWithCount().first().map { it.name to it.parentId }
+        )
+
+        assertEquals(TagParentResult.Cycle, repository.setParent(parent, grandchild))
+        assertEquals(TagParentResult.Cycle, repository.setParent(parent, parent))
+        assertEquals(TagParentResult.Invalid, repository.setParent(999, parent))
+        assertEquals(TagParentResult.Invalid, repository.setParent(child, 999))
+
+        assertEquals(TagParentResult.Updated, repository.setParent(child, null))
+        assertEquals(null, db.tagDao().getTagById(child)!!.parentId)
+    }
+
+    @Test
+    fun 親のタグを削除しても子は残り_上の階層につく() = runTest {
+        val top = tag("top")
+        val middle = tag("middle")
+        val leaf = tag("leaf")
+        repository.setParent(middle, top)
+        repository.setParent(leaf, middle)
+
+        repository.deleteTag(middle)
+
+        assertEquals(top, db.tagDao().getTagById(leaf)!!.parentId)
+    }
+
+
+    @Test
+    fun タグを削除すると付いていたブックマークから外したものとして覚える() = runTest {
+        bookmark(1); bookmark(2)
+        val id = tag("技術", 1, 2)
+        tag("読書", 2)
+
+        repository.deleteTag(id)
+
+        assertEquals(listOf("技術"), db.tagDao().getRemovedKeys(1))
+        assertEquals(listOf("技術"), db.tagDao().getRemovedKeys(2))
+        // 統合で消えるタグは覚えない
+        val from = tag("kotln", 1)
+        val into = tag("Kotlin", 2)
+        repository.mergeTags(into, listOf(from))
+        assertEquals(listOf("技術"), db.tagDao().getRemovedKeys(1))
+        assertEquals(mapOf("kotln" to "Kotlin"), db.tagDao().getAliasTargets().associate { it.aliasKey to it.tagName })
+    }
+
+    @Test
+    fun 名前を変更すると元の名前を別名として覚える() = runTest {
+        bookmark(1)
+        val id = tag("andorid", 1)
+
+        repository.renameTag(id, "Android")
+
+        assertEquals(mapOf("andorid" to "Android"), db.tagDao().getAliasTargets().associate { it.aliasKey to it.tagName })
+    }
+}

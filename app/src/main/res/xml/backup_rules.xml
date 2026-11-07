@@ -6,6 +6,12 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
+    <!-- API キーの暗号文は端末の Keystore 鍵でしか復号できないため復元しない -->
+    <exclude domain="file" path="datastore/api_keys.preferences_pb" />
+    <!-- 取り込んだオンデバイス LLM モデル(数百MB〜)はバックアップしない -->
+    <exclude domain="file" path="models/" />
+    <!-- 保存した画像・PDF・音声・動画(合計で大きくなりやすい)はクラウドのバックアップに入れない -->
+    <exclude domain="file" path="attachments/" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>
