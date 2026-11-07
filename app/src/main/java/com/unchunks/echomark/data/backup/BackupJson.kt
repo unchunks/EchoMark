@@ -71,7 +71,12 @@ data class BackupData(
     /** 要約の履歴(AI が作った版・手で直した版)。[SummaryHistoryEntity.bookmarkId] は [bookmarks] の ID */
     val summaryHistory: List<SummaryHistoryEntity> = emptyList(),
     /** 自分で作ったチャットのテンプレート(DataStore の chat_templates) */
-    val chatTemplates: List<ChatTemplate> = emptyList()
+    val chatTemplates: List<ChatTemplate> = emptyList(),
+    /**
+     * 端末の設定(DataStore のキーの名前 → 値。どれを入れるかは BackupCoverage)。読み込んだあと、利用者が選んだときだけ戻す。
+     * 値は Boolean・Int・String
+     */
+    val settings: Map<String, Any> = emptyMap()
 )
 
 /** バックアップに入れるコレクション(#91)。ID は持たず、名前で同じコレクションかを見分ける。 */
@@ -134,7 +139,14 @@ fun SmartFolderBackup.toEntity(tagIds: Collection<Long>): SmartFolderEntity = sm
 )
 
 /** 読み込んだバックアップと、壊れていて読み飛ばした要素の数。 */
-data class DecodedBackup(val data: BackupData, val invalidRecords: Int)
+data class DecodedBackup(
+    val data: BackupData,
+    /** 読み取れなかった要素の数(JSON の配列の名前 → 数)。0 の配列は入れない */
+    val invalidByArray: Map<String, Int> = emptyMap()
+) {
+    /** 読み取れなかった要素の合計 */
+    val invalidRecords: Int get() = invalidByArray.values.sum()
+}
 
 /** バックアップとして扱えないファイル。[message] はそのまま画面に出せる文言。 */
 class BackupFormatException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -158,7 +170,8 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "linkCheckMuted": [ リンク切れの確認で「確認しない」を選んだブックマークの ID ],
  *   "reviewCards": [ {bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, lastReviewedAt は無ければ省略, createdAt} ],
  *   "summaryHistory": [ {bookmarkId, summary, source, generator と style は無ければ省略, createdAt} ],
- *   "chatTemplates": [ {id, title, text} ] }
+ *   "chatTemplates": [ {id, title, text} ],
+ *   "settings": { DataStore のキーの名前: 値(真偽・整数・文字列) } }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -206,10 +219,13 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   ブックマークのオフラインコピー(snapshotPath・snapshotPdfPath・snapshotAt)、自分で作ったチャットのテンプレート(chatTemplates。DataStore)。
  *   19 以前は、履歴・オフラインコピー・テンプレートが無いものとして読む。オフラインコピーのファイルは添付ファイルと同じく、
  *   読み込む端末に無ければ(zip に入っていなければ)外す。履歴は読み込んで追加したブックマークにだけ付ける
+ * - 21: 端末の設定(settings。テーマ・並び順・読書モード・AI の選び方・処理の時間など。BackupCoverage で決めたもの)を追加。
+ *   20 以前は設定が無いものとして読む。設定は読み込んだあとに利用者が選んだときだけ戻す。知らない名前(新しい版の設定)は読み飛ばし、
+ *   型の違う値は壊れた要素として数える。アプリのロック・オフラインモード・API キー・この端末だけの設定は入れない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 20
+    const val CURRENT_VERSION = 21
 
     /** 要約の履歴の1版の長さの上限(文字)。壊れた・書き換えられたファイルで巨大な文字列を入れない */
     private const val MAX_SUMMARY_LENGTH = 100_000
@@ -264,6 +280,9 @@ object BackupJson {
         writer.write(",")
         writeArray(writer, "chatTemplates", data.chatTemplates) { it.toJson() }
         writer.write(",")
+        writer.write("\"settings\":")
+        writer.write(JSONObject(data.settings).toString())
+        writer.write(",")
         writer.write("\"linkCheckMuted\":")
         writer.write(JSONArray(data.linkCheckMutedBookmarkIds).toString())
         writer.write("}")
@@ -292,7 +311,7 @@ object BackupJson {
             throw BackupFormatException("新しいバージョンのアプリで作られたバックアップです。アプリを更新してから読み込んでください")
         }
 
-        var invalid = 0
+        val invalid = linkedMapOf<String, Int>()
         fun <T> readArray(name: String, parse: (JSONObject) -> T?): List<T> {
             val array = root.optJSONArray(name) ?: return emptyList()
             return (0 until array.length()).mapNotNull { index ->
@@ -301,7 +320,7 @@ object BackupJson {
                 } catch (e: JSONException) {
                     null
                 }
-                if (parsed == null) invalid++
+                if (parsed == null) invalid[name] = (invalid[name] ?: 0) + 1
                 parsed
             }
         }
@@ -323,11 +342,29 @@ object BackupJson {
             reviewCards = readArray("reviewCards") { it.toReviewCard() },
             summaryHistory = readArray("summaryHistory") { it.toSummaryHistory() },
             chatTemplates = readArray("chatTemplates") { it.toChatTemplate() },
+            settings = root.optJSONObject("settings")?.let { readSettings(it) { invalid["settings"] = (invalid["settings"] ?: 0) + 1 } }.orEmpty(),
             linkCheckMutedBookmarkIds = root.optJSONArray("linkCheckMuted")?.let { array ->
                 (0 until array.length()).mapNotNull { index -> array.optLong(index, -1L).takeIf { it >= 0 } }
             }.orEmpty()
         )
         return DecodedBackup(data, invalid)
+    }
+
+    /** 設定を読む。知らない名前は読み飛ばし(新しい版の設定)、型の違う値は [onInvalid] で数えて読み飛ばす */
+    private fun readSettings(json: JSONObject, onInvalid: () -> Unit): Map<String, Any> {
+        val values = LinkedHashMap<String, Any>()
+        for (name in json.keys()) {
+            val type = BackupCoverage.settingTypeOf(name) ?: continue
+            val value = json.opt(name)
+            val parsed: Any? = when (type) {
+                BackupCoverage.SettingType.BOOLEAN -> value as? Boolean
+                BackupCoverage.SettingType.INT -> (value as? Number)?.takeIf { it is Int || it is Long }?.toLong()
+                    ?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }?.toInt()
+                BackupCoverage.SettingType.STRING -> value as? String
+            }
+            if (parsed == null) onInvalid() else values[name] = parsed
+        }
+        return values
     }
 
     private fun <T> writeArray(writer: Writer, name: String, items: List<T>, toJson: (T) -> JSONObject) {

@@ -20,8 +20,23 @@ data class BackupImportSummary(
     val conversationsSkipped: Int,
     val messagesAdded: Int,
     /** バックアップ(zip)から戻した添付ファイル・オフラインコピーの数 */
-    val filesRestored: Int = 0
+    val filesRestored: Int = 0,
+    /** 壊れていて読み飛ばしたもの(種類ごと) */
+    val skipped: List<BackupSkipped> = emptyList(),
+    /** バックアップに入っていた設定(まだ戻していない。利用者が選んだら [DataManagementRepository.restoreSettings] で戻す)。無ければ null */
+    val settings: BackupSettings? = null
 )
+
+/** 読み飛ばしたもの。[label] は種類(「ノート」など)、[reason] は理由 */
+data class BackupSkipped(val label: String, val count: Int, val reason: String)
+
+/**
+ * バックアップに入っていた端末の設定(テーマ・並び順・AI の選び方・処理の時間など)。戻すかは利用者が決める。
+ * [values] は設定の名前 → 値(戻せるものだけ。API キー・この端末だけの設定・ロックは入らない)
+ */
+data class BackupSettings(val values: Map<String, Any>) {
+    val count: Int get() = values.size
+}
 
 /** 端末内で使っている容量(バイト)。 */
 data class StorageUsage(
@@ -54,6 +69,9 @@ interface DataManagementRepository {
      * (途中で失敗しても今のデータはそのまま)。読み込んだブックマークの埋め込み・AI 処理は裏で再実行する。
      */
     suspend fun importBackup(uri: String): BackupImportSummary
+
+    /** 読み込んだバックアップの設定を戻す。戻した数を返す(アプリのロック・オフラインモードなどは戻さない) */
+    suspend fun restoreSettings(settings: BackupSettings): Int
 
     suspend fun storageUsage(): StorageUsage
 

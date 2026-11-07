@@ -25,7 +25,9 @@ import com.unchunks.echomark.testing.FakeApiUsageRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeDataManagementRepository
+import com.unchunks.echomark.testing.FakeAutoBackupController
 import com.unchunks.echomark.testing.FakeOfflineModeController
+import com.unchunks.echomark.domain.repository.BackupSettings
 import com.unchunks.echomark.testing.FakeProcessingScheduleController
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.testing.FakeRediscoverScheduleController
@@ -56,6 +58,7 @@ class SettingsViewModelTest {
     private val scheduler = FakeRediscoverScheduleController()
     private val processingScheduler = FakeProcessingScheduleController()
     private val offlineController = FakeOfflineModeController(settings)
+    private val autoBackup = FakeAutoBackupController()
 
     private fun createViewModel(usage: FakeApiUsageRepository = FakeApiUsageRepository()) = SettingsViewModel(
         appSettings = settings,
@@ -69,6 +72,7 @@ class SettingsViewModelTest {
         scheduleController = scheduler,
         processingScheduleController = processingScheduler,
         offlineModeController = offlineController,
+        autoBackupController = autoBackup,
         apiUsageRepository = usage,
         crashLogs = crashLogs,
         dispatchers = TestDispatcherProvider(mainRule.dispatcher)
@@ -93,6 +97,49 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(ApiUsagePeriods(), viewModel.uiState.value.apiUsage)
+    }
+
+    @Test
+    fun 自動バックアップの保存先を選ぶとオンになり_保存先が無いとオンにしない() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.setAutoBackupEnabled(true)
+        advanceUntilIdle()
+        assertFalse(settings.autoBackupFlow.value.enabled)
+
+        viewModel.setAutoBackupFolder("content://tree/x", "Backup")
+        viewModel.setAutoBackupKeep(10)
+        viewModel.setAutoBackupIncludeFiles(true)
+        advanceUntilIdle()
+        val backup = settings.autoBackupFlow.value
+        assertTrue(backup.enabled)
+        assertEquals("Backup", backup.folderLabel)
+        assertEquals(10, backup.keep)
+        assertTrue(backup.includeFiles)
+        assertEquals(backup, viewModel.uiState.value.autoBackup)
+
+        viewModel.runAutoBackupNow()
+        assertEquals(1, autoBackup.runs)
+    }
+
+    @Test
+    fun 読み込んだバックアップの設定は選んだときだけ戻し_予定も登録し直す() = runTest {
+        data.importSummary = data.importSummary.copy(settings = BackupSettings(mapOf("theme_mode" to "DARK")))
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.importBackup("content://in.json")
+        advanceUntilIdle()
+        assertTrue(data.restoredSettings.isEmpty())
+
+        viewModel.restoreBackupSettings()
+        advanceUntilIdle()
+
+        assertEquals(listOf(BackupSettings(mapOf("theme_mode" to "DARK"))), data.restoredSettings)
+        assertEquals(DataOperationState.Idle, viewModel.uiState.value.dataOperation)
+        assertTrue(scheduler.applied.isNotEmpty())
+        assertTrue(viewModel.message.value!!.contains("設定を 1 件戻しました"))
     }
 
     @Test

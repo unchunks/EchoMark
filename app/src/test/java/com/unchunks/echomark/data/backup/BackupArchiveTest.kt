@@ -11,6 +11,7 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.TagSource
+import com.unchunks.echomark.domain.repository.BackupSkipped
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -136,9 +137,10 @@ class BackupArchiveTest {
     }
 
     @Test
-    fun 中身がそろっていればバックアップの問題は無い() {
-        val decoded = DecodedBackup(sound, invalidRecords = 0)
-        assertEquals(emptyList<String>(), BackupValidation.problemsOf(decoded))
+    fun 中身がそろっていれば何も読み飛ばさない() {
+        val sanitized = BackupValidation.sanitize(DecodedBackup(sound))
+        assertEquals(emptyList<BackupSkipped>(), sanitized.skipped)
+        assertEquals(sound, sanitized.data)
     }
 
     private val sound = BackupData(
@@ -153,19 +155,48 @@ class BackupArchiveTest {
     )
 
     @Test
-    fun 読めない要素_重なったID_ファイルに無いものへの参照があれば問題にする() {
-        assertEquals(1, BackupValidation.problemsOf(DecodedBackup(sound, invalidRecords = 2)).size)
-
+    fun 壊れた箇所とそれに頼るものだけを外し_種類ごとに数と理由を返す() {
+        val second = BookmarkEntity(id = 1, type = BookmarkType.TEXT, title = "重なった", createdAt = 2, lastAccessedAt = 2)
         val broken = sound.copy(
-            bookmarks = sound.bookmarks + sound.bookmarks,
+            bookmarks = sound.bookmarks + second,
             notes = sound.notes + BookmarkNoteEntity(bookmarkId = 99, text = "迷子", createdAt = 1, updatedAt = 1),
             messages = listOf(ChatMessageEntity(id = 1, conversationId = 5, role = ChatRole.USER, content = "?", createdAt = 1)),
-            summaryHistory = listOf(SummaryHistoryEntity(bookmarkId = 98, summary = "迷子", source = "AI", createdAt = 1)),
-            linkCheckMutedBookmarkIds = listOf(97)
+            summaryHistory = sound.summaryHistory + SummaryHistoryEntity(bookmarkId = 98, summary = "迷子", source = "AI", createdAt = 1),
+            linkCheckMutedBookmarkIds = listOf(1, 97)
         )
-        val problems = BackupValidation.problemsOf(DecodedBackup(broken, invalidRecords = 0))
-        assertEquals(problems.toString(), 5, problems.size)
-        assertTrue(BackupValidation.message(problems).contains("何も読み込みませんでした"))
+
+        val sanitized = BackupValidation.sanitize(DecodedBackup(broken, invalidByArray = mapOf("notes" to 2)))
+
+        // 正しいものは残る(重なった ID は最初のものを残す)
+        assertEquals(listOf("メモ"), sanitized.data.bookmarks.map { it.title })
+        assertEquals(listOf("ノート"), sanitized.data.notes.map { it.text })
+        assertEquals(1, sanitized.data.summaryHistory.size)
+        assertEquals(listOf(1L), sanitized.data.linkCheckMutedBookmarkIds)
+        assertTrue(sanitized.data.messages.isEmpty())
+        assertEquals(sound.bookmarkTags, sanitized.data.bookmarkTags)
+
+        val skipped = sanitized.skipped.associate { (it.label to it.reason) to it.count }
+        assertEquals(2, skipped["ノート" to BackupValidation.REASON_UNREADABLE])
+        assertEquals(1, skipped["ノート" to BackupValidation.REASON_MISSING_PARENT])
+        assertEquals(1, skipped["ブックマーク" to BackupValidation.REASON_DUPLICATE])
+        assertEquals(1, skipped["メッセージ" to BackupValidation.REASON_MISSING_PARENT])
+        assertEquals(1, skipped["要約の履歴" to BackupValidation.REASON_MISSING_PARENT])
+        assertEquals(1, skipped["リンク切れの確認をしない印" to BackupValidation.REASON_MISSING_PARENT])
+        assertEquals(6, sanitized.skipped.size)
+    }
+
+    @Test
+    fun 読み飛ばしたブックマークに頼るものも外す() {
+        // タグが読めずに外れたら、そのタグの紐付けも外す
+        val withoutTag = sound.copy(tags = emptyList())
+
+        val sanitized = BackupValidation.sanitize(DecodedBackup(withoutTag, invalidByArray = mapOf("tags" to 1)))
+
+        assertTrue(sanitized.data.bookmarkTags.isEmpty())
+        assertEquals(
+            listOf(BackupSkipped("タグ", 1, BackupValidation.REASON_UNREADABLE), BackupSkipped("タグの紐付け", 1, BackupValidation.REASON_MISSING_PARENT)),
+            sanitized.skipped
+        )
     }
 
     @Test

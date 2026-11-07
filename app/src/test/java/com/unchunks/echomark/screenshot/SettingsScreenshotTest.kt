@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.model.SummaryFormat
@@ -73,6 +74,20 @@ class SettingsScreenshotTest {
     @Test
     fun settingsAll() = screenshot.captureLightDark("settings_all") {
         Screen(readyState, height = 2500)
+    }
+
+    /** 自動バックアップをオンにしていて、保存先を使えなくなっている(「データ」の欄) */
+    @Test
+    fun settingsAutoBackup() = screenshot.captureLightDark("settings_auto_backup") {
+        Screen(
+            readyState.copy(
+                autoBackup = AutoBackupSettings(
+                    enabled = true, folderUri = "content://tree/x", folderLabel = "EchoMark のバックアップ", keep = 5,
+                    lastSuccessAt = 1_700_000_000_000L, lastError = "保存先のフォルダを使えなくなりました。設定の「自動バックアップ」で、保存先を選び直してください"
+                )
+            ),
+            height = 3000
+        )
     }
 
     /** アプリのロックと、内容を隠す設定をオンにしている(「ロック」の欄) */

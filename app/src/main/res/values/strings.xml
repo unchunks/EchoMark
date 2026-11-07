@@ -8,6 +8,8 @@
     <string name="tile_clipboard_save_subtitle">EchoMark</string>
     <string name="notification_channel_rediscover">週1回のお知らせ(ふり返り・再発見)</string>
     <string name="notification_channel_rediscover_desc">今週のふり返りと、しばらく開いていないブックマークをお知らせします</string>
+    <string name="notification_channel_auto_backup">自動バックアップ</string>
+    <string name="notification_channel_auto_backup_desc">毎晩の自動バックアップを保存できなかったときにお知らせします</string>
     <string name="rediscover_notification_title">こんなブックマーク、忘れていませんか?</string>
     <!-- ランチャーのアプリショートカット(res/xml/shortcuts.xml) -->
     <string name="shortcut_new_chat_short">新しいチャット</string>

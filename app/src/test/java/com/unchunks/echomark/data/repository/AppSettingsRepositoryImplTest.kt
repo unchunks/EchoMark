@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.repository
 
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.lock.AppLockSettings
 import androidx.datastore.core.DataStore
@@ -404,6 +405,62 @@ class AppSettingsRepositoryImplTest {
         repository.updateAppLock { it.copy(enabled = false, hideContent = false) }
         repository.resetToDefaults()
         assertEquals(AppLockSettings(), repository.appLock.first())
+    }
+
+    @Test
+    fun 端末の設定はバックアップに書き出して戻せ_ロックや端末だけの設定には触れない() = runTest {
+        val source = createRepository()
+        source.setThemeMode(ThemeMode.DARK)
+        source.setBookmarkSortOrder(BookmarkSortOrder.OLDEST)
+        source.updateProcessingSettings { it.copy(chargingOnly = true, nightlyHour = 3) }
+        source.setApiModel(AiTask.SUMMARY, ApiProvider.GEMINI, "gemini-test")
+        source.setLocalModel(AiTask.SUMMARY, "my-model")
+        source.setLocalLlmUseGpu(true)
+        source.updateAppLock { it.copy(enabled = true) }
+        source.setOfflineMode(true)
+
+        val exported = source.exportBackupSettings()
+
+        assertEquals("DARK", exported["theme_mode"])
+        assertEquals(3, exported["processing_nightly_hour"])
+        assertEquals("gemini-test", exported["api_model_summary_gemini"])
+        listOf("local_model_summary", "local_llm_use_gpu", "app_lock_enabled", "offline_mode").forEach { assertFalse(it, it in exported) }
+
+        // 戻す先: ロックとオフラインモードは今のまま、戻す設定のうちバックアップに無いものは既定に戻る
+        val target = createRepository()
+        target.setDynamicColor(true)
+        target.updateAppLock { it.copy(hideContent = true) }
+        // 書き換えられたファイル: ロックを外そうとする値・型の違う値・知らない名前は書かない
+        val restored = target.restoreBackupSettings(exported + mapOf("app_lock_enabled" to false, "theme_mode_x" to "?", "rediscover_hour" to "夜"))
+
+        assertEquals(exported.size, restored)
+        assertEquals(ThemeMode.DARK, target.themeMode.first())
+        assertEquals(BookmarkSortOrder.OLDEST, target.bookmarkSortOrder.first())
+        assertEquals(3, target.processingSettings.first().nightlyHour)
+        assertTrue(target.processingSettings.first().chargingOnly)
+        assertEquals("gemini-test", target.aiTaskSettings.first().getValue(AiTask.SUMMARY).apiModels[ApiProvider.GEMINI])
+        assertFalse(target.dynamicColor.first())
+        assertEquals(null, target.aiTaskSettings.first().getValue(AiTask.SUMMARY).localModelId)
+        assertTrue(target.appLock.first().hideContent)
+        assertFalse(target.appLock.first().enabled)
+        assertFalse(target.offlineMode.first())
+        assertEquals(RediscoverSettings().hour, target.rediscoverSettings.first().hour)
+    }
+
+    @Test
+    fun 自動バックアップの設定は既定でオフ_保存できる() = runTest {
+        val repository = createRepository()
+        assertEquals(AutoBackupSettings(), repository.autoBackup.first())
+
+        repository.updateAutoBackup {
+            it.copy(enabled = true, folderUri = "content://tree/x", folderLabel = "Backup", keep = 10, includeFiles = true, lastSuccessAt = 5, lastError = "x")
+        }
+        assertEquals(AutoBackupSettings(true, "content://tree/x", "Backup", 10, true, 5, "x"), repository.autoBackup.first())
+
+        repository.updateAutoBackup { it.copy(lastError = null, keep = 0) }
+        assertEquals(null, repository.autoBackup.first().lastError)
+        // 残す数は 1 以上
+        assertEquals(1, repository.autoBackup.first().keep)
     }
 
 }

@@ -8,6 +8,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.lock.AppLockSettings
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.model.SummaryStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -186,6 +187,24 @@ interface AppSettingsRepository {
      * (初期化をきっかけに守りを外さないように)
      */
     val appLock: Flow<AppLockSettings>
+
+    /** 自動バックアップ(毎晩、選んだフォルダに書き出す)。既定はオフ */
+    val autoBackup: Flow<AutoBackupSettings>
+
+    suspend fun updateAutoBackup(transform: (AutoBackupSettings) -> AutoBackupSettings)
+
+    /**
+     * バックアップに入れる端末の設定(名前 → 値)。どれを入れるかは BackupCoverage(API キー・この端末だけの設定・ロックは入らない)。
+     * 値は保存してあるものだけ(既定のままのものは入らない)
+     */
+    suspend fun exportBackupSettings(): Map<String, Any>
+
+    /**
+     * バックアップの設定に置き換える(利用者が「設定も戻す」を選んだとき)。BackupCoverage で戻すと決めた設定だけを、
+     * 決めた型のときだけ書く。戻す設定のうちバックアップに無いものは既定に戻す(書き出した端末で既定のままだったもの)。
+     * 戻した数を返す
+     */
+    suspend fun restoreBackupSettings(values: Map<String, Any>): Int
 
     /** アプリのロックの設定を書き換える(オンにする前に、画面で本人を確かめること) */
     suspend fun updateAppLock(transform: (AppLockSettings) -> AppLockSettings)

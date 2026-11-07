@@ -5,7 +5,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.unchunks.components.llm.ApiProvider
@@ -16,6 +18,8 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingFont
 import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.data.backup.BackupCoverage
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
@@ -143,6 +147,66 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setOfflineMode(enabled: Boolean) {
         dataStore.edit { it[KEY_OFFLINE_MODE] = enabled }
+    }
+
+    override val autoBackup: Flow<AutoBackupSettings> = data.map { it.toAutoBackup() }.distinctUntilChanged()
+
+    override suspend fun updateAutoBackup(transform: (AutoBackupSettings) -> AutoBackupSettings) {
+        dataStore.edit { prefs ->
+            val next = transform(prefs.toAutoBackup())
+            prefs[KEY_AUTO_BACKUP_ENABLED] = next.enabled
+            prefs.setOrRemove(KEY_AUTO_BACKUP_FOLDER, next.folderUri)
+            prefs.setOrRemove(KEY_AUTO_BACKUP_FOLDER_LABEL, next.folderLabel)
+            prefs[KEY_AUTO_BACKUP_KEEP] = next.keep.coerceIn(1, MAX_AUTO_BACKUP_KEEP)
+            prefs[KEY_AUTO_BACKUP_INCLUDE_FILES] = next.includeFiles
+            if (next.lastSuccessAt == null) prefs.remove(KEY_AUTO_BACKUP_LAST_SUCCESS_AT) else prefs[KEY_AUTO_BACKUP_LAST_SUCCESS_AT] = next.lastSuccessAt
+            prefs.setOrRemove(KEY_AUTO_BACKUP_LAST_ERROR, next.lastError)
+        }
+    }
+
+    private fun Preferences.toAutoBackup() = AutoBackupSettings(
+        enabled = this[KEY_AUTO_BACKUP_ENABLED] ?: false,
+        folderUri = this[KEY_AUTO_BACKUP_FOLDER],
+        folderLabel = this[KEY_AUTO_BACKUP_FOLDER_LABEL],
+        keep = (this[KEY_AUTO_BACKUP_KEEP] ?: AutoBackupSettings.DEFAULT_KEEP).coerceIn(1, MAX_AUTO_BACKUP_KEEP),
+        includeFiles = this[KEY_AUTO_BACKUP_INCLUDE_FILES] ?: false,
+        lastSuccessAt = this[KEY_AUTO_BACKUP_LAST_SUCCESS_AT],
+        lastError = this[KEY_AUTO_BACKUP_LAST_ERROR]
+    )
+
+    private fun MutablePreferences.setOrRemove(key: Preferences.Key<String>, value: String?) {
+        if (value == null) remove(key) else this[key] = value
+    }
+
+    override suspend fun exportBackupSettings(): Map<String, Any> =
+        data.first().asMap().mapNotNull { (key, value) ->
+            val type = BackupCoverage.settingTypeOf(key.name) ?: return@mapNotNull null
+            value.takeIf { it.matches(type) }?.let { key.name to it }
+        }.toMap()
+
+    override suspend fun restoreBackupSettings(values: Map<String, Any>): Int {
+        var restored = 0
+        dataStore.edit { prefs ->
+            // 戻す設定のうち、バックアップに無いものは既定に戻す(書き出した端末で既定のままだったもの)
+            prefs.asMap().keys.filter { BackupCoverage.settingTypeOf(it.name) != null && it.name !in values }.forEach { prefs.remove(it) }
+            values.forEach { (name, value) ->
+                when (BackupCoverage.settingTypeOf(name)) {
+                    BackupCoverage.SettingType.BOOLEAN -> (value as? Boolean)?.let { prefs[booleanPreferencesKey(name)] = it; restored++ }
+                    BackupCoverage.SettingType.INT -> (value as? Number)?.toLong()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
+                        ?.let { prefs[intPreferencesKey(name)] = it.toInt(); restored++ }
+                    BackupCoverage.SettingType.STRING -> (value as? String)?.let { prefs[stringPreferencesKey(name)] = it; restored++ }
+                    // 戻さない設定(ロック・オフラインモード・この端末だけの設定など)と、知らない名前は書かない
+                    null -> Unit
+                }
+            }
+        }
+        return restored
+    }
+
+    private fun Any.matches(type: BackupCoverage.SettingType): Boolean = when (type) {
+        BackupCoverage.SettingType.BOOLEAN -> this is Boolean
+        BackupCoverage.SettingType.INT -> this is Int
+        BackupCoverage.SettingType.STRING -> this is String
     }
 
     override val appLock: Flow<AppLockSettings> = data.map { it.toAppLock() }.distinctUntilChanged()
@@ -384,6 +448,14 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
         val KEY_APP_LOCK_DELAY = stringPreferencesKey("app_lock_delay")
         val KEY_APP_LOCK_HIDE_CONTENT = booleanPreferencesKey("app_lock_hide_content")
+        val KEY_AUTO_BACKUP_ENABLED = booleanPreferencesKey("auto_backup_enabled")
+        val KEY_AUTO_BACKUP_FOLDER = stringPreferencesKey("auto_backup_folder")
+        val KEY_AUTO_BACKUP_FOLDER_LABEL = stringPreferencesKey("auto_backup_folder_label")
+        val KEY_AUTO_BACKUP_KEEP = intPreferencesKey("auto_backup_keep")
+        val KEY_AUTO_BACKUP_INCLUDE_FILES = booleanPreferencesKey("auto_backup_include_files")
+        val KEY_AUTO_BACKUP_LAST_SUCCESS_AT = longPreferencesKey("auto_backup_last_success_at")
+        val KEY_AUTO_BACKUP_LAST_ERROR = stringPreferencesKey("auto_backup_last_error")
+        const val MAX_AUTO_BACKUP_KEEP = 50
         val KEY_DISMISSED_DUPLICATES = stringPreferencesKey("dismissed_duplicates")
         val KEY_BOOKMARK_LIST_DISPLAY = stringPreferencesKey("bookmark_list_display")
         val KEY_READING_FONT_SIZE = stringPreferencesKey("reading_font_size")

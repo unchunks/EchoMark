@@ -506,7 +506,7 @@ class FakeBookmarkRepository : BookmarkRepository {
         return 0
     }
     override suspend fun getBookmarksByIds(ids: List<Long>): List<Bookmark> = bookmarks.value.filter { it.id in ids }
-    override suspend fun getAllBookmarkIds(): List<Long> = TODO("not used")
+    override suspend fun getAllBookmarkIds(): List<Long> = bookmarks.value.map { it.id }
     override suspend fun getEmbeddingModelVersion(bookmarkId: Long): String? = TODO("not used")
 
     /** [getEmbeddingProgress] が返す値(テストで差し替える)。 */

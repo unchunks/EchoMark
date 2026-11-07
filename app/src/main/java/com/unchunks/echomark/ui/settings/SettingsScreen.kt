@@ -85,6 +85,7 @@ import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.lock.rememberAppLockConfirmation
 import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -99,7 +100,7 @@ import java.util.Locale
 /** 設定画面で開くダイアログ。スクリーンショットテストでは最初から開いた状態を渡せる。 */
 enum class SettingsDialog {
     THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG,
-    NIGHTLY_HOUR, CONCURRENCY, API_RATE, SUMMARY_LANGUAGE, SUMMARY_FORMAT, APP_LOCK_DELAY
+    NIGHTLY_HOUR, CONCURRENCY, API_RATE, SUMMARY_LANGUAGE, SUMMARY_FORMAT, APP_LOCK_DELAY, AUTO_BACKUP_KEEP
 }
 
 /** 設定画面の操作。既定は何もしない(プレビュー・スクリーンショット用)。 */
@@ -136,6 +137,15 @@ class SettingsActions(
     val onOpenSubscriptions: () -> Unit = {},
     val onDeleteAllData: (resetSettings: Boolean) -> Unit = {},
     val onDataResultDismissed: () -> Unit = {},
+    /** 読み込んだバックアップの設定も戻す */
+    val onRestoreBackupSettings: () -> Unit = {},
+    /** 自動バックアップのスイッチ(保存先を選んでいなければ、選ぶ画面を開く) */
+    val onAutoBackupToggle: (Boolean) -> Unit = {},
+    /** 自動バックアップの保存先のフォルダを選ぶ */
+    val onPickAutoBackupFolder: () -> Unit = {},
+    val onAutoBackupKeepChange: (Int) -> Unit = {},
+    val onAutoBackupIncludeFilesChange: (Boolean) -> Unit = {},
+    val onRunAutoBackupNow: () -> Unit = {},
     val onShareCrashLog: () -> Unit = {},
     val onClearCrashLog: () -> Unit = {},
     /** null なら「はじめにの案内」の行を出さない */
@@ -185,6 +195,17 @@ fun SettingsScreen(
         onConfirmed = { viewModel.setAppLockEnabled(true) },
         onUnavailable = viewModel::onAppLockUnavailable
     )
+    // 自動バックアップの保存先。選んだフォルダの読み書きの許可を持ち続ける(前のフォルダの許可は手放す)
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (takeFolderPermission(context, uri)) {
+            val previous = uiState.autoBackup.folderUri
+            if (previous != null && previous != uri.toString()) releaseFolderPermission(context, previous)
+            viewModel.setAutoBackupFolder(uri.toString(), folderLabelOf(context, uri))
+        } else {
+            viewModel.onAutoBackupFolderUnavailable()
+        }
+    }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE)) { uri ->
         if (uri != null) viewModel.exportBackup(uri.toString())
     }
@@ -259,6 +280,20 @@ fun SettingsScreen(
             onOpenSubscriptions = { showSubscriptions = true },
             onDeleteAllData = viewModel::deleteAllData,
             onDataResultDismissed = viewModel::onDataResultDismissed,
+            onRestoreBackupSettings = viewModel::restoreBackupSettings,
+            onAutoBackupToggle = { enabled ->
+                val backup = uiState.autoBackup
+                when {
+                    !enabled -> viewModel.setAutoBackupEnabled(false)
+                    // 保存先を選んでいない、または許可がなくなっていれば、選んでもらう
+                    backup.folderUri == null || !hasFolderPermission(context, backup.folderUri) -> folderLauncher.launch(null)
+                    else -> viewModel.setAutoBackupEnabled(true)
+                }
+            },
+            onPickAutoBackupFolder = { folderLauncher.launch(null) },
+            onAutoBackupKeepChange = viewModel::setAutoBackupKeep,
+            onAutoBackupIncludeFilesChange = viewModel::setAutoBackupIncludeFiles,
+            onRunAutoBackupNow = viewModel::runAutoBackupNow,
             onShareCrashLog = {
                 scope.launch {
                     val text = viewModel.crashLogText() ?: return@launch
@@ -487,6 +522,14 @@ fun SettingsContent(
                     onClick = actions.onImportBackup
                 )
             }
+            autoBackupItems(
+                settings = uiState.autoBackup,
+                onToggle = actions.onAutoBackupToggle,
+                onPickFolder = actions.onPickAutoBackupFolder,
+                onOpenKeepDialog = { dialog = SettingsDialog.AUTO_BACKUP_KEEP },
+                onIncludeFilesChange = actions.onAutoBackupIncludeFilesChange,
+                onRunNow = actions.onRunAutoBackupNow
+            )
             item {
                 SettingsItem(
                     title = "他のサービスから取り込む",
@@ -642,10 +685,25 @@ fun SettingsContent(
             },
             onDismiss = { dialog = null }
         )
+        SettingsDialog.AUTO_BACKUP_KEEP -> ChoiceDialog(
+            title = "残すバックアップの数",
+            options = AutoBackupSettings.KEEP_CHOICES,
+            selected = uiState.autoBackup.keep,
+            label = { "新しい ${it} 個" },
+            onSelect = { keep ->
+                actions.onAutoBackupKeepChange(keep)
+                dialog = null
+            },
+            onDismiss = { dialog = null }
+        )
         null -> Unit
     }
 
-    DataOperationDialog(state = uiState.dataOperation, onDismiss = actions.onDataResultDismissed)
+    DataOperationDialog(
+        state = uiState.dataOperation,
+        onDismiss = actions.onDataResultDismissed,
+        onRestoreSettings = actions.onRestoreBackupSettings
+    )
 }
 
 // ---- 表示用の文言 ----
@@ -699,3 +757,7 @@ internal const val OFFLINE_MODE_SUMMARY =
     "オンの間、アプリは一切通信しません。保存・検索・端末内 AI・オフラインコピーはそのまま使えます。" +
         "リンクの本文の取得・フィードとリンク切れの確認・モデルのダウンロード・地図の背景は止まり、" +
         "本文の取得などはオフにしたときに始まります。"
+
+/** [folderUri] の読み書きの許可を持ち続けているか */
+private fun hasFolderPermission(context: Context, folderUri: String): Boolean =
+    context.contentResolver.persistedUriPermissions.any { it.uri.toString() == folderUri && it.isWritePermission }

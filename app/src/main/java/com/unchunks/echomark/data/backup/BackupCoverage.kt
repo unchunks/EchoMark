@@ -117,52 +117,87 @@ object BackupCoverage {
         "processing_stats" to "処理の所要時間の記録は、端末の性能で決まる目安(別の端末では当てはまらない)"
     )
 
-    private const val APP_LOCK = "アプリのロックは端末の設定(端末ごとに生体認証・画面ロックが違う。読み込みで勝手にオン・オフを変えない)"
+    /** app_settings のキーの扱い */
+    sealed interface Key {
+        /** 利用者が作ったもの(チャットのテンプレート)。バックアップに入れ、読み込むときに今のものへ足す */
+        data object UserData : Key
 
-    private const val DEVICE_SETTING = "端末の設定(画面・処理・AI の選び方など)。端末ごとに性能・接続・好みが違うため持ち越さない"
+        /**
+         * 端末の設定。バックアップに入れ、読み込んだあとに利用者が「設定も戻す」を選んだときだけ戻す。
+         * [type] は値の型(バックアップの値の型が違えば戻さない)
+         */
+        data class Setting(val type: SettingType) : Key
+
+        /** 入れない。[reason] は理由 */
+        data class Excluded(val reason: String) : Key
+    }
+
+    enum class SettingType { BOOLEAN, INT, STRING }
+
+    private const val APP_LOCK = "アプリのロックは端末の設定(端末ごとに生体認証・画面ロックが違う)。バックアップを戻して勝手にオン・オフを変えない"
+    private const val AUTO_BACKUP = "自動バックアップの保存先は、この端末のフォルダ(別の端末では開けない)"
+    private const val LEGACY = "用途を分ける前の古い形式の設定(読むだけで書かない。用途ごとの設定を戻す)"
+
+    private val BOOLEAN = Key.Setting(SettingType.BOOLEAN)
+    private val INT = Key.Setting(SettingType.INT)
+    private val STRING = Key.Setting(SettingType.STRING)
 
     /**
-     * app_settings のキーの扱い。null なら [BackupJson] に入れる(利用者が作ったもの)、文字列なら入れない理由。
-     * 末尾が `*` のものは、用途・提供元などを後ろに付けたキーの集まり(`llm_backend_summary` など)。
+     * app_settings のキーの扱い。末尾が `*` のものは、用途・提供元などを後ろに付けたキーの集まり(`llm_backend_summary` など)。
+     * 具体的な名前のほうが `*` より先に当たる。
      */
-    val dataStoreKeys: Map<String, String?> = mapOf(
-        "chat_templates" to null,
-        "search_history" to "何を探したかは端末の中だけに残す(持ち出すファイルに入れない)",
-        "dismissed_duplicates" to "書き出し元のブックマークの ID を覚えているだけで、読み込んだ端末では ID が変わる",
-        "rediscover_notified" to "どのブックマークを通知したかは、この端末の通知の記録",
-        "onboarding_completed" to "はじめにの案内を見たかは、この端末のこと",
-        "offline_mode" to "オフラインモードは端末の設定(読み込みで勝手にオン・オフを変えない)",
-        "app_lock_enabled" to APP_LOCK,
-        "app_lock_delay" to APP_LOCK,
-        "app_lock_hide_content" to APP_LOCK,
-        "theme_mode" to DEVICE_SETTING,
-        "dynamic_color" to DEVICE_SETTING,
-        "send_files_to_cloud" to DEVICE_SETTING,
-        "local_llm_use_gpu" to DEVICE_SETTING,
-        "bookmark_sort_order" to DEVICE_SETTING,
-        "bookmark_list_display" to DEVICE_SETTING,
-        "duplicate_sensitivity" to DEVICE_SETTING,
-        "link_check_enabled" to DEVICE_SETTING,
-        "places_map_background" to DEVICE_SETTING,
-        "reading_font" to DEVICE_SETTING,
-        "reading_font_size" to DEVICE_SETTING,
-        "reading_theme" to DEVICE_SETTING,
-        "rediscover_enabled" to DEVICE_SETTING,
-        "rediscover_day_of_week" to DEVICE_SETTING,
-        "rediscover_hour" to DEVICE_SETTING,
-        "rediscover_minute" to DEVICE_SETTING,
-        "summary_format" to DEVICE_SETTING,
-        "summary_language" to DEVICE_SETTING,
-        "summary_quality_check" to DEVICE_SETTING,
-        "processing_*" to DEVICE_SETTING,
-        "llm_backend" to DEVICE_SETTING,
-        "llm_backend_*" to DEVICE_SETTING,
-        "api_provider" to DEVICE_SETTING,
-        "api_provider_*" to DEVICE_SETTING,
-        "api_model_*" to DEVICE_SETTING,
-        "local_model_*" to "端末内モデルは端末ごとに取り込むもの(読み込んだ端末に同じモデルがあるとは限らない)"
+    val dataStoreKeys: Map<String, Key> = mapOf(
+        "chat_templates" to Key.UserData,
+        // 端末の設定(戻すかは利用者が決める)
+        "theme_mode" to STRING,
+        "dynamic_color" to BOOLEAN,
+        "send_files_to_cloud" to BOOLEAN,
+        "bookmark_sort_order" to STRING,
+        "bookmark_list_display" to STRING,
+        "duplicate_sensitivity" to STRING,
+        "link_check_enabled" to BOOLEAN,
+        "places_map_background" to BOOLEAN,
+        "reading_font" to STRING,
+        "reading_font_size" to STRING,
+        "reading_theme" to STRING,
+        "rediscover_enabled" to BOOLEAN,
+        "rediscover_day_of_week" to INT,
+        "rediscover_hour" to INT,
+        "rediscover_minute" to INT,
+        "summary_format" to STRING,
+        "summary_language" to STRING,
+        "summary_quality_check" to BOOLEAN,
+        "processing_charging_only" to BOOLEAN,
+        "processing_unmetered_only" to BOOLEAN,
+        "processing_nightly_batch" to BOOLEAN,
+        "processing_nightly_hour" to INT,
+        "processing_max_concurrent" to INT,
+        "processing_api_requests_per_minute" to INT,
+        "llm_backend_*" to STRING,
+        "api_provider_*" to STRING,
+        "api_model_*" to STRING,
+        // 入れないもの
+        "llm_backend" to Key.Excluded(LEGACY),
+        "api_provider" to Key.Excluded(LEGACY),
+        "search_history" to Key.Excluded("何を探したかは端末の中だけに残す(持ち出すファイルに入れない)"),
+        "dismissed_duplicates" to Key.Excluded("書き出し元のブックマークの ID を覚えているだけで、読み込んだ端末では ID が変わる"),
+        "rediscover_notified" to Key.Excluded("どのブックマークを通知したかは、この端末の通知の記録"),
+        "onboarding_completed" to Key.Excluded("はじめにの案内を見たかは、この端末のこと"),
+        "offline_mode" to Key.Excluded("オフラインモードは端末の設定(バックアップを戻して勝手に通信を始めない・止めない)"),
+        "app_lock_enabled" to Key.Excluded(APP_LOCK),
+        "app_lock_delay" to Key.Excluded(APP_LOCK),
+        "app_lock_hide_content" to Key.Excluded(APP_LOCK),
+        "local_llm_use_gpu" to Key.Excluded("GPU で動くかは端末ごとに違う(落ちる端末もあるため、端末ごとに試して決める)"),
+        "local_model_*" to Key.Excluded("端末内モデルは端末ごとに取り込むもの(読み込んだ端末に同じモデルがあるとは限らない)"),
+        "auto_backup_*" to Key.Excluded(AUTO_BACKUP)
     )
 
+    /** [name] のキーの扱い(具体的な名前を先に見て、無ければ `*` の集まりを見る)。一覧に無ければ null */
+    fun keyOf(name: String): Key? =
+        dataStoreKeys[name] ?: dataStoreKeys.entries.firstOrNull { (key, _) -> key.endsWith("*") && name.startsWith(key.removeSuffix("*")) }?.value
+
+    /** バックアップに入れて、利用者が選んだら戻す設定の型。戻さないキーなら null */
+    fun settingTypeOf(name: String): SettingType? = (keyOf(name) as? Key.Setting)?.type
     /** 添付ファイル・オフラインコピーの本体の扱い */
     const val FILES = "「ファイルも含めて書き出す」(zip)のときだけ入れる。JSON だけのときは入れず、読み込む端末に無いファイルは外す"
 
@@ -170,5 +205,5 @@ object BackupCoverage {
     const val EMBEDDINGS = "タイトル・要約・本文から作り直せる派生データ。読み込んだあとに作り直す"
 
     /** 端末内モデルの扱い */
-    const val MODELS = "大きく、おすすめの一覧から取り込み直せる"
+    const val MODELS = "端末内モデルと、その速さの記録(ベンチマーク)は端末ごとのもの。大きく、おすすめの一覧から取り込み直せる"
 }
