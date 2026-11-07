@@ -306,12 +306,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun exportBackup(uri: String) = runDataOperation(
+    /** バックアップを書き出す。[includeFiles] なら、添付ファイル・オフラインコピーも入れた zip にする */
+    fun exportBackup(uri: String, includeFiles: Boolean = false) = runDataOperation(
         runningMessage = "バックアップを書き出しています…",
         failureTitle = "書き出せませんでした"
     ) {
-        val summary = dataRepository.exportBackup(uri)
-        _message.value = "${summary.bookmarks} 件のブックマークと ${summary.conversations} 件の会話を書き出しました"
+        val summary = dataRepository.exportBackup(uri, includeFiles)
+        _message.value = "${summary.bookmarks} 件のブックマークと ${summary.conversations} 件の会話を書き出しました" +
+            if (includeFiles) "(ファイル ${summary.files} 件を含む)" else ""
         DataOperationState.Idle
     }
 

@@ -122,7 +122,7 @@ class SettingsDialogScreenshotTest {
             state = DataOperationState.Imported(
                 BackupImportSummary(
                     bookmarksAdded = 42, bookmarksSkipped = 3, tagsAdded = 12,
-                    conversationsAdded = 5, conversationsSkipped = 1, messagesAdded = 30, invalidRecords = 2
+                    conversationsAdded = 5, conversationsSkipped = 1, messagesAdded = 30, filesRestored = 12
                 )
             ),
             onDismiss = {}

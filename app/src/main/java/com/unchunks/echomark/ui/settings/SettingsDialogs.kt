@@ -363,7 +363,7 @@ private fun ImportSummaryText(summary: BackupImportSummary) {
         SummaryRow("追加したタグ", "${summary.tagsAdded} 件")
         SummaryRow("追加した会話", "${summary.conversationsAdded} 件")
         if (summary.conversationsSkipped > 0) SummaryRow("登録済みの会話", "${summary.conversationsSkipped} 件")
-        if (summary.invalidRecords > 0) SummaryRow("壊れていて読み飛ばした項目", "${summary.invalidRecords} 件")
+        if (summary.filesRestored > 0) SummaryRow("戻したファイル(画像・オフラインコピーなど)", "${summary.filesRestored} 件")
         if (summary.bookmarksAdded > 0) {
             Spacer(Modifier.size(4.dp))
             Text(
