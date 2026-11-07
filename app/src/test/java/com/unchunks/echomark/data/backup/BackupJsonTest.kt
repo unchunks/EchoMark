@@ -172,17 +172,25 @@ class BackupJsonTest {
     }
 
     @Test
-    fun ページのオフラインコピーはバックアップに含めない() {
+    fun ページのオフラインコピーの記録は版20から書き出し_古い版では無いものとして読む() {
         val withSnapshot = sample.bookmarks[0].copy(snapshotPath = "attachments/x.mhtml", snapshotPdfPath = "attachments/x.pdf", snapshotAt = 123L)
 
         val text = BackupJson.encode(sample.copy(bookmarks = listOf(withSnapshot)))
         val decoded = BackupJson.decode(text).data.bookmarks.single()
 
-        // ファイルは端末の中にしか無く、バックアップには入れない。読み込んだ端末には、オフラインコピーの記録は無い
-        listOf("snapshot", "x.mhtml", "x.pdf").forEach { assertFalse(it, text.contains(it)) }
-        assertEquals(null, decoded.snapshotPath)
-        assertEquals(null, decoded.snapshotPdfPath)
-        assertEquals(null, decoded.snapshotAt)
+        // ファイルがあるかは読み込む側(DataManagementRepositoryImpl)で確かめる
+        assertEquals("attachments/x.mhtml", decoded.snapshotPath)
+        assertEquals("attachments/x.pdf", decoded.snapshotPdfPath)
+        assertEquals(123L, decoded.snapshotAt)
+
+        // 版 19 以前のファイルに書いてあっても読まない
+        val old = BackupJson.decode(text.replace("\"version\":${BackupJson.CURRENT_VERSION}", "\"version\":19")).data.bookmarks.single()
+        assertEquals(null, old.snapshotPath)
+        assertEquals(null, old.snapshotAt)
+
+        // 添付ファイルの置き場所以外を指すパスは受け付けない
+        val unsafe = BackupJson.decode(text.replace("attachments/x.mhtml", "../../databases/x.db")).data.bookmarks.single()
+        assertEquals(null, unsafe.snapshotPath)
     }
 
     @Test

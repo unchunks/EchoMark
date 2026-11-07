@@ -12,6 +12,8 @@ import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.SmartFolderEntity
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
+import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.data.mapper.SmartFolderCodec
 import com.unchunks.echomark.data.mapper.smartFolderEntity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
@@ -37,9 +39,9 @@ import org.json.JSONObject
 import java.io.Writer
 
 /**
- * バックアップの中身。DB のテーブルをそのまま写したもの。
- * API キー・端末内モデル・埋め込みベクトル(読み込み後に再生成する)・添付ファイルの本体
- * (画像・PDF・音声など。ファイル名などの情報だけを含める)は含めない。
+ * バックアップの中身。DB のテーブルをそのまま写したもの。何を含め、何を含めないか(と理由)は [BackupCoverage] に一覧がある。
+ * API キー・端末内モデル・埋め込みベクトル(読み込み後に再生成する)は含めない。添付ファイル・オフラインコピーの本体は、
+ * 「ファイルも含めて書き出す」(zip。[BackupArchive])のときだけ含め、JSON だけのときはファイル名などの情報だけを含める。
  */
 data class BackupData(
     val exportedAt: Long,
@@ -65,7 +67,11 @@ data class BackupData(
     /** リンク切れの確認で「確認しない」を選んだブックマークの ID(書き出し元の ID)。確認の状態そのものは端末の中のもので含めない */
     val linkCheckMutedBookmarkIds: List<Long> = emptyList(),
     /** 復習に入れたブックマークの状態(#90)。[ReviewCardEntity.bookmarkId] は [bookmarks] の ID */
-    val reviewCards: List<ReviewCardEntity> = emptyList()
+    val reviewCards: List<ReviewCardEntity> = emptyList(),
+    /** 要約の履歴(AI が作った版・手で直した版)。[SummaryHistoryEntity.bookmarkId] は [bookmarks] の ID */
+    val summaryHistory: List<SummaryHistoryEntity> = emptyList(),
+    /** 自分で作ったチャットのテンプレート(DataStore の chat_templates) */
+    val chatTemplates: List<ChatTemplate> = emptyList()
 )
 
 /** バックアップに入れるコレクション(#91)。ID は持たず、名前で同じコレクションかを見分ける。 */
@@ -150,7 +156,9 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ],
  *   "collections": [ {name, description は無ければ省略, createdAt, items: [ {bookmarkId, addedAt} ]} ],
  *   "linkCheckMuted": [ リンク切れの確認で「確認しない」を選んだブックマークの ID ],
- *   "reviewCards": [ {bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, lastReviewedAt は無ければ省略, createdAt} ] }
+ *   "reviewCards": [ {bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, lastReviewedAt は無ければ省略, createdAt} ],
+ *   "summaryHistory": [ {bookmarkId, summary, source, generator と style は無ければ省略, createdAt} ],
+ *   "chatTemplates": [ {id, title, text} ] }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -194,10 +202,21 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 19: ブックマークの readingListAt(「あとで読む」に入れた日時。DB v28 の bookmarks の列)と、復習のカード(reviewCards。review_cards)を追加。
  *   18 以前は「あとで読む」も復習も無いものとして読む。カードの bookmarkId は書き出し元の ID で、読み込むときに付け替える。
  *   間隔・伸びやすさ・回数が範囲外・負のカードは、範囲内に丸めて読む。すでに同じブックマークにカードがあれば、読み込んだものは足さない
+ * - 20: すべてのテーブルを見直して足した([BackupCoverage])。要約の履歴(summaryHistory。DB v15 の summary_history)、
+ *   ブックマークのオフラインコピー(snapshotPath・snapshotPdfPath・snapshotAt)、自分で作ったチャットのテンプレート(chatTemplates。DataStore)。
+ *   19 以前は、履歴・オフラインコピー・テンプレートが無いものとして読む。オフラインコピーのファイルは添付ファイルと同じく、
+ *   読み込む端末に無ければ(zip に入っていなければ)外す。履歴は読み込んで追加したブックマークにだけ付ける
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 19
+    const val CURRENT_VERSION = 20
+
+    /** 要約の履歴の1版の長さの上限(文字)。壊れた・書き換えられたファイルで巨大な文字列を入れない */
+    private const val MAX_SUMMARY_LENGTH = 100_000
+
+    /** チャットのテンプレートの名前・本文の長さの上限(文字) */
+    private const val MAX_TEMPLATE_TITLE_LENGTH = 200
+    private const val MAX_TEMPLATE_TEXT_LENGTH = 20_000
 
     /** 場所の名前の長さの上限(文字) */
     private const val MAX_PLACE_NAME_LENGTH = 100
@@ -240,6 +259,10 @@ object BackupJson {
         writeArray(writer, "collections", data.collections) { it.toJson() }
         writer.write(",")
         writeArray(writer, "reviewCards", data.reviewCards) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "summaryHistory", data.summaryHistory) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "chatTemplates", data.chatTemplates) { it.toJson() }
         writer.write(",")
         writer.write("\"linkCheckMuted\":")
         writer.write(JSONArray(data.linkCheckMutedBookmarkIds).toString())
@@ -298,6 +321,8 @@ object BackupJson {
             notes = readArray("notes") { it.toNote() },
             collections = readArray("collections") { it.toCollection() },
             reviewCards = readArray("reviewCards") { it.toReviewCard() },
+            summaryHistory = readArray("summaryHistory") { it.toSummaryHistory() },
+            chatTemplates = readArray("chatTemplates") { it.toChatTemplate() },
             linkCheckMutedBookmarkIds = root.optJSONArray("linkCheckMuted")?.let { array ->
                 (0 until array.length()).mapNotNull { index -> array.optLong(index, -1L).takeIf { it >= 0 } }
             }.orEmpty()
@@ -343,6 +368,38 @@ object BackupJson {
         .apply { longitude?.let { put("longitude", it) } }
         .putNullable("placeName", placeName)
         .apply { readingListAt?.let { put("readingListAt", it) } }
+        .putNullable("snapshotPath", snapshotPath)
+        .putNullable("snapshotPdfPath", snapshotPdfPath)
+        .apply { snapshotAt?.let { put("snapshotAt", it) } }
+
+    private fun SummaryHistoryEntity.toJson() = JSONObject()
+        .put("bookmarkId", bookmarkId)
+        .put("summary", summary)
+        .put("source", source)
+        .putNullable("generator", generator)
+        .putNullable("style", style)
+        .put("createdAt", createdAt)
+
+    private fun ChatTemplate.toJson() = JSONObject().put("id", id).put("title", title).put("text", text)
+
+    private fun JSONObject.toSummaryHistory(): SummaryHistoryEntity? {
+        val summary = stringOrNull("summary")?.takeIf { it.isNotBlank() }?.take(MAX_SUMMARY_LENGTH) ?: return null
+        return SummaryHistoryEntity(
+            bookmarkId = longOrNull("bookmarkId") ?: return null,
+            summary = summary,
+            // 読めない値は読み出しで AI として扱われる(SummaryHistoryEntity の KDoc)ので、文字列のまま持つ
+            source = stringOrNull("source")?.takeIf { it.isNotBlank() } ?: return null,
+            generator = stringOrNull("generator"),
+            style = stringOrNull("style"),
+            createdAt = longOrNull("createdAt") ?: return null
+        )
+    }
+
+    private fun JSONObject.toChatTemplate(): ChatTemplate? {
+        val title = stringOrNull("title")?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_TEMPLATE_TITLE_LENGTH) ?: return null
+        val text = stringOrNull("text")?.takeIf { it.isNotBlank() }?.take(MAX_TEMPLATE_TEXT_LENGTH) ?: return null
+        return ChatTemplate(id = stringOrNull("id")?.takeIf { it.isNotBlank() } ?: return null, title = title, text = text)
+    }
 
     private fun TagEntity.toJson() = JSONObject()
         .put("id", id)
@@ -440,6 +497,10 @@ object BackupJson {
             },
             // version 18 以前には無い(「あとで読む」に入れていないものとして読む)
             readingListAt = if (version >= 19) longOrNull("readingListAt") else null,
+            // version 19 以前には無い。添付ファイルの置き場所以外を指すパスは受け付けない(ファイルがあるかは読み込む側で確かめる)
+            snapshotPath = if (version >= 20) stringOrNull("snapshotPath")?.takeIf { isValidAttachmentPath(it) } else null,
+            snapshotPdfPath = if (version >= 20) stringOrNull("snapshotPdfPath")?.takeIf { isValidAttachmentPath(it) } else null,
+            snapshotAt = if (version >= 20) longOrNull("snapshotAt") else null,
             latitude = geoPoint?.latitude,
             longitude = geoPoint?.longitude,
             placeName = if (version >= 18) stringOrNull("placeName")?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_PLACE_NAME_LENGTH) else null,

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoveToInbox
 import androidx.compose.material.icons.outlined.RssFeed
@@ -116,6 +117,8 @@ class SettingsActions(
     val onRediscoverScheduleChange: (DayOfWeek, Int, Int) -> Unit = { _, _, _ -> },
     val onOpenNotificationSettings: () -> Unit = {},
     val onExportBackup: () -> Unit = {},
+    /** 添付ファイル・オフラインコピーも入れて(zip で)書き出す */
+    val onExportBackupWithFiles: () -> Unit = {},
     val onImportBackup: () -> Unit = {},
     /** 他のサービス(Pocket・Raindrop.io・ブラウザなど)の書き出しファイルを取り込む(ファイルを選ぶ) */
     val onImportFromServices: () -> Unit = {},
@@ -169,6 +172,10 @@ fun SettingsScreen(
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE)) { uri ->
         if (uri != null) viewModel.exportBackup(uri.toString())
+    }
+    // 添付ファイル・オフラインコピーも入れた zip
+    val archiveExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_ARCHIVE_MIME_TYPE)) { uri ->
+        if (uri != null) viewModel.exportBackup(uri.toString(), includeFiles = true)
     }
     // .json の MIME タイプはファイルアプリによって異なるため、よく使われるものをまとめて許可し、中身で判定する
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -228,7 +235,8 @@ fun SettingsScreen(
                 }
             },
             onExportBackup = { exportLauncher.launch("echomark-backup-${LocalDate.now()}.json") },
-            onImportBackup = { importLauncher.launch(arrayOf(BACKUP_MIME_TYPE, "text/plain", "application/octet-stream")) },
+            onExportBackupWithFiles = { archiveExportLauncher.launch("echomark-backup-${LocalDate.now()}.zip") },
+            onImportBackup = { importLauncher.launch(arrayOf(BACKUP_MIME_TYPE, BACKUP_ARCHIVE_MIME_TYPE, "text/plain", "application/octet-stream")) },
             onImportFromServices = { linkImportLauncher.launch(arrayOf("*/*")) },
             onOpenSubscriptions = { showSubscriptions = true },
             onDeleteAllData = viewModel::deleteAllData,
@@ -411,15 +419,23 @@ fun SettingsContent(
                 SettingsItem(
                     title = "バックアップを書き出す",
                     icon = Icons.Outlined.Upload,
-                    summary = "ブックマーク・タグ・会話を JSON ファイルに保存します",
+                    summary = "ブックマーク・タグ・会話・ノートなどを JSON ファイルに保存します(画像・PDF などのファイルは含めません)",
                     onClick = actions.onExportBackup
+                )
+            }
+            item {
+                SettingsItem(
+                    title = "ファイルも含めて書き出す",
+                    icon = Icons.Outlined.FolderZip,
+                    summary = "保存した画像・PDF・音声・動画と、オフラインコピーも入れた zip ファイルに保存します。大きくなることがあります",
+                    onClick = actions.onExportBackupWithFiles
                 )
             }
             item {
                 SettingsItem(
                     title = "バックアップを読み込む",
                     icon = Icons.Outlined.Download,
-                    summary = "今のデータに追加します。同じ URL のブックマークはスキップします",
+                    summary = "今のデータに追加します(JSON・zip)。同じ URL のブックマークはスキップします。壊れたファイルは何も読み込みません",
                     onClick = actions.onImportBackup
                 )
             }
@@ -593,6 +609,7 @@ private val StorageUsage.label: String
     }.joinToString("・")
 
 private const val BACKUP_MIME_TYPE = "application/json"
+private const val BACKUP_ARCHIVE_MIME_TYPE = "application/zip"
 
 /** クラッシュログを1つのテキストファイルにして、共有先を選ばせる(FileProvider で一時的な読み取り権限つきで渡す)。 */
 private suspend fun shareCrashLog(context: Context, text: String) {

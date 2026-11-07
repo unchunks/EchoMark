@@ -5,7 +5,9 @@ data class BackupExportSummary(
     val bookmarks: Int,
     val tags: Int,
     val conversations: Int,
-    val messages: Int
+    val messages: Int,
+    /** 一緒に書き出した添付ファイル・オフラインコピーの数(ファイルも含めて書き出したときだけ) */
+    val files: Int = 0
 )
 
 /** バックアップを読み込んだ結果。 */
@@ -17,8 +19,8 @@ data class BackupImportSummary(
     val conversationsAdded: Int,
     val conversationsSkipped: Int,
     val messagesAdded: Int,
-    /** 壊れていて読み飛ばした要素 */
-    val invalidRecords: Int
+    /** バックアップ(zip)から戻した添付ファイル・オフラインコピーの数 */
+    val filesRestored: Int = 0
 )
 
 /** 端末内で使っている容量(バイト)。 */
@@ -41,10 +43,16 @@ class DataOperationException(message: String, cause: Throwable? = null) : Except
  * [uri] は SAF(ファイル選択)で得た content:// の URI 文字列。
  */
 interface DataManagementRepository {
-    /** ブックマーク・タグ・会話を JSON で書き出す。API キー・端末内モデル・添付ファイルの本体は含めない。 */
-    suspend fun exportBackup(uri: String): BackupExportSummary
+    /**
+     * ブックマーク・タグ・会話などを JSON で書き出す。API キー・端末内モデル・埋め込みは含めない。
+     * [includeFiles] なら、添付ファイル・オフラインコピーの本体も入れた zip にする(何を含めるかは BackupCoverage)。
+     */
+    suspend fun exportBackup(uri: String, includeFiles: Boolean = false): BackupExportSummary
 
-    /** バックアップを今のデータに統合する。読み込んだブックマークの埋め込み・AI 処理は裏で再実行する。 */
+    /**
+     * バックアップ(JSON か zip)を今のデータに統合する。全体を確かめてから書き込み、壊れていれば何も読み込まない
+     * (途中で失敗しても今のデータはそのまま)。読み込んだブックマークの埋め込み・AI 処理は裏で再実行する。
+     */
     suspend fun importBackup(uri: String): BackupImportSummary
 
     suspend fun storageUsage(): StorageUsage

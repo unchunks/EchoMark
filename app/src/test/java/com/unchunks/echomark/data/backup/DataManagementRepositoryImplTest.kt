@@ -287,4 +287,117 @@ class DataManagementRepositoryImplTest {
         assertEquals(null, bookmarkRepository.getBookmarkById(again)!!.placeName)
         assertEquals(null, bookmarkRepository.getBookmarkById(again)!!.latitude)
     }
+
+    private val store by lazy { AttachmentStore(context, TestDispatcherProvider(Dispatchers.Unconfined)) }
+
+    /** 画像のブックマーク(ファイルつき)に、オフラインコピーと要約の履歴を付け、チャットのテンプレートも作る */
+    private suspend fun seedWithFiles(): Long {
+        val image = store.saveStream("画像の中身".byteInputStream(), "image/png", "photo.png", 1024)
+        val id = bookmarkRepository.saveFileBookmark(image, "写真", null).id
+        val mhtml = store.saveStream("ページの中身".byteInputStream(), "text/plain", "page.txt", 1024)
+        val pdf = store.saveStream("PDF の中身".byteInputStream(), "application/pdf", "page.pdf", 1024)
+        db.bookmarkDao().updateSnapshot(id, mhtml.filePath, pdf.filePath, 77)
+        db.backupDao().insertSummaryHistory(
+            com.unchunks.echomark.data.local.entity.SummaryHistoryEntity(
+                bookmarkId = id, summary = "前の要約", source = "MANUAL", createdAt = 5
+            )
+        )
+        settings.chatTemplatesFlow.value = listOf(ChatTemplate("t1", "要点", "要点をまとめて"))
+        return id
+    }
+
+    private fun export(includeFiles: Boolean): ByteArray = runBlocking {
+        val out = java.io.ByteArrayOutputStream()
+        val uri = Uri.parse("content://test/out-$includeFiles")
+        shadowOf(context.contentResolver).registerOutputStream(uri, out)
+        repository.exportBackup(uri.toString(), includeFiles)
+        out.toByteArray()
+    }
+
+    private suspend fun import(bytes: ByteArray, name: String = "in") =
+        Uri.parse("content://test/$name").let { uri ->
+            shadowOf(context.contentResolver).registerInputStream(uri, bytes.inputStream())
+            repository.importBackup(uri.toString())
+        }
+
+    @Test
+    fun ファイルも含めて書き出すと_添付ファイル_オフラインコピー_要約の履歴_テンプレートまで戻る() = runBlocking {
+        val id = seedWithFiles()
+        val before = bookmarkRepository.getBookmarkById(id)!!
+        val bytes = export(includeFiles = true)
+        assertTrue(BackupArchive.isZip(bytes.copyOf(4)))
+
+        repository.deleteAllData(resetSettings = false)
+        assertEquals(0L, repository.storageUsage().attachmentBytes)
+        val summary = import(bytes)
+
+        assertEquals(1, summary.bookmarksAdded)
+        assertEquals(3, summary.filesRestored)
+        val restoredId = bookmarkRepository.getAllBookmarkIds().single()
+        val entity = db.bookmarkDao().getById(restoredId)!!
+        assertEquals(before.filePath, entity.filePath)
+        assertEquals("画像の中身", store.existingFile(entity.filePath)!!.readText())
+        assertEquals("ページの中身", store.existingFile(entity.snapshotPath)!!.readText())
+        assertEquals("PDF の中身", store.existingFile(entity.snapshotPdfPath)!!.readText())
+        assertEquals(77L, entity.snapshotAt)
+        assertEquals(listOf("前の要約"), db.backupDao().getAllSummaryHistory().map { it.summary })
+        assertEquals(listOf("要点"), settings.chatTemplatesFlow.value.map { it.title })
+        // 展開に使った一時的な場所は残さない
+        assertTrue(File(context.cacheDir, "backup-import").listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun JSONだけのときはファイルを入れず_読み込む端末に無いオフラインコピーは外す() = runBlocking {
+        seedWithFiles()
+        val bytes = export(includeFiles = false)
+        assertTrue(!BackupArchive.isZip(bytes.copyOf(4)))
+
+        repository.deleteAllData(resetSettings = false)
+        val summary = import(bytes)
+
+        assertEquals(0, summary.filesRestored)
+        val entity = db.bookmarkDao().getById(bookmarkRepository.getAllBookmarkIds().single())!!
+        assertEquals(null, entity.filePath)
+        assertEquals(null, entity.snapshotPath)
+        assertEquals(null, entity.snapshotPdfPath)
+        assertEquals(null, entity.snapshotAt)
+        // 要約の履歴とテンプレートは JSON にも入る
+        assertEquals(1, db.backupDao().getAllSummaryHistory().size)
+        assertEquals(1, settings.chatTemplatesFlow.value.size)
+    }
+
+    @Test
+    fun 壊れたバックアップは何も読み込まず_今のデータはそのまま() = runBlocking {
+        val existing = bookmarkRepository.saveUrlBookmark("https://example.com/keep", null, null).id
+        // ノートが、ファイルに無いブックマークを指している
+        val json = """
+            {"format":"echomark-backup","version":20,"exportedAt":1,
+             "bookmarks":[{"id":1,"type":"TEXT","title":"新しいメモ","createdAt":1,"aiStatus":"DONE"}],
+             "notes":[{"bookmarkId":2,"text":"迷子のノート","createdAt":1,"updatedAt":1}],
+             "chatTemplates":[{"id":"t9","title":"読み込まない","text":"…"}]}
+        """.trimIndent()
+
+        val error = runCatching { import(json.toByteArray()) }.exceptionOrNull()
+
+        assertTrue(error.toString(), error is com.unchunks.echomark.domain.repository.DataOperationException)
+        assertTrue(error!!.message!!.contains("今のデータはそのまま"))
+        assertEquals(listOf(existing), bookmarkRepository.getAllBookmarkIds())
+        assertTrue(settings.chatTemplatesFlow.value.isEmpty())
+    }
+
+    @Test
+    fun 書き込みの途中で失敗したら_入れたファイルを消し_テンプレートを元に戻す() = runBlocking {
+        seedWithFiles()
+        val bytes = export(includeFiles = true)
+        repository.deleteAllData(resetSettings = false)
+        settings.chatTemplatesFlow.value = listOf(ChatTemplate("mine", "自分の", "そのまま残す"))
+        // DB を閉じて、統合(最後の段)で失敗させる
+        db.close()
+
+        val error = runCatching { import(bytes) }.exceptionOrNull()
+
+        assertTrue(error.toString(), error is com.unchunks.echomark.domain.repository.DataOperationException)
+        assertEquals(0L, repository.storageUsage().attachmentBytes)
+        assertEquals(listOf("mine"), settings.chatTemplatesFlow.value.map { it.id })
+    }
 }

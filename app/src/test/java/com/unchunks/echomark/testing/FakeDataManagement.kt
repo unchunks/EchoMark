@@ -14,18 +14,21 @@ class FakeDataManagementRepository : DataManagementRepository {
     var exportSummary = BackupExportSummary(bookmarks = 3, tags = 2, conversations = 1, messages = 4)
     var importSummary = BackupImportSummary(
         bookmarksAdded = 2, bookmarksSkipped = 1, tagsAdded = 1,
-        conversationsAdded = 1, conversationsSkipped = 0, messagesAdded = 2, invalidRecords = 0
+        conversationsAdded = 1, conversationsSkipped = 0, messagesAdded = 2
     )
     var storage = StorageUsage(databaseBytes = 1024, embeddingBytes = 2048, modelBytes = 0)
     var failure: Throwable? = null
 
     val exportedUris = mutableListOf<String>()
+    /** 書き出しでファイルも含めたか(書き出しごと) */
+    val exportIncludeFiles = mutableListOf<Boolean>()
     val importedUris = mutableListOf<String>()
     val deleteCalls = mutableListOf<Boolean>()
     var storageCalls = 0
 
-    override suspend fun exportBackup(uri: String): BackupExportSummary {
+    override suspend fun exportBackup(uri: String, includeFiles: Boolean): BackupExportSummary {
         exportedUris += uri
+        exportIncludeFiles += includeFiles
         failure?.let { throw it }
         return exportSummary
     }

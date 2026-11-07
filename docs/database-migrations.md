@@ -50,6 +50,8 @@
    既定値の入る列や、マイグレーションの中で埋める値(`UPDATE`)は必ず確かめる。
 6. 利用者のデータの列なら、バックアップ(`data/backup/BackupJson.kt`)にも足す。`CURRENT_VERSION` を上げ、
    古い版のバックアップを読むときの値を決める(DB のマイグレーションと同じ扱いにする)。足さないと、書き出し・読み込みでその列が消える。
+   入れない列・テーブルも、`data/backup/BackupCoverage.kt` に理由を書いて足す(`BackupCoverageTest` が、スキーマ JSON にあって
+   一覧に無い列・テーブルを見つけると失敗する)。手順は `docs/backup.md`。
 7. テストを通す。
 
    ```sh

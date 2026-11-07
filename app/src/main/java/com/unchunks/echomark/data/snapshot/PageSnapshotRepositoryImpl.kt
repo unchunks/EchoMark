@@ -12,7 +12,7 @@ import javax.inject.Inject
 /**
  * ページのオフラインコピーを、添付ファイルと同じ保存先(`filesDir/attachments/`)に置く。
  * そのため「すべてのデータを削除」・使われていないファイルの掃除([com.unchunks.echomark.data.attachment.UnusedAttachmentCleaner])の対象になる。
- * バックアップには含めない(大きく、リンク先から取り直せる)。
+ * バックアップには、「ファイルも含めて書き出す」(zip)のときだけ含める(大きく、リンク先から取り直せるため、JSON だけのときは含めない)。
  */
 class PageSnapshotRepositoryImpl @Inject constructor(
     private val attachmentStore: AttachmentStore,

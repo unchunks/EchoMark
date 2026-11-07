@@ -25,6 +25,7 @@ import com.unchunks.echomark.data.local.entity.ConversationEntity
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.echomark.data.local.entity.SmartFolderEntity
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
+import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.data.local.entity.TagAliasEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
@@ -52,7 +53,9 @@ data class BackupMergeResult(
     /** 追加したコレクションの数(同じ名前のコレクションが既にあれば、追加せずそこへブックマークを足す) */
     val collectionsAdded: Int = 0,
     /** 追加した復習のカードの数(同じブックマークにカードが既にあれば追加しない) */
-    val reviewCardsAdded: Int = 0
+    val reviewCardsAdded: Int = 0,
+    /** 追加した要約の履歴の版の数(読み込んで追加したブックマークの分だけ) */
+    val summaryHistoryAdded: Int = 0
 )
 
 /**
@@ -126,6 +129,12 @@ abstract class BackupDao {
     @Query("DELETE FROM collections")
     abstract suspend fun deleteAllCollections()
 
+    @Query("SELECT * FROM summary_history ORDER BY bookmarkId, createdAt, id")
+    abstract suspend fun getAllSummaryHistory(): List<SummaryHistoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertSummaryHistory(entry: SummaryHistoryEntity): Long
+
     @Query("SELECT * FROM review_cards ORDER BY bookmarkId")
     abstract suspend fun getAllReviewCards(): List<ReviewCardEntity>
 
@@ -170,7 +179,8 @@ abstract class BackupDao {
             notes = getAllNotes(),
             collections = collectionBackups(),
             linkCheckMutedBookmarkIds = getMutedLinkCheckBookmarkIds(),
-            reviewCards = getAllReviewCards()
+            reviewCards = getAllReviewCards(),
+            summaryHistory = getAllSummaryHistory()
         )
     }
 
@@ -266,6 +276,7 @@ abstract class BackupDao {
      * - タグの別名: 行き先のタグがあればそのタグへ、無ければ(どのブックマークにも付いていないタグでも)ユーザーのタグとして作って付ける。
      *   別名と同じ名前のタグが既にあるとき、同じ別名が既にあるときは取り込まない
      * - 外したタグの記録: 追加したブックマークの分だけ取り込む
+     * - 要約の履歴: 追加したブックマークの分だけ取り込む(既にあったブックマークには、この端末の履歴がある)
      * - スマートフォルダ: 名前(大文字小文字・全角半角を区別しない)が今の DB に無いものだけ追加する。条件のタグは名前で今の DB のタグを探す(無ければ作る)
      * - カテゴリ: 名前(大文字小文字・全角半角を区別しない)が今の DB に無いものだけ追加する(既にあるカテゴリの説明は変えない)。
      *   カテゴリを自分で選んだ印(categoryEdited)は、追加するブックマークにそのまま付く
@@ -437,6 +448,14 @@ abstract class BackupDao {
             reviewCardsAdded++
         }
 
+        // 要約の履歴: 読み込んで追加したブックマークにだけ付ける(既にあったブックマークには、その端末の履歴がある)
+        var summaryHistoryAdded = 0
+        for (entry in data.summaryHistory) {
+            val bookmarkId = bookmarkIds[entry.bookmarkId]?.takeIf { it in addedBookmarkIds } ?: continue
+            insertSummaryHistory(entry.copy(id = 0, bookmarkId = bookmarkId))
+            summaryHistoryAdded++
+        }
+
         // コレクション: 名前(大文字小文字・全角半角を区別しない)が同じコレクションが今の DB にあれば、そこへブックマークを足す
         // (説明は変えない)。無ければ作る。入れるブックマークは書き出し元の ID から付け替える(追加したものも、同じ URL で既にあったものも)
         val collectionIds = getAllCollections().associateTo(HashMap()) { CollectionNames.key(it.name) to it.id }
@@ -487,7 +506,8 @@ abstract class BackupDao {
             subscriptionsAdded = subscriptionsAdded,
             notesAdded = notesAdded,
             collectionsAdded = collectionsAdded,
-            reviewCardsAdded = reviewCardsAdded
+            reviewCardsAdded = reviewCardsAdded,
+            summaryHistoryAdded = summaryHistoryAdded
         )
     }
 
