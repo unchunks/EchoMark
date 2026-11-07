@@ -137,6 +137,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { it[KEY_LINK_CHECK_ENABLED] = enabled }
     }
 
+    override val offlineMode: Flow<Boolean> = data.map { it[KEY_OFFLINE_MODE] ?: false }.distinctUntilChanged()
+
+    override suspend fun setOfflineMode(enabled: Boolean) {
+        dataStore.edit { it[KEY_OFFLINE_MODE] = enabled }
+    }
+
     override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) {
         dataStore.edit { it[KEY_DUPLICATE_SENSITIVITY] = sensitivity.name }
     }
@@ -314,8 +320,11 @@ class AppSettingsRepositoryImpl @Inject constructor(
     override suspend fun resetToDefaults() {
         dataStore.edit { prefs ->
             val onboardingCompleted = prefs[KEY_ONBOARDING_COMPLETED]
+            val offlineMode = prefs[KEY_OFFLINE_MODE]
             prefs.clear()
             if (onboardingCompleted != null) prefs[KEY_ONBOARDING_COMPLETED] = onboardingCompleted
+            // 初期化をきっかけに通信を始めないよう、オンにしたオフラインモードは残す
+            if (offlineMode == true) prefs[KEY_OFFLINE_MODE] = true
         }
     }
 
@@ -345,6 +354,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_DUPLICATE_SENSITIVITY = stringPreferencesKey("duplicate_sensitivity")
         val KEY_LINK_CHECK_ENABLED = booleanPreferencesKey("link_check_enabled")
         val KEY_PLACES_MAP_BACKGROUND = booleanPreferencesKey("places_map_background")
+        val KEY_OFFLINE_MODE = booleanPreferencesKey("offline_mode")
         val KEY_DISMISSED_DUPLICATES = stringPreferencesKey("dismissed_duplicates")
         val KEY_BOOKMARK_LIST_DISPLAY = stringPreferencesKey("bookmark_list_display")
         val KEY_READING_FONT_SIZE = stringPreferencesKey("reading_font_size")

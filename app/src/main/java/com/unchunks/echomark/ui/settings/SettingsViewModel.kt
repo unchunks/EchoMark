@@ -13,6 +13,7 @@ import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupImportSummary
+import com.unchunks.echomark.data.network.OfflineModeController
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.DataOperationException
@@ -129,6 +130,8 @@ data class SettingsUiState(
     val crashLog: CrashLogSummary = CrashLogSummary(),
     /** クラウド AI の使用量(クラウド AI を使えない間は空) */
     val apiUsage: ApiUsagePeriods = ApiUsagePeriods(),
+    /** オフラインモード(オンの間、アプリは通信しない) */
+    val offlineMode: Boolean = false,
     val versionLabel: String = ""
 )
 
@@ -140,6 +143,7 @@ class SettingsViewModel @Inject constructor(
     private val dataRepository: DataManagementRepository,
     private val scheduleController: RediscoverScheduleController,
     private val processingScheduleController: ProcessingScheduleController,
+    private val offlineModeController: OfflineModeController,
     private val apiUsageRepository: ApiUsageRepository,
     private val crashLogs: CrashLogStore,
     private val dispatchers: DispatcherProvider
@@ -182,7 +186,7 @@ class SettingsViewModel @Inject constructor(
         )
     }
 
-    private val display = combine(appSettings.themeMode, appSettings.dynamicColor, ::Pair)
+    private val display = combine(appSettings.themeMode, appSettings.dynamicColor, appSettings.offlineMode, ::Triple)
 
     private val behavior = combine(appSettings.processingSettings, appSettings.summaryStyle, ::Pair)
 
@@ -192,7 +196,7 @@ class SettingsViewModel @Inject constructor(
         appSettings.rediscoverSettings,
         behavior,
         transient
-    ) { ai, (themeMode, dynamicColor), rediscover, (processing, summaryStyle), transient ->
+    ) { ai, (themeMode, dynamicColor, offlineMode), rediscover, (processing, summaryStyle), transient ->
         SettingsUiState(
             isLoaded = true,
             ai = ai,
@@ -205,6 +209,7 @@ class SettingsViewModel @Inject constructor(
             dataOperation = transient.operation,
             crashLog = transient.crashLog,
             apiUsage = transient.apiUsage,
+            offlineMode = offlineMode,
             versionLabel = VERSION_LABEL
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
@@ -244,6 +249,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicColor(enabled: Boolean) {
         viewModelScope.launch { appSettings.setDynamicColor(enabled) }
+    }
+
+    /** オフラインモードを切り替える(オンならすぐに通信を止め、オフなら待っていた処理を積み直す) */
+    fun setOfflineMode(enabled: Boolean) {
+        viewModelScope.launch { offlineModeController.setOfflineMode(enabled) }
     }
 
     /** 再発見通知のオン/オフ。オンなら現在の曜日・時刻でスケジュールし、オフなら取り消す。 */

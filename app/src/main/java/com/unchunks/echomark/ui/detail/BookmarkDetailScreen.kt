@@ -369,7 +369,8 @@ fun BookmarkDetailScreen(
             url = capturing.url,
             onCaptured = { snapshotViewModel.onCaptured(it.mhtml, it.pdf) },
             onFailed = snapshotViewModel::onFailed,
-            onCancel = snapshotViewModel::cancel
+            onCancel = snapshotViewModel::cancel,
+            isOffline = snapshotViewModel::isOffline
         )
     }
 

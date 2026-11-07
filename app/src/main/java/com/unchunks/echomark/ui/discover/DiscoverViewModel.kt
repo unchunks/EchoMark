@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.components.websearch.ResourceSource
 import com.unchunks.echomark.data.discover.DiscoveredResource
 import com.unchunks.echomark.data.discover.DiscoveryStep
+import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.data.discover.ResourceDiscovery
 import com.unchunks.echomark.domain.provider.toLlmUserMessage
 import com.unchunks.echomark.domain.repository.AiSetupRepository
@@ -61,7 +62,8 @@ data class DiscoverUiState(
 @HiltViewModel
 class DiscoverViewModel @Inject constructor(
     private val discovery: ResourceDiscovery,
-    aiSetupRepository: AiSetupRepository
+    aiSetupRepository: AiSetupRepository,
+    private val gate: NetworkGate
 ) : ViewModel() {
 
     private val state = MutableStateFlow(DiscoverUiState())
@@ -94,6 +96,11 @@ class DiscoverViewModel @Inject constructor(
         val current = state.value
         if (!current.canSearch) return
         val topic = current.topic.trim()
+        // オフラインモードの間は Web を検索しない(通信そのものは共通の OkHttpClient でも断る)
+        if (gate.isOffline()) {
+            state.update { it.copy(hasSearched = true, resources = emptyList(), errorMessage = OFFLINE_DISCOVER_MESSAGE) }
+            return
+        }
         searchJob = viewModelScope.launch {
             state.update {
                 it.copy(
@@ -186,3 +193,7 @@ class DiscoverViewModel @Inject constructor(
         const val AI_FAILED_PREFIX = "AI で資料を選べませんでした"
     }
 }
+
+/** オフラインモードの間に探そうとしたときの知らせ */
+internal const val OFFLINE_DISCOVER_MESSAGE =
+    "オフラインモードの間は Web で資料を探せません。設定の「オフラインモード」をオフにしてください。"

@@ -2,6 +2,7 @@ package com.unchunks.echomark.data.ai.model
 
 import android.content.Context
 import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.echomark.data.network.NetworkGate
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,20 +52,24 @@ class ModelCatalogDownloader internal constructor(
     private val installer: DownloadedModelInstaller,
     private val activeFile: File,
     private val usableBytes: () -> Long,
-    private val dispatcherProvider: DispatcherProvider
+    private val dispatcherProvider: DispatcherProvider,
+    /** オフラインモードがオンか([NetworkGate])。オンの間はダウンロードを始めない */
+    private val isOffline: () -> Boolean = { false }
 ) {
     @Inject
     constructor(
         @ApplicationContext context: Context,
         client: ModelDownloadClient,
         installer: DownloadedModelInstaller,
-        dispatcherProvider: DispatcherProvider
+        dispatcherProvider: DispatcherProvider,
+        gate: NetworkGate
     ) : this(
         client,
         installer,
         File(File(context.filesDir, "models"), ACTIVE_FILE_NAME),
         { context.filesDir.usableSpace },
-        dispatcherProvider
+        dispatcherProvider,
+        gate::isOffline
     )
 
     private val _state = MutableStateFlow<CatalogDownloadState>(CatalogDownloadState.Idle)
@@ -77,6 +82,10 @@ class ModelCatalogDownloader internal constructor(
     suspend fun start(entry: ModelCatalogEntry): Unit = withContext(dispatcherProvider.io) {
         mutex.withLock {
             if (readActive() != null) return@withLock
+            if (isOffline()) {
+                _state.value = CatalogDownloadState.Failed(entry, OFFLINE_MESSAGE)
+                return@withLock
+            }
             val required = entry.sizeBytes * 2 + ModelImportValidator.STORAGE_MARGIN_BYTES
             val usable = usableBytes()
             if (usable < required) {
@@ -99,6 +108,19 @@ class ModelCatalogDownloader internal constructor(
                 clearActive()
             }
             _state.value = CatalogDownloadState.Idle
+        }
+    }
+
+    /**
+     * オフラインモードにしたので、ダウンロード中ならやめる(途中のファイルも消す)。DownloadManager は端末の側で通信を
+     * 続けるため、アプリの通信を止めるだけでは止まらない。やめたことは失敗として画面に出す。
+     */
+    suspend fun cancelForOfflineMode(): Unit = withContext(dispatcherProvider.io) {
+        mutex.withLock {
+            val (id, entry) = readActive() ?: return@withLock
+            client.remove(id)
+            clearActive()
+            _state.value = CatalogDownloadState.Failed(entry, OFFLINE_MESSAGE)
         }
     }
 
@@ -178,5 +200,6 @@ class ModelCatalogDownloader internal constructor(
         const val ACTIVE_FILE_NAME = "catalog_download.json"
         const val DOWNLOAD_ID = "downloadId"
         const val ENTRY_ID = "entryId"
+        const val OFFLINE_MESSAGE = "オフラインモードの間はダウンロードできません。設定の「オフラインモード」をオフにしてから、もう一度ダウンロードしてください"
     }
 }

@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import androidx.core.content.getSystemService
+import com.unchunks.echomark.data.network.NetworkGate
+import com.unchunks.echomark.data.network.ensureOnline
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -39,12 +41,19 @@ interface ModelDownloadClient {
 
 /** Android の DownloadManager を使う。アプリを閉じてもダウンロードは続き、通知で進み具合が分かる。 */
 class AndroidModelDownloadClient @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val gate: NetworkGate
 ) : ModelDownloadClient {
 
     private val manager: DownloadManager get() = requireNotNull(context.getSystemService())
 
-    override fun enqueue(url: String, title: String, fileName: String): Long = manager.enqueue(
+    // DownloadManager は OkHttp を通らないため、頼む前にオフラインモードを確かめる
+    override fun enqueue(url: String, title: String, fileName: String): Long {
+        gate.ensureOnline("model download")
+        return enqueueRequest(url, title, fileName)
+    }
+
+    private fun enqueueRequest(url: String, title: String, fileName: String): Long = manager.enqueue(
         DownloadManager.Request(Uri.parse(url))
             .setTitle(title)
             .setAllowedOverMetered(false)

@@ -254,6 +254,15 @@
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-car.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
+
+        <!--
+            ML Kit(文字認識・ラベル付け)は、Google Data Transport でアプリの中から利用状況を Google に送る。
+            OkHttp を通らずオフラインモードで止められないため、送信先(CCT)の登録を外して常に送らないようにする
+            (文字認識・ラベル付けの機能は送信と関係なく動く。docs/offline-mode.md)
+        -->
+        <service
+            android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery"
+            tools:node="remove" />
     </application>
 
 </manifest>

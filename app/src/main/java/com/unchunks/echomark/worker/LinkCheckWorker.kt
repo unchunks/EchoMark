@@ -12,6 +12,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.unchunks.echomark.data.linkcheck.LinkChecker
+import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import dagger.Lazy
@@ -30,10 +31,13 @@ import javax.inject.Inject
 class LinkCheckWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val checker: LinkChecker
+    private val checker: LinkChecker,
+    private val gate: NetworkGate
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // オフラインモードの間は確かめない(今夜の分は次の夜に回る)。途中でオンにされたら、LinkChecker が記録せずにやめる
+        if (gate.isOffline()) return Result.success()
         val summary = checker.checkDue()
         Timber.i(
             "リンクを確認: %d 件を確認、%d 件が開けず、%d 件が新しく切れた%s",
@@ -77,6 +81,8 @@ class LinkCheckNightlyTask @Inject constructor(
 
     override suspend fun run() {
         if (!appSettings.linkCheckEnabled.first()) return
+        // オフラインモードの間は積まない(通信の条件を満たしたときに確かめに行ってしまう)
+        if (appSettings.offlineMode.first()) return
         if (checker.get().countDue() == 0) return
         val settings = appSettings.processingSettings.first()
         workManager.enqueueUniqueWork(LinkCheckWorker.WORK_NAME, ExistingWorkPolicy.KEEP, LinkCheckWorker.requestFor(settings))

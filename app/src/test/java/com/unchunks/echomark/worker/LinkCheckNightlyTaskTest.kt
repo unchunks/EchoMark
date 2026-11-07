@@ -81,6 +81,16 @@ class LinkCheckNightlyTaskTest {
     }
 
     @Test
+    fun オフラインモードの間は何も積まない() = runBlocking {
+        save()
+        settings.offlineModeFlow.value = true
+
+        task.run()
+
+        assertTrue(works().isEmpty())
+    }
+
+    @Test
     fun 今夜確認するものが無ければ何も積まない() = runBlocking {
         val id = save()
         // たった今確認したばかり(14日は確認しない)

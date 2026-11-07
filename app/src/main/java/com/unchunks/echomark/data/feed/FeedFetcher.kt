@@ -5,6 +5,7 @@ import com.unchunks.components.web.PublicAddressInterceptor
 import com.unchunks.components.web.PublicOnlyDns
 import com.unchunks.components.web.isAllowedRedirect
 import com.unchunks.components.web.isPublicAddress
+import com.unchunks.echomark.data.network.OfflineModeException
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -77,6 +78,8 @@ class FeedFetcher internal constructor(
                 throw e
             } catch (e: IllegalArgumentException) {
                 throw FeedFetchException("URL の形式が正しくありません", e)
+            } catch (e: OfflineModeException) {
+                throw FeedFetchException("オフラインモードのため取得しませんでした。設定の「オフラインモード」をオフにしてください", e)
             } catch (e: IOException) {
                 throw FeedFetchException("取得できませんでした(通信できないか、サイトが応答しません)", e)
             }

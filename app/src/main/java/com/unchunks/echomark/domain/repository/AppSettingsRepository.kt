@@ -172,6 +172,14 @@ interface AppSettingsRepository {
     /** 読書モードの見た目(文字の大きさ・背景・書体)。 */
     val readingStyle: Flow<ReadingStyle>
 
+    /**
+     * オフラインモード。オンの間、アプリは一切ネットワークに接続しない(通信してよいかは
+     * [com.unchunks.echomark.data.network.NetworkGate] の1か所で決める)。通信の要る処理(本文の取得など)は
+     * 処理待ちのまま残し、オフにしたら積み直す。既定はオフ。
+     * 「全データを削除」で設定を初期化しても、オンのままにする(初期化をきっかけに通信を始めないように)。
+     */
+    val offlineMode: Flow<Boolean>
+
     suspend fun setLlmBackend(task: AiTask, backend: LlmBackend)
     suspend fun setApiProvider(task: AiTask, provider: ApiProvider)
 
@@ -194,6 +202,12 @@ interface AppSettingsRepository {
     suspend fun setLinkCheckEnabled(enabled: Boolean)
     suspend fun setPlacesMapBackground(enabled: Boolean)
 
+    /**
+     * オフラインモードを保存する。画面からは [com.unchunks.echomark.data.network.OfflineModeController] を通して切り替える
+     * (待っている処理の積み直し・ダウンロードの取り消しも行う)。
+     */
+    suspend fun setOfflineMode(enabled: Boolean)
+
     /** [transform] で「両方残す」と答えた重複の組を書き換える */
     suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>)
 
@@ -213,7 +227,8 @@ interface AppSettingsRepository {
 
     /**
      * 設定を既定値に戻す(全データ削除で「設定も初期化」を選んだとき)。
-     * オンボーディング済みの記録だけは残す(削除直後に案内が再表示されないように)。
+     * オンボーディング済みの記録は残す(削除直後に案内が再表示されないように)。
+     * オンにしたオフラインモードも残す(初期化をきっかけに通信を始めないように)。
      */
     suspend fun resetToDefaults()
 }
