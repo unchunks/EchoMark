@@ -13,8 +13,12 @@ import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.domain.subscription.MAX_SUBSCRIPTIONS
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.SubscriptionType
+import com.unchunks.echomark.domain.importer.ImportResult
+import com.unchunks.echomark.domain.importer.ImportedLink
+import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
@@ -27,6 +31,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.Executors
 
 /** 購読の追加(フィードの探し方)・オン/オフ・削除・いま確認する。本物の DB とローカルのサーバーで確かめる。 */
 @RunWith(AndroidJUnit4::class)
@@ -216,5 +221,42 @@ class SubscriptionRepositoryImplTest {
         assertEquals(1, summary.checked)
         assertEquals(1, summary.added)
         assertEquals(on, dao.getEnabled().single().id)
+    }
+
+    @Test
+    fun いま確認するは呼び出し元のスレッドではなく背景で動く() = runBlocking {
+        server.enqueue(feedResponse())
+        val id = (repository.subscribe(server.url("/feed.xml").toString()) as SubscribeOutcome.Added).id
+        server.enqueue(feedResponse())
+        var importThread: String? = null
+        // フィードを読んだあとの保存がどのスレッドで動いたか(読むのも同じスレッド)
+        val recording = object : BookmarkRepository by bookmarks {
+            override suspend fun importLinks(
+                links: List<ImportedLink>,
+                folderAsTag: Boolean,
+                onProgress: (done: Int, total: Int) -> Unit
+            ): ImportResult {
+                // コルーチンのデバッグでは名前の後ろに「 @coroutine#1」が付く
+                importThread = Thread.currentThread().name.substringBefore(" @")
+                return bookmarks.importLinks(links, folderAsTag, onProgress)
+            }
+        }
+        val background = Executors.newSingleThreadExecutor { Thread(it, BACKGROUND_THREAD) }.asCoroutineDispatcher()
+        try {
+            val provider = TestDispatcherProvider(background)
+            val fetcher = FeedFetcher(OkHttpClient(), provider) { true }
+            val onBackground = SubscriptionRepositoryImpl(dao, fetcher, FeedChecker(dao, fetcher) { recording }, provider)
+
+            // 画面からは viewModelScope(メインスレッド)で呼ばれる。ここでは呼び出し元のテストのスレッドがその代わり
+            onBackground.checkNow(id)
+        } finally {
+            background.close()
+        }
+
+        assertEquals(BACKGROUND_THREAD, importThread)
+    }
+
+    private companion object {
+        const val BACKGROUND_THREAD = "feed-check-background"
     }
 }

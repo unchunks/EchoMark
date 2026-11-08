@@ -1,5 +1,7 @@
 package com.unchunks.echomark.data.feed
 
+import androidx.tracing.trace
+import androidx.tracing.traceAsync
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.network.isOfflineModeBlock
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
@@ -14,6 +16,7 @@ import dagger.Lazy
 import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
 /**
@@ -53,7 +56,11 @@ class FeedChecker @Inject constructor(
         val plan: Plan
     )
 
-    private suspend fun check(subscriptions: List<SubscriptionEntity>, maxNew: Int, manual: Boolean, now: Long): FeedCheckSummary {
+    private suspend fun check(subscriptions: List<SubscriptionEntity>, maxNew: Int, manual: Boolean, now: Long): FeedCheckSummary =
+        // Perfetto で確認全体の長さを見られるように(端末で重さを調べるとき)
+        traceAsync(TRACE_CHECK, nextTraceCookie()) { checkTraced(subscriptions, maxNew, manual, now) }
+
+    private suspend fun checkTraced(subscriptions: List<SubscriptionEntity>, maxNew: Int, manual: Boolean, now: Long): FeedCheckSummary {
         // 長く確認していないものを先に(上限で打ち切っても、同じフィードばかり確認して残りが後回しにならない)
         val ordered = subscriptions.sortedWith(compareBy({ it.lastCheckedAt ?: Long.MIN_VALUE }, { it.id }))
         var remaining = maxNew
@@ -69,7 +76,9 @@ class FeedChecker @Inject constructor(
                 when (val response = fetcher.fetch(subscription.feedUrl, subscription.etag, subscription.lastModified)) {
                     FeedResponse.NotModified -> subscriptionDao.recordNotModified(subscription.id, now)
                     is FeedResponse.Body -> {
-                        val parsed = FeedParser.parse(response.body.bytes, response.body.charsetName, response.body.finalUrl)
+                        val parsed = trace(TRACE_PARSE) {
+                            FeedParser.parse(response.body.bytes, response.body.charsetName, response.body.finalUrl)
+                        }
                         if (parsed == null) {
                             failed++
                             subscriptionDao.recordFailure(subscription.id, now, NOT_A_FEED_MESSAGE)
@@ -157,6 +166,11 @@ class FeedChecker @Inject constructor(
 
         /** 見た記事の目印として覚える最大数(1つのフィードから読む最大数より十分多くする) */
         const val MAX_SEEN_KEYS = 500
+
+        private const val TRACE_CHECK = "FeedChecker.check"
+        private const val TRACE_PARSE = "FeedParser.parse"
+        private val traceCookies = AtomicInteger()
+        private fun nextTraceCookie(): Int = traceCookies.incrementAndGet()
 
         private const val NOT_A_FEED_MESSAGE = "フィードとして読めませんでした(RSS・Atom ではありません)"
         private const val MAX_TAG_CHARS = 40
