@@ -11,14 +11,16 @@ import com.unchunks.echomark.domain.model.ConversationPreview
 fun ConversationEntity.toDomain() = Conversation(
     id = id, title = title, isTitleManuallySet = isTitleManuallySet,
     summary = summary, createdAt = createdAt, updatedAt = updatedAt, aboutBookmarkId = aboutBookmarkId,
-    summaryCoveredUntil = summaryCoveredUntil, isPinned = isPinned, branchedFromId = branchedFromId, branchedAt = branchedAt
+    summaryCoveredUntil = summaryCoveredUntil, isPinned = isPinned, branchedFromId = branchedFromId, branchedAt = branchedAt,
+    webSearchEnabled = webSearchEnabled
 )
 
 fun ChatMessageEntity.toDomain() = ChatMessage(
     id = id, conversationId = conversationId, role = role, content = content,
     referencedBookmarkIds = referencedBookmarkIds
         ?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList(),
-    createdAt = createdAt
+    createdAt = createdAt,
+    webSources = WebSourcesJson.decode(webSources)
 )
 
 fun ConversationWithLastMessage.toDomain() = ConversationPreview(
@@ -32,11 +34,13 @@ fun ConversationWithLastMessage.toDomain() = ConversationPreview(
 fun Conversation.toEntity() = ConversationEntity(
     id = id, title = title, isTitleManuallySet = isTitleManuallySet,
     summary = summary, createdAt = createdAt, updatedAt = updatedAt, aboutBookmarkId = aboutBookmarkId,
-    summaryCoveredUntil = summaryCoveredUntil, isPinned = isPinned, branchedFromId = branchedFromId, branchedAt = branchedAt
+    summaryCoveredUntil = summaryCoveredUntil, isPinned = isPinned, branchedFromId = branchedFromId, branchedAt = branchedAt,
+    webSearchEnabled = webSearchEnabled
 )
 
 fun ChatMessage.toEntity() = ChatMessageEntity(
     id = id, conversationId = conversationId, role = role, content = content,
     referencedBookmarkIds = referencedBookmarkIds.takeIf { it.isNotEmpty() }?.joinToString(","),
-    createdAt = createdAt
+    createdAt = createdAt,
+    webSources = WebSourcesJson.encode(webSources)
 )

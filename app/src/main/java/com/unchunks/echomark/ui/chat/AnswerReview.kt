@@ -4,6 +4,7 @@ import com.unchunks.components.composeui.ChatMarkdown
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.EvidenceFinder
 import com.unchunks.echomark.domain.bookmark.model.SentenceEvidence
+import com.unchunks.echomark.domain.websearch.WebSource
 
 /** 回答の1文を、引用した資料と照らし合わせた結果。 */
 enum class ClaimStatus {
@@ -40,17 +41,29 @@ data class AnswerClaim(
 data class CitedSource(val number: Int, val bookmarkId: Long, val quote: String?)
 
 /**
+ * 回答が引用した Web のページ。
+ * @property quote 回答の文の根拠になった一節(ページの抜粋の中)。見つからなければ null
+ */
+data class CitedWebSource(val source: WebSource, val quote: String?) {
+    val number: Int get() = source.number
+}
+
+/**
  * 回答と資料の照らし合わせの結果。
  * @property sources 回答が引用した資料(回答に出てきた順)
  * @property uncitedNumbers 文脈に入れたが回答が引用しなかった資料の番号
  * @property claims 引用番号の付いた文(回答の順)
  * @property unknownNumbers 回答に出てくるが、対応する資料が無い番号
+ * @property webSources 回答が引用した Web のページ(回答に出てきた順)
+ * @property uncitedWeb 文脈に入れたが回答が引用しなかった Web のページ
  */
 data class AnswerReview(
     val sources: List<CitedSource> = emptyList(),
     val uncitedNumbers: List<Int> = emptyList(),
     val claims: List<AnswerClaim> = emptyList(),
-    val unknownNumbers: List<Int> = emptyList()
+    val unknownNumbers: List<Int> = emptyList(),
+    val webSources: List<CitedWebSource> = emptyList(),
+    val uncitedWeb: List<WebSource> = emptyList()
 ) {
     /** 確かめてほしい文 */
     val flagged: List<AnswerClaim>
@@ -79,12 +92,19 @@ object AnswerReviewer {
     /**
      * @param referencedIds 回答の文脈に入れた資料の ID(n 番目が引用番号 n)
      * @param bookmarks 資料の bookmarkId -> ブックマーク。削除済みは含まれない
+     * @param webSources 回答の文脈に入れた Web のページ(番号は資料の続き)。抜粋と照らし合わせる
      */
-    fun review(answer: String, referencedIds: List<Long>, bookmarks: Map<Long, Bookmark>): AnswerReview {
+    fun review(
+        answer: String,
+        referencedIds: List<Long>,
+        bookmarks: Map<Long, Bookmark>,
+        webSources: List<WebSource> = emptyList()
+    ): AnswerReview {
         val sentences = citingSentences(answer)
         val cited = sentences.flatMap { it.numbers }.distinct()
         val numbers = 1..referencedIds.size
-        val evidence = evidenceBySource(sentences, referencedIds, bookmarks)
+        val webByNumber = webSources.associateBy { it.number }
+        val evidence = evidenceBySource(sentences, referencedIds, bookmarks) + webEvidence(sentences, webSources)
         val claims = sentences.map { claimOf(it, evidence) }
         return AnswerReview(
             sources = cited.filter { it in numbers && referencedIds[it - 1] in bookmarks }.map { number ->
@@ -98,8 +118,31 @@ object AnswerReviewer {
             uncitedNumbers = numbers.filter { it !in cited && referencedIds[it - 1] in bookmarks },
             claims = claims,
             // 資料の次の番号は、その質問に添付したファイルのことがある(添付は保存しないため確かめられない)
-            unknownNumbers = cited.filter { it !in 1..referencedIds.size + 1 }
+            unknownNumbers = cited.filter { it !in 1..referencedIds.size + 1 && it !in webByNumber },
+            webSources = cited.mapNotNull { number ->
+                val source = webByNumber[number] ?: return@mapNotNull null
+                CitedWebSource(source, bestQuote(number, sentences, evidence))
+            },
+            uncitedWeb = webSources.filter { it.number !in cited }
         )
+    }
+
+    /** 資料 [number] を引用した文の根拠のうち、いちばん近い一節 */
+    private fun bestQuote(number: Int, sentences: List<CitingSentence>, evidence: Map<Int, Map<String, SentenceEvidence>>): String? =
+        sentences.filter { number in it.numbers }
+            .mapNotNull { evidence[number]?.get(it.key) }
+            .filter { it.isSupported }
+            .maxByOrNull { it.support }
+            ?.quote
+
+    /** Web のページの番号 -> (文の比べる形 -> 根拠)。抜粋の無い(ページを読めなかった)ものは照らし合わせない */
+    private fun webEvidence(sentences: List<CitingSentence>, webSources: List<WebSource>): Map<Int, Map<String, SentenceEvidence>> {
+        if (sentences.isEmpty()) return emptyMap()
+        val claims = sentences.joinToString("\n") { it.text }
+        return webSources.filter { it.excerpt.isNotBlank() }.mapNotNull { source ->
+            val report = EvidenceFinder.find(claims, source.excerpt)
+            if (report.comparable) source.number to report.items.associateBy { EvidenceFinder.matchKey(it.sentence) } else null
+        }.toMap()
     }
 
     /** 引用番号の付いた文(回答の順)。文の後ろ(句点の後)に付いた番号も、その文の番号にする。 */

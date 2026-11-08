@@ -10,6 +10,9 @@ package com.unchunks.echomark.domain.chat
  * @property passageChars 「関連する部分」の文字数
  * @property pinnedChars 質問の対象として固定した資料の文字数
  * @property attachmentChars 添付の本文の文字数
+ * @property webSources Web 検索をオンにした質問で入れる、Web のページの数
+ * @property webChars Web のページ1件の抜粋の文字数
+ * @property maxSourcesWithWeb Web 検索をオンにした質問で入れる資料(ブックマーク)の数(残りは Web のページに使う)
  */
 data class ChatContextLimits(
     val historyMessages: Int,
@@ -19,10 +22,17 @@ data class ChatContextLimits(
     val passageItems: Int,
     val passageChars: Int,
     val pinnedChars: Int,
-    val attachmentChars: Int
+    val attachmentChars: Int,
+    val webSources: Int,
+    val webChars: Int,
+    val maxSourcesWithWeb: Int
 ) {
     companion object {
-        /** 端末内 AI。プロンプト全体の予算(LocalChatPrompt)に収まる量 */
+        /**
+         * 端末内 AI。プロンプト全体の予算(LocalChatPrompt)に収まる量。
+         * Web 検索をオンにしたときは、資料を減らして Web のページ2件(抜粋は短め)を入れる
+         * (LocalChatPrompt が入れる文脈は5件まで・プロンプト全体で 1,800 文字ほど)
+         */
         val COMPACT = ChatContextLimits(
             historyMessages = RagSupport.HISTORY_LIMIT,
             maxSources = RagSupport.SEARCH_LIMIT,
@@ -31,7 +41,10 @@ data class ChatContextLimits(
             passageItems = 3,
             passageChars = RagSupport.PASSAGE_CHARS,
             pinnedChars = 1_200,
-            attachmentChars = 800
+            attachmentChars = 800,
+            webSources = 2,
+            webChars = 280,
+            maxSourcesWithWeb = 3
         )
 
         /** クラウド API に渡す会話履歴の発言の数の上限 */
@@ -53,7 +66,10 @@ data class ChatContextLimits(
             passageItems = 8,
             passageChars = 800,
             pinnedChars = 6_000,
-            attachmentChars = 3_000
+            attachmentChars = 3_000,
+            webSources = 5,
+            webChars = 1_500,
+            maxSourcesWithWeb = 6
         )
     }
 }

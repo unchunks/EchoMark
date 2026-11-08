@@ -36,6 +36,19 @@ class ApiKeyRepositoryImpl @Inject constructor(
 
     override suspend fun clearKey(provider: ApiProvider) = store.clear(nameOf(provider))
 
+    override val webSearchKeyConfigured: Flow<Boolean> = store.storedNames.map { WEB_SEARCH_KEY_NAME in it }
+
+    override suspend fun getWebSearchKey(): String? = store.get(WEB_SEARCH_KEY_NAME)
+
+    override suspend fun setWebSearchKey(apiKey: String) = store.set(WEB_SEARCH_KEY_NAME, apiKey)
+
+    override suspend fun clearWebSearchKey() = store.clear(WEB_SEARCH_KEY_NAME)
+
     /** 保存するときの名前(以前の版と同じ。変えると保存済みのキーを読めなくなる) */
     private fun nameOf(provider: ApiProvider) = "api_key_${provider.name.lowercase()}"
+
+    private companion object {
+        /** Web 検索(Brave Search API)のキーを保存するときの名前。変えると保存済みのキーを読めなくなる */
+        const val WEB_SEARCH_KEY_NAME = "web_search_key_brave"
+    }
 }

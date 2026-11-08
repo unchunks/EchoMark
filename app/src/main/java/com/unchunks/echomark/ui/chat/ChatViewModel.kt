@@ -30,6 +30,9 @@ import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.repository.ChatModelRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
+import com.unchunks.echomark.domain.repository.SaveResult
+import com.unchunks.echomark.domain.websearch.WebSearchStatus
+import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -67,7 +70,8 @@ class ChatViewModel @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val appSettings: AppSettingsRepository,
     private val voiceInput: ChatVoiceInput,
-    private val speechOutput: ChatSpeechOutput
+    private val speechOutput: ChatSpeechOutput,
+    webSearchStatus: WebSearchStatus
 ) : ViewModel() {
 
     // 既存会話は "chat/{conversationId}" の引数で渡る。"chat/new" では未設定(null)で、
@@ -85,6 +89,9 @@ class ChatViewModel @Inject constructor(
     private val streamingTextFlow = MutableStateFlow<String?>(null)
     private val pendingReferenceCountFlow = MutableStateFlow<Int?>(null)
     private val errorFlow = MutableStateFlow<ChatError?>(null)
+
+    /** Web を検索している間の進み具合(検索中か・文脈に入れたページの数) */
+    private val webProgressFlow = MutableStateFlow(WebProgress())
 
     /** 次の質問に添付するファイルの内容(添付していなければ null)。送信すると外れる。 */
     private val attachmentFlow = MutableStateFlow<ChatAttachmentContext?>(null)
@@ -121,6 +128,30 @@ class ChatViewModel @Inject constructor(
     private val conversationFlow: Flow<Conversation?> = conversationIdFlow.flatMapLatest { id ->
         if (id == null) flowOf(null) else repository.observeConversation(id)
     }
+
+    /** まだ作っていない会話(新しいチャット)の Web 検索のオン・オフ。最初の送信で会話に保存する */
+    private val newConversationWebSearchFlow = MutableStateFlow(false)
+
+    /** この会話で Web を検索するか(会話に保存したもの。新しいチャットでは [newConversationWebSearchFlow]) */
+    private val webSearchEnabledFlow: Flow<Boolean> =
+        combine(conversationIdFlow, conversationFlow, newConversationWebSearchFlow) { id, conversation, newValue ->
+            if (id == null) newValue else conversation?.webSearchEnabled == true
+        }.distinctUntilChanged()
+
+    private val webNoticeFlow = MutableStateFlow<String?>(null)
+    private val webKeyPromptFlow = MutableStateFlow(false)
+    private val savedWebUrlsFlow = MutableStateFlow<Set<String>>(emptySet())
+
+    private val webSearchState: Flow<ChatWebSearchState> = combine(
+        webSearchEnabledFlow,
+        webSearchStatus.availability,
+        webNoticeFlow,
+        webKeyPromptFlow,
+        savedWebUrlsFlow
+    ) { enabled, availability, notice, prompt, saved -> ChatWebSearchState(enabled, availability, notice, prompt, saved) }
+
+    /** 送信のときに読む、Web を検索できるか */
+    private val webAvailability = webSearchStatus.availability
 
     /**
      * 質問の対象のブックマーク ID。新しく始めるときはナビゲーション引数、
@@ -169,8 +200,9 @@ class ChatViewModel @Inject constructor(
         isSendingFlow,
         streamingTextFlow,
         pendingReferenceCountFlow,
-        errorFlow
-    ) { sending, streaming, pendingCount, error -> SendingState(sending, streaming, pendingCount, error) }
+        errorFlow,
+        webProgressFlow
+    ) { sending, streaming, pendingCount, error, web -> SendingState(sending, streaming, pendingCount, error, web) }
         .combine(combine(voiceStateFlow, voiceErrorFlow, speechOutput.speakingMessageId, ::VoiceUiState)) { sending, voice -> sending to voice }
 
     private val contextState = combine(
@@ -241,8 +273,8 @@ class ChatViewModel @Inject constructor(
         sendingState,
         contextState,
         composerState,
-        answerReviewsFlow
-    ) { messagesAndRefs, sending, context, composer, reviews ->
+        combine(answerReviewsFlow, webSearchState, ::Pair)
+    ) { messagesAndRefs, sending, context, composer, (reviews, webSearch) ->
         val attachment = composer.attachment
         val (sendingValues, voice) = sending
         val messages = messagesAndRefs?.first.orEmpty()
@@ -270,6 +302,9 @@ class ChatViewModel @Inject constructor(
             isSending = sendingValues.isSending,
             streamingText = sendingValues.streamingText,
             pendingReferenceCount = sendingValues.pendingReferenceCount,
+            isSearchingWeb = sendingValues.web.searching,
+            pendingWebSourceCount = sendingValues.web.count,
+            webSearch = webSearch,
             error = sendingValues.error,
             voiceState = voice.state,
             voiceError = voice.error,
@@ -373,7 +408,7 @@ class ChatViewModel @Inject constructor(
             answerReviewsFlow.value = messages.filter { it.role == ChatRole.ASSISTANT }.associate { message ->
                 val ids = message.referencedBookmarkIds
                 val key = ReviewKey(message.id, ids.filter { it in bookmarks })
-                message.id to reviewCache.getOrPut(key) { AnswerReviewer.review(message.content, ids, bookmarks) }
+                message.id to reviewCache.getOrPut(key) { AnswerReviewer.review(message.content, ids, bookmarks, message.webSources) }
             }
         }
     }
@@ -414,9 +449,54 @@ class ChatViewModel @Inject constructor(
     fun saveAsNote(message: ChatMessage, onSaved: (Long) -> Unit) {
         val state = uiState.value
         val question = state.messages.takeWhile { it.id != message.id }.lastOrNull { it.role == ChatRole.USER }?.content
-        val sources = state.answerReviews[message.id]?.sources.orEmpty().mapNotNull { state.referencedBookmarks[it.bookmarkId] }
-        val note = ChatNotes.from(question, message, sources)
+        val review = state.answerReviews[message.id]
+        val sources = review?.sources.orEmpty().mapNotNull { state.referencedBookmarks[it.bookmarkId] }
+        val note = ChatNotes.from(question, message, sources, review?.webSources.orEmpty().map { it.source })
         viewModelScope.launch { onSaved(repository.saveNote(note.title, note.content)) }
+    }
+
+    /**
+     * この会話の Web 検索をオン・オフする。キーが無ければ設定への案内を出し、オフラインモードならその理由を出す(どちらもオンにしない)。
+     * 新しいチャットでは、最初の送信で会話に保存する。
+     */
+    fun setWebSearchEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled) {
+                val availability = webAvailability.first()
+                if (!availability.keyConfigured) {
+                    webKeyPromptFlow.value = true
+                    return@launch
+                }
+                if (availability.offline) {
+                    webNoticeFlow.value = WEB_OFFLINE_NOTICE
+                    return@launch
+                }
+            }
+            webNoticeFlow.value = null
+            val id = conversationIdFlow.value
+            if (id == null) newConversationWebSearchFlow.value = enabled else repository.setWebSearchEnabled(id, enabled)
+        }
+    }
+
+    /** キーが無いときの案内を閉じる。 */
+    fun dismissWebSearchKeyPrompt() {
+        webKeyPromptFlow.value = false
+    }
+
+    /** 回答の根拠にした Web のページをブックマークに保存する。結果を [onSaved] に渡す。 */
+    fun saveWebSource(source: WebSource, onSaved: (SaveResult) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val result = repository.saveWebSource(source)
+                savedWebUrlsFlow.value = savedWebUrlsFlow.value + source.url
+                onSaved(result)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Web のページを保存できなかった")
+                webNoticeFlow.value = "ページを保存できませんでした"
+            }
+        }
     }
 
     /** 入力中の [text] を自分のテンプレートに保存する。 */
@@ -475,7 +555,9 @@ class ChatViewModel @Inject constructor(
         isSendingFlow.value = true
         errorFlow.value = null
         voiceErrorFlow.value = null
+        webNoticeFlow.value = null
         pendingReferenceCountFlow.value = null
+        webProgressFlow.value = WebProgress()
         stopRequested = false
         // 声で聞いた質問だけを読み上げる。送り直しや手入力の質問は読み上げない
         val speakAnswer = speakNextAnswer
@@ -486,17 +568,25 @@ class ChatViewModel @Inject constructor(
                 // ブックマークについての質問なら、そのブックマーク名を既定のタイトルにし、対象を会話に保存する。
                 // 対象が削除済みなら通常の会話として扱う
                 val about = resolveAboutBookmark()
+                // Web 検索は、オンにしていて、キーがあるときだけ(オフラインモードは送信の側で断り、その理由を出す)
+                val webSearch = webSearchEnabledFlow.first() && webAvailability.first().keyConfigured
                 val id = conversationIdFlow.value
                     ?: repository.createConversation(
                         title = about?.let { RagSupport.aboutBookmarkTitle(it.title) },
-                        aboutBookmarkId = about?.id
+                        aboutBookmarkId = about?.id,
+                        webSearchEnabled = newConversationWebSearchFlow.value
                     ).also { savedStateHandle[ARG_CONVERSATION_ID] = it }
                 streamingTextFlow.value = ""
-                repository.sendMessageStream(id, text, about?.id, isRetry, attachment, scopeFlow.value.takeIf { it != ChatScopeChoices.ALL })
-                    .collect { event ->
+                repository.sendMessageStream(
+                    id, text, about?.id, isRetry, attachment, scopeFlow.value.takeIf { it != ChatScopeChoices.ALL }, webSearch
+                ).collect { event ->
                     when (event) {
-                        is ChatStreamEvent.Started ->
+                        ChatStreamEvent.SearchingWeb -> webProgressFlow.value = WebProgress(searching = true)
+                        is ChatStreamEvent.WebSearchSkipped -> webNoticeFlow.value = event.reason
+                        is ChatStreamEvent.Started -> {
                             pendingReferenceCountFlow.value = event.referencedBookmarkIds.size
+                            webProgressFlow.value = WebProgress(count = event.webSourceCount.takeIf { webSearch })
+                        }
                         is ChatStreamEvent.Delta -> streamingTextFlow.value = event.textSoFar
                         is ChatStreamEvent.Completed -> {
                             val answer = streamingTextFlow.value
@@ -521,6 +611,7 @@ class ChatViewModel @Inject constructor(
             } finally {
                 streamingTextFlow.value = null
                 pendingReferenceCountFlow.value = null
+                webProgressFlow.value = WebProgress()
                 isSendingFlow.value = false
             }
         }
@@ -600,8 +691,12 @@ class ChatViewModel @Inject constructor(
         val isSending: Boolean,
         val streamingText: String?,
         val pendingReferenceCount: Int?,
-        val error: ChatError?
+        val error: ChatError?,
+        val web: WebProgress
     )
+
+    /** Web 検索の進み具合。[count] は文脈に入れたページの数(決まるまで・検索しないときは null) */
+    private data class WebProgress(val searching: Boolean = false, val count: Int? = null)
 
     private class AttachmentState(
         val name: String?,
@@ -634,6 +729,8 @@ class ChatViewModel @Inject constructor(
         private const val SEND_FAILED_PREFIX = "送信に失敗しました"
 
         private const val STOPPED_BEFORE_ANSWER_MESSAGE = "回答が始まる前に止めました"
+
+        private const val WEB_OFFLINE_NOTICE = "オフラインモードの間は Web を検索できません"
 
         /** 質問の例を作るときに見る、最近のブックマークの件数。 */
         private const val SUGGESTION_SOURCE_LIMIT = 50

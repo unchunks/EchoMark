@@ -64,6 +64,11 @@ import kotlinx.coroutines.flow.map
 /** AI 設定画面の操作。既定は何もしない(スクリーンショット用)。 */
 class AiSettingsActions(
     val onBack: () -> Unit = {},
+    /** Web 検索(Brave Search API)のキーを保存する */
+    val onSaveWebSearchKey: (String) -> Unit = {},
+    val onClearWebSearchKey: () -> Unit = {},
+    /** 入力中のキー(空なら保存したキー)で検索できるか試す */
+    val onTestWebSearchKey: (String) -> Unit = {},
     val onSelectBackend: (AiTask, LlmBackend) -> Unit = { _, _ -> },
     /** モデルファイルを選ぶ(ファイル選択画面は呼び出し側で開く) */
     val onPickModel: () -> Unit = {},
@@ -102,9 +107,11 @@ class AiSettingsActions(
 @Composable
 fun AiSettingsScreen(
     onBack: () -> Unit,
-    viewModel: AiSettingsViewModel = hiltViewModel()
+    viewModel: AiSettingsViewModel = hiltViewModel(),
+    webSearchViewModel: WebSearchSettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val webSearch by webSearchViewModel.uiState.collectAsState()
     val connectionTest by viewModel.connectionTest.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -140,8 +147,12 @@ fun AiSettingsScreen(
         uiState = uiState,
         connectionTest = connectionTest,
         snackbarHostState = snackbarHostState,
+        webSearch = webSearch,
         actions = AiSettingsActions(
             onBack = onBack,
+            onSaveWebSearchKey = webSearchViewModel::saveKey,
+            onClearWebSearchKey = webSearchViewModel::clearKey,
+            onTestWebSearchKey = webSearchViewModel::testKey,
             onSelectBackend = viewModel::setBackend,
             onPickModel = { picker.launch(arrayOf("*/*")) },
             onCancelImport = viewModel::cancelImport,
@@ -178,7 +189,8 @@ fun AiSettingsContent(
     connectionTest: ConnectionTestState,
     actions: AiSettingsActions,
     modifier: Modifier = Modifier,
-    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    webSearch: WebSearchSettingsUiState = WebSearchSettingsUiState()
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
@@ -286,6 +298,16 @@ fun AiSettingsContent(
                 onRevert = actions.onRevertEmbeddingModel
             )
             uiState.embeddingProgress?.takeIf { !it.isComplete }?.let { EmbeddingIndexProgress(it) }
+
+            // クラウド AI とは別に、端末内 AI でも使えるため、いつも出す
+            SectionDivider()
+            SectionHeader("Web 検索(Brave Search API)")
+            WebSearchKeySection(
+                state = webSearch,
+                onSave = actions.onSaveWebSearchKey,
+                onClear = actions.onClearWebSearchKey,
+                onTest = actions.onTestWebSearchKey
+            )
 
             if (CLOUD_AI_ENABLED) {
                 SectionDivider()
