@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.MAX_ATTACHMENT_BYTES
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.data.local.dao.BackupDao
+import com.unchunks.echomark.data.local.encryption.DatabaseLeftovers
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.di.DatabaseModule
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
@@ -59,6 +60,7 @@ class DataManagementRepositoryImpl @Inject constructor(
     private val apiKeyRepository: ApiKeyRepository,
     private val workScheduler: BookmarkWorkScheduler,
     private val attachmentStore: AttachmentStore,
+    private val databaseLeftovers: DatabaseLeftovers,
     private val dispatcherProvider: DispatcherProvider
 ) : DataManagementRepository {
 
@@ -261,6 +263,8 @@ class DataManagementRepositoryImpl @Inject constructor(
         workManager.cancelUniqueWork(ReembedAllWorker.WORK_NAME)
         workManager.cancelUniqueWork(FeedCheckWorker.WORK_NAME)
         backupDao.deleteAll()
+        // 暗号化の途中で残った平文の DB の写しがあれば、上書きして消す(全部消したあとに平文を残さない)
+        databaseLeftovers.deleteLeftovers()
         vectorSearch.deleteAll()
         // 添付ファイルは参照が無くなったので、掃除を待たずにすぐ消す
         attachmentStore.deleteAll()

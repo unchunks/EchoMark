@@ -73,6 +73,7 @@ class SettingsViewModelTest {
         processingScheduleController = processingScheduler,
         offlineModeController = offlineController,
         autoBackupController = autoBackup,
+        databaseEncryption = com.unchunks.echomark.data.local.encryption.DatabaseEncryptionStatus(ApplicationProvider.getApplicationContext()),
         apiUsageRepository = usage,
         crashLogs = crashLogs,
         dispatchers = TestDispatcherProvider(mainRule.dispatcher)

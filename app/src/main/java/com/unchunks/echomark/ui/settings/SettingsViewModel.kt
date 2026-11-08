@@ -14,6 +14,8 @@ import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.data.network.OfflineModeController
+import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionState
+import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionStatus
 import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.worker.AutoBackupController
@@ -140,6 +142,8 @@ data class SettingsUiState(
     val appLock: AppLockSettings = AppLockSettings(),
     /** 自動バックアップ(保存先・残す数・最後の結果) */
     val autoBackup: AutoBackupSettings = AutoBackupSettings(),
+    /** 保存したデータ(DB)の暗号化の状態(#100) */
+    val databaseEncryption: DatabaseEncryptionState = DatabaseEncryptionState.UNKNOWN,
     val versionLabel: String = ""
 )
 
@@ -153,6 +157,7 @@ class SettingsViewModel @Inject constructor(
     private val processingScheduleController: ProcessingScheduleController,
     private val offlineModeController: OfflineModeController,
     private val autoBackupController: AutoBackupController,
+    private val databaseEncryption: DatabaseEncryptionStatus,
     private val apiUsageRepository: ApiUsageRepository,
     private val crashLogs: CrashLogStore,
     private val dispatchers: DispatcherProvider
@@ -197,7 +202,7 @@ class SettingsViewModel @Inject constructor(
 
     private val display = combine(appSettings.themeMode, appSettings.dynamicColor, appSettings.offlineMode, ::Triple)
 
-    private val privacy = combine(appSettings.appLock, appSettings.autoBackup, ::Pair)
+    private val privacy = combine(appSettings.appLock, appSettings.autoBackup, databaseEncryption.state, ::Triple)
 
     private val behavior = combine(appSettings.processingSettings, appSettings.summaryStyle, privacy, ::Triple)
 
@@ -223,6 +228,7 @@ class SettingsViewModel @Inject constructor(
             offlineMode = offlineMode,
             appLock = privacySettings.first,
             autoBackup = privacySettings.second,
+            databaseEncryption = privacySettings.third,
             versionLabel = VERSION_LABEL
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
@@ -374,6 +380,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoBackupIncludeFiles(include: Boolean) {
         viewModelScope.launch { appSettings.updateAutoBackup { it.copy(includeFiles = include) } }
+    }
+
+    /** 暗号化の鍵が失われてデータを作り直した、という知らせを閉じる */
+    fun dismissDatabaseKeyLost() {
+        databaseEncryption.dismissKeyLost()
     }
 
     /** 選んだフォルダに書き込む許可を持てなかった */

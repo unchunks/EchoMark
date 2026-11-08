@@ -6,6 +6,7 @@
 - 対象: `refactor/app-cleanup`(13ed26b)の依存。`releaseRuntimeClasspath` の 287 個と、assets のモデル
 - 追記(2026-11-07): 場所の画面の「地図の背景」で MapLibre Native(O24・O25)を足した(付録の表にも足した)。MapLibre の推移的な依存で、`androidx.fragment` は 1.5.4 から 1.8.9 に上がる
 - 追記(2026-11-07): アプリのロックで `androidx.biometric:biometric` 1.1.0(Apache License 2.0、Android Jetpack なので O1 に含める)を足した(付録の表にも足した)。推移的な依存の `androidx.fragment` などは、すでに入っている版に解決される
+- 追記(2026-11-07): 保存したデータの暗号化(#100)で SQLCipher for Android(O26)を足した。`androidx.sqlite` は 2.6.2 から 2.7.0 に上がる(SQLCipher が求める)。ライセンスの文面をアプリの「オープンソースライセンス」に載せる(下の「SQLCipher のライセンス文」)
 
 ## 確かめ方
 
@@ -53,6 +54,7 @@
 | O23 | LMDB(ObjectBox のネイティブライブラリに含まれる) | OpenLDAP Public License 2.8 | 可 | バイナリで配布するときは著作権表示と通知を再現し、このライセンスの写しを含める。作者の名前を宣伝に使わない | `objectbox-android-db` の POM と、ObjectBox Binary Licence の Schedule A |
 | O24 | MapLibre Native(場所の画面の「地図の背景」。タイルの地図の描画) | BSD 2-Clause License | 可 | バイナリで配布するときは、著作権表示・条件・免責を文書などに含める(下の「MapLibre のライセンス文」) | `org.maplibre.gl:android-sdk-opengl:13.7.1` と `maplibre-android-gestures:0.0.4` の POM(どちらも BSD-2-Clause)と、<https://github.com/maplibre/maplibre-native/blob/main/platform/android/LICENSE.md>(2026-11-07 に確認)。AAR 自体にはライセンスのファイルが入っていない |
 | O25 | MapLibre の Java ユーティリティ(`android-sdk-turf`・`android-sdk-geojson`) | Apache License 2.0 | 可 | O1 と同じ | 各 POM(MapLibre Native が使う) |
+| O26 | SQLCipher for Android(保存したデータの暗号化) | BSD 形式(3 条項。Zetetic LLC) | 可 | ライセンスの文面と著作権表示を、アプリの画面か資料に載せる(設定の「オープンソースライセンス」に文面を載せた) | `net.zetetic:sqlcipher-android:4.20.0`。POM はライセンスの URL(https://www.zetetic.net/sqlcipher/license/)だけで名前は無い。文面は下の「SQLCipher のライセンス文」(2026-11-07 に確認)。ネイティブライブラリ `libsqlcipher.so`(4 種の CPU)は 16 KB ページに合わせてある(PT_LOAD の境界が 0x4000) |
 
 ### オープンソースでないもの(利用規約)
 
@@ -110,6 +112,37 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 リポジトリのトップの `LICENSE.md` には、上の 2 行に加えて「Copyright (c) 2018-2021 MapTiler.com」もある。Android 版の `LICENSE.md` は上の 2 行だけで、どちらも BSD 2-Clause で条件は同じ。
+
+### SQLCipher のライセンス文
+
+SQLCipher for Android(O26。Community Edition)は BSD 形式。<https://www.zetetic.net/sqlcipher/license/SQLCIPHER_COMMUNITY_EDITION_LICENSE.txt> の文面(2026-11-07 に確認)をそのまま写す。アプリでは設定の「オープンソースライセンス」に同じ文面を出す(`ui/settings/LicenseTexts.kt`)。
+
+```text
+Copyright (c) 2008-2026, ZETETIC, LLC
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the ZETETIC LLC nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
 
 ## 地図のタイルと地図のデータ(場所の画面の「地図の背景」)
 
@@ -288,10 +321,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | O1 Android Jetpack | `androidx.savedstate:savedstate-compose` | 1.4.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.savedstate:savedstate-compose-android` | 1.4.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.savedstate:savedstate-ktx` | 1.4.0 | The Apache Software License, Version 2.0 | Google Maven |
-| O1 Android Jetpack | `androidx.sqlite:sqlite` | 2.6.2 | The Apache Software License, Version 2.0 | Google Maven |
-| O1 Android Jetpack | `androidx.sqlite:sqlite-android` | 2.6.2 | The Apache Software License, Version 2.0 | Google Maven |
-| O1 Android Jetpack | `androidx.sqlite:sqlite-framework` | 2.6.2 | The Apache Software License, Version 2.0 | Google Maven |
-| O1 Android Jetpack | `androidx.sqlite:sqlite-framework-android` | 2.6.2 | The Apache Software License, Version 2.0 | Google Maven |
+| O1 Android Jetpack | `androidx.sqlite:sqlite` | 2.7.0 | The Apache Software License, Version 2.0 | Google Maven |
+| O1 Android Jetpack | `androidx.sqlite:sqlite-android` | 2.7.0 | The Apache Software License, Version 2.0 | Google Maven |
+| O1 Android Jetpack | `androidx.sqlite:sqlite-framework` | 2.7.0 | The Apache Software License, Version 2.0 | Google Maven |
+| O1 Android Jetpack | `androidx.sqlite:sqlite-framework-android` | 2.7.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.startup:startup-runtime` | 1.2.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.tracing:tracing` | 1.2.0 | The Apache Software License, Version 2.0 | Google Maven |
 | O1 Android Jetpack | `androidx.tracing:tracing-ktx` | 1.2.0 | The Apache Software License, Version 2.0 | Google Maven |
@@ -430,6 +463,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 | O24 MapLibre Native | `org.maplibre.gl:maplibre-android-gestures` | 0.0.4 | BSD | Maven Central |
 | O25 MapLibre Java ユーティリティ | `org.maplibre.gl:android-sdk-geojson` | 6.0.1 | The Apache Software License, Version 2.0 | Maven Central |
 | O25 MapLibre Java ユーティリティ | `org.maplibre.gl:android-sdk-turf` | 6.0.1 | The Apache Software License, Version 2.0 | Maven Central |
+| O26 SQLCipher for Android | `net.zetetic:sqlcipher-android` | 4.20.0 | (名前なし。https://www.zetetic.net/sqlcipher/license/) | Maven Central |
 | N1 ML Kit | `com.google.android.gms:play-services-mlkit-image-labeling` | 16.0.8 | ML Kit Terms of Service | Google Maven |
 | N1 ML Kit | `com.google.android.gms:play-services-mlkit-text-recognition-common` | 19.1.0 | ML Kit Terms of Service | Google Maven |
 | N1 ML Kit | `com.google.android.gms:play-services-mlkit-text-recognition-japanese` | 16.0.1 | ML Kit Terms of Service | Google Maven |

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.EnhancedEncryption
 import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
@@ -84,6 +85,7 @@ import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.lock.rememberAppLockConfirmation
+import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionState
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import kotlinx.coroutines.Dispatchers
@@ -146,6 +148,8 @@ class SettingsActions(
     val onAutoBackupKeepChange: (Int) -> Unit = {},
     val onAutoBackupIncludeFilesChange: (Boolean) -> Unit = {},
     val onRunAutoBackupNow: () -> Unit = {},
+    /** 暗号化の鍵が失われた知らせを閉じる */
+    val onDismissDatabaseKeyLost: () -> Unit = {},
     val onShareCrashLog: () -> Unit = {},
     val onClearCrashLog: () -> Unit = {},
     /** null なら「はじめにの案内」の行を出さない */
@@ -294,6 +298,7 @@ fun SettingsScreen(
             onAutoBackupKeepChange = viewModel::setAutoBackupKeep,
             onAutoBackupIncludeFilesChange = viewModel::setAutoBackupIncludeFiles,
             onRunAutoBackupNow = viewModel::runAutoBackupNow,
+            onDismissDatabaseKeyLost = viewModel::dismissDatabaseKeyLost,
             onShareCrashLog = {
                 scope.launch {
                     val text = viewModel.crashLogText() ?: return@launch
@@ -420,6 +425,7 @@ fun SettingsContent(
                     )
                 }
             }
+            databaseEncryptionItems(uiState.databaseEncryption, actions.onDismissDatabaseKeyLost)
             item {
                 SettingsSwitchItem(
                     title = "最近使ったアプリで内容を隠す",
@@ -761,3 +767,36 @@ internal const val OFFLINE_MODE_SUMMARY =
 /** [folderUri] の読み書きの許可を持ち続けているか */
 private fun hasFolderPermission(context: Context, folderUri: String): Boolean =
     context.contentResolver.persistedUriPermissions.any { it.uri.toString() == folderUri && it.isWritePermission }
+
+/** 保存したデータの暗号化の状態(#100)。うまくいっていないときは、理由とすることを出す */
+private fun androidx.compose.foundation.lazy.LazyListScope.databaseEncryptionItems(
+    state: DatabaseEncryptionState,
+    onDismissKeyLost: () -> Unit
+) {
+    item {
+        SettingsItem(
+            title = "保存したデータの暗号化",
+            icon = Icons.Outlined.EnhancedEncryption,
+            summary = when (state) {
+                DatabaseEncryptionState.PLAINTEXT_FALLBACK -> "暗号化できなかったため、今は暗号化せずに保存しています。次にアプリを開いたときにやり直します"
+                else -> DATABASE_ENCRYPTION_SUMMARY
+            }
+        )
+    }
+    if (state == DatabaseEncryptionState.KEY_LOST) {
+        item {
+            SettingsNotice(
+                text = "暗号化の鍵がこの端末で使えなくなったため、保存していたデータを読めず、新しく作り直しました。" +
+                    "バックアップがあれば、「データ」→「バックアップを読み込む」で戻してください。",
+                icon = Icons.Outlined.WarningAmber,
+                isWarning = true,
+                action = { TextButton(onClick = onDismissKeyLost) { Text("閉じる") } }
+            )
+        }
+    }
+}
+
+/** 暗号化の説明。何を守り、何は端末の暗号化に任せているかを書く */
+internal const val DATABASE_ENCRYPTION_SUMMARY =
+    "ブックマーク・タグ・会話・ノートなどのデータベースを、この端末だけの鍵で暗号化して保存しています。" +
+        "画像・PDF などのファイルと、検索用のデータは、端末の暗号化で守られます。"

@@ -6,6 +6,11 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
+    <!--
+        DB は SQLCipher で暗号化し、その鍵は端末の Keystore の外へ出ない。別の端末へ移しても開けないため、移さない
+        (端末を移すときは、アプリのバックアップ(設定 → データ)で移す。#100)
+    -->
+    <exclude domain="database" path="." />
     <!-- API キーの暗号文は端末の Keystore 鍵でしか復号できないため復元しない -->
     <exclude domain="file" path="datastore/api_keys.preferences_pb" />
     <!-- 取り込んだオンデバイス LLM モデル(数百MB〜)はバックアップしない -->
