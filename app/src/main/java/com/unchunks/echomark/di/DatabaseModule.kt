@@ -21,6 +21,14 @@ import com.unchunks.echomark.data.local.dao.ReviewCardDao
 import com.unchunks.echomark.data.local.dao.SmartFolderDao
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.dao.TagDao
+import com.unchunks.components.securestorage.KeystoreSecretCipher
+import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionMigrator
+import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionStatus
+import com.unchunks.echomark.data.local.encryption.DatabaseKeyStore
+import com.unchunks.echomark.data.local.encryption.DatabaseLeftovers
+import com.unchunks.echomark.data.local.encryption.EncryptingOpenHelperFactory
+import com.unchunks.echomark.data.local.encryption.EncryptionOutcome
+import com.unchunks.echomark.data.local.encryption.SqlCipherEngine
 import dagger.Lazy
 import dagger.Module
 import dagger.Provides
@@ -28,6 +36,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.objectbox.BoxStore
+import java.io.File
 import javax.inject.Singleton
 
 @Module
@@ -36,17 +45,46 @@ object DatabaseModule {
     /** DB ファイル名。設定画面のストレージ使用量の計算でも使う。 */
     const val DATABASE_NAME = "echomark.db"
 
+    /** DB の鍵(パスフレーズ)を暗号化する Android Keystore の鍵の名前。一度使い始めたら変えない(変えると DB を開けなくなる) */
+    private const val DATABASE_KEY_ALIAS = "echomark_database_key"
+
+    /** DB の鍵の暗号文のファイル(バックアップされない場所) */
+    private const val DATABASE_KEY_FILE = "database_key.bin"
+
+    /** DB の暗号化の準備(#100)。平文の DB の暗号化と、残った平文の写しの片付けを行う */
+    @Provides
+    @Singleton
+    fun provideDatabaseEncryptionMigrator(@ApplicationContext context: Context): DatabaseEncryptionMigrator =
+        DatabaseEncryptionMigrator(
+            main = context.getDatabasePath(DATABASE_NAME),
+            engine = SqlCipherEngine(),
+            keyStore = DatabaseKeyStore(File(context.noBackupFilesDir, DATABASE_KEY_FILE), KeystoreSecretCipher(DATABASE_KEY_ALIAS))
+        )
+
+    @Provides
+    fun provideDatabaseLeftovers(migrator: DatabaseEncryptionMigrator): DatabaseLeftovers = migrator
+
     @Provides
     @Singleton
     fun provideAppDatabase(
         @ApplicationContext context: Context,
-        boxStore: Lazy<BoxStore>
+        boxStore: Lazy<BoxStore>,
+        migrator: DatabaseEncryptionMigrator,
+        encryptionStatus: DatabaseEncryptionStatus
     ): AppDatabase {
         return Room.databaseBuilder(
             context,
             AppDatabase::class.java,
             DATABASE_NAME
         )
+            // 保存したデータを SQLCipher で暗号化する(#100)。最初に開くとき(裏のスレッド)に、平文の DB を暗号化する
+            .openHelperFactory(
+                EncryptingOpenHelperFactory(prepare = migrator::prepare) { outcome ->
+                    encryptionStatus.record(outcome)
+                    // 鍵が失われて DB を作り直したら、古い埋め込みが新しいブックマークに紐付かないよう消す
+                    if (outcome is EncryptionOutcome.KeyLost) boxStore.get().removeAllObjects()
+                }
+            )
             // 作り直したブックマークの ID は 1 から振り直されるため、古い埋め込みが新しいブックマークに紐付かないよう消す
             .applyMigrationPolicy(allowDestructiveDowngrade = BuildConfig.DEBUG) { boxStore.get().removeAllObjects() }
             .build()

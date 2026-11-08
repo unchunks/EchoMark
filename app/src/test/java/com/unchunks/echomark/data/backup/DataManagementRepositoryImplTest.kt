@@ -52,6 +52,12 @@ class DataManagementRepositoryImplTest {
     private lateinit var bookmarkRepository: BookmarkRepositoryImpl
     private lateinit var repository: DataManagementRepositoryImpl
     private val settings = FakeAppSettingsRepository()
+    private val leftovers = object : com.unchunks.echomark.data.local.encryption.DatabaseLeftovers {
+        var calls = 0
+        override fun deleteLeftovers() {
+            calls++
+        }
+    }
 
     @Before
     fun setUp() {
@@ -87,6 +93,7 @@ class DataManagementRepositoryImplTest {
             apiKeyRepository = FakeApiKeyRepository(),
             workScheduler = scheduler,
             attachmentStore = AttachmentStore(context, dispatcherProvider),
+            databaseLeftovers = leftovers,
             dispatcherProvider = dispatcherProvider
         )
     }
@@ -110,6 +117,12 @@ class DataManagementRepositoryImplTest {
         val states = workManager.statesByTag(BookmarkWorkScheduler.TAG)
         assertTrue(states.toString(), states.all { it == WorkInfo.State.CANCELLED })
         assertTrue(bookmarkRepository.getAllBookmarkIds().isEmpty())
+    }
+
+    @Test
+    fun 全データ削除は暗号化の途中で残った平文の写しも消す() = runBlocking {
+        repository.deleteAllData(resetSettings = false)
+        assertEquals(1, leftovers.calls)
     }
 
     @Test

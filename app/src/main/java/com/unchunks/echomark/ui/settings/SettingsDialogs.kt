@@ -273,7 +273,8 @@ private val OPEN_SOURCE_LIBRARIES = listOf(
     "Bouncy Castle" to "Bouncy Castle Licence",
     "LMDB(ObjectBox のネイティブライブラリに含まれる)" to "OpenLDAP Public License 2.8",
     "MapLibre Native(場所の画面の地図の背景)" to "BSD 2-Clause License",
-    "MapLibre の Java ユーティリティ(turf・geojson)" to "Apache License 2.0"
+    "MapLibre の Java ユーティリティ(turf・geojson)" to "Apache License 2.0",
+    "SQLCipher for Android(保存したデータの暗号化)" to "BSD 形式のライセンス(下に文面)"
 )
 
 /** アプリに同梱される、オープンソースでないライブラリ・モデルと利用規約。 */
@@ -303,6 +304,13 @@ internal fun LicensesDialog(onDismiss: () -> Unit) {
                 HorizontalDivider()
                 Text("オープンソースでないもの(利用規約)", style = MaterialTheme.typography.titleSmall)
                 NON_OPEN_SOURCE_COMPONENTS.forEach { (name, terms) -> LicenseEntry(name, terms) }
+                HorizontalDivider()
+                Text("SQLCipher のライセンス", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    SQLCIPHER_LICENSE_TEXT,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } }

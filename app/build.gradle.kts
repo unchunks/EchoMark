@@ -94,6 +94,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     // アプリのロック(指紋・顔・端末の画面ロックで本人を確かめる)
     implementation(libs.androidx.biometric)
+    // 保存したデータ(Room の DB)の暗号化(#100)。SQLCipher の Room 2 向けの SupportOpenHelperFactory が androidx.sqlite 2.7 を求める
+    implementation(libs.sqlcipher.android) { artifact { type = "aar" } }
+    implementation(libs.androidx.sqlite)
 
     implementation(libs.datastore.preferences)
     implementation(libs.timber)
