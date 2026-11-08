@@ -16,7 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * スワイプの代わりの TalkBack のカスタムアクション(アーカイブ・削除)が、TalkBack がフォーカスするカード
+ * TalkBack のカスタムアクション(既読・アーカイブ・削除)が、TalkBack がフォーカスするカード
  * (クリックできるノード)に付いていること。フォーカスされないノードに付けると、操作の一覧に出ない。
  */
 @RunWith(AndroidJUnit4::class)
