@@ -1,7 +1,6 @@
 package com.unchunks.echomark.ui.bookmark
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,7 +53,6 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.automirrored.outlined.ViewList
@@ -78,10 +76,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxDefaults
-import androidx.compose.material3.SwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -103,7 +97,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -548,20 +541,34 @@ fun BookmarkListContent(
                 .fillMaxSize()
         ) {
             if (!uiState.isSearchActive) {
-                SmartFolderRow(
-                    folders = uiState.smartFolders,
-                    activeId = uiState.activeSmartFolderId,
-                    canSave = uiState.canSaveSmartFolder,
-                    folderToUpdate = uiState.smartFolderToUpdate,
-                    onSelect = callbacks.onSmartFolderSelect,
-                    onSave = {
-                        smartFolderError = null
-                        smartFolderDialog = SmartFolderDialog.Save
-                    },
-                    onUpdate = callbacks.onUpdateSmartFolder,
-                    onManage = { smartFolderDialog = SmartFolderDialog.Manage(it) },
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
+                // 「この条件を保存」と「すべて解除」は同じ行・同じ高さに並べる(条件を付けている間はどちらも出る)。
+                // 「すべて解除」は右端に固定し、フォルダが多くて行が横に動いても隠れない
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SmartFolderRow(
+                        folders = uiState.smartFolders,
+                        activeId = uiState.activeSmartFolderId,
+                        canSave = uiState.canSaveSmartFolder,
+                        folderToUpdate = uiState.smartFolderToUpdate,
+                        onSelect = callbacks.onSmartFolderSelect,
+                        onSave = {
+                            smartFolderError = null
+                            smartFolderDialog = SmartFolderDialog.Save
+                        },
+                        onUpdate = callbacks.onUpdateSmartFolder,
+                        onManage = { smartFolderDialog = SmartFolderDialog.Manage(it) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (uiState.isNarrowed) {
+                        // 行に何も出ない(フォルダが無く保存もできない)ときも、右端に寄せる
+                        if (uiState.smartFolders.isEmpty() && !uiState.canSaveSmartFolder) Spacer(Modifier.weight(1f))
+                        ClearConditionsChip(onClick = callbacks.onClearFilters, modifier = Modifier.padding(start = 8.dp, end = 16.dp))
+                    }
+                }
             }
             if (uiState.isSearchActive) {
                 SearchSuggestionRow(
@@ -591,7 +598,9 @@ fun BookmarkListContent(
                 onReadStateToggle = callbacks.onReadStateToggle,
                 onOpenConditions = { showConditionSheet = true },
                 onTagMatchChange = callbacks.onTagMatchChange,
-                onClearFilters = callbacks.onClearFilters
+                onClearFilters = callbacks.onClearFilters,
+                // 検索中はスマートフォルダの行が無いので、ここに出す
+                showClear = uiState.isSearchActive
             )
             when {
                 uiState.isLoading -> LoadingState(message = "読み込み中…")
@@ -664,7 +673,7 @@ private fun BookmarkList(
             val selected = bookmark.id == selectedBookmarkId
             val onClick = { callbacks.onOpenBookmark(bookmark.id) }
             val onLongClick = { callbacks.onLongPress(bookmark) }
-            // スワイプできない人向けに、同じ操作を TalkBack のカスタムアクションにも出す。
+            // 長押しのメニューと同じ操作を、TalkBack のカスタムアクションにも出す。
             // TalkBack がフォーカスするのはカード(クリックできるノード)なので、カードに付ける
             val accessibility = Modifier.semantics {
                 customActions = listOf(
@@ -714,17 +723,7 @@ private fun BookmarkList(
                     }
                 }
             }
-            if (uiState.display == BookmarkListDisplay.GRID) {
-                // 幅の狭いタイルは、横にスワイプして操作するには向かない。長押しのメニューと TalkBack の操作で同じことができる
-                Box(Modifier.animateItem()) { item() }
-            } else {
-                SwipeableBookmarkItem(
-                    bookmark = bookmark,
-                    onArchiveToggle = onArchiveToggle,
-                    onDelete = onDelete,
-                    modifier = Modifier.animateItem()
-                ) { item() }
-            }
+            Box(Modifier.animateItem()) { item() }
         }
     }
 }
@@ -971,10 +970,12 @@ private fun FilterBar(
     onReadStateToggle: (ReadState) -> Unit,
     onOpenConditions: () -> Unit,
     onTagMatchChange: (TagMatch) -> Unit,
-    onClearFilters: () -> Unit
+    onClearFilters: () -> Unit,
+    showClear: Boolean
 ) {
     val narrowed = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty() || selectedTypes.isNotEmpty() || period != null ||
         readState != null
+    val clearVisible = showClear && narrowed
     Column {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             FilterChipRow(
@@ -994,26 +995,31 @@ private fun FilterBar(
                 onReadStateToggle = onReadStateToggle,
                 onOpenConditions = onOpenConditions,
                 // 「すべて解除」を出す間は、右の余白を詰めてそちらに譲る
-                endPadding = if (narrowed) 8.dp else 16.dp,
+                endPadding = if (clearVisible) 8.dp else 16.dp,
                 modifier = Modifier.weight(1f)
             )
-            if (narrowed) {
-                AssistChip(
-                    onClick = onClearFilters,
-                    label = { Text("すべて解除") },
-                    leadingIcon = {
-                        Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize))
-                    },
-                    modifier = Modifier
-                        .padding(end = 16.dp)
-                        .semantics { contentDescription = "タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除" }
-                )
+            if (clearVisible) {
+                ClearConditionsChip(onClick = onClearFilters, modifier = Modifier.padding(end = 16.dp))
             }
         }
         if (selectedTagIds.size >= 2) {
             TagMatchRow(count = selectedTagIds.size, tagMatch = tagMatch, onChange = onTagMatchChange)
         }
     }
+}
+
+/** タグ・カテゴリ・種類・期間・読んだかの絞り込みを一度に外すチップ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClearConditionsChip(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    AssistChip(
+        onClick = onClick,
+        label = { Text("すべて解除") },
+        leadingIcon = {
+            Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize))
+        },
+        modifier = modifier.semantics { contentDescription = "タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除" }
+    )
 }
 
 /** 複数のタグを選んだときの組み合わせ方(すべて含む=AND / どれかを含む=OR)の切り替え。 */
@@ -1330,74 +1336,6 @@ private fun rediscoverCaption(bookmark: Bookmark, nowMillis: Long): String =
         "最後に開いたのは${formatRelativeTime(bookmark.lastAccessedAt, nowMillis)}"
     }
 
-/**
- * 右へスワイプでアーカイブ(アーカイブ済みなら戻す)、左へスワイプで削除。どちらも Snackbar で取り消せる。
- * 同じ操作の TalkBack のカスタムアクションは、中のカードに付ける([BookmarkList])。
- */
-@Composable
-private fun SwipeableBookmarkItem(
-    bookmark: Bookmark,
-    onArchiveToggle: () -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    val threshold = SwipeToDismissBoxDefaults.positionalThreshold
-    // 取り消しで同じ ID が戻ってきたとき、スワイプ済みの状態を引き継がないよう保存しない state にする
-    val state = remember(bookmark.id, bookmark.isArchived) {
-        SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, threshold)
-    }
-    SwipeToDismissBox(
-        state = state,
-        modifier = modifier,
-        backgroundContent = { SwipeBackground(state.dismissDirection, bookmark.isArchived) },
-        onDismiss = { direction ->
-            when (direction) {
-                SwipeToDismissBoxValue.StartToEnd -> onArchiveToggle()
-                SwipeToDismissBoxValue.EndToStart -> onDelete()
-                SwipeToDismissBoxValue.Settled -> Unit
-            }
-        }
-    ) {
-        content()
-    }
-}
-
-@Composable
-private fun SwipeBackground(direction: SwipeToDismissBoxValue, isArchived: Boolean) {
-    if (direction == SwipeToDismissBoxValue.Settled) return
-    val scheme = MaterialTheme.colorScheme
-    val isArchive = direction == SwipeToDismissBoxValue.StartToEnd
-    val (container, content) = if (isArchive) {
-        scheme.tertiaryContainer to scheme.onTertiaryContainer
-    } else {
-        scheme.errorContainer to scheme.onErrorContainer
-    }
-    val icon: ImageVector
-    val label: String
-    if (isArchive) {
-        icon = if (isArchived) Icons.Outlined.Unarchive else Icons.Outlined.Archive
-        label = if (isArchived) "戻す" else "アーカイブ"
-    } else {
-        icon = Icons.Outlined.Delete
-        label = "削除"
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clip(MaterialTheme.shapes.medium)
-            .background(container)
-            .padding(horizontal = 24.dp),
-        contentAlignment = if (isArchive) Alignment.CenterStart else Alignment.CenterEnd
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = content)
-            Spacer(Modifier.width(8.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, color = content)
-        }
-    }
-}
-
 @Composable
 private fun ListEmptyState(uiState: BookmarkListUiState, callbacks: BookmarkListCallbacks) {
     when (uiState.emptyKind) {
@@ -1426,7 +1364,7 @@ private fun ListEmptyState(uiState: BookmarkListUiState, callbacks: BookmarkList
         ListEmptyKind.NO_ARCHIVED -> EmptyState(
             icon = Icons.Outlined.Archive,
             title = "アーカイブは空です",
-            description = "一覧でカードを右へスワイプすると、ここへ移せます。"
+            description = "カードを長押しして「アーカイブ」を選ぶと、ここへ移せます。"
         )
         ListEmptyKind.NO_FILTER_MATCH -> EmptyState(
             icon = Icons.AutoMirrored.Outlined.Label,
