@@ -55,6 +55,7 @@ import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.ViewAgenda
+import androidx.compose.material.icons.outlined.VerticalAlignTop
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -75,6 +76,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -92,6 +94,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -409,6 +412,8 @@ fun BookmarkListContent(
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val listState = rememberLazyStaggeredGridState()
+    val scope = rememberCoroutineScope()
+    val showScrollToTop by remember { derivedStateOf { listState.firstVisibleItemIndex > 3 } }
     // 一番上にいるか、上へ戻る方向にスクロールしたときだけ、追加ボタンを文字つきで大きく出す
     val fabExpanded by remember { derivedStateOf { !listState.canScrollBackward || listState.lastScrolledBackward } }
 
@@ -524,13 +529,29 @@ fun BookmarkListContent(
             }
         },
         floatingActionButton = {
-            if (!uiState.isSearchActive) {
-                ExtendedFloatingActionButton(
-                    text = { Text("追加") },
-                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    expanded = fabExpanded,
-                    onClick = callbacks.onAddClick
-                )
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (showingList && showScrollToTop) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            scope.launch {
+                                listState.animateScrollToItem(0)
+                                scrollBehavior.state.heightOffset = 0f
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Icon(Icons.Outlined.VerticalAlignTop, contentDescription = "一覧の先頭に戻る")
+                    }
+                }
+                if (!uiState.isSearchActive) {
+                    ExtendedFloatingActionButton(
+                        text = { Text("追加") },
+                        icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                        expanded = fabExpanded,
+                        onClick = callbacks.onAddClick,
+                        modifier = Modifier.semantics { contentDescription = "ブックマークを追加" }
+                    )
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -628,8 +649,12 @@ private fun BookmarkList(
         columns = StaggeredGridCells.Adaptive(if (uiState.display == BookmarkListDisplay.GRID) BOOKMARK_TILE_MIN_WIDTH else BOOKMARK_CARD_MIN_WIDTH),
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        // 下は追加ボタンに最後のカードが隠れないだけ空ける
-        contentPadding = PaddingValues(start = LIST_SIDE_PADDING, end = LIST_SIDE_PADDING, bottom = 96.dp),
+        // 通常表示では追加・先頭へ戻るボタンの2段分を空け、最後のカードを操作できるようにする。
+        contentPadding = PaddingValues(
+            start = LIST_SIDE_PADDING,
+            end = LIST_SIDE_PADDING,
+            bottom = if (uiState.isSearchActive) 96.dp else 152.dp
+        ),
         verticalItemSpacing = 8.dp,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -1370,16 +1395,32 @@ private fun ListEmptyState(uiState: BookmarkListUiState, callbacks: BookmarkList
             icon = Icons.AutoMirrored.Outlined.Label,
             title = "当てはまるブックマークがありません",
             description = filterSummary(uiState)?.let { "「${it}」に当てはまるブックマークは、この絞り込みにはありません。" },
-            actionLabel = "タグとカテゴリの絞り込みを解除",
+            actionLabel = "絞り込みを解除",
             onAction = callbacks.onClearFilters
         )
         ListEmptyKind.NO_SEARCH_RESULT -> EmptyState(
             icon = Icons.Outlined.SearchOff,
             title = "「${uiState.searchQuery.trim()}」は見つかりませんでした",
-            description = if (uiState.semanticSearchAvailable) {
+            description = if (uiState.isNarrowed) {
+                "${filterSummary(uiState) ?: "選択した条件"}で絞り込んでいます。検索語をそのままに、絞り込みを解除して探せます。"
+            } else if (uiState.filter != BookmarkFilter.ACTIVE) {
+                "「${uiState.filter.label()}」の中を検索しています。検索語をそのままに、「すべて」の一覧から探せます。"
+            } else if (uiState.semanticSearchAvailable) {
                 "別の言葉や、探している内容を文章で入力してみてください。"
             } else {
                 "別の言葉で試してみてください。AI の準備ができると、意味の近いものも探せます。"
+            },
+            actionLabel = when {
+                uiState.isNarrowed -> "絞り込みを解除して検索"
+                uiState.filter != BookmarkFilter.ACTIVE -> "すべてから検索"
+                else -> "検索を閉じる"
+            },
+            onAction = {
+                when {
+                    uiState.isNarrowed -> callbacks.onClearFilters()
+                    uiState.filter != BookmarkFilter.ACTIVE -> callbacks.onFilterChange(BookmarkFilter.ACTIVE)
+                    else -> callbacks.onSearchActiveChange(false)
+                }
             }
         )
         ListEmptyKind.NONE -> Unit

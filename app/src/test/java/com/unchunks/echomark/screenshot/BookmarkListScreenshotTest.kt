@@ -292,6 +292,19 @@ class BookmarkListScreenshotTest {
     )
 
     @Test
+    fun filteredSearchNoResult() = screenshot.captureScreenLightDark(
+        "library_list_filtered_search_empty",
+        content = content(
+            BookmarkListUiState(
+                isSearchActive = true,
+                searchQuery = "料理",
+                readState = ReadState.UNREAD,
+                totalCount = 30
+            )
+        )
+    )
+
+    @Test
     fun addSheet() = screenshot.captureLightDark("library_add_sheet") {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
             AddBookmarkSheetContent(

@@ -147,20 +147,32 @@ class BookmarkViewModel @Inject constructor(
     /** 追加シートを開く要求(ショートカット・ウィジェットの「URL を追加」から起動したとき)。画面が1回ずつ受け取る */
     val addSheetRequests: Flow<Unit> = addSheetRequestChannel.receiveAsFlow()
 
-    /** 入力が空なら即時、入力中は 300ms のデバウンスを掛けて検索実行を間引く */
+    /** 入力が空なら即時、入力中は短いデバウンスを掛けて検索実行を間引く */
     @OptIn(FlowPreview::class)
     private val debouncedQueryFlow: Flow<String> = searchQueryFlow
         .map { it.trim() }
         .debounce { if (it.isBlank()) 0L else SEARCH_DEBOUNCE_MS }
         .distinctUntilChanged()
 
+    /** データ取得に必要な条件だけ。表示形式やフォルダ名の変更では検索をやり直さない。 */
+    private data class ListRequest(
+        val search: String,
+        val filter: BookmarkQuery,
+        val sortOrder: BookmarkSortOrder,
+        val retry: Int
+    )
+
     private val listFlow: Flow<ListResult> =
-        combine(debouncedQueryFlow, shownControlsFlow, retryTrigger) { query, controls, _ -> query to controls }
-            .flatMapLatest { (query, controls) ->
+        combine(debouncedQueryFlow, shownControlsFlow, retryTrigger) { query, controls, retry ->
+            ListRequest(if (controls.searchActive) query else "", controls.query, controls.sortOrder, retry)
+        }
+            .distinctUntilChanged()
+            .flatMapLatest { request ->
+                val query = request.search
                 // 絞り込み・並べ替え済みの一覧。検索時は「表示してよいもの」の判定(検索結果との積)と、DB 変更時の再検索のきっかけに使う。
                 // 検索自体はタグ・カテゴリを知らない(絞り込みの条件はここだけで持つ)
-                val visible = repository.observeBookmarks(controls.query, controls.sortOrder)
-                val result = if (controls.searchActive && query.isNotBlank()) {
+                val visible = repository.observeBookmarks(request.filter, request.sortOrder)
+                val result = if (query.isNotBlank()) {
                     // 検索語の埋め込み(意味検索の準備)は、モデルの読み込みや AI 処理との順番待ちで時間がかかることがある。
                     // 待つ間はキーワードの結果を先に出す。準備は検索語ごとに1回だけで、DB の変更で検索し直しても待ち直さない
                     // (null: 準備中、true: 意味検索も使える、false: 埋め込みが使えずキーワードのみ)

@@ -436,6 +436,57 @@ class BookmarkViewModelTest {
     }
 
     @Test
+    fun 表示形式を切り替えても検索済みの結果と意味検索を再取得しない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"), testBookmark(2, "banana"))
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+        repository.keywordSearchCalls.clear()
+        repository.searchCalls.clear()
+        repository.prepareCalls.clear()
+
+        viewModel.onDisplayChange(BookmarkListDisplay.COMPACT)
+        advanceUntilIdle()
+
+        assertEquals(BookmarkListDisplay.COMPACT, viewModel.uiState.value.display)
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+        assertFalse(viewModel.uiState.value.isSearching)
+        assertTrue(repository.keywordSearchCalls.isEmpty())
+        assertTrue(repository.searchCalls.isEmpty())
+        assertTrue(repository.prepareCalls.isEmpty())
+
+        // 同じ条件でも明示的な再試行は実行する。
+        viewModel.retry()
+        advanceUntilIdle()
+        assertEquals(listOf("apple"), repository.prepareCalls)
+        assertEquals(listOf("apple"), repository.searchCalls)
+    }
+
+    @Test
+    fun 意味検索の準備中に表示形式を切り替えても準備をやり直さない() = runTest {
+        repository.bookmarks.value = listOf(testBookmark(1, "apple"))
+        val gate = CompletableDeferred<Unit>()
+        repository.prepareGate = gate
+        val viewModel = createViewModel()
+        start(viewModel)
+        viewModel.onSearchQueryChange("apple")
+        advanceUntilIdle()
+        assertEquals(listOf("apple"), repository.prepareCalls)
+
+        viewModel.onDisplayChange(BookmarkListDisplay.COMPACT)
+        advanceUntilIdle()
+        assertEquals(listOf("apple"), repository.prepareCalls)
+        assertEquals(listOf(1L), viewModel.uiState.value.bookmarks.map { it.id })
+        assertTrue(viewModel.uiState.value.isSearching)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("apple"), repository.searchCalls)
+        assertFalse(viewModel.uiState.value.isSearching)
+    }
+
+    @Test
     fun 連続入力では最後の検索語だけで検索する() = runTest {
         repository.bookmarks.value = listOf(testBookmark(1, "apple"))
         val viewModel = createViewModel()
