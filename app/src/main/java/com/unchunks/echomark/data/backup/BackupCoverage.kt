@@ -58,11 +58,14 @@ object BackupCoverage {
             included(
                 "id", "title", "isTitleManuallySet", "summary", "createdAt", "updatedAt", "aboutBookmarkId", "summaryCoveredUntil",
                 "isPinned", "branchedFromId", "branchedAt"
+            ) + excluded(
+                "Web 検索のオン・オフは質問の語句を端末の外に送る設定。バックアップを戻して勝手にオンにしない(読み込んだ会話ではオフ)",
+                "webSearchEnabled"
             )
         ),
         "chat_messages" to Table.Included(
             "messages",
-            included("id", "conversationId", "role", "content", "referencedBookmarkIds", "createdAt")
+            included("id", "conversationId", "role", "content", "referencedBookmarkIds", "createdAt", "webSources")
         ),
         "api_usage" to Table.Excluded(
             "クラウド API の使用量の記録は、この端末で使った量の目安。別の端末に持ち込むと、その端末で使った量と重なって数えてしまう"

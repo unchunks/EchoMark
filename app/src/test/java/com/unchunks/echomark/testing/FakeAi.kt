@@ -187,6 +187,13 @@ class FakeApiKeyRepository(initial: Map<ApiProvider, String> = emptyMap()) : Api
     override suspend fun getKey(provider: ApiProvider): String? = keys.value[provider]
     override suspend fun setKey(provider: ApiProvider, apiKey: String) { keys.value = keys.value + (provider to apiKey) }
     override suspend fun clearKey(provider: ApiProvider) { keys.value = keys.value - provider }
+
+    /** Web 検索(Brave Search API)のキー */
+    val webSearchKey = MutableStateFlow<String?>(null)
+    override val webSearchKeyConfigured: Flow<Boolean> = webSearchKey.map { it != null }
+    override suspend fun getWebSearchKey(): String? = webSearchKey.value
+    override suspend fun setWebSearchKey(apiKey: String) { webSearchKey.value = apiKey.trim().ifEmpty { null } }
+    override suspend fun clearWebSearchKey() { webSearchKey.value = null }
 }
 
 /** chatStream で [chunks] を順に流す LLM。[failure] があれば途中で投げる。 */

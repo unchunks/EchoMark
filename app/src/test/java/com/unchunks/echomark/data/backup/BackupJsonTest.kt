@@ -10,6 +10,8 @@ import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.mapper.WebSourcesJson
+import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.data.backup.SmartFolderBackup
@@ -374,6 +376,52 @@ class BackupJsonTest {
         val decoded = BackupJson.decode(BackupJson.encode(sample.copy(conversations = listOf(branched))))
 
         assertEquals(branched, decoded.data.conversations.single())
+    }
+
+    @Test
+    fun 会話のWeb検索のオンは書き出さず_読み込んだ会話ではオフにする() {
+        val conversation = ConversationEntity(id = 9, title = "Web", createdAt = 1, updatedAt = 2, webSearchEnabled = true)
+
+        val text = BackupJson.encode(sample.copy(conversations = listOf(conversation)))
+        val decoded = BackupJson.decode(text).data.conversations.single()
+
+        assertFalse(JSONObject(text).getJSONArray("conversations").getJSONObject(0).has("webSearchEnabled"))
+        assertFalse(decoded.webSearchEnabled)
+        // 手で書き換えたファイルに入っていても、オンにしない
+        val edited = """
+            {"format":"echomark-backup","version":22,"exportedAt":1,
+             "conversations":[{"id":3,"title":"会話","isTitleManuallySet":false,"createdAt":20,"updatedAt":30,"webSearchEnabled":true}]}
+        """.trimIndent()
+        assertFalse(BackupJson.decode(edited).data.conversations.single().webSearchEnabled)
+    }
+
+    @Test
+    fun 回答のWebのページを書き出して読め_形のおかしいものは除く() {
+        val json = """
+            {"format":"echomark-backup","version":22,"exportedAt":1,
+             "conversations":[{"id":3,"title":"会話","isTitleManuallySet":false,"createdAt":20,"updatedAt":30}],
+             "messages":[{"id":1,"conversationId":3,"role":"ASSISTANT","content":"答え [2]","referencedBookmarkIds":[],"createdAt":21,
+               "webSources":[{"n":2,"url":"https://example.com/a","title":"題","domain":"example.com","excerpt":"抜粋"},
+                             {"n":3,"url":"javascript:alert(1)","title":"悪い"}]}]}
+        """.trimIndent()
+
+        val message = BackupJson.decode(json).data.messages.single()
+        val sources = WebSourcesJson.decode(message.webSources)
+
+        assertEquals(listOf(WebSource(2, "https://example.com/a", "題", "example.com", "抜粋")), sources)
+        val again = BackupJson.decode(BackupJson.encode(sample.copy(messages = listOf(message)))).data.messages.single()
+        assertEquals(message, again)
+    }
+
+    @Test
+    fun version21以前の回答はWebのページが無いものとして読む() {
+        val json = """
+            {"format":"echomark-backup","version":21,"exportedAt":1,
+             "conversations":[{"id":3,"title":"会話","isTitleManuallySet":false,"createdAt":20,"updatedAt":30}],
+             "messages":[{"id":1,"conversationId":3,"role":"ASSISTANT","content":"答え","referencedBookmarkIds":[5],"createdAt":21}]}
+        """.trimIndent()
+
+        assertEquals(null, BackupJson.decode(json).data.messages.single().webSources)
     }
 
     @Test

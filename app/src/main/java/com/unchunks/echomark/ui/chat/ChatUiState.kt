@@ -6,6 +6,7 @@ import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.ConversationBranch
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.domain.repository.ChatModelChoices
+import com.unchunks.echomark.domain.websearch.WebSearchAvailability
 
 data class ChatUiState(
     /** 会話のタイトル。まだ会話が作られていなければ null(「新しいチャット」と表示)。 */
@@ -58,11 +59,36 @@ data class ChatUiState(
     /** 添付のファイルを読み込んでいる間 true */
     val isAttaching: Boolean = false,
     /** 添付を使えなかった理由(なければ null) */
-    val attachmentError: String? = null
+    val attachmentError: String? = null,
+    /** Web 検索のオン・オフと、使えるか。 */
+    val webSearch: ChatWebSearchState = ChatWebSearchState(),
+    /** Web を検索している間 true(生成中の進み具合に出す) */
+    val isSearchingWeb: Boolean = false,
+    /** 文脈に入れた Web のページの数が決まったら、その数。 */
+    val pendingWebSourceCount: Int? = null
 ) {
     /** 何もメッセージが無い新しい会話(挨拶と質問の例を出す)。 */
     val isEmptyConversation: Boolean
         get() = !isLoading && messages.isEmpty() && !isSending && error == null
+}
+
+/**
+ * チャットの Web 検索(会話ごとに覚える。新しい会話ではオフ)。
+ * @property enabled この会話でオンにしているか
+ * @property availability キーを保存しているか・オフラインモードか
+ * @property notice 直近の質問で Web を検索できなかった理由など(なければ null)。次の質問を送ると消える
+ * @property showKeyPrompt キーが無いのにオンにしようとした(設定への案内を出す)
+ * @property savedUrls この画面でブックマークに保存した Web のページの URL
+ */
+data class ChatWebSearchState(
+    val enabled: Boolean = false,
+    val availability: WebSearchAvailability = WebSearchAvailability(),
+    val notice: String? = null,
+    val showKeyPrompt: Boolean = false,
+    val savedUrls: Set<String> = emptySet()
+) {
+    /** オンで、実際に検索できる(質問の語句が端末の外に出る) */
+    val active: Boolean get() = enabled && availability.usable
 }
 
 /** 音声入力の進み具合。 */

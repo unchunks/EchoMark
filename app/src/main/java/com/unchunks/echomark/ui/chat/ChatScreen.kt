@@ -89,6 +89,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,6 +100,7 @@ import com.unchunks.components.composeui.ChatMarkdown
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.repository.ChatModelOption
+import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.navigation.WideContentMaxWidth
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
@@ -129,6 +131,7 @@ fun ChatScreen(
         uri?.let { viewModel.attachFile(it.toString()) }
     }
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     // マイクの許可は、マイクのボタンを押したときにだけ求める
     val requestMicrophone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.startVoiceInput() else viewModel.onMicrophoneDenied()
@@ -186,6 +189,23 @@ fun ChatScreen(
                 scope.launch {
                     val result = snackbarHostState.showSnackbar("メモに保存しました", actionLabel = "開く")
                     if (result == SnackbarResult.ActionPerformed) onOpenBookmark(bookmarkId)
+                }
+            }
+        },
+        onWebSearchChange = viewModel::setWebSearchEnabled,
+        onDismissWebSearchKeyPrompt = viewModel::dismissWebSearchKeyPrompt,
+        onOpenWebSource = { url ->
+            // ブラウザが無いなどで開けなくても、画面は落とさない
+            runCatching { uriHandler.openUri(url) }.onFailure {
+                scope.launch { snackbarHostState.showSnackbar("ページを開けませんでした") }
+            }
+        },
+        onSaveWebSource = { source ->
+            viewModel.saveWebSource(source) { result ->
+                scope.launch {
+                    val message = if (result.isDuplicate) "すでに保存しています" else "ブックマークに保存しました"
+                    val action = snackbarHostState.showSnackbar(message, actionLabel = "開く")
+                    if (action == SnackbarResult.ActionPerformed) onOpenBookmark(result.id)
                 }
             }
         }
@@ -262,7 +282,11 @@ fun ChatContent(
     onVoiceClick: () -> Unit = {},
     onFinishVoice: () -> Unit = {},
     onCancelVoice: () -> Unit = {},
-    onToggleSpeaking: (ChatMessage) -> Unit = {}
+    onToggleSpeaking: (ChatMessage) -> Unit = {},
+    onWebSearchChange: (Boolean) -> Unit = {},
+    onDismissWebSearchKeyPrompt: () -> Unit = {},
+    onOpenWebSource: (String) -> Unit = {},
+    onSaveWebSource: (WebSource) -> Unit = {}
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -395,6 +419,8 @@ fun ChatContent(
                         onOpenConversation = onOpenConversation,
                         onSaveNote = onSaveNote,
                         onToggleSpeaking = onToggleSpeaking,
+                        onOpenWebSource = onOpenWebSource,
+                        onSaveWebSource = onSaveWebSource,
                         modifier = Modifier.nestedScroll(userScrollConnection)
                     )
                 }
@@ -420,6 +446,8 @@ fun ChatContent(
             uiState.scopeLabel?.takeIf { uiState.aboutBookmark == null }?.let { label ->
                 ChatScopeStatus(label = label, onClick = onScopeClick)
             }
+            ChatWebSearchStatus(state = uiState.webSearch, onTurnOff = { onWebSearchChange(false) })
+            uiState.webSearch.notice?.let { ChatWebSearchNotice(it) }
             uiState.voiceError?.let { message ->
                 Text(
                     text = message,
@@ -443,9 +471,21 @@ fun ChatContent(
                 onAttachClick = onAttachClick,
                 onTemplateClick = onTemplateClick,
                 // 質問の対象のブックマークがあるときは、対象を根拠にするため範囲は選ばない
-                onScopeClick = onScopeClick.takeIf { uiState.aboutBookmark == null }
+                onScopeClick = onScopeClick.takeIf { uiState.aboutBookmark == null },
+                webSearchEnabled = uiState.webSearch.enabled,
+                onWebSearchChange = onWebSearchChange
             )
         }
+    }
+
+    if (uiState.webSearch.showKeyPrompt) {
+        WebSearchKeyPromptDialog(
+            onOpenSettings = {
+                onDismissWebSearchKeyPrompt()
+                onOpenAiSettings()
+            },
+            onDismiss = onDismissWebSearchKeyPrompt
+        )
     }
 
     if (showRename) {
@@ -572,6 +612,8 @@ private fun ChatMessageList(
     onOpenConversation: (Long) -> Unit,
     onSaveNote: (ChatMessage) -> Unit,
     onToggleSpeaking: (ChatMessage) -> Unit,
+    onOpenWebSource: (String) -> Unit,
+    onSaveWebSource: (WebSource) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // 生成中でなければ、最後の質問は編集でき、最後が回答なら作り直せる(失敗の表示中は再試行のボタンを使う)
@@ -609,7 +651,10 @@ private fun ChatMessageList(
                         onBranch = if (idle) ({ onBranch(message) }) else null,
                         onSaveNote = if (idle) ({ onSaveNote(message) }) else null,
                         isSpeaking = message.id == uiState.speakingMessageId,
-                        onToggleSpeaking = { onToggleSpeaking(message) }
+                        onToggleSpeaking = { onToggleSpeaking(message) },
+                        savedWebUrls = uiState.webSearch.savedUrls,
+                        onOpenWebSource = onOpenWebSource,
+                        onSaveWebSource = onSaveWebSource
                     )
                 }
                 val branches = uiState.branches.filter { it.branchedAt == message.createdAt }
@@ -621,7 +666,9 @@ private fun ChatMessageList(
                 item(key = "streaming", contentType = "streaming") {
                     StreamingMessageItem(
                         text = streaming.orEmpty(),
-                        pendingReferenceCount = uiState.pendingReferenceCount
+                        pendingReferenceCount = uiState.pendingReferenceCount,
+                        isSearchingWeb = uiState.isSearchingWeb,
+                        pendingWebSourceCount = uiState.pendingWebSourceCount
                     )
                 }
             }
@@ -742,7 +789,9 @@ internal fun ChatInputBar(
     onVoiceClick: () -> Unit = {},
     onAttachClick: () -> Unit = {},
     onTemplateClick: () -> Unit = {},
-    onScopeClick: (() -> Unit)? = null
+    onScopeClick: (() -> Unit)? = null,
+    webSearchEnabled: Boolean = false,
+    onWebSearchChange: ((Boolean) -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxWidth()) {
@@ -778,11 +827,22 @@ internal fun ChatInputBar(
                     }
                 }
             }
+            if (onWebSearchChange != null) {
+                Box(modifier = Modifier.padding(bottom = 4.dp)) {
+                    WebSearchToggleButton(enabled = webSearchEnabled, onChange = onWebSearchChange, isSending = isSending)
+                }
+            }
             TextField(
                 value = value,
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("保存したブックマークについて質問…", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                placeholder = {
+                    Text(
+                        if (webSearchEnabled) "ブックマークと Web をもとに質問…" else "保存したブックマークについて質問…",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 shape = RoundedCornerShape(28.dp),
                 maxLines = 6,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),

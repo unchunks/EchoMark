@@ -46,6 +46,7 @@ import com.unchunks.echomark.domain.repository.ChatModelChoices
 import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.repository.ChatModelRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
+import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.domain.repository.ChatSpeechOutput
 import com.unchunks.echomark.domain.repository.ChatVoiceInput
 import com.unchunks.echomark.domain.repository.VoiceInputResult
@@ -632,12 +633,39 @@ open class FakeChatRepository : ChatRepository {
     /** 非 null なら sendMessageStream がこの例外で Failed を流す。 */
     var sendFailure: Throwable? = null
 
-    override suspend fun createConversation(title: String?, aboutBookmarkId: Long?): Long {
+    /** createConversation に渡された Web 検索のオン・オフ。 */
+    val createdWebSearch = mutableListOf<Boolean>()
+
+    override suspend fun createConversation(title: String?, aboutBookmarkId: Long?, webSearchEnabled: Boolean): Long {
         createCalls++
         createdTitles += title
         createdAboutBookmarkIds += aboutBookmarkId
+        createdWebSearch += webSearchEnabled
         return createdConversationId
     }
+
+    /** sendMessageStream に渡された Web 検索のオン・オフ。 */
+    val sentWebSearch = mutableListOf<Boolean>()
+
+    /** setWebSearchEnabled の呼び出し。会話の webSearchEnabled も書き換える。 */
+    val webSearchChanges = mutableListOf<Pair<Long, Boolean>>()
+
+    override suspend fun setWebSearchEnabled(conversationId: Long, enabled: Boolean) {
+        webSearchChanges += conversationId to enabled
+        conversation.value = conversation.value?.copy(webSearchEnabled = enabled)
+    }
+
+    /** saveWebSource に渡されたページ。 */
+    val savedWebSources = mutableListOf<WebSource>()
+    var webSourceSaveResult = SaveResult(id = 88L, isDuplicate = false)
+
+    override suspend fun saveWebSource(source: WebSource): SaveResult {
+        savedWebSources += source
+        return webSourceSaveResult
+    }
+
+    /** sendMessageStream で、Started の前に流す出来事(Web の検索中・検索できなかった、など)。 */
+    var eventsBeforeStart: List<ChatStreamEvent> = emptyList()
 
     override fun observeMessages(conversationId: Long): Flow<List<ChatMessage>> = messages
 
@@ -685,9 +713,11 @@ open class FakeChatRepository : ChatRepository {
         pinnedBookmarkId: Long?,
         isRetry: Boolean,
         attachment: ChatAttachmentContext?,
-        scope: BookmarkQuery?
+        scope: BookmarkQuery?,
+        webSearch: Boolean
     ): Flow<ChatStreamEvent> = flow {
         sentScopes += scope
+        sentWebSearch += webSearch
         sent += conversationId to userMessage
         sendCalls += SendCall(conversationId, userMessage, pinnedBookmarkId, isRetry)
         sentAttachments += attachment
@@ -696,6 +726,7 @@ open class FakeChatRepository : ChatRepository {
             emit(ChatStreamEvent.Failed(failure))
             return@flow
         }
+        eventsBeforeStart.forEach { emit(it) }
         emit(ChatStreamEvent.Started(emptyList()))
         emit(ChatStreamEvent.Delta("回答"))
         emit(ChatStreamEvent.Completed(1L))

@@ -276,6 +276,7 @@ class DataManagementRepositoryImpl @Inject constructor(
         if (resetSettings) {
             appSettings.resetToDefaults()
             ApiProvider.entries.forEach { apiKeyRepository.clearKey(it) }
+            apiKeyRepository.clearWebSearchKey()
             // 初期化で再発見通知はオフになるので、登録済みの予定も取り消す
             RediscoverDigestScheduler.cancel(workManager)
         }
