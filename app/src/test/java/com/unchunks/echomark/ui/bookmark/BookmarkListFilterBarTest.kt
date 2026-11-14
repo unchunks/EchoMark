@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -23,6 +24,7 @@ import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.components.PreviewSamples
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -238,5 +240,43 @@ class BookmarkListFilterBarTest {
         // 組み合わせ方は、タグを2つ以上選んだときだけ
         composeRule.onNodeWithText("すべて含む").assertDoesNotExist()
         assertEquals(TagMatch.ALL, BookmarkQuery().tagMatch)
+    }
+
+    @Test
+    fun この条件を保存とすべて解除は同じ行の同じ高さに並ぶ() {
+        setContent(initial = BookmarkQuery(categories = setOf("技術")))
+
+        val save = composeRule.onNodeWithContentDescription("今の絞り込み条件をスマートフォルダとして保存").assertIsDisplayed()
+        val clear = composeRule.onNodeWithContentDescription("タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除").assertIsDisplayed()
+        val saveBounds = save.getUnclippedBoundsInRoot()
+        val clearBounds = clear.getUnclippedBoundsInRoot()
+        assertEquals(saveBounds.top, clearBounds.top)
+        assertEquals(saveBounds.bottom - saveBounds.top, clearBounds.bottom - clearBounds.top)
+        // 「すべて解除」は右端、「この条件を保存」はその左
+        assertTrue(saveBounds.right <= clearBounds.left)
+    }
+
+    @Test
+    fun スマートフォルダの行に何も出ないときも条件があればすべて解除を出す() {
+        // 開いているフォルダがあると保存の候補は出ない(フォルダの一覧は空の状態でも「すべて解除」は出る)
+        val state = BookmarkListUiState(
+            bookmarks = PreviewSamples.all,
+            selectedCategories = setOf("技術"),
+            activeSmartFolderId = 1,
+            totalCount = 4
+        )
+        composeRule.setContent {
+            EchoMarkTheme {
+                BookmarkListContent(
+                    uiState = state,
+                    snackbarHostState = SnackbarHostState(),
+                    callbacks = BookmarkListCallbacks(),
+                    nowMillis = PreviewSamples.NOW
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("すべて解除").assertIsDisplayed()
+        composeRule.onNodeWithText("この条件を保存").assertDoesNotExist()
     }
 }

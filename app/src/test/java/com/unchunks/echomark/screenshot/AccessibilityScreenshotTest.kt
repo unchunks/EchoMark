@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.ui.bookmark.BookmarkListCallbacks
@@ -79,6 +80,39 @@ class AccessibilityScreenshotTest {
             BookmarkListUiState(
                 bookmarks = listOf(PreviewSamples.urlBookmark, longTagBookmark, PreviewSamples.textBookmark),
                 allTags = tags,
+                totalCount = 3
+            )
+        )
+    )
+
+    /** 条件を付けている間の「この条件を保存」と「すべて解除」が、文字サイズ最大級・360dp でも同じ行に並ぶこと */
+    @Test
+    fun listConditionsLargeFont() = screenshot.captureScreenLightDark(
+        "a11y_list_conditions_font2_w360",
+        widthDp = NARROW_WIDTH_DP,
+        heightDp = TALL_HEIGHT_DP,
+        fontScale = LARGEST_FONT_SCALE,
+        content = list(
+            BookmarkListUiState(
+                bookmarks = listOf(PreviewSamples.urlBookmark),
+                allTags = tags,
+                readState = ReadState.UNREAD,
+                totalCount = 3
+            )
+        )
+    )
+
+    /** 標準の文字サイズ・360dp で、条件を付けている間の「この条件を保存」と「すべて解除」が同じ行に並ぶこと */
+    @Test
+    fun listConditionsNarrow() = screenshot.captureScreenLightDark(
+        "a11y_list_conditions_w360",
+        widthDp = NARROW_WIDTH_DP,
+        content = list(
+            BookmarkListUiState(
+                bookmarks = listOf(PreviewSamples.urlBookmark),
+                allTags = tags,
+                selectedTagIds = setOf(2L),
+                readState = ReadState.UNREAD,
                 totalCount = 3
             )
         )

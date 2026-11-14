@@ -24,6 +24,15 @@ interface BookmarkDao {
     suspend fun insert(bookmark: BookmarkEntity): Long
 
 
+    /**
+     * [block] の書き込みを1つのトランザクションにまとめる(ほかの DAO の書き込みも含められる)。
+     * 書き込みごとに、見ている問い合わせ(一覧など、全件を読むもの)が読み直されるので、まとめて書くときに使う
+     */
+    @Transaction
+    suspend fun inTransaction(block: suspend () -> Unit) {
+        block()
+    }
+
     // 競合時は何もせず -1 を返す(URL重複用。REPLACEだとタグ参照がカスケード削除されるため使わない)
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnore(bookmark: BookmarkEntity): Long

@@ -791,7 +791,7 @@ class BookmarkViewModelTest {
     }
 
     @Test
-    fun スワイプ削除は削除して取り消し用のメッセージを出し元に戻せる() = runTest {
+    fun 削除すると取り消し用のメッセージを出し元に戻せる() = runTest {
         val target = testBookmark(1)
         repository.bookmarks.value = listOf(target)
         val viewModel = createViewModel()
@@ -808,7 +808,7 @@ class BookmarkViewModelTest {
     }
 
     @Test
-    fun スワイプでアーカイブし取り消すと元に戻る() = runTest {
+    fun アーカイブして取り消すと元に戻る() = runTest {
         val target = testBookmark(1)
         repository.bookmarks.value = listOf(target, testBookmark(2))
         val viewModel = createViewModel()

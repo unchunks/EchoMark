@@ -1,6 +1,7 @@
 package com.unchunks.echomark
 
 import android.app.Application
+import android.os.StrictMode
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.work.HiltWorkerFactory
@@ -53,6 +54,8 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
 
     override fun onCreate() {
         super.onCreate()
+        // debug ビルドでは、メインスレッドでのディスクの読み書き・通信を Logcat に出す(もたつきの原因を探すため。release では何もしない)
+        if (BuildConfig.DEBUG) enableStrictMode()
 
         // 捕まえられない例外などを端末内のファイルに残す(外部サービスには送らない)。設定画面から見る・共有する・消す
         CrashReporter.install(this)
@@ -104,6 +107,18 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
             .components { add(OkHttpNetworkFetcherFactory(callFactory = { okHttpClient.get() })) }
             .crossfade(true)
             .build()
+
+    /** メインスレッドでのディスクの読み書き・通信を、止めずに Logcat(タグ StrictMode)へ出す */
+    private fun enableStrictMode() {
+        StrictMode.setThreadPolicy(
+            StrictMode.ThreadPolicy.Builder()
+                .detectDiskReads()
+                .detectDiskWrites()
+                .detectNetwork()
+                .penaltyLog()
+                .build()
+        )
+    }
 
     /** 通知チャンネルを作成する(既存なら何もしない)。 */
     private fun createNotificationChannels() {

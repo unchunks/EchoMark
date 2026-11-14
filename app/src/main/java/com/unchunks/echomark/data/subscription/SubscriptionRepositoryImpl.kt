@@ -109,8 +109,13 @@ class SubscriptionRepositoryImpl @Inject constructor(
         dao.delete(id)
     }
 
-    override suspend fun checkNow(id: Long?): FeedCheckSummary =
+    /**
+     * 画面(viewModelScope = メインスレッド)から呼ばれるので、確認はまるごと背景で行う。
+     * フィードの XML を読むのは重く(1件で数 MB・最大 100 件)、メインスレッドで読むと画面が止まる
+     */
+    override suspend fun checkNow(id: Long?): FeedCheckSummary = withContext(dispatcherProvider.io) {
         if (id == null) checker.checkAll(manual = true) else checker.checkOne(id)
+    }
 }
 
 internal fun SubscriptionEntity.toDomain(): Subscription = Subscription(
