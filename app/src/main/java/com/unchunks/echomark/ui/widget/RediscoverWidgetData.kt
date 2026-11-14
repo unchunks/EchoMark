@@ -55,7 +55,7 @@ object RediscoverWidgetData {
         .toSet()
 
     /** 一覧の「今日の再発見」と同じ候補数(BookmarkViewModel.REDISCOVER_CANDIDATES) */
-    private const val CANDIDATE_LIMIT = 30
+    const val CANDIDATE_LIMIT = 30
 
     /**
      * 全ブックマークから、今日の再発見を最大3件選ぶ。
