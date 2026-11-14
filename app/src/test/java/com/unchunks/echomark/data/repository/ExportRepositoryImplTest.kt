@@ -152,4 +152,47 @@ class ExportRepositoryImplTest {
             assertTrue(e.message!!.isNotBlank())
         }
     }
+
+    @Test
+    fun 選んだブックマークをまとめて書き出すと選んだ順に並び_見出しは指定したものになる() = runBlocking {
+        val first = saveUrl("最初の記事", "https://example.com/1")
+        val second = saveUrl("二つ目の記事", "https://example.com/2")
+        val third = saveUrl("三つ目の記事", "https://example.com/3")
+        db.bookmarkNoteDao().insert(BookmarkNoteEntity(bookmarkId = second, text = "二つ目のノート", createdAt = 5, updatedAt = 5))
+
+        // 選んだ順(コレクションの入れた順や ID の順ではない)に並べる。存在しない ID は飛ばす
+        val result = repository.exportBookmarks(listOf(third, 9_999L, second), "選んだブックマーク", ExportFormat.MARKDOWN, Uri.fromFile(out).toString())
+
+        assertEquals(2, result.exported)
+        val text = out.readText()
+        assertTrue(text, text.startsWith("# 選んだブックマーク\n"))
+        assertTrue(text, text.indexOf("三つ目の記事") < text.indexOf("二つ目の記事"))
+        assertFalse(text.contains("最初の記事"))
+        assertTrue(text, text.contains("二つ目のノート"))
+        assertTrue(first > 0)
+    }
+
+    @Test
+    fun 選んだものをブラウザのブックマークで書き出すとリンクの無いものは飛ばして数える() = runBlocking {
+        val link = saveUrl("記事", "https://example.com/1")
+        val memo = db.bookmarkDao().insert(
+            Bookmark(type = BookmarkType.TEXT, title = "メモ", content = "本文", createdAt = 1, lastAccessedAt = 1).toEntity()
+        )
+
+        val result = repository.exportBookmarks(listOf(link, memo), "選んだブックマーク", ExportFormat.BROWSER_HTML, Uri.fromFile(out).toString())
+
+        assertEquals(1, result.exported)
+        assertEquals(1, result.skipped)
+    }
+
+    @Test
+    fun 選んだものがすべて見つからないときは書き出さず例外() = runBlocking {
+        try {
+            repository.exportBookmarks(listOf(9_999L), "選んだブックマーク", ExportFormat.MARKDOWN, Uri.fromFile(out).toString())
+            fail("例外になるはず")
+        } catch (e: ExportException) {
+            assertTrue(e.message!!.contains("見つかりません"))
+        }
+        assertFalse(out.exists())
+    }
 }

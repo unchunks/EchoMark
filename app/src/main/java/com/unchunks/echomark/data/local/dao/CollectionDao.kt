@@ -66,6 +66,10 @@ interface CollectionDao {
     @Query("DELETE FROM collection_items WHERE collectionId = :collectionId AND bookmarkId = :bookmarkId")
     suspend fun deleteItem(collectionId: Long, bookmarkId: Long)
 
+    /** [deleteItem] を複数件に(一覧の複数選択。呼び出し側で SQLite の変数の上限に収まる件数に区切る) */
+    @Query("DELETE FROM collection_items WHERE collectionId = :collectionId AND bookmarkId IN (:bookmarkIds)")
+    suspend fun deleteItems(collectionId: Long, bookmarkIds: List<Long>)
+
     /** ブックマークが入っているコレクション(追加のシートでチェックを付ける用) */
     @Query("SELECT collectionId FROM collection_items WHERE bookmarkId = :bookmarkId")
     fun observeCollectionIdsOf(bookmarkId: Long): Flow<List<Long>>

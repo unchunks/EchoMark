@@ -15,4 +15,10 @@ interface ExportRepository {
 
     /** ブックマーク1件を [format] で [uri] に書き出す(ノートも入る)。ブックマークが無い・書き込めないときは [ExportException]。 */
     suspend fun exportBookmark(bookmarkId: Long, format: ExportFormat, uri: String): ExportResult
+
+    /**
+     * 選んだブックマーク [bookmarkIds] をまとめて [format] で [uri] に書き出す(一覧の複数選択。ノートも入る。順番は [bookmarkIds] のとおり)。
+     * 文書の見出しは [title]。1件も見つからない・書き込めないときは [ExportException]。
+     */
+    suspend fun exportBookmarks(bookmarkIds: List<Long>, title: String, format: ExportFormat, uri: String): ExportResult
 }

@@ -1192,4 +1192,184 @@ class BookmarkRepositoryImplTest {
 
         assertEquals(777L, repository.getBookmarkById(id)!!.readingListAt)
     }
+
+    // ---- まとめての操作(一覧の複数選択) ----
+
+    private suspend fun saveTexts(count: Int): List<Long> = (1..count).map { repository.saveBookmark(textBookmark("メモ$it")).id }
+
+    /** タグ付きで読む(getBookmarkById はタグを含まない) */
+    private suspend fun tagsOf(id: Long): Set<String> = repository.observeBookmark(id).first()!!.tags.toSet()
+
+    @Test
+    fun まとめてお気に入り_アーカイブ_既読を変えると選んだものだけが変わる() = runBlocking {
+        val (a, b, c) = saveTexts(3)
+
+        repository.setFavoriteAll(listOf(a, b), true)
+        repository.setArchivedAll(listOf(b, c), true)
+        repository.setReadAll(listOf(a), true)
+
+        val all = listOf(a, b, c).map { repository.getBookmarkById(it)!! }
+        assertEquals(listOf(true, true, false), all.map { it.isFavorite })
+        assertEquals(listOf(false, true, true), all.map { it.isArchived })
+        assertEquals(listOf(true, false, false), all.map { it.isRead })
+
+        repository.setReadAll(listOf(a), false)
+        assertFalse(repository.getBookmarkById(a)!!.isRead)
+    }
+
+    @Test
+    fun まとめて既読にしても読んだ日時は最初に読んだときのまま() = runBlocking {
+        val (a, b) = saveTexts(2)
+        db.bookmarkDao().markRead(a, 1_000L)
+
+        repository.setReadAll(listOf(a, b), true)
+
+        assertEquals(1_000L, repository.getBookmarkById(a)!!.readAt)
+        assertTrue(repository.getBookmarkById(b)!!.isRead)
+    }
+
+    @Test
+    fun 件数が多くても区切って1つのトランザクションで書き_空の指定は何もしない() = runBlocking {
+        // SQLite の変数の上限に収まるよう、500件ずつに区切って書く
+        val ids = saveTexts(1_100)
+
+        repository.setFavoriteAll(ids, true)
+        repository.setFavoriteAll(emptyList(), false)
+
+        assertEquals(1_100, db.bookmarkDao().getByIds(ids.take(500)).count { it.isFavorite } + db.bookmarkDao().getByIds(ids.drop(500)).count { it.isFavorite })
+    }
+
+    @Test
+    fun まとめてタグを付けて外す() = runBlocking {
+        val (a, b, c) = saveTexts(3)
+        repository.addTag(c, "別")
+
+        repository.addTagAll(listOf(a, b, c), "共通")
+        assertEquals(listOf(setOf("共通"), setOf("共通"), setOf("別", "共通")), listOf(a, b, c).map { tagsOf(it) })
+
+        repository.removeTagAll(listOf(a, b), "共通")
+        assertEquals(listOf(setOf<String>(), setOf<String>(), setOf("別", "共通")), listOf(a, b, c).map { tagsOf(it) })
+
+        // 空の名前は付けない
+        repository.addTagAll(listOf(a), "  ")
+        assertTrue(tagsOf(a).isEmpty())
+    }
+
+    @Test
+    fun まとめて付けたタグは削除済みのブックマークには付かない() = runBlocking {
+        val (a) = saveTexts(1)
+
+        repository.addTagAll(listOf(a, 9_999L), "共通")
+
+        assertEquals(setOf("共通"), tagsOf(a))
+        assertEquals(listOf("共通"), db.tagDao().getAllTags().first().map { it.name })
+    }
+
+    @Test
+    fun まとめてカテゴリを決めると自分で選んだものとして残る() = runBlocking {
+        val (a, b) = saveTexts(2)
+
+        repository.setCategoryAll(listOf(a, b), " 資料 ")
+        repository.setCategoryAll(listOf(a), "  ")
+
+        val all = listOf(a, b).map { repository.getBookmarkById(it)!! }
+        assertEquals(listOf("資料", "資料"), all.map { it.category })
+        assertEquals(listOf(true, true), all.map { it.categoryEdited })
+    }
+
+    @Test
+    fun まとめての再処理は1件ずつ順番の列に積み_件ごとのワークを作らない() = runBlocking {
+        val ids = saveTexts(3)
+        ids.forEach { repository.saveGeneratedSummary(it, "要約", origin()) }
+        // 保存したときに積んだ処理は取り消して、再処理で積んだものだけを見る
+        ids.forEach { workManager.cancelUniqueWork("process_bookmark_$it") }
+
+        val queued = repository.reprocessAll(ids)
+
+        assertEquals(3, queued.count)
+        assertTrue(queued.started)
+        assertSequential(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME), expectedSize = 3)
+        assertTrue(ids.all { id -> unfinished("process_bookmark_$id").isEmpty() })
+        val after = ids.map { repository.getBookmarkById(it)!! }
+        assertEquals(listOf(AiStatus.PENDING, AiStatus.PENDING, AiStatus.PENDING), after.map { it.aiStatus })
+        // 要約は消して、作り直す
+        assertTrue(after.all { it.summary == null })
+    }
+
+    @Test
+    fun まとめての再処理は手で直した要約を置き換えない() = runBlocking {
+        val (edited, plain) = saveTexts(2)
+        repository.saveGeneratedSummary(plain, "AI の要約", origin())
+        repository.saveGeneratedSummary(edited, "AI の要約", origin())
+        repository.editSummary(edited, "直した要約")
+
+        repository.reprocessAll(listOf(edited, plain))
+
+        assertEquals("直した要約", repository.getBookmarkById(edited)!!.summary)
+        assertNull(repository.getBookmarkById(plain)!!.summary)
+        assertEquals(AiStatus.PENDING, repository.getBookmarkById(edited)!!.aiStatus)
+    }
+
+    @Test
+    fun 夜間にまとめて処理する設定では再処理も列に積まず処理待ちにするだけ() = runBlocking {
+        val ids = saveTexts(2)
+        settings.updateProcessingSettings { it.copy(nightlyBatch = true) }
+
+        val queued = repository.reprocessAll(ids)
+
+        assertEquals(2, queued.count)
+        assertFalse(queued.started)
+        assertEquals(listOf(AiStatus.PENDING, AiStatus.PENDING), ids.map { repository.getBookmarkById(it)!!.aiStatus })
+        assertTrue(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME).filterNot { it.isFinished }.isEmpty())
+    }
+
+    @Test
+    fun まとめての再処理は存在しないものを飛ばし_空なら何もしない() = runBlocking {
+        val (a) = saveTexts(1)
+
+        assertEquals(1, repository.reprocessAll(listOf(a, 9_999L)).count)
+        assertEquals(0, repository.reprocessAll(emptyList()).count)
+    }
+
+    @Test
+    fun まとめて削除するとAIだけのタグを消し処理を取り消し_まとめて元に戻せる() = runBlocking {
+        val (a, b, c) = saveTexts(3)
+        repository.addTag(a, "自分")
+        repository.saveAiTags(a, listOf("AI"))
+        repository.saveAiTags(b, listOf("AI"))
+        db.noteDaoInsert(a)
+        val targets = listOf(a, b).map { repository.observeBookmark(it).first()!! }
+
+        repository.deleteBookmarks(targets)
+
+        assertNull(repository.getBookmarkById(a))
+        assertNull(repository.getBookmarkById(b))
+        assertEquals(c, db.bookmarkDao().getAllIds().single())
+        assertEquals(listOf("自分"), db.tagDao().getAllTags().first().map { it.name })
+        assertTrue(listOf(a, b).all { unfinished("process_bookmark_$it").isEmpty() })
+
+        repository.restoreBookmarks(targets)
+
+        val restored = listOf(a, b).map { repository.observeBookmark(it).first()!! }
+        assertEquals(setOf("自分", "AI"), restored[0].tags.toSet())
+        assertEquals(setOf("AI"), restored[1].tags.toSet())
+        // 預かっていたノートも戻る。処理は件ごとではなく、1件ずつ順番の列に積み直す
+        assertEquals(1, db.bookmarkNoteDao().getByBookmark(a).size)
+        assertSequential(workManager.statesOf(BookmarkWorkScheduler.BULK_WORK_NAME), expectedSize = 2)
+        assertTrue(listOf(a, b).all { unfinished("process_bookmark_$it").isEmpty() })
+    }
+
+    @Test
+    fun まとめて削除したものは空の指定なら何もしない() = runBlocking {
+        val (a) = saveTexts(1)
+
+        repository.deleteBookmarks(emptyList())
+        repository.restoreBookmarks(emptyList())
+
+        assertEquals(a, db.bookmarkDao().getAllIds().single())
+    }
+
+    private suspend fun AppDatabase.noteDaoInsert(bookmarkId: Long) {
+        bookmarkNoteDao().insertAll(listOf(BookmarkNoteEntity(bookmarkId = bookmarkId, text = "ノート", createdAt = 1L, updatedAt = 1L)))
+    }
 }
