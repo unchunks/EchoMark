@@ -231,7 +231,7 @@ class ChatRepositoryImpl @Inject constructor(
         } else {
             // 範囲を選んでいるときは、その範囲の保存の中から探す(対象が固定されていれば範囲は使わない)
             val range = scope.takeIf { pinned == null }
-            val allowed = range?.let { inScope -> bookmarkRepository.observeBookmarks(inScope, BookmarkSortOrder.NEWEST).first().mapTo(HashSet()) { it.id } }
+            val allowed = range?.let { inScope -> bookmarkRepository.observeBookmarkList(inScope, BookmarkSortOrder.NEWEST).first().mapTo(HashSet()) { it.id } }
             val searched = try {
                 findRelevantBookmarks(query, keywords, limits.maxSources, allowed)
             } catch (e: CancellationException) {
@@ -531,7 +531,7 @@ class ChatRepositoryImpl @Inject constructor(
 
     override fun observeScopeChoices(): Flow<ChatScopeChoices> = combine(
         bookmarkRepository.observeAllTags(),
-        bookmarkRepository.observeBookmarks(BookmarkQuery(), BookmarkSortOrder.NEWEST)
+        bookmarkRepository.observeBookmarkList(BookmarkQuery(), BookmarkSortOrder.NEWEST)
     ) { tags, bookmarks ->
         val tagCounts = bookmarks.flatMap { it.tags }.groupingBy { it }.eachCount()
         val categoryCounts = bookmarks.mapNotNull { it.category }.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
@@ -542,7 +542,7 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     override fun observeScopeCount(scope: BookmarkQuery): Flow<Int> =
-        bookmarkRepository.observeBookmarks(scope, BookmarkSortOrder.NEWEST).map { it.size }
+        bookmarkRepository.observeBookmarkList(scope, BookmarkSortOrder.NEWEST).map { it.size }
 
     private class PreparedChat(
         val history: List<ChatMessage>,

@@ -45,5 +45,8 @@ object ReadingTime {
     fun label(minutes: Int): String = "約${minutes}分"
 }
 
-/** [Bookmark] の本文を読むのにかかる分数の目安(本文が無い・短いときは null)。 */
-fun Bookmark.readingMinutes(): Int? = ReadingTime.minutes(content)
+/**
+ * [Bookmark] の本文を読むのにかかる分数の目安(本文が無い・短いときは null)。
+ * 本文を読まずに出すもの(一覧)は、先に求めた [Bookmark.estimatedReadingMinutes] を使う
+ */
+fun Bookmark.readingMinutes(): Int? = estimatedReadingMinutes ?: ReadingTime.minutes(content)

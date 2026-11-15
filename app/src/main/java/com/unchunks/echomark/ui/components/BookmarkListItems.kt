@@ -71,7 +71,7 @@ fun CompactBookmarkRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                val readingMinutes = remember(bookmark.content) { bookmark.readingMinutes() }
+                val readingMinutes = remember(bookmark.content, bookmark.estimatedReadingMinutes) { bookmark.readingMinutes() }
                 SourceLine(
                     source = domain,
                     relativeTime = formatRelativeTime(bookmark.createdAt, nowMillis),
@@ -130,7 +130,7 @@ fun BookmarkGridTile(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(4.dp))
-                val readingMinutes = remember(bookmark.content) { bookmark.readingMinutes() }
+                val readingMinutes = remember(bookmark.content, bookmark.estimatedReadingMinutes) { bookmark.readingMinutes() }
                 SourceLine(
                     source = domain,
                     relativeTime = formatRelativeTime(bookmark.createdAt, nowMillis),

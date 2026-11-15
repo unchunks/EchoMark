@@ -55,7 +55,12 @@ data class Bookmark(
     /** 場所の名前(利用者が入れたもの)。名前だけで座標が無いこともある */
     val placeName: String? = null,
     /** 「あとで読む」に入れた日時。null なら入れていない。読むと(詳細画面を開く・読んだことにする)外れる */
-    val readingListAt: Long? = null
+    val readingListAt: Long? = null,
+    /**
+     * 本文を読まずに出すとき(一覧)の、読む時間の目安(分)。null なら [content] から求める([readingMinutes])。
+     * DB には持たない(一覧の問い合わせで本文の代わりに入れる)
+     */
+    val estimatedReadingMinutes: Int? = null
 ) {
     /** 読んだか(詳細画面を開いたか、読んだことにしたか) */
     val isRead: Boolean get() = readAt != null
