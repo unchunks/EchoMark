@@ -920,4 +920,44 @@ class MigrationTest {
         }
         connection.close()
     }
+
+    @Test
+    fun migrate29To30_addsBookmarkIndexesAndKeepsRows() {
+        helper.createDatabase(29).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, contentUri, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (1, 'URL', '記事', 'https://example.com/a', 100, 200, 'PENDING', 0, 0, 0, 0)"
+            )
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (2, 'TEXT', 'メモ', 300, 50, 'DONE', 1, 0, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v30 と一致するか(インデックスも)検証される
+        val connection = helper.runMigrationsAndValidate(30, listOf(MIGRATION_29_30))
+
+        // 行と値はそのまま
+        connection.prepare("SELECT id, title, aiStatus, lastAccessedAt FROM bookmarks ORDER BY id").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("記事", stmt.getText(1))
+            assertEquals("PENDING", stmt.getText(2))
+            assertTrue(stmt.step())
+            assertEquals("メモ", stmt.getText(1))
+            assertEquals(50L, stmt.getLong(3))
+            assertFalse(stmt.step())
+        }
+        // 足したインデックスがある
+        val indexes = connection.prepare("PRAGMA index_list(`bookmarks`)").use { stmt ->
+            // 列は seq, name, unique, origin, partial
+            buildSet { while (stmt.step()) add(stmt.getText(1)) }
+        }
+        assertTrue(
+            indexes.containsAll(
+                setOf("index_bookmarks_contentUri", "index_bookmarks_aiStatus", "index_bookmarks_lastAccessedAt", "index_bookmarks_createdAt")
+            )
+        )
+        connection.close()
+    }
 }
