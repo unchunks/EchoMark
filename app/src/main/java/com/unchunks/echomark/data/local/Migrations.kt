@@ -367,12 +367,28 @@ val MIGRATION_28_29 = object : Migration(28, 29) {
 }
 
 /**
- * v29 → v30: Web で確かめた結果(fact_checks)のテーブルを足す。空で始める。
- * ブックマークの要約・チャットの回答ごとに1行(targetType と targetId で一意)。対象が消えた行は、次に確かめるときに消す
+ * v29 → v30: bookmarks によく読み直す問い合わせのためのインデックスを足す(列・行は変えない)。
+ * - aiStatus: 処理の状況(処理待ち・処理中・失敗)。ほとんどの行は処理済みなので、全件を見ずに済む
+ * - lastAccessedAt: 再発見(ウィジェット・通知の候補。古い順の先頭だけ)、最近読んだもの(新しい順の先頭だけ)
+ * - createdAt: 未読の新しい順の先頭だけ(「次に読む」)、保存した期間での絞り込み
+ * 既存の行はそのまま。作るのにかかる時間は行の数に比例する(数千件で数十〜数百ミリ秒)。
  */
 val MIGRATION_29_30 = object : Migration(29, 30) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // スキーマ JSON(30.json)の createSql と同じ
+        // スキーマ JSON(30.json)の indices の createSql と同じ
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_aiStatus` ON `bookmarks` (`aiStatus`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_lastAccessedAt` ON `bookmarks` (`lastAccessedAt`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_createdAt` ON `bookmarks` (`createdAt`)")
+    }
+}
+
+/**
+ * v30 → v31: Web で確かめた結果(fact_checks)のテーブルを足す。空で始める。
+ * ブックマークの要約・チャットの回答ごとに1行(targetType と targetId で一意)。対象が消えた行は、次に確かめるときに消す
+ */
+val MIGRATION_30_31 = object : Migration(30, 31) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // スキーマ JSON(31.json)の createSql と同じ
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS `fact_checks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `targetType` TEXT NOT NULL, " +
                 "`targetId` INTEGER NOT NULL, `textHash` TEXT NOT NULL, `claims` TEXT NOT NULL, `checkedAt` INTEGER NOT NULL)"
@@ -392,7 +408,8 @@ val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
         MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
-        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30
+        MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
+        MIGRATION_29_30, MIGRATION_30_31
     )
 
 /** 正式なマイグレーションでデータを保ったまま更新できる最も古い版。これより上げてはいけない(公開版の利用者のデータが消える)。 */

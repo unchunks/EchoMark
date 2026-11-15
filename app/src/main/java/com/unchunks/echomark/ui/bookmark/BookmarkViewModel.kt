@@ -159,7 +159,7 @@ class BookmarkViewModel @Inject constructor(
             .flatMapLatest { (query, controls) ->
                 // 絞り込み・並べ替え済みの一覧。検索時は「表示してよいもの」の判定(検索結果との積)と、DB 変更時の再検索のきっかけに使う。
                 // 検索自体はタグ・カテゴリを知らない(絞り込みの条件はここだけで持つ)
-                val visible = repository.observeBookmarks(controls.query, controls.sortOrder)
+                val visible = repository.observeBookmarkList(controls.query, controls.sortOrder)
                 val result = if (controls.searchActive && query.isNotBlank()) {
                     // 検索語の埋め込み(意味検索の準備)は、モデルの読み込みや AI 処理との順番待ちで時間がかかることがある。
                     // 待つ間はキーワードの結果を先に出す。準備は検索語ごとに1回だけで、DB の変更で検索し直しても待ち直さない

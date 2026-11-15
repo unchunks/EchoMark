@@ -155,7 +155,7 @@ private fun BookmarkCardBody(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 // 本文の長さから、読むのにかかる時間の目安を出す(長い本文でも数えるだけなので、同じ本文のあいだは覚えておく)
-                val readingMinutes = remember(bookmark.content) { bookmark.readingMinutes() }
+                val readingMinutes = remember(bookmark.content, bookmark.estimatedReadingMinutes) { bookmark.readingMinutes() }
                 SourceLine(
                     source = domain,
                     relativeTime = formatRelativeTime(bookmark.createdAt, nowMillis),
