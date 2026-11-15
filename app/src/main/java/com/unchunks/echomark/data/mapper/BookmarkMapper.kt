@@ -2,6 +2,7 @@ package com.unchunks.echomark.data.mapper
 
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkListRow
+import com.unchunks.echomark.data.local.entity.BookmarkSourceRow
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
@@ -55,4 +56,11 @@ fun SummaryHistoryEntity.toDomain(): SummaryVersion = SummaryVersion(
     id = id, bookmarkId = bookmarkId, summary = summary,
     source = SummarySource.entries.firstOrNull { it.name == source } ?: SummarySource.AI,
     generator = generator, style = style, createdAt = createdAt
+)
+
+/** 出すのに要る列だけのブックマーク。本文・要約・タグなど読んでいないものは空(既定の値)になる */
+fun BookmarkSourceRow.toDomain(): Bookmark = Bookmark(
+    id = id, type = type, contentUri = contentUri, title = title, siteName = siteName,
+    filePath = filePath, mimeType = mimeType, fileSize = fileSize,
+    createdAt = createdAt, lastAccessedAt = lastAccessedAt, isArchived = isArchived
 )

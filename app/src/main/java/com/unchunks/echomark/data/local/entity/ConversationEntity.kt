@@ -34,5 +34,11 @@ data class ConversationEntity(
      */
     val branchedFromId: Long? = null,
     /** v19 で追加。元の会話と共通の最後の発言の日時。バックアップの読み込みで発言の ID は振り直されるため、ID ではなく日時で持つ */
-    val branchedAt: Long? = null
+    val branchedAt: Long? = null,
+    /**
+     * v29 で追加。この会話の質問で Web を検索するか(質問の語句が端末の外に出るため、新しい会話ではオフ)。
+     * バックアップには入れない(読み込んだ会話ではオフに戻る)。
+     */
+    @ColumnInfo(defaultValue = "0")
+    val webSearchEnabled: Boolean = false
 )

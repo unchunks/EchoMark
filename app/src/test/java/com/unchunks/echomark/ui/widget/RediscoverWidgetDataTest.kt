@@ -164,4 +164,43 @@ class RediscoverWidgetDataTest {
         assertEquals(4, changes.size)
         assertEquals(null, changes.last().processing)
     }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun ウィジェットを置いている間だけ中身を見る() = runTest {
+        val placed = MutableStateFlow(false)
+        val content = MutableStateFlow(1)
+        var subscriptions = 0
+        val seen = mutableListOf<Int>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            RediscoverWidgetUpdater.whilePlaced(placed) {
+                subscriptions++
+                content
+            }.toList(seen)
+        }
+        runCurrent()
+        // 置いていない間は、DB の問い合わせを始めない
+        assertEquals(0, subscriptions)
+        content.value = 2
+        runCurrent()
+        assertTrue(seen.isEmpty())
+
+        placed.value = true
+        runCurrent()
+        assertEquals(1, subscriptions)
+        assertEquals(listOf(2), seen)
+
+        // 外したら、変わっても流さない
+        placed.value = false
+        content.value = 3
+        runCurrent()
+        assertEquals(listOf(2), seen)
+
+        // 置き直したら見直す。同じ知らせが重なっても1回だけ
+        placed.value = true
+        placed.value = true
+        runCurrent()
+        assertEquals(2, subscriptions)
+        assertEquals(listOf(2, 3), seen)
+    }
 }

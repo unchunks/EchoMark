@@ -104,7 +104,8 @@ class RediscoverWidget : GlanceAppWidget() {
     }
 
     private fun rediscoverItems(repository: BookmarkRepository): Flow<List<RediscoverWidgetItem>> =
-        repository.observeBookmarks()
+        // 候補になる古い順の数十件だけを、出すのに要る列だけで読む(全件を本文ごと読み直さない)
+        repository.observeLeastRecentlyAccessed(RediscoverWidgetData.CANDIDATE_LIMIT)
             .map { RediscoverWidgetData.toItems(RediscoverWidgetData.select(it, System.currentTimeMillis())) }
             .catch { e ->
                 if (e is CancellationException) throw e
@@ -117,6 +118,21 @@ class RediscoverWidget : GlanceAppWidget() {
 /** ウィジェットを置いたときに呼ばれる受け口(AndroidManifest に登録)。 */
 class RediscoverWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = RediscoverWidget()
+
+    /** 1つ目を置いた。ブックマークの変化に合わせた描き直しを始める */
+    override fun onEnabled(context: Context) {
+        super.onEnabled(context)
+        updater(context).onPlacementChanged(placed = true)
+    }
+
+    /** 最後の1つを外した。DB を見るのをやめる */
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        updater(context).onPlacementChanged(placed = false)
+    }
+
+    private fun updater(context: Context): RediscoverWidgetUpdater =
+        EntryPointAccessors.fromApplication(context, RediscoverWidgetEntryPoint::class.java).rediscoverWidgetUpdater()
 }
 
 /** ウィジェットは Hilt の注入先にできないため、EntryPoint からリポジトリを取る。 */
@@ -126,6 +142,7 @@ interface RediscoverWidgetEntryPoint {
     fun bookmarkRepository(): BookmarkRepository
     fun appSettingsRepository(): AppSettingsRepository
     fun widgetProcessingSource(): WidgetProcessingSource
+    fun rediscoverWidgetUpdater(): RediscoverWidgetUpdater
 }
 
 /** アプリと同じく、ブランド配色(既定)か壁紙に合わせたダイナミックカラー。ライト/ダークは端末に合わせる。 */

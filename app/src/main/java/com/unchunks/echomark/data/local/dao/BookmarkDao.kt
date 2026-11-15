@@ -10,6 +10,7 @@ import androidx.room.Update
 import com.unchunks.echomark.data.local.entity.BookmarkContentRow
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkListRow
+import com.unchunks.echomark.data.local.entity.BookmarkSourceRow
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.domain.bookmark.duplicates.UrlEntry
@@ -317,6 +318,17 @@ interface BookmarkDao {
 
     @Query("SELECT * FROM bookmarks WHERE id IN (:ids)")
     suspend fun getByIds(ids: List<Long>): List<BookmarkEntity>
+
+    /**
+     * 最後に開いた日時が古い順に [limit] 件(同じなら ID の順)。出すのに要る列だけ読む(本文・タグは読まない)。
+     * 「しばらく開いていない」で絞るのは、この並びの先頭からの範囲なので、取ったあとに日時で絞っても、
+     * 先に絞ってから [limit] 件取るのと同じになる(呼び出し側で今の日時を使える)。再発見ウィジェットの候補
+     */
+    @Query(
+        "SELECT id, type, title, contentUri, siteName, filePath, mimeType, fileSize, createdAt, lastAccessedAt, isArchived " +
+            "FROM bookmarks ORDER BY lastAccessedAt ASC, id ASC LIMIT :limit"
+    )
+    fun observeLeastRecentlyAccessed(limit: Int): Flow<List<BookmarkSourceRow>>
 
     // タグ付きブックマークの取得
     @Transaction

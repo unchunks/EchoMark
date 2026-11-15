@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.backup
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.data.attachment.isValidAttachmentPath
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.mapper.WebSourcesJson
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.CategoryEntity
@@ -160,7 +161,7 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "bookmarks": [ {全列。summaryEdited・categoryEdited は手で直した・選んだときだけ} ], "tags": [ {id, name, isUserCreated, parentId は親があるときだけ} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
  *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil・branchedFromId・branchedAt は無ければ省略} ],
- *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ],
+ *   "messages": [ {全列。referencedBookmarkIds は数値の配列。webSources はオブジェクトの配列で、無ければ省略} ],
  *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ],
  *   "categories": [ {name, description, createdAt} ],
  *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ],
@@ -222,10 +223,13 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 21: 端末の設定(settings。テーマ・並び順・読書モード・AI の選び方・処理の時間など。BackupCoverage で決めたもの)を追加。
  *   20 以前は設定が無いものとして読む。設定は読み込んだあとに利用者が選んだときだけ戻す。知らない名前(新しい版の設定)は読み飛ばし、
  *   型の違う値は壊れた要素として数える。アプリのロック・オフラインモード・API キー・この端末だけの設定は入れない
+ * - 22: チャットの回答に webSources(回答の根拠にした Web のページ。DB v29 の chat_messages.webSources)を追加。
+ *   21 以前は Web のページが無いものとして読む。http/https 以外の URL・番号の無いものは除く。
+ *   会話の webSearchEnabled(Web 検索のオン・オフ)は質問の語句を端末の外に送る設定なので入れず、読み込んだ会話ではオフにする
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 21
+    const val CURRENT_VERSION = 22
 
     /** 要約の履歴の1版の長さの上限(文字)。壊れた・書き換えられたファイルで巨大な文字列を入れない */
     private const val MAX_SUMMARY_LENGTH = 100_000
@@ -482,6 +486,9 @@ object BackupJson {
         .put("content", content)
         .put("referencedBookmarkIds", JSONArray(parseReferencedIds(referencedBookmarkIds)))
         .put("createdAt", createdAt)
+        .apply {
+            WebSourcesJson.decode(webSources).takeIf { it.isNotEmpty() }?.let { put("webSources", WebSourcesJson.toJsonArray(it)) }
+        }
 
     // ---- JSON → エンティティ(必須項目が無い・未知の種類なら null) ----
 
@@ -755,7 +762,9 @@ object BackupJson {
             role = enumOrNull<ChatRole>(optString("role")) ?: return null,
             content = stringOrNull("content") ?: return null,
             referencedBookmarkIds = formatReferencedIds(ids),
-            createdAt = longOrNull("createdAt") ?: return null
+            createdAt = longOrNull("createdAt") ?: return null,
+            // version 21 以前には無い(Web のページは無いものとして読む)。形のおかしいものは除く
+            webSources = optJSONArray("webSources")?.let { WebSourcesJson.encode(WebSourcesJson.fromJsonArray(it)) }
         )
     }
 
