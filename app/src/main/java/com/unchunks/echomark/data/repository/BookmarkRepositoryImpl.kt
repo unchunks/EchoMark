@@ -837,6 +837,11 @@ class BookmarkRepositoryImpl @Inject constructor(
             .map { list -> list.map { it.toDomain() } }
             .flowOn(dispatcherProvider.io)
 
+    override fun observeLeastRecentlyAccessed(limit: Int): Flow<List<Bookmark>> =
+        bookmarkDao.observeLeastRecentlyAccessed(limit)
+            .map { rows -> rows.map { it.toDomain() } }
+            .flowOn(dispatcherProvider.io)
+
     override fun observeAllTags(): Flow<List<Tag>> =
         tagDao.getAllTags().map { list -> list.map { Tag(it.id, it.name) } }
             .flowOn(dispatcherProvider.io)

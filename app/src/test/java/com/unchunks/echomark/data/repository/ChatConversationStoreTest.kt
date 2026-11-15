@@ -22,6 +22,7 @@ import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeLlmProvider
+import com.unchunks.echomark.testing.FakeWebSourceProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -62,7 +63,8 @@ class ChatConversationStoreTest {
             llmProviderResolver = resolver,
             bookmarkRepository = bookmarks,
             chatMemory = ChatMemoryCompressor(db.conversationDao(), db.chatMessageDao(), resolver, dispatchers),
-            dispatcherProvider = dispatchers
+            dispatcherProvider = dispatchers,
+            webSourceProvider = FakeWebSourceProvider()
         )
     }
 

@@ -8,6 +8,8 @@ import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.ChatMessageEntity
 import com.unchunks.echomark.data.local.entity.ConversationEntity
+import com.unchunks.echomark.data.mapper.WebSourcesJson
+import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
@@ -92,7 +94,10 @@ class BackupCoverageTest {
             )
         ),
         messages = listOf(
-            ChatMessageEntity(id = 7, conversationId = 5, role = ChatRole.USER, content = "A?", referencedBookmarkIds = "1", createdAt = 402)
+            ChatMessageEntity(
+                id = 7, conversationId = 5, role = ChatRole.ASSISTANT, content = "A [2]", referencedBookmarkIds = "1", createdAt = 402,
+                webSources = WebSourcesJson.encode(listOf(WebSource(2, "https://example.com/w", "ページ", "example.com", "抜粋")))
+            )
         ),
         tagAliases = listOf(TagAliasEntity(aliasKey = TagNames.key("Kotlin言語"), alias = "Kotlin言語", tagId = 10)),
         removedTags = listOf(RemovedTagEntity(bookmarkId = 1, tagKey = TagNames.key("java"), tagName = "java", removedAt = 600)),

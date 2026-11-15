@@ -57,6 +57,9 @@ interface ConversationDao {
     @Query("UPDATE conversations SET isPinned = :pinned WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean)
 
+    @Query("UPDATE conversations SET webSearchEnabled = :enabled WHERE id = :id")
+    suspend fun setWebSearchEnabled(id: Long, enabled: Boolean)
+
     /**
      * 会話一覧用。固定した会話を先に、それぞれ最終更新の新しい順に、各会話の最後のメッセージと質問の対象のブックマーク名を添えて返す。
      * スキーマを変えずに済むよう、相関サブクエリで最新の1件を引く(chat_messages.conversationId に索引あり)。

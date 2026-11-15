@@ -18,6 +18,7 @@ import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /** URLブックマーク保存の結果。isDuplicate=true なら既存のブックマークを再利用した */
 data class SaveResult(val id: Long, val isDuplicate: Boolean)
@@ -242,6 +243,16 @@ interface BookmarkRepository {
 
     // Observe / Search
     fun observeBookmarks(): Flow<List<Bookmark>>
+
+    /**
+     * 最後に開いた日時が古い順に [limit] 件(同じなら ID の順)。再発見ウィジェットの候補。
+     * タイトル・出どころ・日時・アーカイブかどうかだけが入り、本文・要約・タグは入らない
+     * ([observeBookmarks] は全件を本文・タグごと読み直すため、変わるたびに読み直すものには重い)
+     */
+    fun observeLeastRecentlyAccessed(limit: Int): Flow<List<Bookmark>> =
+        observeBookmarks().map { list ->
+            list.sortedWith(compareBy<Bookmark> { it.lastAccessedAt }.thenBy { it.id }).take(limit)
+        }
     fun observeAllTags(): Flow<List<Tag>>
     fun observeBookmark(id: Long): Flow<Bookmark?>
 

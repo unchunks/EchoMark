@@ -4,6 +4,7 @@ import com.unchunks.components.composeui.ChatMarkdown
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.chat.RagSupport
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.websearch.WebSource
 
 /** 回答から作るメモの内容。 */
 data class ChatNote(val title: String, val content: String)
@@ -16,10 +17,12 @@ object ChatNotes {
      * 引用番号は会話の中でしか意味が無いため本文から除き、引用した保存の名前を末尾に書き出す。
      * @param question この回答の質問。タイトルに使う。無ければ回答の冒頭を使う
      * @param sources 回答が引用した保存(番号の順)
+     * @param webSources 回答が引用した Web のページ(番号の順)。保存の後に「(Web)」を付けて書き出す
      */
-    fun from(question: String?, answer: ChatMessage, sources: List<Bookmark>): ChatNote {
+    fun from(question: String?, answer: ChatMessage, sources: List<Bookmark>, webSources: List<WebSource> = emptyList()): ChatNote {
         val body = ChatMarkdown.toPlainText(RagSupport.withoutCitations(answer).content).trim()
-        val sourceLines = sources.map { source -> "- ${source.title}" + source.contentUri?.let { " ($it)" }.orEmpty() }
+        val sourceLines = sources.map { source -> "- ${source.title}" + source.contentUri?.let { " ($it)" }.orEmpty() } +
+            webSources.map { source -> "- (Web) ${source.title} (${source.url})" }
         val content = listOfNotNull(
             body,
             (listOf(SOURCES_HEADER) + sourceLines).joinToString("\n").takeIf { sourceLines.isNotEmpty() }

@@ -16,5 +16,7 @@ data class Conversation(
     /** この会話を分けた元の会話。分けていなければ null(元が削除済みのこともある)。 */
     val branchedFromId: Long? = null,
     /** 元の会話と共通の最後の発言の日時。 */
-    val branchedAt: Long? = null
+    val branchedAt: Long? = null,
+    /** この会話の質問で Web を検索するか(質問の語句が端末の外に出る)。 */
+    val webSearchEnabled: Boolean = false
 )

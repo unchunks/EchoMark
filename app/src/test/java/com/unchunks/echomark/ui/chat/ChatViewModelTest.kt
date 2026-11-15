@@ -28,6 +28,7 @@ import com.unchunks.echomark.testing.FakeChatModelRepository
 import com.unchunks.echomark.testing.FakeChatSpeechOutput
 import com.unchunks.echomark.testing.FakeChatVoiceInput
 import com.unchunks.echomark.testing.FakeChatRepository
+import com.unchunks.echomark.testing.FakeWebSearchStatus
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.navigation.Routes
 import kotlinx.coroutines.CompletableDeferred
@@ -60,6 +61,7 @@ class ChatViewModelTest {
     private val settings = FakeAppSettingsRepository()
     private val voiceInput = FakeChatVoiceInput()
     private val speechOutput = FakeChatSpeechOutput()
+    private val webSearchStatus = FakeWebSearchStatus()
     private val attachmentSource = object : ChatAttachmentSource {
         override suspend fun load(uri: String): ChatAttachmentContext = ChatAttachmentContext("資料.txt", "添付の本文")
     }
@@ -67,7 +69,7 @@ class ChatViewModelTest {
     private fun createViewModel(
         savedState: SavedStateHandle = SavedStateHandle(),
         repo: FakeChatRepository = repository
-    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels, dispatchers, settings, voiceInput, speechOutput)
+    ) = ChatViewModel(repo, aiSetup, savedState, attachmentSource, chatModels, dispatchers, settings, voiceInput, speechOutput, webSearchStatus)
 
     @Test
     fun モデル未取得のときは専用メッセージとAI設定への導線を出しisSendingが戻る() = runTest {
@@ -176,7 +178,8 @@ class ChatViewModelTest {
                 pinnedBookmarkId: Long?,
                 isRetry: Boolean,
                 attachment: ChatAttachmentContext?,
-                scope: BookmarkQuery?
+                scope: BookmarkQuery?,
+                webSearch: Boolean
             ): Flow<ChatStreamEvent> = flow {
                 sent += conversationId to userMessage
                 gate.await()
@@ -251,7 +254,8 @@ class ChatViewModelTest {
                 pinnedBookmarkId: Long?,
                 isRetry: Boolean,
                 attachment: ChatAttachmentContext?,
-                scope: BookmarkQuery?
+                scope: BookmarkQuery?,
+                webSearch: Boolean
             ): Flow<ChatStreamEvent> = flow {
                 emit(ChatStreamEvent.Started(listOf(1L, 2L)))
                 emit(ChatStreamEvent.Delta("こんに"))
@@ -287,7 +291,8 @@ class ChatViewModelTest {
                 pinnedBookmarkId: Long?,
                 isRetry: Boolean,
                 attachment: ChatAttachmentContext?,
-                scope: BookmarkQuery?
+                scope: BookmarkQuery?,
+                webSearch: Boolean
             ): Flow<ChatStreamEvent> = flow {
                 emit(ChatStreamEvent.Delta("途中"))
                 try {
@@ -320,7 +325,8 @@ class ChatViewModelTest {
             pinnedBookmarkId: Long?,
             isRetry: Boolean,
             attachment: ChatAttachmentContext?,
-            scope: BookmarkQuery?
+            scope: BookmarkQuery?,
+            webSearch: Boolean
         ): Flow<ChatStreamEvent> = flow {
             sendCalls += SendCall(conversationId, userMessage, pinnedBookmarkId, isRetry)
             emit(ChatStreamEvent.Started(emptyList()))
@@ -964,6 +970,7 @@ class ChatViewModelTest {
         dispatchers,
         settings,
         voiceInput,
-        speechOutput
+        speechOutput,
+        webSearchStatus
     )
 }

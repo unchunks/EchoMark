@@ -887,4 +887,37 @@ class MigrationTest {
         }
         connection.close()
     }
+
+    @Test
+    fun migrate28To29_addsWebSearchColumnsTurnedOff() {
+        helper.createDatabase(28).apply {
+            execSQL(
+                "INSERT INTO conversations (id, title, isTitleManuallySet, createdAt, updatedAt, isPinned) VALUES (1, '会話', 0, 100, 200, 1)"
+            )
+            execSQL(
+                "INSERT INTO chat_messages (id, conversationId, role, content, referencedBookmarkIds, createdAt) " +
+                    "VALUES (1, 1, 'ASSISTANT', '回答 [1]', '5', 150)"
+            )
+            close()
+        }
+
+        // スキーマ v29 と一致するか(列・既定値)も検証される
+        val connection = helper.runMigrationsAndValidate(29, listOf(MIGRATION_28_29))
+
+        // 既存の会話は Web 検索オフ(質問の語句を勝手に外に出さない)。ほかの値は変わらない
+        connection.prepare("SELECT title, isPinned, webSearchEnabled FROM conversations").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("会話", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+            assertEquals(0L, stmt.getLong(2))
+        }
+        // 既存の回答は Web のページを使っていない(NULL)
+        connection.prepare("SELECT content, referencedBookmarkIds, webSources FROM chat_messages").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("回答 [1]", stmt.getText(0))
+            assertEquals("5", stmt.getText(1))
+            assertTrue(stmt.isNull(2))
+        }
+        connection.close()
+    }
 }

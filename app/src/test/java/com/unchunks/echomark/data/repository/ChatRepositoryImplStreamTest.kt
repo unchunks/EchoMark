@@ -39,6 +39,13 @@ import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeEmbeddingProvider
 import com.unchunks.echomark.testing.FakeLlmProvider
+import com.unchunks.echomark.testing.FakeWebSourceProvider
+import com.unchunks.echomark.domain.websearch.WebSourceProvider
+import com.unchunks.echomark.domain.websearch.CollectedWebSource
+import com.unchunks.echomark.domain.websearch.WebSearchException
+import com.unchunks.echomark.domain.websearch.WebSource
+import com.unchunks.echomark.data.mapper.toDomain
+import com.unchunks.echomark.data.network.OfflineModeException
 import com.unchunks.echomark.testing.testBookmark
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -94,7 +101,8 @@ class ChatRepositoryImplStreamTest {
     private fun repository(
         llm: LlmProvider,
         settings: FakeAppSettingsRepository = FakeAppSettingsRepository(LlmBackend.LOCAL),
-        embeddingProvider: EmbeddingProvider = noEmbedding
+        embeddingProvider: EmbeddingProvider = noEmbedding,
+        webSources: WebSourceProvider = FakeWebSourceProvider()
     ) = ChatRepositoryImpl(
         conversationDao = conversationDao,
         chatMessageDao = messageDao,
@@ -103,7 +111,8 @@ class ChatRepositoryImplStreamTest {
         llmProviderResolver = LlmProviderResolver(LocalLlmProviders { llm }, { llm }, settings, FakeApiKeyRepository()),
         bookmarkRepository = bookmarkRepository,
         chatMemory = chatMemory(llm, settings),
-        dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
+        dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
+        webSourceProvider = webSources
     )
 
     @Test
@@ -166,7 +175,8 @@ class ChatRepositoryImplStreamTest {
             ),
             bookmarkRepository = brokenSearch,
             chatMemory = chatMemory(FakeLlmProvider(), FakeAppSettingsRepository(LlmBackend.LOCAL)),
-            dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined)
+            dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
+            webSourceProvider = FakeWebSourceProvider()
         )
 
         val events = repository.sendMessageStream(1L, "最近の保存は？").toList()
@@ -663,6 +673,144 @@ class ChatRepositoryImplStreamTest {
      * このテストは埋め込み無しの経路だけを通り、ベクトル検索は呼ばれないので未初期化のインスタンスで足りる
      * (呼ばれると NullPointerException になる。ベクトル検索の失敗を試すテストではそれを使う)。
      */
+    private fun webSource(n: Int, fromPage: Boolean = true) = CollectedWebSource(
+        url = "https://site$n.example.com/page",
+        title = "ページ$n",
+        domain = "site$n.example.com",
+        excerpt = "Kotlin のコルーチンの抜粋$n",
+        fromPage = fromPage
+    )
+
+    @Test
+    fun Web検索をオンにすると_資料の続きの番号でWebのページを文脈に入れ_回答と一緒に保存する() = runBlocking {
+        val web = FakeWebSourceProvider(listOf(webSource(1), webSource(2, fromPage = false)))
+        val llm = LimitsLlm(ChatContextLimits.COMPACT)
+
+        val events = repository(llm, webSources = web).sendMessageStream(1L, "Kotlin のコルーチン", webSearch = true).toList()
+
+        assertEquals(ChatStreamEvent.SearchingWeb, events[0])
+        assertEquals(ChatStreamEvent.Started(listOf(5L), webSourceCount = 2), events[1])
+        assertEquals(listOf("Kotlin のコルーチン"), web.queries)
+        // 端末内 AI の量(2件・短い抜粋)で集める
+        assertEquals(ChatContextLimits.COMPACT.webSources, web.lastLimit)
+        assertEquals(ChatContextLimits.COMPACT.webChars, web.lastExcerptChars)
+        // ブックマークが [1]、Web のページが [2]・[3]。いちばん近い資料の次に置く
+        assertTrue(llm.context[0], llm.context[0].startsWith("[1] Kotlin 入門"))
+        assertEquals("[2] (Web: site1.example.com) ページ1: Kotlin のコルーチンの抜粋1", llm.context[1])
+        assertTrue(llm.context[2], llm.context[2].startsWith("[3] (Web: site2.example.com)"))
+
+        val saved = messageDao.all.value.last().toDomain()
+        assertEquals(listOf(2, 3), saved.webSources.map { it.number })
+        assertEquals("ページ1", saved.webSources[0].title)
+        assertEquals("Kotlin のコルーチンの抜粋1", saved.webSources[0].excerpt)
+        // ページを読めず検索結果の概要だけで答えたものは、検索サービスの文字(タイトル・概要)を残さない
+        assertEquals("site2.example.com", saved.webSources[1].title)
+        assertEquals("", saved.webSources[1].excerpt)
+    }
+
+    @Test
+    fun Web検索がオフなら検索しない() = runBlocking {
+        val web = FakeWebSourceProvider(listOf(webSource(1)))
+
+        val events = repository(FakeLlmProvider(listOf("回答")), webSources = web).sendMessageStream(1L, "Kotlin").toList()
+
+        assertTrue(web.queries.isEmpty())
+        assertFalse(events.any { it == ChatStreamEvent.SearchingWeb })
+        assertTrue(messageDao.all.value.last().webSources == null)
+    }
+
+    @Test
+    fun Web検索に失敗しても_理由を知らせて保存内容だけで答える() = runBlocking {
+        val web = FakeWebSourceProvider(failure = WebSearchException.InvalidKey())
+        val llm = LimitsLlm(ChatContextLimits.COMPACT)
+
+        val events = repository(llm, webSources = web).sendMessageStream(1L, "Kotlin", webSearch = true).toList()
+
+        assertEquals(ChatStreamEvent.WebSearchSkipped(WebSearchException.InvalidKey().message!!), events[1])
+        assertEquals(ChatStreamEvent.Started(listOf(5L), webSourceCount = 0), events[2])
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+        assertEquals(1, llm.context.size)
+    }
+
+    @Test
+    fun オフラインモードで止められたら_その理由を出す() = runBlocking {
+        val web = FakeWebSourceProvider(failure = OfflineModeException("api.search.brave.com"))
+
+        val events = repository(FakeLlmProvider(listOf("回答")), webSources = web)
+            .sendMessageStream(1L, "Kotlin", webSearch = true).toList()
+
+        val skipped = events.filterIsInstance<ChatStreamEvent.WebSearchSkipped>().single()
+        assertTrue(skipped.reason, skipped.reason.contains("オフラインモード"))
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
+    fun Webで何も見つからなければ_そのことを知らせる() = runBlocking {
+        val events = repository(FakeLlmProvider(listOf("回答")), webSources = FakeWebSourceProvider())
+            .sendMessageStream(1L, "Kotlin", webSearch = true).toList()
+
+        assertTrue(events.any { it is ChatStreamEvent.WebSearchSkipped })
+        assertTrue(events.last() is ChatStreamEvent.Completed)
+    }
+
+    @Test
+    fun Web検索をオンにすると資料の数を減らしてページの分を残す() = runBlocking {
+        fakeBookmarks.bookmarks.value = (1L..7L).map { testBookmark(id = it, title = "記事$it") }
+        searchReturnsAll = true
+        val llm = LimitsLlm(ChatContextLimits.COMPACT)
+        val web = FakeWebSourceProvider(listOf(webSource(1), webSource(2), webSource(3)))
+
+        repository(llm, webSources = web).sendMessageStream(1L, "記事について", webSearch = true).toList()
+
+        val webEntries = llm.context.filter { it.contains("(Web: ") }
+        assertEquals(ChatContextLimits.COMPACT.maxSourcesWithWeb + ChatContextLimits.COMPACT.webSources, llm.context.size)
+        assertEquals(ChatContextLimits.COMPACT.webSources, webEntries.size)
+        // Web のページの番号は、資料の数の続き
+        assertTrue(webEntries.first(), webEntries.first().startsWith("[${ChatContextLimits.COMPACT.maxSourcesWithWeb + 1}] "))
+    }
+
+    @Test
+    fun AIを使えないときは_検索語を外に出さない() = runBlocking {
+        val web = FakeWebSourceProvider(listOf(webSource(1)))
+        val repository = ChatRepositoryImpl(
+            conversationDao = conversationDao,
+            chatMessageDao = messageDao,
+            vectorSearch = unusedVectorSearch(),
+            embeddingProvider = noEmbedding,
+            llmProviderResolver = LlmProviderResolver(
+                LocalLlmProviders { throw IllegalStateException("モデルが無い") }, { FakeLlmProvider() },
+                FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()
+            ),
+            bookmarkRepository = bookmarkRepository,
+            chatMemory = chatMemory(FakeLlmProvider(), FakeAppSettingsRepository(LlmBackend.LOCAL)),
+            dispatcherProvider = TestDispatcherProvider(Dispatchers.Unconfined),
+            webSourceProvider = web
+        )
+
+        val events = repository.sendMessageStream(1L, "Kotlin", webSearch = true).toList()
+
+        assertTrue(events.last() is ChatStreamEvent.Failed)
+        assertTrue(web.queries.isEmpty())
+    }
+
+    @Test
+    fun Webのページを保存するとURLのブックマークにする() = runBlocking {
+        val result = repository(FakeLlmProvider()).saveWebSource(
+            WebSource(3, "https://example.com/a", "記事の題", "example.com", "抜粋")
+        )
+
+        val saved = fakeBookmarks.bookmarks.value.first { it.id == result.id }
+        assertEquals("https://example.com/a", saved.contentUri)
+        assertEquals("記事の題", saved.title)
+    }
+
+    @Test
+    fun 新しい会話のWeb検索のオンオフを会話に保存する() = runBlocking {
+        repository(FakeLlmProvider()).createConversation(webSearchEnabled = true)
+
+        assertTrue(conversationDao.inserted.single().webSearchEnabled)
+    }
+
     private fun unusedVectorSearch(): VectorSearchDataSource {
         val unsafeClass = Class.forName("sun.misc.Unsafe")
         val unsafe = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null)
@@ -726,6 +874,10 @@ private class FakeConversationDao : ConversationDao {
     override fun observeBranches(conversationId: Long): Flow<List<ConversationEntity>> = MutableStateFlow(emptyList())
     override suspend fun search(pattern: String): List<ConversationMatchRow> = emptyList()
     override suspend fun setPinned(id: Long, pinned: Boolean) = Unit
+    val webSearchChanges = mutableListOf<Pair<Long, Boolean>>()
+    override suspend fun setWebSearchEnabled(id: Long, enabled: Boolean) {
+        webSearchChanges += id to enabled
+    }
     override fun observeAllWithLastMessage(): Flow<List<ConversationWithLastMessage>> =
         MutableStateFlow(emptyList())
     override suspend fun touch(id: Long, updatedAt: Long) = Unit
