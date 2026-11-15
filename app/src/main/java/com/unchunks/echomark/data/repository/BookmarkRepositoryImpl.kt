@@ -81,6 +81,9 @@ class BookmarkRepositoryImpl @Inject constructor(
     private val deletedExtras: DeletedBookmarkExtrasStash = DeletedBookmarkExtrasStash()
 ) : BookmarkRepository {
 
+    // 一覧の読む時間の目安の覚え(一覧の画面の ViewModel が持つこのインスタンスの間、使い回す)
+    private val readingMinutes = ReadingMinutesCache()
+
     override suspend fun saveBookmark(bookmark: Bookmark): SaveResult =
         withContext(dispatcherProvider.io) {
             val contentUri = bookmark.contentUri
@@ -748,26 +751,52 @@ class BookmarkRepositoryImpl @Inject constructor(
         query: BookmarkQuery,
         sortOrder: BookmarkSortOrder
     ): Flow<List<Bookmark>> =
-        bookmarkDao.observeFiltered(
-            archived = query.filter == BookmarkFilter.ARCHIVED,
-            favoriteOnly = query.filter == BookmarkFilter.FAVORITES,
-            tagIds = query.tagIds.toList(),
-            tagCount = query.tagIds.size,
-            matchAll = query.tagMatch == TagMatch.ALL,
-            categories = query.categories.toList(),
-            categoryCount = query.categories.size,
-            types = query.types.map { it.name },
-            typeCount = query.types.size,
-            createdSince = query.period?.sinceMillis(System.currentTimeMillis()) ?: 0L,
-            readFilter = when (query.readState) {
+        query.filtered(sortOrder, bookmarkDao::observeFiltered)
+            .map { list -> list.map { it.toDomain() } }
+            .flowOn(dispatcherProvider.io)
+
+    override fun observeBookmarkList(
+        query: BookmarkQuery,
+        sortOrder: BookmarkSortOrder
+    ): Flow<List<Bookmark>> =
+        query.filtered(sortOrder, bookmarkDao::observeFilteredWithoutContent)
+            .map { rows ->
+                // 読む時間の目安は、本文が変わったものだけ本文を読んで求め直す
+                val lengths = rows.mapNotNull { row -> row.contentLength?.takeIf { it > 0 }?.let { row.bookmark.id to it } }.toMap()
+                val minutes = readingMinutes.minutesFor(lengths) { ids ->
+                    bookmarkDao.getContents(ids).associate { it.id to it.content }
+                }
+                rows.map { row -> row.toDomain().copy(estimatedReadingMinutes = minutes[row.bookmark.id]) }
+            }
+            .flowOn(dispatcherProvider.io)
+
+    /** 一覧の絞り込み・並べ替え([BookmarkDao.observeFiltered] の引数)で [observe] を呼ぶ */
+    private fun <T> BookmarkQuery.filtered(
+        sortOrder: BookmarkSortOrder,
+        observe: (
+            archived: Boolean?, favoriteOnly: Boolean, tagIds: List<Long>, tagCount: Int, matchAll: Boolean,
+            categories: List<String>, categoryCount: Int, types: List<String>, typeCount: Int,
+            createdSince: Long, readFilter: Int, sortOrder: String
+        ) -> Flow<List<T>>
+    ): Flow<List<T>> =
+        observe(
+            filter == BookmarkFilter.ARCHIVED,
+            filter == BookmarkFilter.FAVORITES,
+            tagIds.toList(),
+            tagIds.size,
+            tagMatch == TagMatch.ALL,
+            categories.toList(),
+            categories.size,
+            types.map { it.name },
+            types.size,
+            period?.sinceMillis(System.currentTimeMillis()) ?: 0L,
+            when (readState) {
                 null -> 0
                 ReadState.UNREAD -> 1
                 ReadState.READ -> 2
             },
-            sortOrder = sortOrder.name
+            sortOrder.name
         )
-            .map { list -> list.map { it.toDomain() } }
-            .flowOn(dispatcherProvider.io)
 
     override suspend fun search(query: String): List<Bookmark> =
         searchWithDetails(query).bookmarks

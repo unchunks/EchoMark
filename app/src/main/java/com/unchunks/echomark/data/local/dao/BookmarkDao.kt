@@ -7,7 +7,9 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.unchunks.echomark.data.local.entity.BookmarkContentRow
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.local.entity.BookmarkListRow
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.domain.bookmark.duplicates.UrlEntry
@@ -185,16 +187,16 @@ interface BookmarkDao {
 
     // ---- 処理の状況の画面 ----
 
-    /** 処理中・処理待ちのもの。処理中を先に、処理待ちは頼んだ順(古い順)に並べる */
+    /** 処理中・処理待ちのもの。処理中を先に、処理待ちは頼んだ順(古い順)に並べる。本文は読まない(content は null) */
     @Query(
-        "SELECT * FROM bookmarks WHERE aiStatus IN ('PENDING', 'PROCESSING') " +
+        "SELECT " + BOOKMARK_COLUMNS_WITHOUT_CONTENT + " FROM bookmarks WHERE aiStatus IN ('PENDING', 'PROCESSING') " +
             "ORDER BY CASE aiStatus WHEN 'PROCESSING' THEN 0 ELSE 1 END, COALESCE(queuedAt, createdAt), id"
     )
     fun observeProcessingQueue(): Flow<List<BookmarkEntity>>
 
-    /** 処理に失敗したもの(新しい順、[limit] 件まで) */
+    /** 処理に失敗したもの(新しい順、[limit] 件まで)。本文は読まない(content は null) */
     @Query(
-        "SELECT * FROM bookmarks WHERE aiStatus = 'FAILED' " +
+        "SELECT " + BOOKMARK_COLUMNS_WITHOUT_CONTENT + " FROM bookmarks WHERE aiStatus = 'FAILED' " +
             "ORDER BY COALESCE(processingFinishedAt, createdAt) DESC, id DESC LIMIT :limit"
     )
     fun observeRecentFailures(limit: Int): Flow<List<BookmarkEntity>>
@@ -336,31 +338,7 @@ interface BookmarkDao {
      * 同順位は新しい順。
      */
     @Transaction
-    @Query("""
-        WITH RECURSIVE selected(root, id) AS (
-            SELECT id, id FROM tags WHERE id IN (:tagIds)
-            UNION
-            SELECT s.root, t.id FROM tags AS t INNER JOIN selected AS s ON t.parentId = s.id
-        )
-        SELECT * FROM bookmarks
-        WHERE (:archived IS NULL OR isArchived = :archived)
-        AND (:favoriteOnly = 0 OR isFavorite = 1)
-        AND (:tagCount = 0 OR NOT EXISTS (SELECT 1 FROM selected) OR (
-            SELECT COUNT(DISTINCT s.root) FROM bookmark_tag_cross_ref AS r
-            INNER JOIN selected AS s ON s.id = r.tagId
-            WHERE r.bookmarkId = bookmarks.id
-        ) >= CASE WHEN :matchAll = 1 THEN (SELECT COUNT(DISTINCT root) FROM selected) ELSE 1 END)
-        AND (:categoryCount = 0 OR category COLLATE NOCASE IN (:categories))
-        AND (:typeCount = 0 OR type IN (:types))
-        AND (:createdSince = 0 OR createdAt >= :createdSince)
-        AND (:readFilter = 0 OR (:readFilter = 1 AND readAt IS NULL) OR (:readFilter = 2 AND readAt IS NOT NULL))
-        ORDER BY
-            CASE WHEN :sortOrder = 'OLDEST' THEN createdAt END ASC,
-            CASE WHEN :sortOrder = 'RECENTLY_OPENED' THEN lastAccessedAt END DESC,
-            CASE WHEN :sortOrder = 'TITLE' THEN title END COLLATE NOCASE ASC,
-            createdAt DESC,
-            id DESC
-    """)
+    @Query(FILTERED_SELECTED_TAGS + " SELECT * FROM bookmarks " + FILTERED_CONDITIONS_AND_ORDER)
     fun observeFiltered(
         archived: Boolean?,
         favoriteOnly: Boolean,
@@ -375,6 +353,34 @@ interface BookmarkDao {
         readFilter: Int,
         sortOrder: String
     ): Flow<List<BookmarkWithTags>>
+
+    /**
+     * [observeFiltered] と同じ絞り込み・並べ替えで、本文を読まないもの(一覧の画面用)。content は null で、本文の長さ(文字数)を
+     * [BookmarkListRow.contentLength] に入れる。一覧はブックマークが変わるたびに全件を読み直すので、本文(取得したページの本文)まで読むと重い
+     */
+    @Transaction
+    @Query(
+        FILTERED_SELECTED_TAGS + " SELECT " + BOOKMARK_COLUMNS_WITHOUT_CONTENT + ", LENGTH(content) AS contentLength " +
+            "FROM bookmarks " + FILTERED_CONDITIONS_AND_ORDER
+    )
+    fun observeFilteredWithoutContent(
+        archived: Boolean?,
+        favoriteOnly: Boolean,
+        tagIds: List<Long>,
+        tagCount: Int,
+        matchAll: Boolean,
+        categories: List<String>,
+        categoryCount: Int,
+        types: List<String>,
+        typeCount: Int,
+        createdSince: Long,
+        readFilter: Int,
+        sortOrder: String
+    ): Flow<List<BookmarkListRow>>
+
+    /** [ids] の本文(読む時間の目安を求めるため。一覧の問い合わせでは本文を読まない) */
+    @Query("SELECT id, content FROM bookmarks WHERE id IN (:ids)")
+    suspend fun getContents(ids: List<Long>): List<BookmarkContentRow>
 
     @Transaction
     @Query("SELECT * FROM bookmarks WHERE id = :id")
@@ -413,3 +419,41 @@ interface BookmarkDao {
     """)
     suspend fun searchByKeyword(pattern: String): List<BookmarkWithTags>
 }
+
+/**
+ * bookmarks の列のうち、本文(content)の代わりに NULL を返す並び(本文の要らない問い合わせで、BookmarkEntity として読むため)。
+ * bookmarks に列を足したら、ここにも足す(BookmarkColumnsTest が、表の列と食い違うと失敗する)
+ */
+internal const val BOOKMARK_COLUMNS_WITHOUT_CONTENT =
+    "id, type, NULL AS content, contentUri, title, summary, category, createdAt, lastAccessedAt, aiStatus, imageUrl, siteName, " +
+        "isFavorite, isArchived, filePath, mimeType, fileName, fileSize, contentFetchedAt, processingStage, queuedAt, " +
+        "processingStartedAt, stageStartedAt, processingFinishedAt, failureReason, summaryEdited, categoryEdited, readAt, " +
+        "snapshotPath, snapshotPdfPath, snapshotAt, latitude, longitude, placeName, readingListAt"
+
+/** 一覧の絞り込みで選んだタグと、その下の階層のタグ(selected(root, id))。[BookmarkDao.observeFiltered] を参照 */
+internal const val FILTERED_SELECTED_TAGS = """
+        WITH RECURSIVE selected(root, id) AS (
+            SELECT id, id FROM tags WHERE id IN (:tagIds)
+            UNION
+            SELECT s.root, t.id FROM tags AS t INNER JOIN selected AS s ON t.parentId = s.id
+        )"""
+
+/** 一覧の絞り込みの条件と並べ替え。[BookmarkDao.observeFiltered] を参照 */
+internal const val FILTERED_CONDITIONS_AND_ORDER = """
+        WHERE (:archived IS NULL OR isArchived = :archived)
+        AND (:favoriteOnly = 0 OR isFavorite = 1)
+        AND (:tagCount = 0 OR NOT EXISTS (SELECT 1 FROM selected) OR (
+            SELECT COUNT(DISTINCT s.root) FROM bookmark_tag_cross_ref AS r
+            INNER JOIN selected AS s ON s.id = r.tagId
+            WHERE r.bookmarkId = bookmarks.id
+        ) >= CASE WHEN :matchAll = 1 THEN (SELECT COUNT(DISTINCT root) FROM selected) ELSE 1 END)
+        AND (:categoryCount = 0 OR category COLLATE NOCASE IN (:categories))
+        AND (:typeCount = 0 OR type IN (:types))
+        AND (:createdSince = 0 OR createdAt >= :createdSince)
+        AND (:readFilter = 0 OR (:readFilter = 1 AND readAt IS NULL) OR (:readFilter = 2 AND readAt IS NOT NULL))
+        ORDER BY
+            CASE WHEN :sortOrder = 'OLDEST' THEN createdAt END ASC,
+            CASE WHEN :sortOrder = 'RECENTLY_OPENED' THEN lastAccessedAt END DESC,
+            CASE WHEN :sortOrder = 'TITLE' THEN title END COLLATE NOCASE ASC,
+            createdAt DESC,
+            id DESC"""

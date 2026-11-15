@@ -215,6 +215,16 @@ interface BookmarkRepository {
     ): Flow<List<Bookmark>>
 
     /**
+     * 一覧の画面に出すもの。[observeBookmarks]([query], [sortOrder])と同じものを同じ順に流すが、本文([Bookmark.content])は入れず、
+     * 読む時間の目安を [Bookmark.estimatedReadingMinutes] に入れる(一覧はブックマークが変わるたびに全件を読み直すため、本文まで読むと重い)。
+     * 本文の要るところ(チャットに渡すなど)では [observeBookmarks] を使う
+     */
+    fun observeBookmarkList(
+        query: BookmarkQuery,
+        sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST
+    ): Flow<List<Bookmark>> = observeBookmarks(query, sortOrder)
+
+    /**
      * ハイブリッド検索。キーワード(LIKE)とベクトル類似の結果を RRF で統合して返す。
      * キーワードは空白(全角を含む)で区切った語をすべて含むもの(AND)。
      * 埋め込みが使えない場合はキーワードのみ。一覧の絞り込み([BookmarkQuery])との積は、呼び出し側で取る。
