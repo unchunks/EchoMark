@@ -34,6 +34,8 @@ class TopLevelNavigationTest {
                 composable(BOOKMARKS_ROUTE) { Text("一覧") }
                 composable(CHAT_ROUTE) { Text("会話一覧") }
                 composable(CHAT_NEW_ROUTE) { Text("新しいチャット") }
+                composable(EXPLORE_ROUTE) { Text("見つける") }
+                composable(Routes.COLLECTIONS) { Text("コレクション") }
                 composable(SETTINGS_ROUTE) { Text("設定") }
                 composable(Routes.AI_SETTINGS) { Text("AI 設定") }
             }
@@ -127,6 +129,22 @@ class TopLevelNavigationTest {
 
         act { navigateToTopLevel(BOOKMARKS_ROUTE) }
         assertEquals(BOOKMARKS_ROUTE, selectedRoute())
+    }
+
+    @Test
+    fun 見つけるタブから開いた画面は_見つけるタブに属し_タブを押し直すと最初の画面に戻る() {
+        setContent()
+        act { navigateToTopLevel(EXPLORE_ROUTE) }
+        act { navigate(Routes.COLLECTIONS) }
+        assertEquals(EXPLORE_ROUTE, selectedRoute())
+
+        act { navigateToTopLevel(EXPLORE_ROUTE) }
+        assertEquals(listOf(BOOKMARKS_ROUTE, EXPLORE_ROUTE), routes)
+
+        // ほかのタブへ移って戻ると、見つけるタブが開く
+        act { navigateToTopLevel(CHAT_ROUTE) }
+        act { navigateToTopLevel(EXPLORE_ROUTE) }
+        assertEquals(EXPLORE_ROUTE, navController.currentDestination?.route)
     }
 
     @Test

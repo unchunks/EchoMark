@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.Share
@@ -29,7 +30,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 
-/** カードの長押しで出す操作メニュー(お気に入り・既読/未読・アーカイブ・共有・削除)。 */
+/**
+ * カードの長押しで出す操作メニュー(お気に入り・あとで読む・既読/未読・アーカイブ・共有・削除)。
+ * @param onToggleReadingList 「あとで読む」に入れる・外す。null なら項目を出さない
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookmarkActionSheet(
@@ -39,7 +43,8 @@ fun BookmarkActionSheet(
     onToggleRead: () -> Unit,
     onToggleArchive: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onToggleReadingList: (() -> Unit)? = null
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         BookmarkActionSheetContent(
@@ -52,7 +57,8 @@ fun BookmarkActionSheet(
             onToggleRead = onToggleRead,
             onToggleArchive = onToggleArchive,
             onShare = onShare,
-            onDelete = onDelete
+            onDelete = onDelete,
+            onToggleReadingList = onToggleReadingList
         )
     }
 }
@@ -65,7 +71,8 @@ internal fun BookmarkActionSheetContent(
     onToggleRead: () -> Unit,
     onToggleArchive: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onToggleReadingList: (() -> Unit)? = null
 ) {
     Column(Modifier.padding(bottom = 16.dp)) {
         Text(
@@ -81,6 +88,14 @@ internal fun BookmarkActionSheetContent(
             label = if (bookmark.isFavorite) "お気に入りから外す" else "お気に入りに追加",
             onClick = { onAction(onToggleFavorite) }
         )
+        if (onToggleReadingList != null) {
+            // 開かずに一覧から、読むものを取り置ける(詳細画面のメニューと同じ操作)
+            ActionItem(
+                icon = Icons.Outlined.AutoStories,
+                label = if (bookmark.isInReadingList) "「あとで読む」から外す" else "あとで読む",
+                onClick = { onAction(onToggleReadingList) }
+            )
+        }
         ActionItem(
             icon = if (bookmark.isRead) Icons.Outlined.MarkEmailUnread else Icons.Outlined.TaskAlt,
             label = if (bookmark.isRead) "未読に戻す" else "既読にする",

@@ -22,6 +22,7 @@ import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.bookmark.AddBookmarkForm
 import com.unchunks.echomark.ui.bookmark.AddBookmarkSheetContent
 import com.unchunks.echomark.ui.bookmark.AddMode
+import com.unchunks.echomark.ui.bookmark.BookmarkActionSheetContent
 import com.unchunks.echomark.ui.bookmark.BookmarkListCallbacks
 import com.unchunks.echomark.ui.bookmark.BookmarkListContent
 import com.unchunks.echomark.ui.bookmark.BookmarkListUiState
@@ -290,6 +291,23 @@ class BookmarkListScreenshotTest {
             )
         )
     )
+
+    /** カードの長押しで出す操作メニュー(一覧から「あとで読む」に入れられる) */
+    @Test
+    fun actionSheet() = screenshot.captureLightDark("library_action_sheet") {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            BookmarkActionSheetContent(
+                bookmark = PreviewSamples.urlBookmark,
+                onAction = {},
+                onToggleFavorite = {},
+                onToggleRead = {},
+                onToggleArchive = {},
+                onShare = {},
+                onDelete = {},
+                onToggleReadingList = {}
+            )
+        }
+    }
 
     @Test
     fun addSheet() = screenshot.captureLightDark("library_add_sheet") {

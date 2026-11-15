@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -67,6 +69,8 @@ import com.unchunks.echomark.ui.collections.CollectionDetailScreen
 import com.unchunks.echomark.ui.collections.CollectionDetailViewModel
 import com.unchunks.echomark.ui.collections.CollectionsScreen
 import com.unchunks.echomark.ui.discover.DiscoverScreen
+import com.unchunks.echomark.ui.explore.ExploreActions
+import com.unchunks.echomark.ui.explore.ExploreScreen
 import com.unchunks.echomark.ui.linkcheck.BrokenLinksScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.graph.GraphScreen
@@ -91,8 +95,12 @@ private enum class TopLevelDestination(
 ) {
     BOOKMARKS(BOOKMARKS_ROUTE, "ブックマーク", Icons.Filled.Bookmarks, Icons.Outlined.Bookmarks),
     CHAT(CHAT_ROUTE, "チャット", Icons.Filled.Forum, Icons.Outlined.Forum),
+    EXPLORE(EXPLORE_ROUTE, "見つける", Icons.Filled.Explore, Icons.Outlined.Explore),
     SETTINGS("settings", "設定", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
+
+/** 「見つける」タブ(読む・ふり返る、資料を探す、分析、コレクション、タグ、重複、リンク切れへの入口) */
+internal const val EXPLORE_ROUTE = "explore"
 
 /** チャットタブ(会話の一覧) */
 internal const val CHAT_ROUTE = "chat"
@@ -417,6 +425,20 @@ fun EchoMarkNavHost(
                     onBack = navController.popBackAction(),
                     onOpenBookmark = { id -> navController.navigate(Routes.bookmarkDetail(id)) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
+                )
+            }
+            // 「見つける」タブ。ここから開いた画面は、このタブの上に積む(戻るとこのタブに戻る)
+            composable(TopLevelDestination.EXPLORE.route) {
+                ExploreScreen(
+                    actions = ExploreActions(
+                        onOpenReview = dropUnlessResumed { navController.navigate(Routes.REVIEW) },
+                        onOpenDiscover = dropUnlessResumed { navController.navigate(Routes.DISCOVER) },
+                        onOpenInsights = dropUnlessResumed { navController.navigate(Routes.INSIGHTS) },
+                        onOpenCollections = dropUnlessResumed { navController.navigate(Routes.COLLECTIONS) },
+                        onOpenTags = dropUnlessResumed { navController.navigate(Routes.TAGS) },
+                        onOpenDuplicates = dropUnlessResumed { navController.navigate(Routes.DUPLICATES) },
+                        onOpenBrokenLinks = dropUnlessResumed { navController.navigate(Routes.BROKEN_LINKS) }
+                    )
                 )
             }
             composable(TopLevelDestination.SETTINGS.route) {
