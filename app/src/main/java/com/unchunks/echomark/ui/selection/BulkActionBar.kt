@@ -3,11 +3,12 @@ package com.unchunks.echomark.ui.selection
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+
+
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -208,7 +209,7 @@ fun BulkActionBar(
 
     val close = { dialog = null }
     when (dialog) {
-        DIALOG_ADD_TAG -> AddTagDialog(
+        DIALOG_ADD_TAG -> AddTagSheet(
             suggestions = tagSuggestions,
             count = selected.size,
             onConfirm = { name ->
@@ -280,39 +281,40 @@ private fun MenuItem(text: String, icon: androidx.compose.ui.graphics.vector.Ima
 }
 
 /** タグの名前を入れて、選んだすべてに付ける。候補は、すでにあるタグ(タップで入力に入る) */
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddTagDialog(suggestions: List<String>, count: Int, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+private fun AddTagSheet(suggestions: List<String>, count: Int, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("${count}件にタグを付ける") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("タグの名前") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                val candidates = suggestions.filter { name.isBlank() || it.contains(name.trim(), ignoreCase = true) }.take(MAX_TAG_SUGGESTIONS)
-                if (candidates.isNotEmpty()) {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        candidates.forEach { tag ->
-                            FilterChip(selected = tag == name.trim(), onClick = { name = tag }, label = { Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis) })
-                        }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 16.dp).navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("${count}件にタグを付ける", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("タグの名前") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            val candidates = suggestions.filter { name.isBlank() || it.contains(name.trim(), ignoreCase = true) }.take(MAX_TAG_SUGGESTIONS)
+            if (candidates.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    candidates.forEach { tag ->
+                        FilterChip(selected = tag == name.trim(), onClick = { name = tag }, label = { Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis) })
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) { Text("付ける") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
-    )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onDismiss) { Text("キャンセル") }
+                TextButton(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) { Text("付ける") }
+            }
+        }
+    }
 }
 
 /** 選んだものに付いているタグから、外すものを選ぶ(多く付いているものから) */

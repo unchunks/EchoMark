@@ -10,7 +10,9 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -335,6 +337,7 @@ class BookmarkListSelectionTest {
             BulkActionCallbacks(onAddTag = { calls.log += "add:$it" }, onRemoveTag = { calls.log += "remove:$it" })
         )
 
+
         composeRule.onNodeWithContentDescription("その他の操作").performClick()
         composeRule.onNodeWithText("タグを付ける").performClick()
         composeRule.onNodeWithText("2件にタグを付ける").assertIsDisplayed()
@@ -346,8 +349,8 @@ class BookmarkListSelectionTest {
         composeRule.onNodeWithContentDescription("その他の操作").performClick()
         composeRule.onNodeWithText("タグを外す").performClick()
         // 選んだものに付いているタグが、多く付いているものから並ぶ
-        composeRule.onNodeWithText("#Kotlin").assertIsDisplayed()
-        composeRule.onNodeWithText("#Kotlin").performClick()
+        composeRule.onNode(hasText("#Kotlin") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        composeRule.onNode(hasText("#Kotlin") and hasAnyAncestor(isDialog())).performClick()
 
         assertEquals(listOf("add:Android", "remove:Kotlin"), calls.log)
     }
