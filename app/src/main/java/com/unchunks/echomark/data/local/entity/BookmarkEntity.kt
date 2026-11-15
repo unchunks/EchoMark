@@ -11,9 +11,15 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 
 // ここを変更するときは、ccom.unchunks.echomark.domain.bookmark.model.Bookmark.kt の変更が不要か確認すること
 // contentUri に unique index を張り、同一URLの重複保存を防ぐ(NULLは複数可)
+// aiStatus・lastAccessedAt・createdAt は、よく読み直す問い合わせの絞り込み・並べ替えに使う(処理の状況、再発見・最近読んだもの、未読の新しい順)
 @Entity(
     tableName = "bookmarks",
-    indices = [Index(value = ["contentUri"], unique = true)]
+    indices = [
+        Index(value = ["contentUri"], unique = true),
+        Index(value = ["aiStatus"]),
+        Index(value = ["lastAccessedAt"]),
+        Index(value = ["createdAt"])
+    ]
 )
 data class BookmarkEntity (
     @PrimaryKey(autoGenerate = true)
