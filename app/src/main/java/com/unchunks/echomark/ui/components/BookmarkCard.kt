@@ -29,13 +29,21 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Placeable
@@ -343,16 +351,46 @@ internal fun SourceLine(
     }
 }
 
+/**
+ * お気に入りの星ボタン。押したことが指と目で分かるよう、軽く振動させ、色をなめらかに変え、
+ * 付けたときだけ星を少し弾ませる(外すときは静かに戻す)。
+ */
 @Composable
 internal fun FavoriteButton(isFavorite: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
+    val haptics = LocalHapticFeedback.current
+    val tint by animateColorAsState(
+        targetValue = if (isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "favoriteTint"
+    )
+    val scale = remember { Animatable(1f) }
+    var wasFavorite by remember { mutableStateOf(isFavorite) }
+    LaunchedEffect(isFavorite) {
+        if (isFavorite && !wasFavorite) {
+            scale.snapTo(FAVORITE_POP_START_SCALE)
+            scale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium))
+        }
+        wasFavorite = isFavorite
+    }
+    IconButton(
+        onClick = {
+            haptics.performHapticFeedback(if (isFavorite) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+            onClick()
+        }
+    ) {
         Icon(
             imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
             contentDescription = if (isFavorite) "お気に入りから外す" else "お気に入りに追加",
-            tint = if (isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
+            tint = tint,
+            modifier = Modifier.graphicsLayer {
+                scaleX = scale.value
+                scaleY = scale.value
+            }
         )
     }
 }
+
+/** お気に入りに付けた瞬間の星の大きさ(ここから元の大きさへ弾んで戻る) */
+private const val FAVORITE_POP_START_SCALE = 0.6f
 
 /**
  * サムネイル。OG 画像があれば読み込み、読み込み中・失敗時・画像なしのときはプレースホルダー

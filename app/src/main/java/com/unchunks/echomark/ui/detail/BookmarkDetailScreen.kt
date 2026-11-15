@@ -35,7 +35,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AddToHomeScreen
 import androidx.compose.material.icons.outlined.AutoStories
@@ -61,7 +60,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Translate
-import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -167,6 +165,7 @@ import com.unchunks.echomark.ui.components.AiStatusBadge
 import com.unchunks.echomark.ui.components.AiTagIcon
 import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
+import com.unchunks.echomark.ui.components.FavoriteButton
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.description
 import com.unchunks.echomark.ui.components.formatElapsed
@@ -647,13 +646,7 @@ private fun DetailTopBar(
                     Icon(Icons.AutoMirrored.Outlined.MenuBook, contentDescription = "読書モード")
                 }
             }
-            IconButton(onClick = callbacks.onToggleFavorite) {
-                Icon(
-                    imageVector = if (bookmark.isFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                    contentDescription = if (bookmark.isFavorite) "お気に入りから外す" else "お気に入りに追加",
-                    tint = if (bookmark.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            FavoriteButton(isFavorite = bookmark.isFavorite, onClick = callbacks.onToggleFavorite)
             IconButton(onClick = { callbacks.onShare(bookmark) }) {
                 Icon(Icons.Outlined.Share, contentDescription = "共有")
             }

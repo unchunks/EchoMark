@@ -321,7 +321,7 @@ private fun LazyListScope.readingListItems(state: ReviewHubUiState, actions: Rev
             EmptyState(
                 icon = Icons.Outlined.AutoStories,
                 title = "「あとで読む」はまだ空です",
-                description = "ブックマークの詳細画面のメニューから「あとで読む」に入れると、ここに入れた順に並びます。読むと自動で外れます。",
+                description = "一覧でカードを長押しするか、詳細画面のメニューから「あとで読む」に入れると、ここに入れた順に並びます。読むと自動で外れます。",
                 modifier = Modifier.height(280.dp)
             )
         }

@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
@@ -146,7 +147,10 @@ internal fun BookmarkListDetailDestination(
                 onOpenCollections = onOpenCollections,
                 onOpenBrokenLinks = onOpenBrokenLinks,
                 selectedBookmarkId = if (twoPane) selectedId else null,
-                onBookmarkRemoved = { id -> if (id == selectedId) select(null) }
+                onBookmarkRemoved = { id -> if (id == selectedId) select(null) },
+                // 長押しのメニューの「あとで読む」用。右側の詳細(同じストアに既定のキーで作る)とは別のものにして、
+                // 結果の知らせを取り合わないようにする
+                readLaterViewModel = hiltViewModel(key = "list_read_later")
             )
         },
         detail = {
