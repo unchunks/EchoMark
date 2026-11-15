@@ -35,7 +35,7 @@ class FactChecker @Inject constructor(
     /**
      * @throws com.unchunks.echomark.domain.websearch.WebSearchException 検索できない(キー・上限など)。途中までの結果は返さない
      */
-    suspend fun check(text: String, onProgress: (FactCheckProgress) -> Unit): List<CheckedClaim> {
+    suspend fun check(text: String, onProgress: (FactCheckProgress) -> Unit = {}): List<CheckedClaim> {
         val provider = try {
             resolver.resolve(AiTask.CHAT)
         } catch (e: CancellationException) {

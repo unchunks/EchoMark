@@ -920,4 +920,34 @@ class MigrationTest {
         }
         connection.close()
     }
+
+    @Test
+    fun migrate29To30_addsEmptyFactChecksWithOneRowPerTarget() {
+        helper.createDatabase(29).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (1, 'TEXT', '記事', 100, 200, 'DONE', 0, 0, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v30 と一致するか(テーブル・一意の索引)も検証される
+        val connection = helper.runMigrationsAndValidate(30, listOf(MIGRATION_29_30))
+
+        connection.prepare("SELECT COUNT(*) FROM fact_checks").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        connection.prepare("SELECT title FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("記事", stmt.getText(0))
+        }
+        // 対象ごとに1行(同じ対象をもう一度入れると失敗する。アプリは置き換えで入れる)
+        connection.execSQL("INSERT INTO fact_checks (targetType, targetId, textHash, claims, checkedAt) VALUES ('BOOKMARK_SUMMARY', 1, 'h', '[]', 5)")
+        val twice = runCatching {
+            connection.execSQL("INSERT INTO fact_checks (targetType, targetId, textHash, claims, checkedAt) VALUES ('BOOKMARK_SUMMARY', 1, 'h2', '[]', 6)")
+        }
+        assertTrue(twice.isFailure)
+        connection.close()
+    }
 }

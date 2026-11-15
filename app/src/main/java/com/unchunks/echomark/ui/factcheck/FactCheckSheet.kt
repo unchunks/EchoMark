@@ -148,7 +148,10 @@ internal const val FACT_CHECK_HINT =
 @Composable
 private fun ClaimCard(claim: CheckedClaim, onOpenUrl: (String) -> Unit) {
     val style = verdictStyle(claim.verdict)
-    OutlinedCard(colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(style.icon, contentDescription = null, tint = style.color, modifier = Modifier.size(18.dp))
