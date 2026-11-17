@@ -40,6 +40,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -424,7 +427,8 @@ fun EchoMarkNavHost(
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                     onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) },
                     onOpenProcessingQueue = { navController.navigate(Routes.PROCESSING_QUEUE) },
-                    onOpenCategories = { navController.navigate(Routes.CATEGORIES) }
+                    onOpenCategories = { navController.navigate(Routes.CATEGORIES) },
+                    layout = layout
                 )
             }
             // カテゴリの管理(設定の「AI」の欄から開く)
@@ -614,6 +618,8 @@ internal fun EchoMarkNavigationBar(
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 狭い画面で長いラベルが折り返しても、各項目のアイコンとラベルの開始位置をそろえる。
+    val labelLines = if (LocalConfiguration.current.screenWidthDp < 440 && LocalDensity.current.fontScale >= 1.5f) 2 else 1
     NavigationBar(modifier = modifier) {
         TopLevelDestination.entries.forEach { destination ->
             val selected = destination.route == selectedRoute
@@ -621,7 +627,13 @@ internal fun EchoMarkNavigationBar(
                 selected = selected,
                 onClick = { onNavigate(destination.route) },
                 icon = { TopLevelIcon(destination, selected) },
-                label = { Text(destination.label) }
+                label = {
+                    Text(
+                        text = destination.label,
+                        textAlign = TextAlign.Center,
+                        minLines = labelLines
+                    )
+                }
             )
         }
     }
