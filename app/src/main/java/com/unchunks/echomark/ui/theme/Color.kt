@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 
 // ブランドカラー。「保存した知識が響き返ってくる」イメージで、
 // 知的で落ち着いたインディゴを primary、響き(エコー)を表すティールを tertiary に置く。
-// M3 のトーン(数字は明度の目安)に沿って、文字と背景のコントラスト比 4.5:1 以上を確保している。
+// M3 のトーン(数字は明度の目安)に沿って、背景と前景のカラーロールを組み合わせる。
 
 // ---- ライト ----
 val PrimaryLight = Color(0xFF4A55A7) // インディゴ T40
@@ -28,9 +28,7 @@ val OnErrorLight = Color(0xFFFFFFFF)
 val ErrorContainerLight = Color(0xFFFFDAD6)
 val OnErrorContainerLight = Color(0xFF93000A)
 
-val BackgroundLight = Color(0xFFFBF8FF) // ほんのりインディゴを含んだ白
-val OnBackgroundLight = Color(0xFF1B1B21)
-val SurfaceLight = Color(0xFFFBF8FF)
+val SurfaceLight = Color(0xFFFBF8FF) // ほんのりインディゴを含んだ白
 val OnSurfaceLight = Color(0xFF1B1B21)
 val SurfaceVariantLight = Color(0xFFE3E1EC)
 val OnSurfaceVariantLight = Color(0xFF46464F)
@@ -69,9 +67,7 @@ val OnErrorDark = Color(0xFF690005)
 val ErrorContainerDark = Color(0xFF93000A)
 val OnErrorContainerDark = Color(0xFFFFDAD6)
 
-val BackgroundDark = Color(0xFF121318) // 真っ黒ではなく、わずかに青みのある黒
-val OnBackgroundDark = Color(0xFFE4E1E9)
-val SurfaceDark = Color(0xFF121318)
+val SurfaceDark = Color(0xFF121318) // わずかに青みのある黒
 val OnSurfaceDark = Color(0xFFE4E1E9)
 val SurfaceVariantDark = Color(0xFF46464F)
 val OnSurfaceVariantDark = Color(0xFFC7C5D0)
