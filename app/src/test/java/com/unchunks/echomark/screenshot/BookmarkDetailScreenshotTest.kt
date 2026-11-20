@@ -1,0 +1,252 @@
+package com.unchunks.echomark.screenshot
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
+import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
+import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
+import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
+import com.unchunks.echomark.domain.model.SummarySource
+import com.unchunks.echomark.domain.model.SummaryVersion
+import com.unchunks.echomark.ui.components.PreviewSamples
+import com.unchunks.echomark.ui.detail.BookmarkDetailCallbacks
+import com.unchunks.echomark.domain.bookmark.model.ReadingBlock
+import com.unchunks.echomark.domain.bookmark.model.ReadingFont
+import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
+import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
+import com.unchunks.echomark.ui.detail.BookmarkDetailContent
+import com.unchunks.echomark.ui.detail.ReadingModeContent
+import com.unchunks.echomark.ui.detail.BookmarkDetailUiState
+import com.unchunks.echomark.ui.detail.EditBookmarkSheetContent
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.GraphicsMode
+
+/** 詳細画面(URL・メモ・AI 処理中・失敗・準備待ち)と編集シートの見た目。 */
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class BookmarkDetailScreenshotTest {
+
+    @get:Rule
+    val screenshot = ScreenshotRule()
+
+    private fun content(
+        bookmark: Bookmark?,
+        related: List<Bookmark> = emptyList(),
+        stageProgress: Float? = null,
+        stageAverages: Map<StageDurationKey, Long> = emptyMap(),
+        summaryHistory: List<SummaryVersion> = emptyList(),
+        highlightTerms: List<String> = emptyList()
+    ): @Composable () -> Unit = {
+        BookmarkDetailContent(
+            uiState = BookmarkDetailUiState(
+                isLoading = false, bookmark = bookmark, related = related,
+                stageProgress = stageProgress, stageAverages = stageAverages, summaryHistory = summaryHistory,
+                highlightTerms = highlightTerms
+            ),
+            snackbarHostState = SnackbarHostState(),
+            callbacks = BookmarkDetailCallbacks(),
+            nowMillis = PreviewSamples.NOW
+        )
+    }
+
+    private val urlBookmark = PreviewSamples.urlBookmark.copy(
+        category = "技術記事",
+        content = "Jetpack Compose は宣言的に UI を組み立てるツールキットです。状態が変わると関係する部分だけが" +
+            "再コンポーズされますが、不安定な型や毎回生成されるラムダがあると、不要な再コンポーズが起きます。" +
+            "この記事では、安定性の考え方と、remember・derivedStateOf の使い分け、Lazy リストの key 指定など、" +
+            "計測しながら改善する手順を紹介します。まずは Layout Inspector で再コンポーズ回数を確認しましょう。"
+    )
+
+    @Test
+    fun url() = screenshot.captureScreenLightDark(
+        "library_detail_url",
+        heightDp = 1400,
+        content = content(urlBookmark, related = listOf(PreviewSamples.textBookmark, PreviewSamples.processingBookmark))
+    )
+
+    @Test
+    fun urlFromSearch() = screenshot.captureScreenLightDark(
+        "library_detail_url_search",
+        heightDp = 1400,
+        content = content(urlBookmark, highlightTerms = listOf("compose", "remember"))
+    )
+
+    private val readingBlocks = listOf(
+        ReadingBlock.Paragraph("Jetpack Compose は宣言的に UI を組み立てるツールキットです。状態が変わると関係する部分だけが再コンポーズされます。"),
+        ReadingBlock.Paragraph("不安定な型や毎回生成されるラムダがあると、不要な再コンポーズが起きます。この記事では、安定性の考え方と、remember・derivedStateOf の使い分けを紹介します。"),
+        ReadingBlock.Heading("計測する"),
+        ReadingBlock.Paragraph("まずは Layout Inspector で再コンポーズ回数を確認しましょう。")
+    )
+
+    private fun readingMode(style: ReadingStyle): @Composable () -> Unit = {
+        ReadingModeContent(
+            title = "Jetpack Compose のパフォーマンスを改善する 7 つのヒント",
+            source = "Example Tech Blog", readingMinutes = 4, blocks = readingBlocks,
+            style = style, highlightTerms = listOf("remember"), onStyleChange = {}, onClose = {}
+        )
+    }
+
+    @Test
+    fun readingModeSystem() = screenshot.captureScreenLightDark("library_reading_mode", content = readingMode(ReadingStyle()))
+
+    @Test
+    fun readingModePaperSerifLarge() = screenshot.captureScreenLightDark(
+        "library_reading_mode_paper",
+        content = readingMode(ReadingStyle(ReadingFontSize.LARGE, ReadingTheme.PAPER, ReadingFont.SERIF))
+    )
+
+    @Test
+    fun readingModeBlack() = screenshot.captureScreenLightDark(
+        "library_reading_mode_black",
+        content = readingMode(ReadingStyle(ReadingFontSize.MEDIUM, ReadingTheme.DARK, ReadingFont.SANS))
+    )
+
+    @Test
+    fun memo() = screenshot.captureScreenLightDark(
+        "library_detail_memo",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                aiStatus = AiStatus.DONE,
+                category = "読書",
+                content = "情報は編集することで知識になる。\n関係を見つけて、つなぎ直すのが編集。"
+            )
+        )
+    )
+
+    /** 要約を手で直した(印と履歴ボタンが出る) */
+    @Test
+    fun summaryEdited() = screenshot.captureScreenLightDark(
+        "library_detail_summary_edited",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                aiStatus = AiStatus.DONE,
+                category = "読書",
+                summary = "編集して知識に変える、という考え方を自分の言葉で直したメモ。",
+                summaryEdited = true,
+                content = "情報は編集することで知識になる。"
+            ),
+            summaryHistory = listOf(
+                SummaryVersion(2, 3, "編集して知識に変える、という考え方を自分の言葉で直したメモ。", SummarySource.MANUAL, null, null, PreviewSamples.NOW - 60_000),
+                SummaryVersion(1, 3, "情報を「編集」することで自分の知識に変えるという考え方のメモ。", SummarySource.AI, "端末内 AI", "日本語・文章", PreviewSamples.NOW - 3_600_000)
+            )
+        )
+    )
+
+    @Test
+    fun processing() = screenshot.captureScreenLightDark(
+
+        "library_detail_processing",
+        content = content(PreviewSamples.processingBookmark)
+    )
+
+    @Test
+    fun processingWithProgress() = screenshot.captureScreenLightDark(
+        "library_detail_processing_progress",
+        content = content(
+            PreviewSamples.processingBookmark.copy(
+                type = BookmarkType.AUDIO,
+                contentUri = null,
+                title = "会議の録音 2026-10-20",
+                filePath = "attachments/meeting.m4a",
+                mimeType = "audio/mp4",
+                processing = ProcessingInfo(stage = ProcessingStage.EXTRACT_CONTENT)
+            ),
+            stageProgress = 0.4f,
+            stageAverages = mapOf(
+                StageDurationKey(ProcessingStage.ANALYZE, ContentKind.AUDIO) to 90_000L,
+                StageDurationKey(ProcessingStage.EMBED, ContentKind.AUDIO) to 5_000L
+            )
+        )
+    )
+
+    @Test
+    fun done() = screenshot.captureScreenLightDark(
+        "library_detail_done_duration",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                aiStatus = AiStatus.DONE,
+                processing = ProcessingInfo(startedAt = 0L, finishedAt = 192_000L)
+            )
+        )
+    )
+
+    @Test
+    fun failedWithReason() = screenshot.captureScreenLightDark(
+        "library_detail_failed_reason",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                summary = null,
+                processing = ProcessingInfo(failureReason = ProcessingFailureReason.TIMEOUT)
+            )
+        )
+    )
+
+    @Test
+    fun waitingModelWithReason() = screenshot.captureScreenLightDark(
+        "library_detail_waiting_reason",
+        content = content(
+            PreviewSamples.waitingModelBookmark.copy(
+                processing = ProcessingInfo(failureReason = ProcessingFailureReason.MODEL_NOT_AVAILABLE)
+            )
+        )
+    )
+
+    @Test
+    fun retrying() = screenshot.captureScreenLightDark(
+        "library_detail_retrying",
+        content = content(
+            PreviewSamples.textBookmark.copy(
+                aiStatus = AiStatus.PENDING,
+                summary = null,
+                processing = ProcessingInfo(failureReason = ProcessingFailureReason.NETWORK)
+            )
+        )
+    )
+
+    @Test
+    fun failed() = screenshot.captureScreenLightDark(
+        "library_detail_failed",
+        content = content(PreviewSamples.textBookmark.copy(summary = null))
+    )
+
+    @Test
+    fun waitingModel() = screenshot.captureScreenLightDark(
+        "library_detail_waiting",
+        content = content(
+            PreviewSamples.processingBookmark.copy(
+                aiStatus = AiStatus.WAITING_MODEL,
+                title = "アーキテクチャガイド | Android Developers",
+                siteName = "Android Developers",
+                isArchived = true
+            )
+        )
+    )
+
+    @Test
+    fun notFound() = screenshot.captureScreenLightDark("library_detail_not_found", content = content(null))
+
+    @Test
+    fun editSheet() = screenshot.captureLightDark("library_detail_edit_sheet") {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            EditBookmarkSheetContent(
+                isLink = true,
+                title = urlBookmark.title,
+                content = "あとで読む。第3章が特に参考になる。",
+                onTitleChange = {},
+                onContentChange = {},
+                onCancel = {},
+                onSave = {}
+            )
+        }
+    }
+}

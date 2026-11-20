@@ -1,8 +1,115 @@
 package com.unchunks.echomark.ui.chat
 
+import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.ChatMessage
+import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.model.ConversationBranch
+import com.unchunks.echomark.domain.repository.AiSetupState
+import com.unchunks.echomark.domain.repository.ChatModelChoices
+import com.unchunks.echomark.domain.websearch.WebSearchAvailability
 
 data class ChatUiState(
+    /** 会話のタイトル。まだ会話が作られていなければ null(「新しいチャット」と表示)。 */
+    val title: String? = null,
+    /** 会話が作成済みか(リネーム・削除はこのときだけできる)。 */
+    val hasConversation: Boolean = false,
+    /** 既存の会話のメッセージを読み込み中。新規会話では最初から false。 */
+    val isLoading: Boolean = false,
     val messages: List<ChatMessage> = emptyList(),
-    val isSending: Boolean = false
+    /** 引用カード表示用の bookmarkId -> ブックマーク。削除済みブックマークは含まれない。 */
+    val referencedBookmarks: Map<Long, Bookmark> = emptyMap(),
+    /** 「このブックマークについて質問」の対象。通常の会話では null。 */
+    val aboutBookmark: Bookmark? = null,
+    /** 空の会話で出す質問の例。 */
+    val suggestions: List<String> = emptyList(),
+    val isSending: Boolean = false,
+    /**
+     * 生成中の回答(先頭からの全文)。生成中でなければ null。
+     * 送信直後で最初の文字がまだ届いていない間は空文字。完了すると [messages] 側に保存済みの回答が現れる。
+     */
+    val streamingText: String? = null,
+    /** 文脈に使うブックマークが決まったら、その件数。関連ブックマークを探している間は null。 */
+    val pendingReferenceCount: Int? = null,
+    val error: ChatError? = null,
+    val aiSetup: AiSetupState = AiSetupState.READY,
+    /** 保存済みの回答の messageId -> 引用元と資料との照らし合わせの結果。確かめ終わった回答から入る。 */
+    val answerReviews: Map<Long, AnswerReview> = emptyMap(),
+    /** 最後の回答に続く質問の候補。 */
+    val followUps: List<String> = emptyList(),
+    /** 参照する範囲の短い説明。保存全体を見ているなら null。 */
+    val scopeLabel: String? = null,
+    /** 同じブックマークについて前に質問した会話。新しく始めたときだけ、続きから開けるようにする。 */
+    val previousAboutConversationId: Long? = null,
+    /** ユーザーが保存したテンプレート。 */
+    val userTemplates: List<ChatTemplate> = emptyList(),
+    /** この会話を分けた元の会話(分けていない・元が削除済みなら null)。 */
+    val branchParent: ConversationBranch? = null,
+    /** この会話から分けた会話。 */
+    val branches: List<ConversationBranch> = emptyList(),
+    /** 音声入力の進み具合。 */
+    val voiceState: ChatVoiceState = ChatVoiceState.IDLE,
+    /** 音声入力・読み上げを使えなかった理由(なければ null)。 */
+    val voiceError: String? = null,
+    /** 読み上げている回答。 */
+    val speakingMessageId: Long? = null,
+    /** トップバーで選べる AI。 */
+    val modelChoices: ChatModelChoices = ChatModelChoices(),
+    /** 次の質問に添付するファイルの名前(添付していなければ null)。送信すると外れる。 */
+    val attachmentName: String? = null,
+    /** 添付のファイルを読み込んでいる間 true */
+    val isAttaching: Boolean = false,
+    /** 添付を使えなかった理由(なければ null) */
+    val attachmentError: String? = null,
+    /** Web 検索のオン・オフと、使えるか。 */
+    val webSearch: ChatWebSearchState = ChatWebSearchState(),
+    /** Web を検索している間 true(生成中の進み具合に出す) */
+    val isSearchingWeb: Boolean = false,
+    /** 文脈に入れた Web のページの数が決まったら、その数。 */
+    val pendingWebSourceCount: Int? = null
+) {
+    /** 何もメッセージが無い新しい会話(挨拶と質問の例を出す)。 */
+    val isEmptyConversation: Boolean
+        get() = !isLoading && messages.isEmpty() && !isSending && error == null
+}
+
+/**
+ * チャットの Web 検索(会話ごとに覚える。新しい会話ではオフ)。
+ * @property enabled この会話でオンにしているか
+ * @property availability キーを保存しているか・オフラインモードか
+ * @property notice 直近の質問で Web を検索できなかった理由など(なければ null)。次の質問を送ると消える
+ * @property showKeyPrompt キーが無いのにオンにしようとした(設定への案内を出す)
+ * @property savedUrls この画面でブックマークに保存した Web のページの URL
+ */
+data class ChatWebSearchState(
+    val enabled: Boolean = false,
+    val availability: WebSearchAvailability = WebSearchAvailability(),
+    val notice: String? = null,
+    val showKeyPrompt: Boolean = false,
+    val savedUrls: Set<String> = emptySet()
+) {
+    /** オンで、実際に検索できる(質問の語句が端末の外に出る) */
+    val active: Boolean get() = enabled && availability.usable
+}
+
+/** 音声入力の進み具合。 */
+enum class ChatVoiceState {
+    IDLE,
+
+    /** 録音している */
+    LISTENING,
+
+    /** 録音を終えて文字に起こしている */
+    TRANSCRIBING
+}
+
+/**
+ * 送信の失敗。
+ * @param message 画面に出す日本語
+ * @param failedMessage 再試行で送り直す質問
+ * @param needsAiSettings API キー未設定・モデル未取り込みなど、AI 設定を見直せば直る失敗
+ */
+data class ChatError(
+    val message: String,
+    val failedMessage: String,
+    val needsAiSettings: Boolean = false
 )

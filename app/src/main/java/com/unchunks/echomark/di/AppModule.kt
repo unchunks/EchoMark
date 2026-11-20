@@ -1,5 +1,7 @@
 package com.unchunks.echomark.di
 
+import com.unchunks.components.core.DefaultDispatcherProvider
+import com.unchunks.components.core.DispatcherProvider
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn

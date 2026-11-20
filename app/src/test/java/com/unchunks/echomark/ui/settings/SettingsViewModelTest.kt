@@ -1,0 +1,364 @@
+package com.unchunks.echomark.ui.settings
+
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.echomark.crash.CrashEnvironment
+import com.unchunks.echomark.crash.CrashLogKind
+import com.unchunks.echomark.crash.CrashLogStore
+import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.lock.AppLockSettings
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
+import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.usage.ApiUsagePeriods
+import com.unchunks.echomark.domain.usage.ApiUsageRecord
+import com.unchunks.echomark.domain.repository.DataOperationException
+import com.unchunks.echomark.domain.repository.LlmBackend
+import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.testing.FakeApiKeyRepository
+import com.unchunks.echomark.testing.FakeApiUsageRepository
+import com.unchunks.echomark.testing.FakeAppSettingsRepository
+import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.testing.FakeDataManagementRepository
+import com.unchunks.echomark.testing.FakeAutoBackupController
+import com.unchunks.echomark.testing.FakeOfflineModeController
+import com.unchunks.echomark.domain.repository.BackupSettings
+import com.unchunks.echomark.testing.FakeProcessingScheduleController
+import com.unchunks.echomark.domain.repository.ProcessingSettings
+import com.unchunks.echomark.testing.FakeRediscoverScheduleController
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import java.time.DayOfWeek
+
+/** ModelManager が Context を使うため Robolectric で動かす。 */
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(AndroidJUnit4::class)
+class SettingsViewModelTest {
+
+    @get:Rule
+    val mainRule = MainDispatcherRule()
+
+    private val settings = FakeAppSettingsRepository()
+    private val apiKeys = FakeApiKeyRepository()
+    private val data = FakeDataManagementRepository()
+    private val scheduler = FakeRediscoverScheduleController()
+    private val processingScheduler = FakeProcessingScheduleController()
+    private val offlineController = FakeOfflineModeController(settings)
+    private val autoBackup = FakeAutoBackupController()
+
+    private fun createViewModel(usage: FakeApiUsageRepository = FakeApiUsageRepository()) = SettingsViewModel(
+        appSettings = settings,
+        apiKeyRepository = apiKeys,
+        modelManager = ModelManager(
+            ApplicationProvider.getApplicationContext(),
+            FakeBookmarkRepository(),
+            TestDispatcherProvider(mainRule.dispatcher)
+        ),
+        dataRepository = data,
+        scheduleController = scheduler,
+        processingScheduleController = processingScheduler,
+        offlineModeController = offlineController,
+        autoBackupController = autoBackup,
+        databaseEncryption = com.unchunks.echomark.data.local.encryption.DatabaseEncryptionStatus(ApplicationProvider.getApplicationContext()),
+        apiUsageRepository = usage,
+        crashLogs = crashLogs,
+        dispatchers = TestDispatcherProvider(mainRule.dispatcher)
+    )
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private val crashLogs by lazy {
+        CrashLogStore(tmp.newFolder("crash-logs"), { CrashEnvironment("1.0 (1)", "Test Device", "Android 16 (API 36)") })
+    }
+
+    @Test
+    fun クラウドAIを使えない間は使用量を読まず_欄も空のまま() = runTest {
+        // クラウド AI を無効にしている間は記録が無いので、DB も読まない(CLOUD_AI_ENABLED)
+        val usage = FakeApiUsageRepository()
+        usage.record(
+            ApiUsageRecord(System.currentTimeMillis(), ApiProvider.CLAUDE, "claude-haiku-5-5", AiTask.SUMMARY, 100, 20)
+        )
+        val viewModel = createViewModel(usage)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(ApiUsagePeriods(), viewModel.uiState.value.apiUsage)
+    }
+
+    @Test
+    fun 自動バックアップの保存先を選ぶとオンになり_保存先が無いとオンにしない() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.setAutoBackupEnabled(true)
+        advanceUntilIdle()
+        assertFalse(settings.autoBackupFlow.value.enabled)
+
+        viewModel.setAutoBackupFolder("content://tree/x", "Backup")
+        viewModel.setAutoBackupKeep(10)
+        viewModel.setAutoBackupIncludeFiles(true)
+        advanceUntilIdle()
+        val backup = settings.autoBackupFlow.value
+        assertTrue(backup.enabled)
+        assertEquals("Backup", backup.folderLabel)
+        assertEquals(10, backup.keep)
+        assertTrue(backup.includeFiles)
+        assertEquals(backup, viewModel.uiState.value.autoBackup)
+
+        viewModel.runAutoBackupNow()
+        assertEquals(1, autoBackup.runs)
+    }
+
+    @Test
+    fun 読み込んだバックアップの設定は選んだときだけ戻し_予定も登録し直す() = runTest {
+        data.importSummary = data.importSummary.copy(settings = BackupSettings(mapOf("theme_mode" to "DARK")))
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.importBackup("content://in.json")
+        advanceUntilIdle()
+        assertTrue(data.restoredSettings.isEmpty())
+
+        viewModel.restoreBackupSettings()
+        advanceUntilIdle()
+
+        assertEquals(listOf(BackupSettings(mapOf("theme_mode" to "DARK"))), data.restoredSettings)
+        assertEquals(DataOperationState.Idle, viewModel.uiState.value.dataOperation)
+        assertTrue(scheduler.applied.isNotEmpty())
+        assertTrue(viewModel.message.value!!.contains("設定を 1 件戻しました"))
+    }
+
+    @Test
+    fun アプリのロックの設定を保存し_画面に出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.setAppLockEnabled(true)
+        viewModel.setAppLockDelay(AppLockDelay.MINUTES_15)
+        viewModel.setAppLockHideContent(true)
+        advanceUntilIdle()
+
+        val expected = AppLockSettings(enabled = true, delay = AppLockDelay.MINUTES_15, hideContent = true)
+        assertEquals(expected, settings.appLockFlow.value)
+        assertEquals(expected, viewModel.uiState.value.appLock)
+
+        viewModel.onAppLockUnavailable()
+        assertTrue(viewModel.message.value!!.contains("画面ロック"))
+    }
+
+    @Test
+    fun オフラインモードのスイッチは切り替えの仕組みを通して保存し_画面に出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.offlineMode)
+
+        viewModel.setOfflineMode(true)
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), offlineController.calls)
+        assertTrue(viewModel.uiState.value.offlineMode)
+    }
+
+    @Test
+    fun 要約の言語と書き方を書き換えると画面に出し_保存する() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertEquals(SummaryStyle(), viewModel.uiState.value.summaryStyle)
+
+        viewModel.updateSummaryStyle { it.copy(language = SummaryLanguage.CHINESE) }
+        viewModel.updateSummaryStyle { it.copy(format = SummaryFormat.BULLETS) }
+        advanceUntilIdle()
+
+        assertEquals(SummaryStyle(SummaryLanguage.CHINESE, SummaryFormat.BULLETS), viewModel.uiState.value.summaryStyle)
+        assertEquals(SummaryStyle(SummaryLanguage.CHINESE, SummaryFormat.BULLETS), settings.summaryStyleFlow.value)
+    }
+
+    @Test
+    fun クラッシュログの件数が反映され_削除できる() = runTest {
+        crashLogs.record(CrashLogKind.CRASH, IllegalStateException("boom"), "main")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.value.crashLog.count)
+        assertTrue(viewModel.uiState.value.crashLog.latestText!!.contains("boom"))
+
+        viewModel.clearCrashLog()
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.crashLog.count)
+        assertEquals(null, viewModel.uiState.value.crashLog.latestText)
+        assertEquals("クラッシュログを削除しました", viewModel.message.value)
+    }
+
+    @Test
+    fun 読み込み後にAIの状態_表示設定_ストレージが反映される() = runTest {
+        settings.setBackendForAll(LlmBackend.API)
+        settings.themeModeFlow.value = ThemeMode.DARK
+        apiKeys.setKey(ApiProvider.CLAUDE, "sk-test")
+        val viewModel = createViewModel()
+        assertFalse(viewModel.uiState.value.isLoaded)
+
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.isLoaded)
+        assertTrue(state.ai.isReady)
+        assertEquals("Claude API(claude-opus-5-5)", state.ai.label)
+        assertEquals(ThemeMode.DARK, state.themeMode)
+        assertEquals(data.storage, state.storage)
+    }
+
+    @Test
+    fun 処理の設定を書き換えると画面に出し_予定と待っている処理に反映する() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.updateProcessingSettings { it.copy(chargingOnly = true, nightlyBatch = true, nightlyHour = 3) }
+        advanceUntilIdle()
+
+        val expected = ProcessingSettings(chargingOnly = true, nightlyBatch = true, nightlyHour = 3)
+        assertEquals(expected, viewModel.uiState.value.processing)
+        assertEquals(listOf(ProcessingSettings() to expected), processingScheduler.changes)
+    }
+
+    @Test
+    fun AIが未設定なら未設定と表示する() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.ai.isReady)
+        assertEquals("未設定(端末内モデルが未取り込み)", viewModel.uiState.value.ai.label)
+
+        settings.setBackendForAll(LlmBackend.API)
+        AiTask.entries.forEach { settings.setApiProvider(it, ApiProvider.GEMINI) }
+        advanceUntilIdle()
+        assertEquals("未設定(Gemini の API キーが未入力)", viewModel.uiState.value.ai.label)
+    }
+
+    @Test
+    fun 用途ごとにAIが違えば用途ごとに表示し_すべて使えるときだけ準備完了() = runTest {
+        apiKeys.setKey(ApiProvider.CLAUDE, "sk-test")
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+        settings.setLlmBackend(AiTask.CHAT, LlmBackend.API)
+        settings.setApiProvider(AiTask.CHAT, ApiProvider.OPENAI)
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val ai = viewModel.uiState.value.ai
+        assertFalse(ai.isReady)
+        assertEquals(setOf(LlmBackend.LOCAL, LlmBackend.API), ai.backends)
+        assertEquals(
+            "タグ付け: 未設定(端末内モデルが未取り込み) / 要約: Claude(claude-opus-5-5) / " +
+                "チャット: 未設定(OpenAI の API キーが未入力)",
+            ai.label
+        )
+    }
+
+    @Test
+    fun テーマとダイナミックカラーを保存する() = runTest {
+        val viewModel = createViewModel()
+        viewModel.setThemeMode(ThemeMode.LIGHT)
+        viewModel.setDynamicColor(true)
+        advanceUntilIdle()
+        assertEquals(ThemeMode.LIGHT, settings.themeModeFlow.value)
+        assertTrue(settings.dynamicColorFlow.value)
+    }
+
+    @Test
+    fun 再発見通知の変更を保存してスケジュールに反映する() = runTest {
+        val viewModel = createViewModel()
+        viewModel.setRediscoverEnabled(true)
+        advanceUntilIdle()
+        viewModel.setRediscoverSchedule(DayOfWeek.MONDAY, 7, 30)
+        advanceUntilIdle()
+
+        assertEquals(2, scheduler.applied.size)
+        val last = scheduler.applied.last()
+        assertTrue(last.enabled)
+        assertEquals(DayOfWeek.MONDAY, last.dayOfWeek)
+        assertEquals(7, last.hour)
+        assertEquals(30, last.minute)
+    }
+
+    @Test
+    fun 読み込みが成功すると結果を出し_閉じると元に戻る() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        val storageCallsBefore = data.storageCalls
+
+        viewModel.importBackup("content://backup.json")
+        advanceUntilIdle()
+
+        assertEquals(listOf("content://backup.json"), data.importedUris)
+        assertEquals(DataOperationState.Imported(data.importSummary), viewModel.uiState.value.dataOperation)
+        // データが変わったのでストレージ使用量を計算し直す
+        assertTrue(data.storageCalls > storageCallsBefore)
+
+        viewModel.onDataResultDismissed()
+        advanceUntilIdle()
+        assertEquals(DataOperationState.Idle, viewModel.uiState.value.dataOperation)
+    }
+
+    @Test
+    fun 書き出しに失敗するとエラーの文言を出す() = runTest {
+        data.failure = DataOperationException("保存先にアクセスできませんでした")
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.exportBackup("content://out.json")
+        advanceUntilIdle()
+
+        assertEquals(
+            DataOperationState.Failed("書き出せませんでした", "保存先にアクセスできませんでした"),
+            viewModel.uiState.value.dataOperation
+        )
+    }
+
+    @Test
+    fun 書き出しが成功すると件数をメッセージで出す() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.exportBackup("content://out.json")
+        advanceUntilIdle()
+
+        assertEquals(DataOperationState.Idle, viewModel.uiState.value.dataOperation)
+        assertEquals("3 件のブックマークと 1 件の会話を書き出しました", viewModel.message.value)
+    }
+
+    @Test
+    fun 全データ削除は設定の初期化の有無を渡す() = runTest {
+        val viewModel = createViewModel()
+        viewModel.deleteAllData(resetSettings = true)
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), data.deleteCalls)
+        assertEquals("すべてのデータと設定を初期化しました", viewModel.message.value)
+    }
+
+    @Test
+    fun モデルの表示名の整形() {
+        assertEquals("gemma3-1b-it-int4", modelDisplayName("gemma3-1b-it-int4.task"))
+    }
+}

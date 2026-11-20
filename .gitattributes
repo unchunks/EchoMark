@@ -1,0 +1,2 @@
+# ObjectBox はモデル JSON を LF で書き出すため、作業ツリーでも LF に固定する(ビルドのたびに差分が出るのを防ぐ)
+app/objectbox-models/default.json text eol=lf
