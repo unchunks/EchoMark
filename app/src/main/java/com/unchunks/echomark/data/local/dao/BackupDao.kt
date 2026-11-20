@@ -534,6 +534,9 @@ abstract class BackupDao {
     @Query("DELETE FROM fact_checks")
     abstract suspend fun deleteAllFactChecks()
 
+    @Query("DELETE FROM offline_videos")
+    abstract suspend fun deleteAllOfflineVideos()
+
     @Query("DELETE FROM smart_folders")
     abstract suspend fun deleteAllSmartFolders()
 
@@ -560,6 +563,8 @@ abstract class BackupDao {
         deleteAllApiUsage()
         // Web で確かめた結果は、消えたブックマーク・回答のものなので、いっしょに消す
         deleteAllFactChecks()
+        // 動画のオフライン保存の記録も、消えたブックマークのものなので、いっしょに消す(ファイルは呼び出し側で消す)
+        deleteAllOfflineVideos()
         // スマートフォルダは、消えたタグ・ブックマークを前提にした条件なので、いっしょに消す
         deleteAllSmartFolders()
         // 購読も利用者のデータなので、いっしょに消す(確認の状態も含めて)

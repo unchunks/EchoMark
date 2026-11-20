@@ -11,6 +11,7 @@ import com.unchunks.echomark.data.local.dao.CollectionDao
 import com.unchunks.echomark.data.local.dao.LinkCheckDao
 import com.unchunks.echomark.data.local.dao.ReviewCardDao
 import com.unchunks.echomark.data.local.dao.FactCheckDao
+import com.unchunks.echomark.data.local.dao.OfflineVideoDao
 import com.unchunks.echomark.data.local.dao.CategoryDao
 import com.unchunks.echomark.data.local.dao.SmartFolderDao
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
@@ -25,6 +26,7 @@ import com.unchunks.echomark.data.local.entity.CollectionItemEntity
 import com.unchunks.echomark.data.local.entity.LinkCheckEntity
 import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.FactCheckEntity
+import com.unchunks.echomark.data.local.entity.OfflineVideoEntity
 import com.unchunks.echomark.data.local.entity.BookmarkTagCrossRef
 import com.unchunks.echomark.data.local.entity.CategoryEntity
 import com.unchunks.echomark.data.local.entity.SmartFolderEntity
@@ -43,7 +45,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
         ConversationEntity::class, ChatMessageEntity::class, ApiUsageEntity::class, SummaryHistoryEntity::class,
         TagAliasEntity::class, RemovedTagEntity::class, CategoryEntity::class, SmartFolderEntity::class, SubscriptionEntity::class,
         BookmarkNoteEntity::class, CollectionEntity::class, CollectionItemEntity::class,
-        LinkCheckEntity::class, ReviewCardEntity::class, FactCheckEntity::class
+        LinkCheckEntity::class, ReviewCardEntity::class, FactCheckEntity::class, OfflineVideoEntity::class
     ],
     version = AppDatabase.VERSION,
     exportSchema = true
@@ -64,12 +66,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun backupDao(): BackupDao
     abstract fun apiUsageDao(): ApiUsageDao
     abstract fun factCheckDao(): FactCheckDao
+    abstract fun offlineVideoDao(): OfflineVideoDao
 
     companion object {
         /**
          * DB のスキーマの版。テーブル・列・インデックスを変えたら 1 つ上げ、Migrations.kt にマイグレーションを足す
          * (手順は docs/database-migrations.md)。
          */
-        const val VERSION = 31
+        const val VERSION = 32
     }
 }

@@ -990,4 +990,42 @@ class MigrationTest {
         assertTrue(twice.isFailure)
         connection.close()
     }
+
+    @Test
+    fun migrate31To32_addsEmptyOfflineVideosWithOneRowPerBookmark() {
+        helper.createDatabase(31).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, contentUri, title, content, summary, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (1, 'URL', 'https://www.youtube.com/watch?v=abcdefghijk', '動画', '字幕:\nこんにちは', '要約', 100, 200, 'DONE', 0, 0, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v32 と一致するか(テーブル・主キー)も検証される
+        val connection = helper.runMigrationsAndValidate(32, listOf(MIGRATION_31_32))
+
+        connection.prepare("SELECT COUNT(*) FROM offline_videos").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        // 既存のブックマークの本文(字幕)・要約はそのまま
+        connection.prepare("SELECT title, content, summary FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("動画", stmt.getText(0))
+            assertEquals("字幕:\nこんにちは", stmt.getText(1))
+            assertEquals("要約", stmt.getText(2))
+        }
+        // 動画の列は空のまま入れられる。ブックマークごとに1行(同じブックマークをもう一度入れると失敗する)
+        connection.execSQL("INSERT INTO offline_videos (bookmarkId, thumbnailPath, savedAt) VALUES (1, 'attachments/a.jpg', 5)")
+        connection.prepare("SELECT thumbnailPath, savedAt, videoPath, videoSize FROM offline_videos WHERE bookmarkId = 1").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("attachments/a.jpg", stmt.getText(0))
+            assertEquals(5L, stmt.getLong(1))
+            assertTrue(stmt.isNull(2))
+            assertTrue(stmt.isNull(3))
+        }
+        val twice = runCatching { connection.execSQL("INSERT INTO offline_videos (bookmarkId, savedAt) VALUES (1, 6)") }
+        assertTrue(twice.isFailure)
+        connection.close()
+    }
 }
