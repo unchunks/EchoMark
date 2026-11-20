@@ -61,6 +61,10 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.TravelExplore
+import com.unchunks.echomark.domain.factcheck.FactCheckTarget
+import com.unchunks.echomark.ui.factcheck.FactCheckSheet
+import com.unchunks.echomark.ui.factcheck.FactCheckViewModel
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.AlertDialog
@@ -202,10 +206,12 @@ fun BookmarkDetailScreen(
     viewModel: BookmarkDetailViewModel = hiltViewModel(),
     snapshotViewModel: PageSnapshotViewModel = hiltViewModel(),
     placeViewModel: PlaceEditViewModel = hiltViewModel(),
-    readLaterViewModel: ReadLaterViewModel = hiltViewModel()
+    readLaterViewModel: ReadLaterViewModel = hiltViewModel(),
+    factCheckViewModel: FactCheckViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val factCheck by factCheckViewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val snapshotOperation by snapshotViewModel.operation.collectAsState()
     val reviewIds by readLaterViewModel.reviewIds.collectAsState()
@@ -328,6 +334,7 @@ fun BookmarkDetailScreen(
             onSelectCategory = viewModel::setCategory,
             onResetCategory = viewModel::resetCategory,
             onRestoreSummary = viewModel::restoreSummary,
+            onFactCheck = { summary -> uiState.bookmark?.let { factCheckViewModel.open(FactCheckTarget.bookmark(it.id), summary) } },
             onTranslateSummary = viewModel::translateSummary,
             onClearTranslation = viewModel::clearTranslation,
             onAddTag = viewModel::addTag,
@@ -361,6 +368,17 @@ fun BookmarkDetailScreen(
             snapshotBusy = snapshotOperation != SnapshotOperation.Idle
         ),
         showBackButton = showBackButton
+    )
+
+    FactCheckSheet(
+        state = factCheck,
+        onCheck = factCheckViewModel::check,
+        onOpenUrl = { url -> openUrl(context, url) },
+        onOpenAiSettings = {
+            factCheckViewModel.close()
+            onOpenAiSettings()
+        },
+        onDismiss = factCheckViewModel::close
     )
 
     // ページを読み込んでオフラインコピーを作っている間の画面
@@ -426,6 +444,8 @@ class BookmarkDetailCallbacks(
     val onResetCategory: () -> Unit = {},
     /** 履歴の版(ID)に要約を戻す(#20) */
     val onRestoreSummary: (Long) -> Unit = {},
+    /** 要約(引数)を Web で確かめるシートを開く。要約は書き換えない */
+    val onFactCheck: (String) -> Unit = {},
     /** 要約を [SummaryLanguage] に翻訳する(#24) */
     val onTranslateSummary: (SummaryLanguage) -> Unit = {},
     /** 翻訳を閉じる */
@@ -1188,6 +1208,12 @@ private fun AiSection(
                         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                         Text("翻訳")
                     }
+                }
+                // 要約の事実の文を Web のページと照らし合わせる(手がかりを出すだけで、要約は書き換えない)
+                TextButton(onClick = { callbacks.onFactCheck(summary) }) {
+                    Icon(Icons.Outlined.TravelExplore, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text("Web で確かめる")
                 }
                 if (showEvidence) {
                     val body = listOfNotNull(bookmark.title, bookmark.content).joinToString("\n")

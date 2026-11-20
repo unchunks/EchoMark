@@ -70,6 +70,10 @@ object BackupCoverage {
         "api_usage" to Table.Excluded(
             "クラウド API の使用量の記録は、この端末で使った量の目安。別の端末に持ち込むと、その端末で使った量と重なって数えてしまう"
         ),
+        "fact_checks" to Table.Excluded(
+            "Web で確かめた結果は、確かめた時点の手がかり(Web のページの一節を含む)で、もう一度確かめられる。" +
+                "回答のメッセージの ID は読み込む端末で振り直されるため、持ち込んでも対象に結び付かない"
+        ),
         "summary_history" to Table.Included(
             "summaryHistory",
             included("bookmarkId", "summary", "source", "generator", "style", "createdAt") + excluded(ID_RENUMBERED, "id")
