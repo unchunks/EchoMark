@@ -107,4 +107,15 @@ class FakeExportRepository : ExportRepository {
         failure?.let { throw it }
         return result
     }
+
+    /** exportBookmarks の呼び出し(選んだ ID・文書の見出し・形式・保存先) */
+    data class MultiExport(val ids: List<Long>, val title: String, val format: ExportFormat, val uri: String)
+
+    val multiExports = mutableListOf<MultiExport>()
+
+    override suspend fun exportBookmarks(bookmarkIds: List<Long>, title: String, format: ExportFormat, uri: String): ExportResult {
+        multiExports += MultiExport(bookmarkIds, title, format, uri)
+        failure?.let { throw it }
+        return result
+    }
 }

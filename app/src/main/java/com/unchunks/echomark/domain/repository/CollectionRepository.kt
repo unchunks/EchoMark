@@ -41,4 +41,10 @@ interface CollectionRepository {
 
     /** コレクションから外す(ブックマーク自体は消えない) */
     suspend fun remove(collectionId: Long, bookmarkId: Long)
+
+    /** [bookmarkIds] をまとめてコレクションに入れる(1つのトランザクション)。入った件数を返す(コレクションが無ければ 0、すでに入っているものも数える) */
+    suspend fun addAll(collectionId: Long, bookmarkIds: List<Long>): Int = bookmarkIds.count { add(collectionId, it) }
+
+    /** [bookmarkIds] をまとめてコレクションから外す(ブックマーク自体は消えない) */
+    suspend fun removeAll(collectionId: Long, bookmarkIds: List<Long>) = bookmarkIds.forEach { remove(collectionId, it) }
 }

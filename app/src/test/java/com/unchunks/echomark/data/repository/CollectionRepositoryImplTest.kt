@@ -204,4 +204,41 @@ class CollectionRepositoryImplTest {
     fun 無いコレクションの削除は何も返さない() = runBlocking {
         assertNull(repository.delete(9_999L))
     }
+
+    @Test
+    fun まとめて入れると入っているものは増えず_存在しないブックマークは入れない() = runBlocking {
+        val collection = create("集め物")
+        val a = saveBookmark("A")
+        val b = saveBookmark("B")
+        repository.add(collection, a)
+
+        val added = repository.addAll(collection, listOf(a, b, 9_999L, b))
+
+        assertEquals(2, added)
+        assertEquals(listOf(a, b), repository.observeBookmarks(collection).first().map { it.id })
+    }
+
+    @Test
+    fun コレクションが無いとまとめて入れても何も入らない() = runBlocking {
+        val a = saveBookmark("A")
+
+        assertEquals(0, repository.addAll(9_999L, listOf(a)))
+        assertEquals(0, repository.addAll(create("空"), emptyList()))
+    }
+
+    @Test
+    fun まとめて外してもブックマーク自体は消えず_ほかのコレクションにも影響しない() = runBlocking {
+        val first = create("一つ目")
+        val second = create("二つ目")
+        val a = saveBookmark("A")
+        val b = saveBookmark("B")
+        repository.addAll(first, listOf(a, b))
+        repository.addAll(second, listOf(a))
+
+        repository.removeAll(first, listOf(a, b))
+
+        assertEquals(emptyList<Long>(), repository.observeBookmarks(first).first().map { it.id })
+        assertEquals(listOf(a), repository.observeBookmarks(second).first().map { it.id })
+        assertEquals(setOf(a, b), db.bookmarkDao().getAllIds().toSet())
+    }
 }
