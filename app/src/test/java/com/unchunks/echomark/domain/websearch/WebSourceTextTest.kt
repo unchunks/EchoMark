@@ -11,20 +11,9 @@ import org.junit.Test
 class WebSourceTextTest {
 
     @Test
-    fun 検索語は空白をまとめ_長すぎる質問は上限で切る() {
+    fun 検索語は空白をまとめる() {
+        // 上限で切るところは、部品の web-search の BraveSearchQueryTest で確かめる
         assertEquals("Kotlin の コルーチン", WebSourceText.queryFor("  Kotlin の\n\nコルーチン  "))
-        val long = WebSourceText.queryFor("あ".repeat(1_000))
-        assertEquals(WebSourceText.MAX_QUERY_CHARS, long.length)
-        val manyWords = WebSourceText.queryFor((1..100).joinToString(" ") { "w$it" })
-        assertEquals(WebSourceText.MAX_QUERY_WORDS, manyWords.split(' ').size)
-    }
-
-    @Test
-    fun 日本語を含むかを見分ける() {
-        assertTrue(WebSourceText.hasJapanese("Kotlin の使い方"))
-        assertTrue(WebSourceText.hasJapanese("カタカナ"))
-        assertTrue(WebSourceText.hasJapanese("漢字"))
-        assertFalse(WebSourceText.hasJapanese("kotlin coroutines"))
     }
 
     @Test

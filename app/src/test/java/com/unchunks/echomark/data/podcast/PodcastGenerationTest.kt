@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.podcast
 
 import com.unchunks.components.audio.WavAudio
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
@@ -10,7 +11,6 @@ import com.unchunks.echomark.domain.podcast.PodcastFormat
 import com.unchunks.echomark.domain.podcast.PodcastGenerationException
 import com.unchunks.echomark.domain.podcast.PodcastProgress
 import com.unchunks.echomark.domain.podcast.PodcastSpeaker
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.podcast.ScriptGenerator
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.repository.LlmBackend

@@ -2,12 +2,12 @@ package com.unchunks.echomark.ui.podcast
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.speechtext.ReadingDictionary
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.domain.podcast.PodcastEpisode
 import com.unchunks.echomark.domain.podcast.PodcastPlayback
 import com.unchunks.echomark.domain.podcast.PodcastProgress
 import com.unchunks.echomark.domain.podcast.PodcastRepository
-import com.unchunks.echomark.domain.podcast.ReadingDictionary
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException

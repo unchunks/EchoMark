@@ -117,6 +117,7 @@ unchunks-archive = { group = "com.unchunks.components", name = "archive", versio
 unchunks-app-lock = { group = "com.unchunks.components", name = "app-lock", version.ref = "unchunksComponents" }
 unchunks-secure-storage = { group = "com.unchunks.components", name = "secure-storage", version.ref = "unchunksComponents" }
 unchunks-speech = { group = "com.unchunks.components", name = "speech", version.ref = "unchunksComponents" }
+unchunks-speech-text = { group = "com.unchunks.components", name = "speech-text", version.ref = "unchunksComponents" }
 unchunks-document-text = { group = "com.unchunks.components", name = "document-text", version.ref = "unchunksComponents" }
 unchunks-llm-ondevice = { group = "com.unchunks.components", name = "llm-ondevice", version.ref = "unchunksComponents" }
 unchunks-file-storage = { group = "com.unchunks.components", name = "file-storage", version.ref = "unchunksComponents" }

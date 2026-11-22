@@ -1,6 +1,7 @@
 package com.unchunks.echomark.domain.repository
 
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
@@ -10,7 +11,6 @@ import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.SummaryStyle
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map

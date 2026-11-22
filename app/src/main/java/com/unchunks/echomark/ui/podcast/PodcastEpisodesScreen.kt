@@ -60,10 +60,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.ReadableLazyColumn
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.domain.podcast.EpisodeStatus
 import com.unchunks.echomark.domain.podcast.PodcastEpisode
 import com.unchunks.echomark.domain.podcast.PodcastProgress
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.podcast.ScriptGenerator
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState

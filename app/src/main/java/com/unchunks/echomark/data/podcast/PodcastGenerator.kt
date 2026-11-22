@@ -3,8 +3,12 @@ package com.unchunks.echomark.data.podcast
 import com.unchunks.components.audio.UnsupportedWavException
 import com.unchunks.components.audio.WavAudio
 import com.unchunks.components.audio.WavJoiner
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.components.speechtext.SpeechNormalizer
+import com.unchunks.components.speechtext.SpeechText
 import com.unchunks.echomark.data.podcast.tts.PodcastSpeechEngine
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.podcast.AppReadings
 import com.unchunks.echomark.domain.podcast.EpisodeLine
 import com.unchunks.echomark.domain.podcast.EpisodeSource
 import com.unchunks.echomark.domain.podcast.EpisodeStatus
@@ -13,9 +17,6 @@ import com.unchunks.echomark.domain.podcast.PodcastGenerationException
 import com.unchunks.echomark.domain.podcast.PodcastProgress
 import com.unchunks.echomark.domain.podcast.PodcastScript
 import com.unchunks.echomark.domain.podcast.PodcastTemplates
-import com.unchunks.echomark.domain.podcast.ReadingEntry
-import com.unchunks.echomark.domain.podcast.SpeechNormalizer
-import com.unchunks.echomark.domain.podcast.SpeechText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import java.io.File
@@ -58,7 +59,7 @@ class PodcastGenerator @Inject constructor(
                 }
             )
         }
-        val spoken = script.lines.map { SpeechNormalizer.normalize(it.text, dictionary, script.readings) }
+        val spoken = script.lines.map { SpeechNormalizer.normalize(it.text, dictionary, script.readings, AppReadings.builtIn) }
         val work = File(dir, WORK_DIR).apply { deleteRecursively(); mkdirs() }
         val audio = File(dir, AUDIO_FILE)
         try {

@@ -1,23 +1,20 @@
 package com.unchunks.echomark.data.video
 
+import com.unchunks.components.web.DownloadRejectedException
+import com.unchunks.components.web.DownloadRejection
 import com.unchunks.components.web.PublicAddressInterceptor
 import com.unchunks.components.web.PublicOnlyDns
-import com.unchunks.components.web.isAllowedRedirect
+import com.unchunks.components.web.ResumableDownloader
 import com.unchunks.components.web.isPublicAddress
 import com.unchunks.echomark.data.remote.PeerTubeFetcher
 import com.unchunks.echomark.data.remote.UrlContentFetcher
 import com.unchunks.echomark.domain.video.PeerTubeUrls
 import com.unchunks.echomark.domain.video.VideoDownloadFailure
 import com.unchunks.echomark.domain.video.VideoFileSourceKind
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.net.InetAddress
-import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,8 +28,9 @@ class VideoDownloadException(val reason: VideoDownloadFailure, message: String, 
  * - 直接のリンク: リンク先の Content-Type が video/… のときだけ
  * - PeerTube: 公開の API で、投稿者がダウンロードを許した(`downloadEnabled`)動画の、許されたファイル(`fileDownloadUrl`)だけ
  *
- * 接続は本文の取得と同じ決まり(共通の client から作る。ローカルネットワークに接続しない・オフラインモードで断る・
- * リダイレクトは自前で追い、https → http の格下げを拒否する)。途中まで落としたファイルがあれば、Range で続きから落とす。
+ * 落とす仕組みは部品の web-content([ResumableDownloader])にある。接続は本文の取得と同じ決まり(共通の client から作る。
+ * ローカルネットワークに接続しない・オフラインモードで断る・リダイレクトは自前で追い、https → http の格下げを拒否する)。
+ * 途中まで落としたファイルがあれば、Range で続きから落とす。
  */
 @Singleton
 class VideoFileDownloader internal constructor(
@@ -43,17 +41,25 @@ class VideoFileDownloader internal constructor(
     @Inject
     constructor(okHttpClient: OkHttpClient) : this(okHttpClient, ::isPublicAddress)
 
-    private val client: OkHttpClient = okHttpClient.newBuilder()
+    /** PeerTube の API を読む client(ファイルを落とす client と同じ決まり) */
+    private val apiClient: OkHttpClient = okHttpClient.newBuilder()
         .dns(PublicOnlyDns(okHttpClient.dns, isAllowedAddress))
         .addNetworkInterceptor(PublicAddressInterceptor(isAllowedAddress))
         .followRedirects(false)
         .followSslRedirects(false)
-        // 大きなファイルは全体の時間では区切らない(止まったままの接続は、読み込みの時間制限で切る)
         .callTimeout(0, TimeUnit.MILLISECONDS)
         .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
-    private val peerTube = PeerTubeFetcher(client, USER_AGENT)
+    private val peerTube = PeerTubeFetcher(apiClient, USER_AGENT)
+
+    private val downloader = ResumableDownloader(
+        okHttpClient,
+        userAgent = USER_AGENT,
+        isAllowedAddress = isAllowedAddress,
+        storageMarginBytes = STORAGE_MARGIN_BYTES,
+        readTimeoutSeconds = READ_TIMEOUT_SECONDS
+    )
 
     /** 落とすファイル。[label] は画質などの表示用の名前 */
     data class Source(val url: String, val label: String?)
@@ -93,92 +99,33 @@ class VideoFileDownloader internal constructor(
         freeBytes: () -> Long,
         isStopped: () -> Boolean,
         onProgress: (downloaded: Long, total: Long?) -> Unit
-    ): Downloaded {
-        var url = source.url.toHttpUrl()
-        repeat(MAX_REDIRECTS + 1) {
-            val existing = if (part.isFile) part.length() else 0L
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", USER_AGENT)
-                .apply { if (existing > 0) header("Range", "bytes=$existing-") }
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (response.isRedirect) {
-                    val next = response.header("Location")?.let { url.resolve(it) } ?: throw IOException("invalid redirect")
-                    if (!isAllowedRedirect(url, next)) throw IOException("redirect not allowed: ${url.scheme} -> ${next.scheme}")
-                    url = next
-                    return@use
-                }
-                if (response.code == HTTP_RANGE_NOT_SATISFIABLE && existing > 0) {
-                    // 途中のファイルが合わない(サーバーのファイルが変わったなど)。始めから落とし直す
-                    part.delete()
-                    throw IOException("range not satisfiable")
-                }
-                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                val body = response.body
-                val mimeType = UrlContentFetcher.fileMimeType(body.contentType(), url)
-                if (mimeType?.startsWith("video/") != true) {
-                    throw VideoDownloadException(VideoDownloadFailure.NOT_VIDEO, "not a video: ${body.contentType()}")
-                }
-                val range = contentRange(response.header("Content-Range"))
-                val resuming = existing > 0 && response.code == HTTP_PARTIAL_CONTENT && range?.first == existing
-                val start = if (resuming) existing else 0L
-                val length = body.contentLength()
-                val total = range?.second ?: if (length >= 0) start + length else null
-                if (total != null) checkSpace(total, start, maxBytes, freeBytes)
-
-                var written = start
-                var lastReported = -1L
-                FileOutputStream(part, resuming).use { out ->
-                    body.byteStream().use { input ->
-                        val buffer = ByteArray(BUFFER_BYTES)
-                        while (true) {
-                            if (isStopped()) throw CancellationException("download stopped")
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            out.write(buffer, 0, read)
-                            written += read
-                            if (written > maxBytes) throw VideoDownloadException(VideoDownloadFailure.OVER_LIMIT, "over limit")
-                            if (written - lastReported >= REPORT_EVERY_BYTES) {
-                                lastReported = written
-                                onProgress(written, total)
-                                // 大きさの分からないファイルは、書きながら空き容量を確かめる
-                                if (total == null && freeBytes() < STORAGE_MARGIN_BYTES) {
-                                    throw VideoDownloadException(VideoDownloadFailure.NO_SPACE, "storage is low")
-                                }
-                            }
-                        }
-                    }
-                    out.fd.sync()
-                }
-                if (total != null && written < total) throw IOException("incomplete: $written / $total")
-                if (written == 0L) throw VideoDownloadException(VideoDownloadFailure.NOT_VIDEO, "empty file")
-                onProgress(written, total ?: written)
-                return Downloaded(mimeType, written)
-            }
+    ): Downloaded = try {
+        val done = downloader.download(
+            url = source.url,
+            part = part,
+            maxBytes = maxBytes,
+            freeBytes = freeBytes,
+            isStopped = isStopped,
+            typeOf = { contentType, url -> UrlContentFetcher.fileMimeType(contentType, url)?.takeIf { it.startsWith("video/") } },
+            onProgress = onProgress
+        )
+        Downloaded(done.mimeType, done.size)
+    } catch (e: DownloadRejectedException) {
+        val reason = when (e.rejection) {
+            DownloadRejection.OVER_LIMIT -> VideoDownloadFailure.OVER_LIMIT
+            DownloadRejection.NO_SPACE -> VideoDownloadFailure.NO_SPACE
+            DownloadRejection.REJECTED_TYPE -> VideoDownloadFailure.NOT_VIDEO
         }
-        throw IOException("too many redirects")
-    }
-
-    private fun checkSpace(total: Long, start: Long, maxBytes: Long, freeBytes: () -> Long) {
-        if (total > maxBytes) throw VideoDownloadException(VideoDownloadFailure.OVER_LIMIT, "over limit: $total > $maxBytes")
-        if (freeBytes() < total - start + STORAGE_MARGIN_BYTES) {
-            throw VideoDownloadException(VideoDownloadFailure.NO_SPACE, "not enough space for ${total - start} bytes")
-        }
+        throw VideoDownloadException(reason, e.message ?: reason.name, e)
     }
 
     companion object {
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) EchoMark/1.0"
-        private const val MAX_REDIRECTS = 5
         private const val READ_TIMEOUT_SECONDS = 30L
-        private const val BUFFER_BYTES = 64 * 1024
-        private const val REPORT_EVERY_BYTES = 512L * 1024
-        private const val HTTP_PARTIAL_CONTENT = 206
-        private const val HTTP_RANGE_NOT_SATISFIABLE = 416
 
         /** 落としたあとも端末に残しておく空き容量 */
-        const val STORAGE_MARGIN_BYTES: Long = 200L * 1024 * 1024
+        const val STORAGE_MARGIN_BYTES: Long = ResumableDownloader.DEFAULT_STORAGE_MARGIN_BYTES
 
         /** 選ぶ画質の上限(端末で見るには十分で、大きくなりすぎない) */
         private const val PREFERRED_MAX_HEIGHT = 720
@@ -187,13 +134,5 @@ class VideoFileDownloader internal constructor(
         internal fun chooseFile(files: List<PeerTubeFetcher.File>): PeerTubeFetcher.File? =
             files.filter { it.height <= PREFERRED_MAX_HEIGHT }.maxByOrNull { it.height }
                 ?: files.minByOrNull { it.height }
-
-        /** `Content-Range: bytes 100-999/1000` の始まり(100)と合計(1000。`*` なら null) */
-        internal fun contentRange(header: String?): Pair<Long, Long?>? {
-            val match = CONTENT_RANGE.matchEntire(header?.trim() ?: return null) ?: return null
-            return match.groupValues[1].toLong() to match.groupValues[3].toLongOrNull()
-        }
-
-        private val CONTENT_RANGE = Regex("""bytes (\d+)-(\d+)/(\d+|\*)""")
     }
 }

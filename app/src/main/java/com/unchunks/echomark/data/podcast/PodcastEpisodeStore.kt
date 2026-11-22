@@ -1,12 +1,12 @@
 package com.unchunks.echomark.data.podcast
 
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.domain.podcast.EpisodeLine
 import com.unchunks.echomark.domain.podcast.EpisodeSource
 import com.unchunks.echomark.domain.podcast.EpisodeStatus
 import com.unchunks.echomark.domain.podcast.PodcastEpisode
 import com.unchunks.echomark.domain.podcast.PodcastFormat
 import com.unchunks.echomark.domain.podcast.PodcastSpeaker
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.podcast.ScriptGenerator
 import org.json.JSONArray
 import org.json.JSONException

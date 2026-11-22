@@ -95,6 +95,7 @@ dependencies {
     implementation(libs.unchunks.app.lock)
     implementation(libs.unchunks.secure.storage)
     implementation(libs.unchunks.speech)
+    implementation(libs.unchunks.speech.text)
     implementation(libs.unchunks.document.text)
     implementation(libs.unchunks.llm.ondevice)
     implementation(libs.unchunks.file.storage)
