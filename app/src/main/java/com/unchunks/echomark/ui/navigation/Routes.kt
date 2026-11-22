@@ -17,6 +17,15 @@ object Routes {
     /** ポッドキャストができた通知から一覧を開くディープリンク。MainActivity の intent-filter と一致させること */
     const val PODCASTS_DEEP_LINK = "echomark://podcasts"
 
+    /** ポッドキャストの再生(エピソードの一覧・再生の通知から開く) */
+    const val ARG_PODCAST_EPISODE_ID = "episodeId"
+    const val PODCAST_PLAYER = "podcasts/play/{$ARG_PODCAST_EPISODE_ID}"
+    fun podcastPlayer(episodeId: String) = "podcasts/play/$episodeId"
+
+    /** 再生の通知から再生の画面を開くディープリンク(MainActivity の echomark://podcasts の intent-filter に当たる) */
+    const val PODCAST_PLAYER_DEEP_LINK = "echomark://podcasts/play/{$ARG_PODCAST_EPISODE_ID}"
+    fun podcastPlayerDeepLink(episodeId: String) = "echomark://podcasts/play/$episodeId"
+
     /** ポッドキャストを作る(詳細画面・複数選択から開く)。ブックマークの ID をカンマ区切りで渡す */
     const val ARG_PODCAST_BOOKMARK_IDS = "bookmarkIds"
     const val PODCAST_NEW = "podcasts/new?$ARG_PODCAST_BOOKMARK_IDS={$ARG_PODCAST_BOOKMARK_IDS}"

@@ -147,6 +147,8 @@ dependencies {
     // オフライン用に保存した動画・添付の動画をアプリの中で再生する(端末のファイルだけを読む。通信する部品は入れない)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
+    // ポッドキャストのバックグラウンドの再生とメディアの通知(端末のファイルだけを読む)
+    implementation(libs.androidx.media3.session)
 
     // ホーム画面ウィジェット(Jetpack Glance)
     implementation(libs.androidx.glance.appwidget)

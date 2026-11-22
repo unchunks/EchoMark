@@ -16,13 +16,16 @@ import com.unchunks.echomark.ui.podcast.PodcastCreateUiState
 import com.unchunks.echomark.ui.podcast.PodcastEpisodesCallbacks
 import com.unchunks.echomark.ui.podcast.PodcastEpisodesContent
 import com.unchunks.echomark.ui.podcast.PodcastEpisodesUiState
+import com.unchunks.echomark.ui.podcast.PodcastPlayerCallbacks
+import com.unchunks.echomark.ui.podcast.PodcastPlayerContent
+import com.unchunks.echomark.ui.podcast.PodcastPlayerUiState
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
 import java.time.ZoneId
 
-/** ポッドキャストを作る画面と、エピソードの一覧(できた・作成中・失敗・空)の見た目。 */
+/** ポッドキャストを作る画面・エピソードの一覧(できた・作成中・失敗・空)・再生の画面の見た目。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PodcastScreenshotTest {
@@ -95,5 +98,33 @@ class PodcastScreenshotTest {
             callbacks = PodcastEpisodesCallbacks(),
             zone = zone
         )
+    }
+
+    @Test
+    fun player() {
+        val lines = listOf(
+            EpisodeLine(PodcastSpeaker.HOST, "こんにちは。EchoMark ポッドキャストです。今回は、保存したブックマークから3件を紹介します。", "", null, 0),
+            EpisodeLine(PodcastSpeaker.GUEST, "よろしくお願いします。", "", null, 6_000),
+            EpisodeLine(PodcastSpeaker.HOST, "1件目は、Zennの記事「Kotlin 2.3 の新機能」です。", "", 1, 8_000),
+            EpisodeLine(PodcastSpeaker.HOST, "Kotlin 2.3 では、K2 コンパイラーが既定になり、ビルドが速くなりました。", "", 1, 12_000),
+            EpisodeLine(PodcastSpeaker.GUEST, "速くなったのはうれしいですね。どれくらい変わったんですか?", "", 1, 19_000),
+            EpisodeLine(PodcastSpeaker.HOST, "大きなプロジェクトでは、2倍近く速くなったそうです。", "", 1, 24_000)
+        )
+        screenshot.captureScreenLightDark("podcast_player") {
+            PodcastPlayerContent(
+                uiState = PodcastPlayerUiState(
+                    isLoading = false,
+                    episode = ready.copy(lines = lines),
+                    isCurrent = true,
+                    isPlaying = true,
+                    positionMs = 13_500,
+                    durationMs = 312_000,
+                    speed = 1.25f,
+                    currentLine = 3
+                ),
+                snackbarHostState = SnackbarHostState(),
+                callbacks = PodcastPlayerCallbacks()
+            )
+        }
     }
 }

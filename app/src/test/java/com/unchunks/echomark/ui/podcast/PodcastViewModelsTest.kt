@@ -39,6 +39,7 @@ class PodcastViewModelsTest {
     }
     private val podcasts = FakePodcastRepository()
     private val settings = FakeAppSettingsRepository(LlmBackend.LOCAL)
+    private val playback = com.unchunks.echomark.testing.FakePodcastPlayback()
 
     private fun createViewModel(ids: String) =
         PodcastCreateViewModel(SavedStateHandle(mapOf(Routes.ARG_PODCAST_BOOKMARK_IDS to ids)), bookmarks, podcasts)
@@ -108,7 +109,7 @@ class PodcastViewModelsTest {
     fun 一覧と_古いものを消す() = runTest {
         val day = TimeUnit.DAYS.toMillis(1)
         podcasts.episodesFlow.value = listOf(episode("new", 40 * day), episode("old", day))
-        val viewModel = PodcastEpisodesViewModel(podcasts, settings).apply { clock = { 40 * day } }
+        val viewModel = PodcastEpisodesViewModel(podcasts, settings, playback).apply { clock = { 40 * day } }
         val messages = collect(viewModel.messages)
         backgroundScope.launch { viewModel.uiState.collect {} }
         advanceUntilIdle()
@@ -118,6 +119,8 @@ class PodcastViewModelsTest {
         advanceUntilIdle()
 
         assertEquals(listOf(10 * day), podcasts.olderThanCalls)
+        // 消すものを再生していれば止める
+        assertEquals(listOf("stop:old"), playback.calls)
         assertEquals(listOf("new"), viewModel.uiState.value.episodes.map { it.id })
         assertEquals(listOf<PodcastEpisodesMessage>(PodcastEpisodesMessage.Deleted(1)), messages)
     }
@@ -126,7 +129,7 @@ class PodcastViewModelsTest {
     fun 読みを直して辞書に入れ_作り直す() = runTest {
         val target = episode("a", 0)
         podcasts.episodesFlow.value = listOf(target.copy(sources = listOf(com.unchunks.echomark.domain.podcast.EpisodeSource(5, "x", null, null))))
-        val viewModel = PodcastEpisodesViewModel(podcasts, settings)
+        val viewModel = PodcastEpisodesViewModel(podcasts, settings, playback)
         val messages = collect(viewModel.messages)
 
         viewModel.saveReading("日本橋", "にほんばし")

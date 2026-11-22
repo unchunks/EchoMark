@@ -52,3 +52,47 @@ class FakePodcastRepository : PodcastRepository {
 
     override fun audioFileOf(episode: PodcastEpisode): File? = null
 }
+
+/** 再生の Fake。呼ばれた操作を覚え、状態を書き換える */
+class FakePodcastPlayback : com.unchunks.echomark.domain.podcast.PodcastPlayback {
+    val stateFlow = MutableStateFlow(com.unchunks.echomark.domain.podcast.PodcastPlaybackState())
+    override val state: kotlinx.coroutines.flow.StateFlow<com.unchunks.echomark.domain.podcast.PodcastPlaybackState> = stateFlow
+    val calls = mutableListOf<String>()
+    var playResult = true
+
+    override suspend fun play(episode: PodcastEpisode, startMs: Long?): Boolean {
+        calls += "play:${episode.id}:$startMs"
+        if (playResult) stateFlow.value = stateFlow.value.copy(episodeId = episode.id, isPlaying = true, positionMs = startMs ?: 0, durationMs = episode.durationMs ?: 0)
+        return playResult
+    }
+
+    override fun pause() {
+        calls += "pause"
+        stateFlow.update { it.copy(isPlaying = false) }
+    }
+
+    override fun resume() {
+        calls += "resume"
+        stateFlow.update { it.copy(isPlaying = true) }
+    }
+
+    override fun seekTo(positionMs: Long) {
+        calls += "seekTo:$positionMs"
+        stateFlow.update { it.copy(positionMs = positionMs) }
+    }
+
+    override fun seekBy(deltaMs: Long) {
+        calls += "seekBy:$deltaMs"
+        stateFlow.update { it.copy(positionMs = (it.positionMs + deltaMs).coerceAtLeast(0)) }
+    }
+
+    override fun setSpeed(speed: Float) {
+        calls += "speed:$speed"
+        stateFlow.update { it.copy(speed = speed) }
+    }
+
+    override fun stopIfPlaying(episodeId: String) {
+        calls += "stop:$episodeId"
+        if (stateFlow.value.episodeId == episodeId) stateFlow.value = com.unchunks.echomark.domain.podcast.PodcastPlaybackState(speed = stateFlow.value.speed)
+    }
+}

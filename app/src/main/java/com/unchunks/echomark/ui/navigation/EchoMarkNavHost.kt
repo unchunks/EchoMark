@@ -79,6 +79,7 @@ import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
 import com.unchunks.echomark.ui.podcast.PodcastCreateScreen
 import com.unchunks.echomark.ui.podcast.PodcastEpisodesScreen
+import com.unchunks.echomark.ui.podcast.PodcastPlayerScreen
 import com.unchunks.echomark.ui.podcast.ReadingDictionaryScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
@@ -249,7 +250,21 @@ fun EchoMarkNavHost(
             ) {
                 PodcastEpisodesScreen(
                     onBack = navController.popBackAction(),
-                    onOpenDictionary = { navController.navigate(Routes.READING_DICTIONARY) }
+                    onOpenDictionary = { navController.navigate(Routes.READING_DICTIONARY) },
+                    onPlay = { id -> navController.navigate(Routes.podcastPlayer(id)) }
+                )
+            }
+            // ポッドキャストの再生(一覧の「聞く」・再生の通知から開く)。開くと再生する(もう再生していれば続ける)
+            composable(
+                route = Routes.PODCAST_PLAYER,
+                arguments = listOf(navArgument(Routes.ARG_PODCAST_EPISODE_ID) { type = NavType.StringType }),
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.PODCAST_PLAYER_DEEP_LINK }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                PodcastPlayerScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) }
                 )
             }
             // ポッドキャストを作る(詳細画面・複数選択から開く)。作り始めたら、この画面の代わりに一覧を開く
