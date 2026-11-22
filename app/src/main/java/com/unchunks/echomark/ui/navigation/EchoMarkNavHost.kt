@@ -77,6 +77,8 @@ import com.unchunks.echomark.ui.review.ReviewHubScreen
 import com.unchunks.echomark.ui.review.ReviewSessionScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
+import com.unchunks.echomark.ui.podcast.PodcastCreateScreen
+import com.unchunks.echomark.ui.podcast.PodcastEpisodesScreen
 import com.unchunks.echomark.ui.podcast.ReadingDictionaryScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
@@ -233,7 +235,38 @@ fun EchoMarkNavHost(
                     onOpenInsights = { navController.navigate(Routes.INSIGHTS) },
                     onOpenReview = { navController.navigate(Routes.REVIEW) },
                     onOpenCollections = { navController.navigate(Routes.COLLECTIONS) },
-                    onOpenBrokenLinks = { navController.navigate(Routes.BROKEN_LINKS) }
+                    onOpenBrokenLinks = { navController.navigate(Routes.BROKEN_LINKS) },
+                    onOpenPodcasts = { navController.navigate(Routes.PODCASTS) },
+                    onMakePodcast = { ids -> navController.navigate(Routes.podcastNew(ids)) }
+                )
+            }
+            // ポッドキャストのエピソードの一覧(一覧のメニュー・できた通知から開く)
+            composable(
+                route = Routes.PODCASTS,
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.PODCASTS_DEEP_LINK }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                PodcastEpisodesScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenDictionary = { navController.navigate(Routes.READING_DICTIONARY) }
+                )
+            }
+            // ポッドキャストを作る(詳細画面・複数選択から開く)。作り始めたら、この画面の代わりに一覧を開く
+            composable(
+                route = Routes.PODCAST_NEW,
+                arguments = listOf(navArgument(Routes.ARG_PODCAST_BOOKMARK_IDS) { type = NavType.StringType; defaultValue = "" }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                PodcastCreateScreen(
+                    onClose = navController.popBackAction(),
+                    onStarted = {
+                        navController.navigate(Routes.PODCASTS) {
+                            popUpTo(Routes.PODCAST_NEW) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
                 )
             }
             // 資料を探す。AI が選んだ資料をまとめて追加し、戻ると一覧に追加したものが並ぶ
@@ -492,6 +525,7 @@ fun EchoMarkNavHost(
                     onBack = navController.popBackAction(),
                     onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
+                    onMakePodcast = { navController.navigate(Routes.podcastNew(listOf(it))) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }

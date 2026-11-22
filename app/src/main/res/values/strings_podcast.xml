@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_channel_podcast">ポッドキャスト</string>
+    <string name="notification_channel_podcast_desc">ブックマークからポッドキャストを作っている間と、できたときに表示します</string>
+    <string name="podcast_notification_generating">ポッドキャストを作っています…</string>
+    <string name="podcast_notification_ready">ポッドキャストができました</string>
+    <string name="podcast_notification_failed">ポッドキャストを作れませんでした</string>
+</resources>

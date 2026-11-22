@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
@@ -171,6 +172,8 @@ fun BookmarkListScreen(
     onOpenReview: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
     onOpenBrokenLinks: () -> Unit = {},
+    onOpenPodcasts: () -> Unit = {},
+    onMakePodcast: (List<Long>) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -278,7 +281,9 @@ fun BookmarkListScreen(
         onCreateCollectionAndAdd = viewModel::bulkCreateCollectionAndAdd,
         onReprocess = viewModel::bulkReprocess,
         onExport = viewModel::bulkExport,
-        onShare = { bookmark -> shareBookmark(context, bookmark) }
+        onShare = { bookmark -> shareBookmark(context, bookmark) },
+        // 一覧に並んでいる順に紹介する
+        onMakePodcast = { onMakePodcast(uiState.bookmarks.filter { it.id in selectedIds }.map { it.id }) }
     )
 
     BookmarkListContent(
@@ -330,6 +335,7 @@ fun BookmarkListScreen(
             onOpenReview = onOpenReview,
             onOpenCollections = onOpenCollections,
             onOpenBrokenLinks = onOpenBrokenLinks,
+            onOpenPodcasts = onOpenPodcasts,
             onRetry = viewModel::retry
         ),
         selectedBookmarkId = selectedBookmarkId
@@ -420,6 +426,7 @@ class BookmarkListCallbacks(
     val onOpenReview: () -> Unit = {},
     val onOpenCollections: () -> Unit = {},
     val onOpenBrokenLinks: () -> Unit = {},
+    val onOpenPodcasts: () -> Unit = {},
     val onRetry: () -> Unit = {}
 )
 
@@ -566,6 +573,7 @@ fun BookmarkListContent(
                     onOpenReview = callbacks.onOpenReview,
                     onOpenCollections = callbacks.onOpenCollections,
                     onOpenBrokenLinks = callbacks.onOpenBrokenLinks,
+                    onOpenPodcasts = callbacks.onOpenPodcasts,
                     canSelect = uiState.bookmarks.isNotEmpty(),
                     onEnterSelection = { callbacks.onEnterSelection(null) }
                 )
@@ -825,6 +833,7 @@ private fun ListTopBar(
     onOpenReview: () -> Unit,
     onOpenCollections: () -> Unit,
     onOpenBrokenLinks: () -> Unit,
+    onOpenPodcasts: () -> Unit,
     canSelect: Boolean,
     onEnterSelection: () -> Unit
 ) {
@@ -953,6 +962,14 @@ private fun ListTopBar(
                         onClick = {
                             overflowOpen = false
                             onOpenReview()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("ポッドキャスト") },
+                        leadingIcon = { Icon(Icons.Outlined.Podcasts, contentDescription = null) },
+                        onClick = {
+                            overflowOpen = false
+                            onOpenPodcasts()
                         }
                     )
                 }

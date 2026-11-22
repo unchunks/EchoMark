@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AddToHomeScreen
 import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -198,6 +199,7 @@ import java.time.format.DateTimeFormatter
  * ブックマークの詳細。ViewModel をつなぐだけの薄いラッパーで、描画は [BookmarkDetailContent] が行う。
  *
  * @param onAskAi このブックマークについて AI に質問する(チャットの新規会話を開く)
+ * @param onMakePodcast このブックマークからポッドキャストを作る(作る画面を開く)
  * @param onOpenAiSettings AI の準備ができていないときに、AI 設定を開く
  * @param showBackButton トップバーに戻るボタンを出すか。2 画面表示の右側では出さない
  *   ([onBack] は削除後や「見つかりません」の「戻る」で、右側を空にするのに使われる)
@@ -207,6 +209,7 @@ fun BookmarkDetailScreen(
     onBack: () -> Unit,
     onOpenBookmark: (Long) -> Unit,
     onAskAi: (Long) -> Unit = {},
+    onMakePodcast: (Long) -> Unit = {},
     onOpenAiSettings: () -> Unit = {},
     showBackButton: Boolean = true,
     viewModel: BookmarkDetailViewModel = hiltViewModel(),
@@ -335,6 +338,7 @@ fun BookmarkDetailScreen(
                 bookmark.filePath?.let { context.startActivity(VideoPlayerActivity.intent(context, it, bookmark.title)) }
             },
             onAskAi = onAskAi,
+            onMakePodcast = onMakePodcast,
             onOpenAiSettings = onOpenAiSettings,
             onShare = { shareBookmark(context, it) },
             onPinShortcut = { PinnedShortcuts.request(context, PinnedShortcuts.forBookmark(it)) },
@@ -492,6 +496,8 @@ class BookmarkDetailCallbacks(
     /** 保存した動画のファイルを、アプリの中で再生する */
     val onPlayAttachmentVideo: (Bookmark) -> Unit = {},
     val onAskAi: (Long) -> Unit = {},
+    /** このブックマークからポッドキャストを作る */
+    val onMakePodcast: (Long) -> Unit = {},
     val onOpenAiSettings: () -> Unit = {},
     val onShare: (Bookmark) -> Unit = {},
     /** ホーム画面にショートカットを置く */
@@ -837,6 +843,14 @@ private fun DetailTopBar(
                     onClick = {
                         menuOpen = false
                         callbacks.readLater.onToggleReview(bookmark)
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("ポッドキャストにする") },
+                    leadingIcon = { Icon(Icons.Outlined.Podcasts, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.onMakePodcast(bookmark.id)
                     }
                 )
                 DropdownMenuItem(

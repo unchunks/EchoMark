@@ -21,6 +21,8 @@
         <exclude domain="file" path="attachments/" />
         <!-- オフライン用に保存した動画のファイル(大きく、リンク先から落とし直せる)は入れない -->
         <exclude domain="file" path="offline_videos/" />
+        <!-- ポッドキャストの音声(作り直せる。大きくなりやすい)はバックアップしない -->
+        <exclude domain="file" path="podcasts/" />
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
@@ -36,5 +38,7 @@
         <exclude domain="file" path="models/" />
         <!-- オフライン用に保存した動画のファイルは、端末を移すときも移さない(DB を移さないので、どこからも参照されない) -->
         <exclude domain="file" path="offline_videos/" />
+        <!-- ポッドキャストの音声は端末間の転送でも移さない(作り直せる) -->
+        <exclude domain="file" path="podcasts/" />
     </device-transfer>
 </data-extraction-rules>

@@ -15,6 +15,8 @@ import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.MAX_ATTACHMENT_BYTES
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.podcast.ReadingDictionary
+import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.data.local.dao.BackupDao
 import com.unchunks.echomark.data.local.encryption.DatabaseLeftovers
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
@@ -70,7 +72,11 @@ class DataManagementRepositoryImpl @Inject constructor(
 
     override suspend fun exportBackup(uri: String, includeFiles: Boolean): BackupExportSummary = withContext(dispatcherProvider.io) {
         val data = backupDao.snapshot(exportedAt = System.currentTimeMillis())
-            .copy(chatTemplates = appSettings.chatTemplates.first(), settings = appSettings.exportBackupSettings())
+            .copy(
+                chatTemplates = appSettings.chatTemplates.first(),
+                readingDictionary = appSettings.readingDictionary.first(),
+                settings = appSettings.exportBackupSettings()
+            )
         // ファイルも含めるときは、ブックマークが指している添付ファイル・オフラインコピーのうち、端末にあるものを入れる
         val files = if (includeFiles) {
             referencedFiles(data.bookmarks).mapNotNull { path -> attachmentStore.existingFile(path)?.let { path to it } }.toMap()
@@ -169,10 +175,11 @@ class DataManagementRepositoryImpl @Inject constructor(
         throw DataOperationException("ファイルにアクセスできませんでした", e)
     }
 
-    /** 確かめたバックアップを書き込む。失敗したら、それまでに書いたもの(ファイル・テンプレート)を元に戻す */
+    /** 確かめたバックアップを書き込む。失敗したら、それまでに書いたもの(ファイル・テンプレート・読みの辞書)を元に戻す */
     private suspend fun restore(backup: BackupData, stagedFiles: Map<String, File>): BackupImportSummary {
         val placedFiles = mutableListOf<String>()
         var templatesBefore: List<ChatTemplate>? = null
+        var dictionaryBefore: List<ReadingEntry>? = null
         val merged = try {
             // zip に入っていて、この端末に無いファイルを入れる
             for (path in referencedFiles(backup.bookmarks)) {
@@ -186,12 +193,17 @@ class DataManagementRepositoryImpl @Inject constructor(
                 templatesBefore = appSettings.chatTemplates.first()
                 appSettings.updateChatTemplates { mergeChatTemplates(it, data.chatTemplates) }
             }
+            if (data.readingDictionary.isNotEmpty()) {
+                dictionaryBefore = appSettings.readingDictionary.first()
+                appSettings.updateReadingDictionary { ReadingDictionary.merge(it, data.readingDictionary) }
+            }
             backupDao.merge(data)
         } catch (e: Throwable) {
             // 取り消し(画面を閉じたなど)でも元に戻す
             withContext(NonCancellable) {
                 placedFiles.forEach { attachmentStore.delete(it) }
                 templatesBefore?.let { before -> runCatching { appSettings.updateChatTemplates { before } } }
+                dictionaryBefore?.let { before -> runCatching { appSettings.updateReadingDictionary { before } } }
             }
             if (e is CancellationException || e is DataOperationException || e is Error) throw e
             Timber.w(e, "バックアップの書き込みに失敗")
