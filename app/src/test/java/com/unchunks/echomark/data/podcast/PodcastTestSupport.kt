@@ -1,11 +1,11 @@
 package com.unchunks.echomark.data.podcast
 
 import com.unchunks.components.audio.WavAudio
+import com.unchunks.components.speechtext.SpeechText
 import com.unchunks.echomark.data.podcast.tts.PodcastSpeechEngine
 import com.unchunks.echomark.data.podcast.tts.PodcastSpeechSession
 import com.unchunks.echomark.domain.podcast.PodcastGenerationException
 import com.unchunks.echomark.domain.podcast.PodcastSpeaker
-import com.unchunks.echomark.domain.podcast.SpeechText
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder

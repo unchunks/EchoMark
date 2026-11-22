@@ -28,7 +28,7 @@
 | フィードの確認・購読の追加(`FeedFetcher`・`FeedDiscovery`) | 共通の client から作った OkHttp | 夜間の確認は積まない・ワーカーも動かない。途中でオンにされたら失敗に数えずにやめる |
 | リンク切れの確認(`LinkProber`) | 共通の client から作った OkHttp | 夜間の確認は積まない。途中でオンにされたら記録せずにやめる(`NetworkStatus` も通信できない扱い) |
 | 資料探し(部品の Web 検索: arXiv・はてなブックマーク・Wikipedia・YouTube) | Hilt で渡す共通の client | 画面で理由を出して検索しない |
-| チャットの Web 検索(`BraveSearchClient`)と結果のページの取得(`WebSourceCollector`) | 共通の client から作った OkHttp | オンにできない。オンのままの会話では検索せず、保存内容だけで答えて理由を出す |
+| チャットの Web 検索(`BraveWebSearchClient`・部品の web-search の `BraveSearchClient`)と結果のページの取得(`WebSourceCollector`) | 共通の client から作った OkHttp | オンにできない。オンのままの会話では検索せず、保存内容だけで答えて理由を出す |
 | リンク先の画像(Coil) | 共通の client(`EchoMarkApplication`) | インターセプターで断る(キャッシュ済みの画像は出る) |
 | オフラインコピーの作成(`PageSnapshotter`) | WebView | 読み込む前と、ページの中の読み込みのたびに確かめる |
 | オフラインコピーの表示(`SnapshotViewer`) | WebView | もともと保存したファイル以外を読み込まない(通信しない) |

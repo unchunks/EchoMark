@@ -5,9 +5,9 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import com.unchunks.components.speechtext.SpeechText
 import com.unchunks.echomark.domain.podcast.PodcastGenerationException
 import com.unchunks.echomark.domain.podcast.PodcastSpeaker
-import com.unchunks.echomark.domain.podcast.SpeechText
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine

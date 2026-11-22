@@ -2,7 +2,8 @@
 
 EchoMark のうち、ほかのアプリでも使える仕組み(LLM の API クライアント・端末内の埋め込み・秘密情報の暗号化保存・オフラインモードの仕組み・
 音声の文字起こし・WAV の読み書き・PDF と画像の文字の読み取り・端末内 AI のエンジン・資料の検索・RSS と Atom のフィードの読み取り・字幕のファイルの読み取り・
-zip の読み書き・アプリのロック・件数のグラフ・Compose の部品など)は、
+zip の読み書き・アプリのロック・件数のグラフ・Brave Search API のクライアント・続きから落とせるダウンロード・日本語の読み上げの整え・
+Compose の部品など)は、
 別のリポジトリ components(非公開の unchunks/components)の `android/` に切り出してある。部品の一覧と中身は `components/android/README.md`。
 
 ## ビルドに必要なもの
@@ -40,3 +41,6 @@ unchunks/
 ポッドキャストの台本と音声を作る処理(`PodcastGenerator`)も、EchoMark に残した。
 アプリのロックの設定と選択肢の表示名(`domain/lock/AppLock.kt`)、ロック中の画面とロックをオンにする前の確かめ方(`ui/lock/AppLockGate.kt`)、
 バックアップの形式(`backup.json` と `attachments/` の名前の決まり、`BackupArchive`・`BackupJson`・`BackupCoverage`)も、EchoMark に残した。
+Web 検索のキーの保存先とキーが無いときの知らせ・AI に渡す抜粋の整え(`data/websearch/BraveWebSearchClient.kt`・`domain/websearch/WebSourceText.kt`)、
+PeerTube の API と動画の画質の選び方・失敗の理由(`data/video/VideoFileDownloader.kt`)、読み上げで入れてある読みのうちアプリの名前
+(`domain/podcast/AppReadings.kt`)も、EchoMark に残した。

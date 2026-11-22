@@ -3,8 +3,8 @@ package com.unchunks.echomark.data.podcast.tts
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.TtsSpan
-import com.unchunks.echomark.domain.podcast.SpeechPiece
-import com.unchunks.echomark.domain.podcast.SpeechText
+import com.unchunks.components.speechtext.SpeechPiece
+import com.unchunks.components.speechtext.SpeechText
 
 /**
  * 読み上げ用に整えた文([SpeechText])を、[TtsSpan] を付けた文にする。

@@ -2,8 +2,8 @@ package com.unchunks.echomark.screenshot
 
 import androidx.compose.material3.SnackbarHostState
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.unchunks.echomark.domain.podcast.ReadingEntry
-import com.unchunks.echomark.domain.podcast.SpeechNormalizer
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.components.speechtext.SpeechNormalizer
 import com.unchunks.echomark.ui.podcast.ReadingDictionaryContent
 import com.unchunks.echomark.ui.podcast.ReadingDictionaryUiState
 import org.junit.Rule

@@ -1,5 +1,7 @@
 package com.unchunks.echomark.domain.podcast
 
+import com.unchunks.components.speechtext.ReadingEntry
+
 /** ポッドキャストの話し方。label は画面に出す日本語。 */
 enum class PodcastFormat(val label: String) {
     /** 1人の語り手が紹介する */

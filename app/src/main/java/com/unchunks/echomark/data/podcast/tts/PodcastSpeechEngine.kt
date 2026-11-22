@@ -1,7 +1,7 @@
 package com.unchunks.echomark.data.podcast.tts
 
+import com.unchunks.components.speechtext.SpeechText
 import com.unchunks.echomark.domain.podcast.PodcastSpeaker
-import com.unchunks.echomark.domain.podcast.SpeechText
 import java.io.File
 
 /**

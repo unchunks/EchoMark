@@ -1,7 +1,7 @@
 package com.unchunks.echomark.ui.podcast
 
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.components.testing.MainDispatcherRule
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi

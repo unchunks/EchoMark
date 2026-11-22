@@ -21,7 +21,10 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 
-/** 動画のファイルのダウンロード(ローカルのサーバーで、本物の通信はしない) */
+/**
+ * 動画のファイルのダウンロード(ローカルのサーバーで、本物の通信はしない)。続きから落とす・止めるところは、
+ * 部品の web-content の ResumableDownloaderTest で確かめる。
+ */
 class VideoFileDownloaderTest {
 
     @get:Rule
@@ -77,35 +80,6 @@ class VideoFileDownloaderTest {
     }
 
     @Test
-    fun 途中まで落としたファイルがあれば続きから落とす() {
-        part.writeBytes(body.copyOfRange(0, 500))
-        server.enqueue(
-            MockResponse.Builder()
-                .code(206)
-                .addHeader("Content-Type", "video/mp4")
-                .addHeader("Content-Range", "bytes 500-1499/1500")
-                .body(Buffer().write(body.copyOfRange(500, 1500)))
-                .build()
-        )
-
-        val result = download()
-
-        assertEquals("bytes=500-", server.takeRequest().headers["Range"])
-        assertEquals(1500L, result.size)
-        assertTrue(body.contentEquals(part.readBytes()))
-    }
-
-    @Test
-    fun サーバーが続きを返さなければ始めから落とし直す() {
-        part.writeBytes(ByteArray(500) { 9 })
-        server.enqueue(video(body))
-
-        download()
-
-        assertTrue(body.contentEquals(part.readBytes()))
-    }
-
-    @Test
     fun 汎用の種類でも拡張子が動画なら落とす() {
         server.enqueue(video(body, type = "application/octet-stream"))
 
@@ -135,26 +109,6 @@ class VideoFileDownloaderTest {
     }
 
     @Test
-    fun 止められたら途中のファイルを残す() {
-        server.enqueue(video(ByteArray(2 * 1024 * 1024)))
-        var calls = 0
-
-        val result = runCatching {
-            downloader.download(
-                source = VideoFileDownloader.Source(server.url("/big.mp4").toString(), null),
-                part = part,
-                maxBytes = Long.MAX_VALUE,
-                freeBytes = { Long.MAX_VALUE },
-                isStopped = { ++calls > 10 },
-                onProgress = { _, _ -> }
-            )
-        }
-
-        assertTrue(result.exceptionOrNull() is java.util.concurrent.CancellationException)
-        assertTrue(part.length() > 0)
-    }
-
-    @Test
     fun PeerTubeは投稿者がダウンロードを許していなければ落とさない() {
         peerTube(downloadEnabled = false)
 
@@ -174,7 +128,7 @@ class VideoFileDownloaderTest {
     }
 
     @Test
-    fun ファイルの選び方と範囲の読み取り() {
+    fun ファイルの選び方() {
         val files = listOf(
             PeerTubeFetcher.File("a", 1080, "1080p", null),
             PeerTubeFetcher.File("b", 360, "360p", null)
@@ -182,9 +136,6 @@ class VideoFileDownloaderTest {
         assertEquals("b", VideoFileDownloader.chooseFile(files)?.url)
         assertEquals("a", VideoFileDownloader.chooseFile(files.take(1))?.url)
         assertNull(VideoFileDownloader.chooseFile(emptyList()))
-        assertEquals(500L to 1500L, VideoFileDownloader.contentRange("bytes 500-1499/1500"))
-        assertEquals(500L to null, VideoFileDownloader.contentRange("bytes 500-1499/*"))
-        assertNull(VideoFileDownloader.contentRange("bytes */1500"))
     }
 
     private fun peerTube(downloadEnabled: Boolean) {

@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.podcast
 
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.domain.chat.ChatContextLimits
@@ -7,7 +8,6 @@ import com.unchunks.echomark.domain.podcast.PodcastFormat
 import com.unchunks.echomark.domain.podcast.PodcastScript
 import com.unchunks.echomark.domain.podcast.PodcastSource
 import com.unchunks.echomark.domain.podcast.PodcastTemplates
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.podcast.ScriptGenerator
 import com.unchunks.echomark.domain.podcast.ScriptLine
 import com.unchunks.echomark.domain.provider.LlmProvider

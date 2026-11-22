@@ -2,9 +2,10 @@ package com.unchunks.echomark.ui.podcast
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.unchunks.echomark.domain.podcast.ReadingDictionary
-import com.unchunks.echomark.domain.podcast.ReadingEntry
-import com.unchunks.echomark.domain.podcast.SpeechNormalizer
+import com.unchunks.components.speechtext.ReadingDictionary
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.components.speechtext.SpeechNormalizer
+import com.unchunks.echomark.domain.podcast.AppReadings
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -56,7 +57,7 @@ class ReadingDictionaryViewModel @Inject constructor(
             isLoading = false,
             entries = entries,
             sample = text,
-            samplePreview = if (text.isBlank()) "" else SpeechNormalizer.normalize(text, entries).plain
+            samplePreview = if (text.isBlank()) "" else SpeechNormalizer.normalize(text, entries, builtIn = AppReadings.builtIn).plain
         )
     }
         .catch { e ->

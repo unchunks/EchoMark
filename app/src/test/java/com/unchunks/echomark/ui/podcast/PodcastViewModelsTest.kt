@@ -1,6 +1,7 @@
 package com.unchunks.echomark.ui.podcast
 
 import androidx.lifecycle.SavedStateHandle
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
@@ -8,7 +9,6 @@ import com.unchunks.echomark.domain.podcast.EpisodeStatus
 import com.unchunks.echomark.domain.podcast.PodcastEpisode
 import com.unchunks.echomark.domain.podcast.PodcastFormat
 import com.unchunks.echomark.domain.podcast.PodcastGenerationException
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository

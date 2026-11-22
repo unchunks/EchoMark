@@ -1,5 +1,6 @@
 package com.unchunks.echomark.domain.podcast
 
+import com.unchunks.components.speechtext.ReadingEntry
 import kotlinx.coroutines.flow.Flow
 
 /** エピソードの状態。 */

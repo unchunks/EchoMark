@@ -1,6 +1,6 @@
 package com.unchunks.echomark.data.repository
 
-import com.unchunks.echomark.domain.podcast.ReadingEntry
+import com.unchunks.components.speechtext.ReadingEntry
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject

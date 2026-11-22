@@ -3,7 +3,7 @@ package com.unchunks.echomark.data.podcast.tts
 import android.text.Spanned
 import android.text.style.TtsSpan
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.unchunks.echomark.domain.podcast.SpeechNormalizer
+import com.unchunks.components.speechtext.SpeechNormalizer
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
