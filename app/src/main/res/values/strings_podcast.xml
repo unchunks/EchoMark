@@ -5,4 +5,7 @@
     <string name="podcast_notification_generating">ポッドキャストを作っています…</string>
     <string name="podcast_notification_ready">ポッドキャストができました</string>
     <string name="podcast_notification_failed">ポッドキャストを作れませんでした</string>
+    <string name="notification_channel_podcast_playback">ポッドキャストの再生</string>
+    <string name="podcast_playback_artist">EchoMark ポッドキャスト</string>
+    <string name="podcast_playback_title_hidden">ポッドキャスト</string>
 </resources>

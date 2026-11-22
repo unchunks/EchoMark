@@ -79,6 +79,8 @@ import java.time.format.DateTimeFormatter
 class PodcastEpisodesCallbacks(
     val onBack: () -> Unit = {},
     val onOpenDictionary: () -> Unit = {},
+    /** できたエピソードを、アプリの中で聞く(再生の画面を開く) */
+    val onPlay: (PodcastEpisode) -> Unit = {},
     /** できたエピソードを、ほかのアプリ(音楽のプレーヤーなど)で聞く */
     val onListen: (PodcastEpisode) -> Unit = {},
     val onRecreate: (PodcastEpisode) -> Unit = {},
@@ -94,6 +96,7 @@ class PodcastEpisodesCallbacks(
 fun PodcastEpisodesScreen(
     onBack: () -> Unit,
     onOpenDictionary: () -> Unit,
+    onPlay: (String) -> Unit = {},
     viewModel: PodcastEpisodesViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -120,6 +123,7 @@ fun PodcastEpisodesScreen(
         callbacks = PodcastEpisodesCallbacks(
             onBack = onBack,
             onOpenDictionary = onOpenDictionary,
+            onPlay = { episode -> onPlay(episode.id) },
             onListen = { episode -> listenWithOtherApp(context, viewModel.audioFileOf(episode)) },
             onRecreate = viewModel::recreate,
             onDelete = viewModel::delete,
@@ -200,6 +204,7 @@ fun PodcastEpisodesContent(
                             expanded = expanded == episode.id,
                             zone = zone,
                             onToggle = { expanded = if (expanded == episode.id) null else episode.id },
+                            onPlay = { callbacks.onPlay(episode) },
                             onListen = { callbacks.onListen(episode) },
                             onRecreate = { callbacks.onRecreate(episode) },
                             onDelete = { deleting = episode.id },
@@ -260,6 +265,7 @@ private fun EpisodeCard(
     expanded: Boolean,
     zone: ZoneId,
     onToggle: () -> Unit,
+    onPlay: () -> Unit,
     onListen: () -> Unit,
     onRecreate: () -> Unit,
     onDelete: () -> Unit,
@@ -297,12 +303,12 @@ private fun EpisodeCard(
                     )
                 }
             }
-            if (expanded) EpisodeDetails(episode, onEditReading)
+            if (expanded) EpisodeDetails(episode, onEditReading, onListen.takeIf { episode.status == EpisodeStatus.READY })
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (episode.status == EpisodeStatus.READY) {
-                    FilledTonalButton(onClick = onListen) {
+                    FilledTonalButton(onClick = onPlay) {
                         Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                        Text("ほかのアプリで聞く", Modifier.padding(start = 4.dp))
+                        Text("聞く", Modifier.padding(start = 4.dp))
                     }
                 }
                 if (episode.status != EpisodeStatus.GENERATING) {
@@ -322,7 +328,7 @@ private fun EpisodeCard(
 
 /** 出典と、読み上げで使った読み(直して辞書に入れられる) */
 @Composable
-private fun EpisodeDetails(episode: PodcastEpisode, onEditReading: (String) -> Unit) {
+private fun EpisodeDetails(episode: PodcastEpisode, onEditReading: (String) -> Unit, onListen: (() -> Unit)?) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SectionTitle("出典")
         episode.sources.forEachIndexed { index, source ->
@@ -332,6 +338,9 @@ private fun EpisodeDetails(episode: PodcastEpisode, onEditReading: (String) -> U
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        onListen?.let { listen ->
+            TextButton(onClick = listen) { Text("ほかのアプリで聞く") }
         }
         if (episode.readings.isNotEmpty()) {
             SectionTitle("使った読み", Modifier.padding(top = 8.dp))
@@ -409,7 +418,7 @@ private fun FixReadingDialog(surface: String, initialReading: String, onConfirm:
     )
 }
 
-/** 音声を、ほかのアプリで再生する(このアプリの再生は次の段で入れる) */
+/** 音声を、ほかのアプリで再生する(音楽のプレーヤーに入れたいときなど) */
 private fun listenWithOtherApp(context: Context, file: File?) {
     if (file == null) {
         Toast.makeText(context, "音声のファイルがありません", Toast.LENGTH_SHORT).show()

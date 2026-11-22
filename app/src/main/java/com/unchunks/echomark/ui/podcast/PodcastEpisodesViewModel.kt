@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.podcast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.podcast.PodcastEpisode
+import com.unchunks.echomark.domain.podcast.PodcastPlayback
 import com.unchunks.echomark.domain.podcast.PodcastProgress
 import com.unchunks.echomark.domain.podcast.PodcastRepository
 import com.unchunks.echomark.domain.podcast.ReadingDictionary
@@ -43,7 +44,8 @@ sealed interface PodcastEpisodesMessage {
 @HiltViewModel
 class PodcastEpisodesViewModel @Inject constructor(
     private val podcastRepository: PodcastRepository,
-    private val appSettings: AppSettingsRepository
+    private val appSettings: AppSettingsRepository,
+    private val playback: PodcastPlayback
 ) : ViewModel() {
 
     /** テストで時刻を決めるため */
@@ -66,17 +68,22 @@ class PodcastEpisodesViewModel @Inject constructor(
     fun audioFileOf(episode: PodcastEpisode): File? = podcastRepository.audioFileOf(episode)
 
     fun delete(episode: PodcastEpisode) = perform("削除できませんでした") {
+        playback.stopIfPlaying(episode.id)
         podcastRepository.delete(episode.id)
         PodcastEpisodesMessage.Deleted(1)
     }
 
     /** [days] 日より前に作ったものを消す */
     fun deleteOlderThan(days: Int) = perform("削除できませんでした") {
-        PodcastEpisodesMessage.Deleted(podcastRepository.deleteOlderThan(clock() - TimeUnit.DAYS.toMillis(days.toLong())))
+        val threshold = clock() - TimeUnit.DAYS.toMillis(days.toLong())
+        // 消すものを再生していれば止める
+        uiState.value.episodes.filter { it.createdAt < threshold }.forEach { playback.stopIfPlaying(it.id) }
+        PodcastEpisodesMessage.Deleted(podcastRepository.deleteOlderThan(threshold))
     }
 
     fun deleteAll() = perform("削除できませんでした") {
         val count = uiState.value.episodes.size
+        uiState.value.episodes.forEach { playback.stopIfPlaying(it.id) }
         podcastRepository.deleteAll()
         PodcastEpisodesMessage.Deleted(count)
     }
