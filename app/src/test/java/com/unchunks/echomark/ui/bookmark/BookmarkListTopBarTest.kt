@@ -15,12 +15,14 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
+import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.ui.components.PreviewSamples
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.Assert.assertEquals
@@ -66,6 +68,57 @@ class BookmarkListTopBarTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("ブックマーク").assertIsDisplayed()
+    }
+
+    @Test
+    fun 長い一覧から一度の操作で先頭に戻れる() {
+        val many = (1L..30L).map { PreviewSamples.urlBookmark.copy(id = it, title = "ブックマーク $it") }
+        composeRule.setContent {
+            EchoMarkTheme {
+                BookmarkListContent(
+                    uiState = BookmarkListUiState(bookmarks = many, totalCount = many.size),
+                    snackbarHostState = SnackbarHostState(),
+                    callbacks = BookmarkListCallbacks(),
+                    nowMillis = PreviewSamples.NOW
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("一覧の先頭に戻る").assertDoesNotExist()
+        composeRule.onNode(hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            .performScrollToIndex(15)
+        composeRule.onNodeWithContentDescription("一覧の先頭に戻る").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("ブックマーク 1").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("一覧の先頭に戻る").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("ブックマークを追加").assertIsDisplayed()
+    }
+
+    @Test
+    fun 検索結果が空なら検索語を維持して絞り込みを解除できる() {
+        var cleared = 0
+        val queries = mutableListOf<String>()
+        composeRule.setContent {
+            EchoMarkTheme {
+                BookmarkListContent(
+                    uiState = BookmarkListUiState(
+                        isSearchActive = true,
+                        searchQuery = "料理",
+                        readState = ReadState.UNREAD,
+                        totalCount = 30
+                    ),
+                    snackbarHostState = SnackbarHostState(),
+                    callbacks = BookmarkListCallbacks(
+                        onClearFilters = { cleared++ },
+                        onSearchQueryChange = { queries += it }
+                    ),
+                    nowMillis = PreviewSamples.NOW
+                )
+            }
+        }
+        composeRule.onNodeWithText("絞り込みを解除して検索").performClick()
+        assertEquals(1, cleared)
+        assertEquals(emptyList<String>(), queries)
+        composeRule.onNode(hasSetTextAction()).assertTextEquals("料理", includeEditableText = true)
     }
 
     @Test
