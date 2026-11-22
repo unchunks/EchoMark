@@ -73,6 +73,8 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.contentKind
+import com.unchunks.echomark.domain.video.hasVideoTranscript
+import com.unchunks.echomark.domain.video.isOfflineVideoTarget
 import com.unchunks.echomark.ui.attachment.rememberMediaDuration
 import com.unchunks.echomark.ui.attachment.rememberPdfPage
 import com.unchunks.echomark.ui.attachment.rememberPdfPageCount
@@ -95,6 +97,8 @@ internal fun Bookmark.attachmentType(): BookmarkType? =
  * (本文には保存時のメモと、取り出した文字が入る)。
  */
 internal fun contentLabel(bookmark: Bookmark): String = when {
+    // 動画サイトのページの本文は、説明文と字幕(取れたとき)
+    bookmark.isOfflineVideoTarget() && hasVideoTranscript(bookmark.content) -> "説明・字幕・メモ"
     bookmark.type == BookmarkType.URL && bookmark.filePath == null -> "ページの本文・メモ"
     bookmark.type == BookmarkType.TEXT -> if (bookmark.filePath != null) "ファイルの内容・メモ" else "メモ"
     else -> when (bookmark.contentKind()) {
