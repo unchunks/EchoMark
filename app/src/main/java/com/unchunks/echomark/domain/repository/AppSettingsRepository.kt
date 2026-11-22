@@ -1,6 +1,7 @@
 package com.unchunks.echomark.domain.repository
 
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
@@ -147,6 +148,9 @@ interface AppSettingsRepository {
     /** ユーザーが保存したチャットのテンプレート(新しい順)。 */
     val chatTemplates: Flow<List<ChatTemplate>>
 
+    /** ポッドキャストの読み上げに使う、利用者の読みの辞書(新しく入れた順)。 */
+    val readingDictionary: Flow<List<ReadingEntry>>
+
     /** 検索の履歴(新しい順)。端末の中だけに残し、バックアップには含めない。 */
     val searchHistory: Flow<List<String>>
 
@@ -245,6 +249,9 @@ interface AppSettingsRepository {
 
     /** [transform] でチャットのテンプレートを書き換える */
     suspend fun updateChatTemplates(transform: (List<ChatTemplate>) -> List<ChatTemplate>)
+
+    /** [transform] で読みの辞書を書き換える */
+    suspend fun updateReadingDictionary(transform: (List<ReadingEntry>) -> List<ReadingEntry>)
     suspend fun setRediscoverEnabled(enabled: Boolean)
     suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int)
 

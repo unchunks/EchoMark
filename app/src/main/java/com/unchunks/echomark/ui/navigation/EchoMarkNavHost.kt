@@ -76,6 +76,7 @@ import com.unchunks.echomark.ui.review.ReviewHubScreen
 import com.unchunks.echomark.ui.review.ReviewSessionScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
+import com.unchunks.echomark.ui.podcast.ReadingDictionaryScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
 import com.unchunks.echomark.ui.settings.queue.ProcessingQueueScreen
@@ -434,6 +435,14 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 CategoryManagementScreen(onBack = navController.popBackAction())
+            }
+            // ポッドキャストの読みの辞書
+            composable(
+                route = Routes.READING_DICTIONARY,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                ReadingDictionaryScreen(onBack = navController.popBackAction())
             }
             // 処理の状況(設定の「処理」の欄・まとめての処理の通知から開く)
             composable(
