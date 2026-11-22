@@ -33,6 +33,7 @@
 | クラウド AI(Claude・Gemini・OpenAI。接続テストを含む) | Claude は SDK の自前の OkHttp、ほかは共通の client | `OfflineGuardedApiLlmClient` が呼ぶ前に断る。処理は処理待ちのまま残す(今は `CLOUD_AI_ENABLED = false`) |
 | クラウドの文字起こし(OpenAI・Gemini) | 共通の client | 端末内の文字起こしを使う |
 | 場所の画面の地図の背景(MapLibre + OpenFreeMap) | MapLibre の HTTP を共通の client から作った client に差し替え | 地図を作らず、分布図にして理由を出す |
+| ポッドキャストの読み上げ(`AndroidPodcastSpeechEngine`) | 端末の読み上げのアプリ(`TextToSpeech`。別のアプリ) | 通信しない: 日本語の端末内の声だけを使い、読み上げのたびに通信による合成を断る(オフラインモードに関係なく) |
 
 ### 処理待ちの扱い
 

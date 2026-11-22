@@ -15,6 +15,7 @@ import com.unchunks.echomark.data.local.entity.SmartFolderEntity
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.data.mapper.SmartFolderCodec
 import com.unchunks.echomark.data.mapper.smartFolderEntity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
@@ -73,6 +74,8 @@ data class BackupData(
     val summaryHistory: List<SummaryHistoryEntity> = emptyList(),
     /** 自分で作ったチャットのテンプレート(DataStore の chat_templates) */
     val chatTemplates: List<ChatTemplate> = emptyList(),
+    /** ポッドキャストの読みの辞書(DataStore の reading_dictionary) */
+    val readingDictionary: List<ReadingEntry> = emptyList(),
     /**
      * 端末の設定(DataStore のキーの名前 → 値。どれを入れるかは BackupCoverage)。読み込んだあと、利用者が選んだときだけ戻す。
      * 値は Boolean・Int・String
@@ -172,6 +175,7 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "reviewCards": [ {bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, lastReviewedAt は無ければ省略, createdAt} ],
  *   "summaryHistory": [ {bookmarkId, summary, source, generator と style は無ければ省略, createdAt} ],
  *   "chatTemplates": [ {id, title, text} ],
+ *   "readingDictionary": [ {surface, reading} ],
  *   "settings": { DataStore のキーの名前: 値(真偽・整数・文字列) } }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
@@ -226,10 +230,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 22: チャットの回答に webSources(回答の根拠にした Web のページ。DB v29 の chat_messages.webSources)を追加。
  *   21 以前は Web のページが無いものとして読む。http/https 以外の URL・番号の無いものは除く。
  *   会話の webSearchEnabled(Web 検索のオン・オフ)は質問の語句を端末の外に送る設定なので入れず、読み込んだ会話ではオフにする
+ * - 23: ポッドキャストの読みの辞書(readingDictionary。DataStore の reading_dictionary)を追加。22 以前は辞書が無いものとして読む。
+ *   読み込むときは今の辞書に足し、同じ表記(全角・半角・大文字・小文字の違いを含む)は今の読みを残す。ポッドキャストの音声とエピソードは入れない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 22
+    const val CURRENT_VERSION = 23
 
     /** 要約の履歴の1版の長さの上限(文字)。壊れた・書き換えられたファイルで巨大な文字列を入れない */
     private const val MAX_SUMMARY_LENGTH = 100_000
@@ -283,6 +289,8 @@ object BackupJson {
         writeArray(writer, "summaryHistory", data.summaryHistory) { it.toJson() }
         writer.write(",")
         writeArray(writer, "chatTemplates", data.chatTemplates) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "readingDictionary", data.readingDictionary) { it.toJson() }
         writer.write(",")
         writer.write("\"settings\":")
         writer.write(JSONObject(data.settings).toString())
@@ -346,6 +354,7 @@ object BackupJson {
             reviewCards = readArray("reviewCards") { it.toReviewCard() },
             summaryHistory = readArray("summaryHistory") { it.toSummaryHistory() },
             chatTemplates = readArray("chatTemplates") { it.toChatTemplate() },
+            readingDictionary = readArray("readingDictionary") { it.toReadingEntry() },
             settings = root.optJSONObject("settings")?.let { readSettings(it) { invalid["settings"] = (invalid["settings"] ?: 0) + 1 } }.orEmpty(),
             linkCheckMutedBookmarkIds = root.optJSONArray("linkCheckMuted")?.let { array ->
                 (0 until array.length()).mapNotNull { index -> array.optLong(index, -1L).takeIf { it >= 0 } }
@@ -422,6 +431,15 @@ object BackupJson {
         .put("createdAt", createdAt)
 
     private fun ChatTemplate.toJson() = JSONObject().put("id", id).put("title", title).put("text", text)
+
+    private fun ReadingEntry.toJson() = JSONObject().put("surface", surface).put("reading", reading)
+
+    /** 誤りのあるもの(空・長すぎる・読みが表記と同じ)は壊れた要素として数える */
+    private fun JSONObject.toReadingEntry(): ReadingEntry? {
+        val surface = stringOrNull("surface") ?: return null
+        val reading = stringOrNull("reading") ?: return null
+        return if (ReadingEntry.problemOf(surface, reading) == null) ReadingEntry(ReadingEntry.normalize(surface), ReadingEntry.normalize(reading)) else null
+    }
 
     private fun JSONObject.toSummaryHistory(): SummaryHistoryEntity? {
         val summary = stringOrNull("summary")?.takeIf { it.isNotBlank() }?.take(MAX_SUMMARY_LENGTH) ?: return null

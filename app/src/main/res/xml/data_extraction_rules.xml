@@ -19,6 +19,8 @@
             機種変更時の端末間の転送では移す(ブックマークと一緒に見られるように)
         -->
         <exclude domain="file" path="attachments/" />
+        <!-- ポッドキャストの音声(作り直せる。大きくなりやすい)はバックアップしない -->
+        <exclude domain="file" path="podcasts/" />
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
@@ -32,5 +34,7 @@
         <exclude domain="database" path="." />
         <exclude domain="file" path="datastore/api_keys.preferences_pb" />
         <exclude domain="file" path="models/" />
+        <!-- ポッドキャストの音声は端末間の転送でも移さない(作り直せる) -->
+        <exclude domain="file" path="podcasts/" />
     </device-transfer>
 </data-extraction-rules>
