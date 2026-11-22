@@ -21,6 +21,7 @@ import com.unchunks.echomark.ui.settings.ProcessingSettingsDialog
 import com.unchunks.echomark.ui.settings.SettingsDialog
 import com.unchunks.echomark.ui.settings.SummarySettingsDialog
 import com.unchunks.echomark.ui.settings.ThemeModeDialog
+import com.unchunks.echomark.ui.settings.TimeDialog
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,6 +80,17 @@ class SettingsDialogScreenshotTest {
             onChange = {},
             onDismiss = {}
         )
+    }
+
+    @Test
+    fun timeDialog() = screenshot.captureDialogLightDark("settings_dialog_time") {
+        TimeDialog(hour = 20, minute = 0, onConfirm = { _, _ -> }, onDismiss = {})
+    }
+
+    @Test
+    @Config(qualifiers = "ja-rJP-w640dp-h400dp-xhdpi")
+    fun timeInputDialog() = screenshot.captureDialogLightDark("settings_dialog_time_input") {
+        TimeDialog(hour = 20, minute = 0, onConfirm = { _, _ -> }, onDismiss = {})
     }
 
     @Test
