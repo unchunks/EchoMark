@@ -200,6 +200,9 @@ object BackupCoverage {
         "link_check_enabled" to Key.Excluded(SENDS_DATA),
         "llm_backend" to Key.Excluded(LEGACY),
         "api_provider" to Key.Excluded(LEGACY),
+        "reading_dictionary" to Key.Excluded(
+            "ポッドキャストの読みの辞書は、ポッドキャストを作れるようになるまで(読み上げの PR)バックアップの形式に入れない"
+        ),
         "search_history" to Key.Excluded("何を探したかは端末の中だけに残す(持ち出すファイルに入れない)"),
         "dismissed_duplicates" to Key.Excluded("書き出し元のブックマークの ID を覚えているだけで、読み込んだ端末では ID が変わる"),
         "rediscover_notified" to Key.Excluded("どのブックマークを通知したかは、この端末の通知の記録"),

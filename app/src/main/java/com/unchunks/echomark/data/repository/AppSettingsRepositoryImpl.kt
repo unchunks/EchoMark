@@ -24,6 +24,7 @@ import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
@@ -264,6 +265,17 @@ class AppSettingsRepositoryImpl @Inject constructor(
         }
     }
 
+    override val readingDictionary: Flow<List<ReadingEntry>> = data.map { prefs ->
+        prefs[KEY_READING_DICTIONARY]?.let(ReadingDictionaryCodec::decode).orEmpty()
+    }.distinctUntilChanged()
+
+    override suspend fun updateReadingDictionary(transform: (List<ReadingEntry>) -> List<ReadingEntry>) {
+        dataStore.edit { prefs ->
+            val current = prefs[KEY_READING_DICTIONARY]?.let(ReadingDictionaryCodec::decode).orEmpty()
+            prefs[KEY_READING_DICTIONARY] = ReadingDictionaryCodec.encode(transform(current))
+        }
+    }
+
     // 名前の変わった・無くなった並び順が保存されていたら既定に戻す
     override val bookmarkSortOrder: Flow<BookmarkSortOrder> = data.map { prefs ->
         prefs[KEY_BOOKMARK_SORT_ORDER]?.let { name -> BookmarkSortOrder.entries.firstOrNull { it.name == name } }
@@ -442,6 +454,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_CHAT_TEMPLATES = stringPreferencesKey("chat_templates")
+        val KEY_READING_DICTIONARY = stringPreferencesKey("reading_dictionary")
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
         val KEY_DUPLICATE_SENSITIVITY = stringPreferencesKey("duplicate_sensitivity")
         val KEY_LINK_CHECK_ENABLED = booleanPreferencesKey("link_check_enabled")

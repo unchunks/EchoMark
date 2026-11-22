@@ -8,6 +8,9 @@ object Routes {
     /** カテゴリの管理(設定の「AI」の欄から開くサブ画面)。"settings/..." なのでボトムバーは設定タブが選択状態になる */
     const val CATEGORIES = "settings/categories"
 
+    /** ポッドキャストの読みの辞書(表記 → 読み) */
+    const val READING_DICTIONARY = "podcasts/reading-dictionary"
+
     /** タグの管理(ブックマーク一覧のメニューから開くサブ画面) */
     const val TAGS = "tags"
 

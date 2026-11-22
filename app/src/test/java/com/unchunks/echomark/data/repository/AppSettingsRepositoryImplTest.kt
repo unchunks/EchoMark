@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.repository
 
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.lock.AppLockSettings
@@ -197,6 +198,25 @@ class AppSettingsRepositoryImplTest {
         repository.updateChatTemplates { it + template }
 
         assertEquals(listOf(template), repository.chatTemplates.first())
+    }
+
+    @Test
+    fun 読みの辞書を保存して読み出せる() = runTest {
+        val repository = createRepository()
+        assertEquals(emptyList<ReadingEntry>(), repository.readingDictionary.first())
+
+        repository.updateReadingDictionary { it + ReadingEntry("日本橋", "にほんばし") + ReadingEntry("GitHub", "ギットハブ") }
+
+        assertEquals(listOf(ReadingEntry("日本橋", "にほんばし"), ReadingEntry("GitHub", "ギットハブ")), repository.readingDictionary.first())
+    }
+
+    @Test
+    fun 読めない読みの辞書は空として扱い_誤りのある1件は除く() {
+        assertEquals(emptyList<ReadingEntry>(), ReadingDictionaryCodec.decode("壊れた値"))
+        assertEquals(
+            listOf(ReadingEntry("東京", "とうきょう")),
+            ReadingDictionaryCodec.decode("""[{"surface":"東京","reading":"とうきょう"},{"surface":"","reading":"から"},{"x":1},"a"]""")
+        )
     }
 
     @Test
