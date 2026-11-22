@@ -181,6 +181,13 @@
             android:exported="false"
             android:theme="@style/Theme.EchoMark" />
 
+        <!-- 端末に保存した動画の再生(Media3)。向きを変えても再生を続けるよう、作り直さない -->
+        <activity
+            android:name=".ui.video.VideoPlayerActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:theme="@style/Theme.EchoMark" />
+
         <service
             android:name=".ui.tile.ClipboardSaveTileService"
             android:exported="true"

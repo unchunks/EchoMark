@@ -119,13 +119,15 @@ internal fun AttachmentPreview(
     file: File,
     type: BookmarkType,
     onOpenFile: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 動画をアプリの中で再生する(無ければ、ほかのアプリで開く) */
+    onPlayVideo: (() -> Unit)? = null
 ) {
     when (type) {
         BookmarkType.IMAGE -> ImagePreview(file, modifier)
         BookmarkType.PDF -> PdfPreview(file, onOpenFile, modifier)
         BookmarkType.AUDIO -> AudioPlayer(file, modifier.padding(horizontal = 16.dp))
-        BookmarkType.VIDEO -> VideoPreview(file, onOpenFile, modifier.padding(horizontal = 16.dp))
+        BookmarkType.VIDEO -> VideoPreview(file, onPlayVideo, onOpenFile, modifier.padding(horizontal = 16.dp))
         BookmarkType.TEXT, BookmarkType.URL -> Unit
     }
 }
@@ -297,7 +299,7 @@ private fun PdfPageTile(file: File, index: Int, widthPx: Int, onOpenFile: () -> 
 
 /** 動画: 1秒目あたりのコマと再生の印。押すとほかのアプリで再生する */
 @Composable
-private fun VideoPreview(file: File, onOpenFile: () -> Unit, modifier: Modifier) {
+private fun VideoPreview(file: File, onPlayVideo: (() -> Unit)?, onOpenFile: () -> Unit, modifier: Modifier) {
     val widthPx = with(LocalDensity.current) { 360.dp.roundToPx() }
     val frame by rememberVideoFrame(file, widthPx)
     val duration by rememberMediaDuration(file)
@@ -307,7 +309,10 @@ private fun VideoPreview(file: File, onOpenFile: () -> Unit, modifier: Modifier)
             .aspectRatio(16f / 9f)
             .clip(MaterialTheme.shapes.large)
             .background(Color.Black)
-            .clickable(onClickLabel = "ほかのアプリで再生", onClick = onOpenFile),
+            .clickable(
+                onClickLabel = if (onPlayVideo != null) "再生" else "ほかのアプリで再生",
+                onClick = onPlayVideo ?: onOpenFile
+            ),
         contentAlignment = Alignment.Center
     ) {
         frame?.let {

@@ -22,6 +22,8 @@
 | YouTube の字幕(部品の `YouTubeTranscriptFetcher`) | 本文の取得と同じ client | 同上 |
 | PeerTube の動画の情報・字幕(`PeerTubeFetcher`。ページと同じサーバーの公開 API) | 本文の取得と同じ client | 同上 |
 | 動画のオフライン保存(`VideoOfflineWorker`。字幕の取り直し・サムネイルの保存。`docs/video-offline.md`) | 本文の取得と同じ client | 画面で理由を出して始めない。途中でオンにされたら、何も書かずに止める |
+| 動画のファイルのダウンロード(`VideoFileDownloader`・`VideoFileDownloadWorker`。直接のリンク・PeerTube) | 共通の client から作った OkHttp(本文の取得と同じ制限) | 画面で理由を出して始めない。途中でオンにされたら止める(途中のファイルは残し、オフにしたら頼み直せば続きから) |
+| 保存した動画の再生(`VideoPlayerActivity`。Media3) | 端末のファイルだけ(`FileDataSource`) | もともと通信しない |
 | フィードの確認・購読の追加(`FeedFetcher`・`FeedDiscovery`) | 共通の client から作った OkHttp | 夜間の確認は積まない・ワーカーも動かない。途中でオンにされたら失敗に数えずにやめる |
 | リンク切れの確認(`LinkProber`) | 共通の client から作った OkHttp | 夜間の確認は積まない。途中でオンにされたら記録せずにやめる(`NetworkStatus` も通信できない扱い) |
 | 資料探し(部品の Web 検索: arXiv・はてなブックマーク・Wikipedia・YouTube) | Hilt で渡す共通の client | 画面で理由を出して検索しない |

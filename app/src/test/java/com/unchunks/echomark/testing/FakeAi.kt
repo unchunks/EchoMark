@@ -26,6 +26,7 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -122,6 +123,14 @@ class FakeAppSettingsRepository(
     override val duplicateSensitivity: Flow<DuplicateSensitivity> = duplicateSensitivityFlow
     override val linkCheckEnabled: Flow<Boolean> = linkCheckEnabledFlow
     override suspend fun setLinkCheckEnabled(enabled: Boolean) { linkCheckEnabledFlow.value = enabled }
+    val videoDownloadSettingsFlow = MutableStateFlow(VideoDownloadSettings())
+    override val videoDownloadSettings: Flow<VideoDownloadSettings> = videoDownloadSettingsFlow
+    override suspend fun setVideoDownloadWifiOnly(enabled: Boolean) {
+        videoDownloadSettingsFlow.value = videoDownloadSettingsFlow.value.copy(wifiOnly = enabled)
+    }
+    override suspend fun setVideoDownloadMaxTotalBytes(bytes: Long) {
+        videoDownloadSettingsFlow.value = videoDownloadSettingsFlow.value.copy(maxTotalBytes = bytes)
+    }
     override val placesMapBackground: Flow<Boolean> = placesMapBackgroundFlow
     override suspend fun setPlacesMapBackground(enabled: Boolean) { placesMapBackgroundFlow.value = enabled }
     override val offlineMode: Flow<Boolean> = offlineModeFlow

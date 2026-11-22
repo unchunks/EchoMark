@@ -144,6 +144,9 @@ dependencies {
     // 画像読み込み(OG 画像のサムネイル)。通信は共通の OkHttpClient を使う(EchoMarkApplication)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    // オフライン用に保存した動画・添付の動画をアプリの中で再生する(端末のファイルだけを読む。通信する部品は入れない)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
 
     // ホーム画面ウィジェット(Jetpack Glance)
     implementation(libs.androidx.glance.appwidget)

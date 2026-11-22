@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.video.VideoFileStore
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
@@ -166,7 +167,7 @@ class AttachmentStoreTest {
                     filePath = kept.filePath, mimeType = kept.mimeType
                 )
             )
-            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { db.offlineVideoDao() }, TestDispatcherProvider(Dispatchers.Unconfined))
+            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { db.offlineVideoDao() }, { VideoFileStore(context, TestDispatcherProvider(Dispatchers.Unconfined)) }, TestDispatcherProvider(Dispatchers.Unconfined))
 
             assertEquals(1, cleaner.cleanUp(now = 1_000L + 2 * DAY))
 
@@ -191,7 +192,7 @@ class AttachmentStoreTest {
                     contentUri = "https://example.com/a", snapshotPath = mhtml, snapshotPdfPath = pdf, snapshotAt = 5L
                 )
             )
-            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { db.offlineVideoDao() }, TestDispatcherProvider(Dispatchers.Unconfined))
+            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { db.offlineVideoDao() }, { VideoFileStore(context, TestDispatcherProvider(Dispatchers.Unconfined)) }, TestDispatcherProvider(Dispatchers.Unconfined))
 
             assertEquals(1, cleaner.cleanUp(now = 1_000L + 2 * DAY))
 
@@ -222,7 +223,7 @@ class AttachmentStoreTest {
             db.openHelper.writableDatabase.execSQL(
                 "INSERT INTO offline_videos (bookmarkId, thumbnailPath, savedAt) VALUES (999, '${orphanThumbnail.filePath}', 5)"
             )
-            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { videos }, TestDispatcherProvider(Dispatchers.Unconfined))
+            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { videos }, { VideoFileStore(context, TestDispatcherProvider(Dispatchers.Unconfined)) }, TestDispatcherProvider(Dispatchers.Unconfined))
 
             assertEquals(1, cleaner.cleanUp(now = 1_000L + 2 * DAY))
 

@@ -32,6 +32,7 @@ orgJson = "20260814"
 anthropicJava = "2.66.0"
 robolectric = "4.17"
 coil = "3.6.3"
+media3 = "1.10.1"
 roborazzi = "1.76.0"
 glance = "1.2.0"
 pdfboxAndroid = "2.0.27.0"
@@ -89,6 +90,8 @@ litertlm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-and
 anthropic-java = { group = "com.anthropic", name = "anthropic-java", version.ref = "anthropicJava" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
 roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }

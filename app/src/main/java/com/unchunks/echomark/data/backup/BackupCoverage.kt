@@ -150,6 +150,9 @@ object BackupCoverage {
 
     enum class SettingType { BOOLEAN, INT, STRING }
 
+    private const val VIDEO_DOWNLOAD =
+        "動画のファイルの保存の設定(Wi-Fi のときだけ・上限)は、端末の空き容量と通信の契約に合わせて端末ごとに決める" +
+            "(保存した動画もバックアップに入れない)"
     private const val APP_LOCK = "アプリのロックは端末の設定(端末ごとに生体認証・画面ロックが違う)。バックアップを戻して勝手にオン・オフを変えない"
     private const val AUTO_BACKUP = "自動バックアップの保存先は、この端末のフォルダ(別の端末では開けない)"
     private const val SENDS_DATA =
@@ -208,6 +211,8 @@ object BackupCoverage {
         "rediscover_notified" to Key.Excluded("どのブックマークを通知したかは、この端末の通知の記録"),
         "onboarding_completed" to Key.Excluded("はじめにの案内を見たかは、この端末のこと"),
         "offline_mode" to Key.Excluded("オフラインモードは端末の設定(バックアップを戻して勝手に通信を始めない・止めない)"),
+        "video_download_wifi_only" to Key.Excluded(VIDEO_DOWNLOAD),
+        "video_download_max_total_bytes" to Key.Excluded(VIDEO_DOWNLOAD),
         "app_lock_enabled" to Key.Excluded(APP_LOCK),
         "app_lock_delay" to Key.Excluded(APP_LOCK),
         "app_lock_hide_content" to Key.Excluded(APP_LOCK),

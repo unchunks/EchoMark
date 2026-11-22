@@ -8,6 +8,9 @@ object Routes {
     /** カテゴリの管理(設定の「AI」の欄から開くサブ画面)。"settings/..." なのでボトムバーは設定タブが選択状態になる */
     const val CATEGORIES = "settings/categories"
 
+    /** オフラインの動画(保存した動画の一覧・ダウンロードの設定)。設定の「データ」の欄から開く */
+    const val OFFLINE_VIDEOS = "settings/offline-videos"
+
     /** ポッドキャストの読みの辞書(表記 → 読み) */
     const val READING_DICTIONARY = "podcasts/reading-dictionary"
 

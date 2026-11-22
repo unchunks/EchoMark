@@ -8,6 +8,16 @@ import androidx.room.Transaction
 import com.unchunks.echomark.data.local.entity.OfflineVideoEntity
 import kotlinx.coroutines.flow.Flow
 
+/** 保存した動画の一覧の1行([OfflineVideoDao.observeSavedVideos]) */
+data class SavedVideoRow(
+    val bookmarkId: Long,
+    val title: String,
+    val path: String,
+    val size: Long?,
+    val label: String?,
+    val savedAt: Long?
+)
+
 @Dao
 abstract class OfflineVideoDao {
     @Query("SELECT * FROM offline_videos WHERE bookmarkId = :bookmarkId")
@@ -33,6 +43,67 @@ abstract class OfflineVideoDao {
         updateThumbnail(bookmarkId, thumbnailPath, savedAt)
         return true
     }
+
+    @Query(
+        """
+        UPDATE offline_videos SET videoPath = :path, videoMimeType = :mimeType, videoSize = :size, videoSourceUrl = :sourceUrl,
+            videoLabel = :label, videoSavedAt = :savedAt, savedAt = :savedAt
+        WHERE bookmarkId = :bookmarkId
+        """
+    )
+    protected abstract suspend fun updateVideo(
+        bookmarkId: Long, path: String?, mimeType: String?, size: Long?, sourceUrl: String?, label: String?, savedAt: Long?
+    )
+
+    /** 動画のファイルを結びつける(行が無ければ作る)。ブックマークが無ければ何もせず false */
+    @Transaction
+    open suspend fun saveVideo(
+        bookmarkId: Long, path: String, mimeType: String, size: Long, sourceUrl: String, label: String?, savedAt: Long
+    ): Boolean {
+        if (!bookmarkExists(bookmarkId)) return false
+        insertIfAbsent(OfflineVideoEntity(bookmarkId = bookmarkId, savedAt = savedAt))
+        updateVideo(bookmarkId, path, mimeType, size, sourceUrl, label, savedAt)
+        return true
+    }
+
+    /** 動画のファイルの記録だけを外す(サムネイルの記録は残す) */
+    @Query(
+        """
+        UPDATE offline_videos SET videoPath = NULL, videoMimeType = NULL, videoSize = NULL, videoSourceUrl = NULL,
+            videoLabel = NULL, videoSavedAt = NULL
+        WHERE bookmarkId = :bookmarkId
+        """
+    )
+    abstract suspend fun clearVideo(bookmarkId: Long)
+
+    @Query(
+        """
+        UPDATE offline_videos SET videoPath = NULL, videoMimeType = NULL, videoSize = NULL, videoSourceUrl = NULL,
+            videoLabel = NULL, videoSavedAt = NULL
+        """
+    )
+    abstract suspend fun clearAllVideos()
+
+    /** 保存した動画のファイルの置き場所(掃除で、参照されているものとして残す) */
+    @Query("SELECT videoPath FROM offline_videos WHERE videoPath IS NOT NULL")
+    abstract suspend fun getAllVideoPaths(): List<String>
+
+    @Query("SELECT COALESCE(SUM(videoSize), 0) FROM offline_videos WHERE videoPath IS NOT NULL")
+    abstract fun observeVideoBytes(): Flow<Long>
+
+    @Query("SELECT COALESCE(SUM(videoSize), 0) FROM offline_videos WHERE videoPath IS NOT NULL AND bookmarkId != :excludingBookmarkId")
+    abstract suspend fun totalVideoBytes(excludingBookmarkId: Long): Long
+
+    /** 保存した動画の一覧(新しく保存した順)。ブックマークのタイトルと合わせて返す */
+    @Query(
+        """
+        SELECT o.bookmarkId AS bookmarkId, b.title AS title, o.videoPath AS path, o.videoSize AS size, o.videoLabel AS label, o.videoSavedAt AS savedAt
+        FROM offline_videos o INNER JOIN bookmarks b ON b.id = o.bookmarkId
+        WHERE o.videoPath IS NOT NULL
+        ORDER BY o.videoSavedAt DESC
+        """
+    )
+    abstract fun observeSavedVideos(): Flow<List<SavedVideoRow>>
 
     @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE id = :bookmarkId)")
     protected abstract suspend fun bookmarkExists(bookmarkId: Long): Boolean

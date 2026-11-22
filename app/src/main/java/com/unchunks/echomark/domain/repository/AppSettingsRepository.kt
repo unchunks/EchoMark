@@ -12,6 +12,7 @@ import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.model.SummaryStyle
 import kotlinx.coroutines.flow.Flow
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import kotlinx.coroutines.flow.map
 import java.time.DayOfWeek
 
@@ -165,6 +166,13 @@ interface AppSettingsRepository {
 
     /** 夜間にリンク切れを確認する(#94)。確認は処理の設定(充電中だけ・Wi-Fi のときだけ)に従う。既定はオン */
     val linkCheckEnabled: Flow<Boolean>
+
+    /** 動画のファイルのオフライン保存の設定(Wi-Fi のときだけ・保存する合計の上限)。端末ごとの設定で、バックアップには入れない */
+    val videoDownloadSettings: Flow<VideoDownloadSettings>
+
+    suspend fun setVideoDownloadWifiOnly(enabled: Boolean)
+
+    suspend fun setVideoDownloadMaxTotalBytes(bytes: Long)
 
     /** 場所の画面で「地図の背景」を出す(#85)。オンにすると、画面を開いている間だけ地図のタイルをネットワークから読む。既定はオフ */
     val placesMapBackground: Flow<Boolean>

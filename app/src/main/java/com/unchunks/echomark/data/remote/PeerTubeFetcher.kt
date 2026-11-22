@@ -32,10 +32,21 @@ class PeerTubeFetcher(
         val video: YouTubeVideo,
         val transcript: CaptionTranscript?,
         /** サムネイル(大きい方の画像)の絶対 URL。無ければ null */
-        val thumbnailUrl: String?
+        val thumbnailUrl: String?,
+        /** 投稿者が動画のダウンロードを許しているか(`downloadEnabled`。無ければ許していない扱い) */
+        val downloadEnabled: Boolean = false,
+        /** ダウンロードできる動画のファイル(Web Video の `files` と、HLS の `streamingPlaylists[].files`) */
+        val files: List<File> = emptyList()
     )
 
-    fun fetch(ref: PeerTubeUrls.VideoRef): Result? {
+    /**
+     * 動画のファイル1つ。[url] は `fileDownloadUrl`(添付ファイルとして返す URL)、無ければ `fileUrl`。
+     * [height] は画質(解像度の id。音声だけなら 0)
+     */
+    data class File(val url: String, val height: Int, val label: String?, val size: Long?)
+
+    /** 動画の情報を取る。[withTranscript] が false なら字幕は取らない(ダウンロードの準備のとき) */
+    fun fetch(ref: PeerTubeUrls.VideoRef, withTranscript: Boolean = true): Result? {
         val origin = ref.origin.toHttpUrlOrNull() ?: return null
         val details = get(origin, "api/v1/videos/${ref.videoId}")?.let { parseJson(it) } ?: return null
         // PeerTube の動画の答えか(同じパスの、ほかのサイトのページを取り違えない)
@@ -49,8 +60,38 @@ class PeerTubeFetcher(
             keywords = details.optJSONArray("tags").strings()
         )
         // 配信中(ライブ)の動画は字幕が無く、内容も変わっていくので、情報だけにする
-        val transcript = if (details.optBoolean("isLive")) null else transcript(origin, ref.videoId)
-        return Result(video, transcript, thumbnailUrl(origin, details))
+        val isLive = details.optBoolean("isLive")
+        val transcript = if (isLive || !withTranscript) null else transcript(origin, ref.videoId)
+        return Result(
+            video = video,
+            transcript = transcript,
+            thumbnailUrl = thumbnailUrl(origin, details),
+            downloadEnabled = !isLive && details.optBoolean("downloadEnabled", false),
+            files = if (isLive) emptyList() else files(origin, details)
+        )
+    }
+
+    /** ダウンロードできるファイル。映像の無いもの(音声だけ)・接続してはいけない URL は除く */
+    private fun files(origin: HttpUrl, details: JSONObject): List<File> {
+        val playlists = details.optJSONArray("streamingPlaylists")
+        val arrays = listOfNotNull(details.optJSONArray("files")) +
+            (0 until (playlists?.length() ?: 0)).mapNotNull { playlists?.optJSONObject(it)?.optJSONArray("files") }
+        return arrays.flatMap { array -> (0 until array.length()).mapNotNull { array.optJSONObject(it) } }
+            .filter { it.optBoolean("hasVideo", true) }
+            .mapNotNull { file ->
+                val raw = file.optString("fileDownloadUrl").takeIf { it.isNotBlank() && it != "null" }
+                    ?: file.optString("fileUrl").takeIf { it.isNotBlank() && it != "null" }
+                    ?: return@mapNotNull null
+                val url = origin.resolve(raw)?.takeIf { isAllowedFileUrl(origin, it) } ?: return@mapNotNull null
+                val resolution = file.optJSONObject("resolution")
+                File(
+                    url = url.toString(),
+                    height = resolution?.optInt("id") ?: 0,
+                    label = resolution?.optString("label")?.takeIf { it.isNotBlank() },
+                    size = file.optLong("size", -1L).takeIf { it > 0 }
+                )
+            }
+            .filter { it.height > 0 }
     }
 
     /** 字幕を1つ選んで取る。日本語 → 人が付けたもの → 最初のもの の順に選ぶ */

@@ -33,6 +33,8 @@ import com.unchunks.echomark.worker.RediscoverDigestScheduler
 import com.unchunks.echomark.worker.FeedCheckWorker
 import com.unchunks.echomark.worker.ReembedAllWorker
 import com.unchunks.echomark.worker.VideoOfflineWorkScheduler
+import com.unchunks.echomark.worker.VideoDownloadWorkScheduler
+import com.unchunks.echomark.data.video.VideoFileStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.objectbox.BoxStore
 import kotlinx.coroutines.CancellationException
@@ -61,6 +63,7 @@ class DataManagementRepositoryImpl @Inject constructor(
     private val apiKeyRepository: ApiKeyRepository,
     private val workScheduler: BookmarkWorkScheduler,
     private val attachmentStore: AttachmentStore,
+    private val videoFileStore: VideoFileStore,
     private val databaseLeftovers: DatabaseLeftovers,
     private val dispatcherProvider: DispatcherProvider
 ) : DataManagementRepository {
@@ -254,7 +257,8 @@ class DataManagementRepositoryImpl @Inject constructor(
             databaseBytes = databaseBytes,
             embeddingBytes = runCatching { boxStore.dbSizeOnDisk }.getOrDefault(0L),
             modelBytes = modelManager.totalBytes(),
-            attachmentBytes = attachmentStore.totalBytes()
+            attachmentBytes = attachmentStore.totalBytes(),
+            offlineVideoBytes = videoFileStore.totalBytes()
         )
     }
 
@@ -265,12 +269,15 @@ class DataManagementRepositoryImpl @Inject constructor(
         workManager.cancelUniqueWork(FeedCheckWorker.WORK_NAME)
         // 動画のオフライン保存(字幕の取得・サムネイルのダウンロード)も止める
         workManager.cancelAllWorkByTag(VideoOfflineWorkScheduler.TAG)
+        workManager.cancelAllWorkByTag(VideoDownloadWorkScheduler.TAG)
         backupDao.deleteAll()
         // 暗号化の途中で残った平文の DB の写しがあれば、上書きして消す(全部消したあとに平文を残さない)
         databaseLeftovers.deleteLeftovers()
         vectorSearch.deleteAll()
         // 添付ファイルは参照が無くなったので、掃除を待たずにすぐ消す
         attachmentStore.deleteAll()
+        // オフライン用に保存した動画のファイル(途中まで落としたものも)
+        videoFileStore.deleteAll()
         // 検索の履歴(何を探したか)と、自分で作ったチャットのテンプレートは利用者のデータなので、設定を残す場合でも消す
         appSettings.updateSearchHistory { emptyList() }
         appSettings.updateChatTemplates { emptyList() }
