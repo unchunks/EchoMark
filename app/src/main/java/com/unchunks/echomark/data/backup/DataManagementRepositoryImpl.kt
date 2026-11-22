@@ -32,6 +32,7 @@ import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import com.unchunks.echomark.worker.RediscoverDigestScheduler
 import com.unchunks.echomark.worker.FeedCheckWorker
 import com.unchunks.echomark.worker.ReembedAllWorker
+import com.unchunks.echomark.worker.VideoOfflineWorkScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.objectbox.BoxStore
 import kotlinx.coroutines.CancellationException
@@ -262,6 +263,8 @@ class DataManagementRepositoryImpl @Inject constructor(
         workScheduler.cancelAll()
         workManager.cancelUniqueWork(ReembedAllWorker.WORK_NAME)
         workManager.cancelUniqueWork(FeedCheckWorker.WORK_NAME)
+        // 動画のオフライン保存(字幕の取得・サムネイルのダウンロード)も止める
+        workManager.cancelAllWorkByTag(VideoOfflineWorkScheduler.TAG)
         backupDao.deleteAll()
         // 暗号化の途中で残った平文の DB の写しがあれば、上書きして消す(全部消したあとに平文を残さない)
         databaseLeftovers.deleteLeftovers()

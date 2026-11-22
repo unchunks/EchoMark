@@ -74,6 +74,10 @@ object BackupCoverage {
             "Web で確かめた結果は、確かめた時点の手がかり(Web のページの一節を含む)で、もう一度確かめられる。" +
                 "回答のメッセージの ID は読み込む端末で振り直されるため、持ち込んでも対象に結び付かない"
         ),
+        "offline_videos" to Table.Excluded(
+            "動画のオフライン保存は端末ごとの保存。サムネイルはリンク先から取り直せ、動画のファイルは大きい" +
+                "(zip にも入れない。読み込んだ端末で保存し直す)"
+        ),
         "summary_history" to Table.Included(
             "summaryHistory",
             included("bookmarkId", "summary", "source", "generator", "style", "createdAt") + excluded(ID_RENUMBERED, "id")

@@ -1,5 +1,6 @@
 package com.unchunks.echomark.domain.bookmark.model
 
+import com.unchunks.echomark.domain.video.PeerTubeUrls
 import java.net.URI
 
 /**
@@ -51,8 +52,12 @@ fun contentKindOfMimeType(mimeType: String?): ContentKind? {
     }
 }
 
-/** 動画サイトの URL なら [ContentKind.VIDEO]。それ以外は null(呼び出し側で Web ページ扱い)。 */
+/**
+ * 動画サイトの URL なら [ContentKind.VIDEO]。それ以外は null(呼び出し側で Web ページ扱い)。
+ * PeerTube はサーバーごとにホストが違うため、動画ページのパスの形で見分ける([PeerTubeUrls])。
+ */
 fun contentKindOfUrl(url: String): ContentKind? {
+    if (PeerTubeUrls.videoOf(url) != null) return ContentKind.VIDEO
     val host = try {
         URI(url.trim()).host?.lowercase()?.removePrefix("www.")?.removePrefix("m.")
     } catch (_: Exception) {
