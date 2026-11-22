@@ -90,6 +90,9 @@ dependencies {
     implementation(libs.unchunks.web.search)
     implementation(libs.unchunks.feed)
     implementation(libs.unchunks.audio)
+    implementation(libs.unchunks.archive)
+    // アプリのロック(指紋・顔・端末の画面ロックで本人を確かめる。androidx.biometric はこの部品から入る)
+    implementation(libs.unchunks.app.lock)
     implementation(libs.unchunks.secure.storage)
     implementation(libs.unchunks.speech)
     implementation(libs.unchunks.document.text)
@@ -102,8 +105,6 @@ dependencies {
     // 重い処理の区間を Perfetto のトレースに出す(端末でのもたつきの調査用)
     implementation(libs.androidx.tracing.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    // アプリのロック(指紋・顔・端末の画面ロックで本人を確かめる)
-    implementation(libs.androidx.biometric)
     // 保存したデータ(Room の DB)の暗号化(#100)。SQLCipher の Room 2 向けの SupportOpenHelperFactory が androidx.sqlite 2.7 を求める
     implementation(libs.sqlcipher.android) { artifact { type = "aar" } }
     implementation(libs.androidx.sqlite)
