@@ -11,9 +11,9 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.unchunks.components.web.NetworkGate
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.R
-import com.unchunks.echomark.data.network.NetworkGate
-import com.unchunks.echomark.data.network.isOfflineModeBlock
 import com.unchunks.echomark.data.video.VideoDownloadException
 import com.unchunks.echomark.data.video.VideoFileDownloader
 import com.unchunks.echomark.data.video.VideoFileStore

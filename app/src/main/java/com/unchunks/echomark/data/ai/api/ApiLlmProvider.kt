@@ -21,11 +21,11 @@ import com.unchunks.components.llm.cloud.ClaudeApiClient
 import com.unchunks.components.llm.cloud.GeminiApiClient
 import com.unchunks.components.llm.cloud.OpenAiApiClient
 import com.unchunks.components.llm.cloud.completeJson
+import com.unchunks.components.web.NetworkGate
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.AnalysisSchema
 import com.unchunks.echomark.data.ai.StructuredOutput
 import com.unchunks.echomark.data.ai.local.AnalysisParser
-import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope

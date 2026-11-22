@@ -1,6 +1,6 @@
 package com.unchunks.echomark.data.podcast
 
-import com.unchunks.echomark.data.podcast.audio.WavAudio
+import com.unchunks.components.audio.WavAudio
 import com.unchunks.echomark.data.podcast.tts.PodcastSpeechEngine
 import com.unchunks.echomark.data.podcast.tts.PodcastSpeechSession
 import com.unchunks.echomark.domain.podcast.PodcastGenerationException

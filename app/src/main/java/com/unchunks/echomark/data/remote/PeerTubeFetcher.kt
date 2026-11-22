@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.components.web.CaptionFileText
 import com.unchunks.components.web.CaptionTranscript
 import com.unchunks.echomark.domain.video.PeerTubeUrls
 import okhttp3.HttpUrl

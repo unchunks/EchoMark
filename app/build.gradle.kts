@@ -88,6 +88,8 @@ dependencies {
     implementation(libs.unchunks.search)
     implementation(libs.unchunks.web.content)
     implementation(libs.unchunks.web.search)
+    implementation(libs.unchunks.feed)
+    implementation(libs.unchunks.audio)
     implementation(libs.unchunks.secure.storage)
     implementation(libs.unchunks.speech)
     implementation(libs.unchunks.document.text)

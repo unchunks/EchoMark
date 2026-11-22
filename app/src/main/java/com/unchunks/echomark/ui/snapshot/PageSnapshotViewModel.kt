@@ -2,7 +2,7 @@ package com.unchunks.echomark.ui.snapshot
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.unchunks.echomark.data.network.NetworkGate
+import com.unchunks.components.web.NetworkGate
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.snapshot.PageSnapshotRepository
 import dagger.hilt.android.lifecycle.HiltViewModel

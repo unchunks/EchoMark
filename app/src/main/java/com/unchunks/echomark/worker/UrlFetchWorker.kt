@@ -4,11 +4,11 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.unchunks.components.web.NetworkGate
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.attachment.AttachmentStore
-import com.unchunks.echomark.data.network.NetworkGate
-import com.unchunks.echomark.data.network.isOfflineModeBlock
 import com.unchunks.echomark.data.remote.DownloadSink
 import com.unchunks.echomark.data.remote.FetchedContent
 import com.unchunks.echomark.data.remote.UrlContentFetcher

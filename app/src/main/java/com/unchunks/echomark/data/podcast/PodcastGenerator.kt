@@ -1,8 +1,8 @@
 package com.unchunks.echomark.data.podcast
 
-import com.unchunks.echomark.data.podcast.audio.UnsupportedWavException
-import com.unchunks.echomark.data.podcast.audio.WavAudio
-import com.unchunks.echomark.data.podcast.audio.WavJoiner
+import com.unchunks.components.audio.UnsupportedWavException
+import com.unchunks.components.audio.WavAudio
+import com.unchunks.components.audio.WavJoiner
 import com.unchunks.echomark.data.podcast.tts.PodcastSpeechEngine
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.podcast.EpisodeLine

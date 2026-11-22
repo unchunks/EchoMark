@@ -13,9 +13,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.Jsoup
 import org.json.JSONException
 import org.json.JSONObject
+import org.jsoup.Jsoup
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
@@ -27,7 +27,7 @@ import javax.inject.Singleton
  *
  * - エンドポイント: `GET https://api.search.brave.com/res/v1/web/search`、キーは `X-Subscription-Token` ヘッダー
  *   (<https://api-dashboard.search.brave.com/api-reference/web/search/get>)
- * - 通信は共通の OkHttpClient から作るため、オフラインモード([com.unchunks.echomark.data.network.NetworkGate])で止まる
+ * - 通信は共通の OkHttpClient から作るため、オフラインモード([com.unchunks.components.web.NetworkGate])で止まる
  * - 時間制限を短くし、応答の大きさに上限を設ける。1秒あたりの回数は [WebSearchRateLimiter] で抑える
  * - 結果は信頼しない文字列として扱う(HTML のタグを除き、長さを切る)。保存はしない([WebSearchResult])
  * - キーはヘッダーにだけ入れ、ログ・例外のメッセージには出さない

@@ -5,8 +5,8 @@ import com.unchunks.components.llm.cloud.ApiCredentials
 import com.unchunks.components.llm.cloud.ApiLlmClient
 import com.unchunks.components.llm.cloud.ApiRequest
 import com.unchunks.components.llm.cloud.ApiTokenUsage
-import com.unchunks.echomark.data.network.NetworkGate
-import com.unchunks.echomark.data.network.OfflineModeException
+import com.unchunks.components.web.NetworkGate
+import com.unchunks.components.web.OfflineModeException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow

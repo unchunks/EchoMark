@@ -19,7 +19,7 @@ data class WebSearchResult(
     val domain: String
 )
 
-/** Web 検索。失敗は [WebSearchException](オフラインモードなら [com.unchunks.echomark.data.network.OfflineModeException])で知らせる。 */
+/** Web 検索。失敗は [WebSearchException](オフラインモードなら [com.unchunks.components.web.OfflineModeException])で知らせる。 */
 interface WebSearchClient {
     /** [query] で検索し、上位から最大 [count] 件を返す。キーは保存したものを使う。 */
     suspend fun search(query: String, count: Int): List<WebSearchResult>

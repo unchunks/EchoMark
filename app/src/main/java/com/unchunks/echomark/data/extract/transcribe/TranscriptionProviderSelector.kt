@@ -6,7 +6,7 @@ import com.unchunks.components.speech.OnDeviceSpeechTranscriber
 import com.unchunks.components.speech.OpenAiTranscriptionClient
 import com.unchunks.components.speech.PcmChunk
 import com.unchunks.components.speech.TranscriptionProvider
-import com.unchunks.echomark.data.network.NetworkGate
+import com.unchunks.components.web.NetworkGate
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
