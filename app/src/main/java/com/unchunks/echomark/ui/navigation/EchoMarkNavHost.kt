@@ -71,6 +71,7 @@ import com.unchunks.echomark.ui.collections.CollectionDetailViewModel
 import com.unchunks.echomark.ui.collections.CollectionsScreen
 import com.unchunks.echomark.ui.discover.DiscoverScreen
 import com.unchunks.echomark.ui.linkcheck.BrokenLinksScreen
+import com.unchunks.echomark.ui.video.OfflineVideosScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.graph.GraphScreen
 import com.unchunks.echomark.ui.insights.InsightsScreen
@@ -79,6 +80,10 @@ import com.unchunks.echomark.ui.review.ReviewHubScreen
 import com.unchunks.echomark.ui.review.ReviewSessionScreen
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
 import com.unchunks.echomark.ui.onboarding.OnboardingScreen
+import com.unchunks.echomark.ui.podcast.PodcastCreateScreen
+import com.unchunks.echomark.ui.podcast.PodcastEpisodesScreen
+import com.unchunks.echomark.ui.podcast.PodcastPlayerScreen
+import com.unchunks.echomark.ui.podcast.ReadingDictionaryScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
 import com.unchunks.echomark.ui.settings.queue.ProcessingQueueScreen
@@ -234,7 +239,52 @@ fun EchoMarkNavHost(
                     onOpenInsights = { navController.navigate(Routes.INSIGHTS) },
                     onOpenReview = { navController.navigate(Routes.REVIEW) },
                     onOpenCollections = { navController.navigate(Routes.COLLECTIONS) },
-                    onOpenBrokenLinks = { navController.navigate(Routes.BROKEN_LINKS) }
+                    onOpenBrokenLinks = { navController.navigate(Routes.BROKEN_LINKS) },
+                    onOpenPodcasts = { navController.navigate(Routes.PODCASTS) },
+                    onMakePodcast = { ids -> navController.navigate(Routes.podcastNew(ids)) }
+                )
+            }
+            // ポッドキャストのエピソードの一覧(一覧のメニュー・できた通知から開く)
+            composable(
+                route = Routes.PODCASTS,
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.PODCASTS_DEEP_LINK }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                PodcastEpisodesScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenDictionary = { navController.navigate(Routes.READING_DICTIONARY) },
+                    onPlay = { id -> navController.navigate(Routes.podcastPlayer(id)) }
+                )
+            }
+            // ポッドキャストの再生(一覧の「聞く」・再生の通知から開く)。開くと再生する(もう再生していれば続ける)
+            composable(
+                route = Routes.PODCAST_PLAYER,
+                arguments = listOf(navArgument(Routes.ARG_PODCAST_EPISODE_ID) { type = NavType.StringType }),
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.PODCAST_PLAYER_DEEP_LINK }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                PodcastPlayerScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) }
+                )
+            }
+            // ポッドキャストを作る(詳細画面・複数選択から開く)。作り始めたら、この画面の代わりに一覧を開く
+            composable(
+                route = Routes.PODCAST_NEW,
+                arguments = listOf(navArgument(Routes.ARG_PODCAST_BOOKMARK_IDS) { type = NavType.StringType; defaultValue = "" }),
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                PodcastCreateScreen(
+                    onClose = navController.popBackAction(),
+                    onStarted = {
+                        navController.navigate(Routes.PODCASTS) {
+                            popUpTo(Routes.PODCAST_NEW) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
                 )
             }
             // 資料を探す。AI が選んだ資料をまとめて追加し、戻ると一覧に追加したものが並ぶ
@@ -428,8 +478,17 @@ fun EchoMarkNavHost(
                     onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) },
                     onOpenProcessingQueue = { navController.navigate(Routes.PROCESSING_QUEUE) },
                     onOpenCategories = { navController.navigate(Routes.CATEGORIES) },
+                    onOpenOfflineVideos = { navController.navigate(Routes.OFFLINE_VIDEOS) },
                     layout = layout
                 )
+            }
+            // オフラインの動画(設定の「データ」の欄から開く)
+            composable(
+                route = Routes.OFFLINE_VIDEOS,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                OfflineVideosScreen(onBack = navController.popBackAction())
             }
             // カテゴリの管理(設定の「AI」の欄から開く)
             composable(
@@ -438,6 +497,14 @@ fun EchoMarkNavHost(
                 popExitTransition = subScreenPopExit
             ) {
                 CategoryManagementScreen(onBack = navController.popBackAction())
+            }
+            // ポッドキャストの読みの辞書
+            composable(
+                route = Routes.READING_DICTIONARY,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                ReadingDictionaryScreen(onBack = navController.popBackAction())
             }
             // 処理の状況(設定の「処理」の欄・まとめての処理の通知から開く)
             composable(
@@ -477,6 +544,7 @@ fun EchoMarkNavHost(
                     onBack = navController.popBackAction(),
                     onOpenBookmark = { navController.navigate(Routes.bookmarkDetail(it)) },
                     onAskAi = { navController.navigate(Routes.chatAboutBookmark(it)) },
+                    onMakePodcast = { navController.navigate(Routes.podcastNew(listOf(it))) },
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }

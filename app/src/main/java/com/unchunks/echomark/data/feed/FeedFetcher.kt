@@ -1,11 +1,11 @@
 package com.unchunks.echomark.data.feed
 
 import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.web.OfflineModeException
 import com.unchunks.components.web.PublicAddressInterceptor
 import com.unchunks.components.web.PublicOnlyDns
 import com.unchunks.components.web.isAllowedRedirect
 import com.unchunks.components.web.isPublicAddress
-import com.unchunks.echomark.data.network.OfflineModeException
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl

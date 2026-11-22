@@ -3,7 +3,7 @@ package com.unchunks.echomark.data.linkcheck
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import com.unchunks.echomark.data.network.NetworkGate
+import com.unchunks.components.web.NetworkGate
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 

@@ -70,6 +70,14 @@ object BackupCoverage {
         "api_usage" to Table.Excluded(
             "クラウド API の使用量の記録は、この端末で使った量の目安。別の端末に持ち込むと、その端末で使った量と重なって数えてしまう"
         ),
+        "fact_checks" to Table.Excluded(
+            "Web で確かめた結果は、確かめた時点の手がかり(Web のページの一節を含む)で、もう一度確かめられる。" +
+                "回答のメッセージの ID は読み込む端末で振り直されるため、持ち込んでも対象に結び付かない"
+        ),
+        "offline_videos" to Table.Excluded(
+            "動画のオフライン保存は端末ごとの保存。サムネイルはリンク先から取り直せ、動画のファイルは大きい" +
+                "(zip にも入れない。読み込んだ端末で保存し直す)"
+        ),
         "summary_history" to Table.Included(
             "summaryHistory",
             included("bookmarkId", "summary", "source", "generator", "style", "createdAt") + excluded(ID_RENUMBERED, "id")
@@ -122,7 +130,7 @@ object BackupCoverage {
 
     /** app_settings のキーの扱い */
     sealed interface Key {
-        /** 利用者が作ったもの(チャットのテンプレート)。バックアップに入れ、読み込むときに今のものへ足す */
+        /** 利用者が作ったもの(チャットのテンプレート・読みの辞書)。バックアップに入れ、読み込むときに今のものへ足す */
         data object UserData : Key
 
         /**
@@ -142,6 +150,9 @@ object BackupCoverage {
 
     enum class SettingType { BOOLEAN, INT, STRING }
 
+    private const val VIDEO_DOWNLOAD =
+        "動画のファイルの保存の設定(Wi-Fi のときだけ・上限)は、端末の空き容量と通信の契約に合わせて端末ごとに決める" +
+            "(保存した動画もバックアップに入れない)"
     private const val APP_LOCK = "アプリのロックは端末の設定(端末ごとに生体認証・画面ロックが違う)。バックアップを戻して勝手にオン・オフを変えない"
     private const val AUTO_BACKUP = "自動バックアップの保存先は、この端末のフォルダ(別の端末では開けない)"
     private const val SENDS_DATA =
@@ -159,6 +170,8 @@ object BackupCoverage {
      */
     val dataStoreKeys: Map<String, Key> = mapOf(
         "chat_templates" to Key.UserData,
+        // ポッドキャストの読みの辞書(v23〜)
+        "reading_dictionary" to Key.UserData,
         // 端末の設定(戻すかは利用者が決める)
         "theme_mode" to STRING,
         "dynamic_color" to BOOLEAN,
@@ -197,6 +210,8 @@ object BackupCoverage {
         "rediscover_notified" to Key.Excluded("どのブックマークを通知したかは、この端末の通知の記録"),
         "onboarding_completed" to Key.Excluded("はじめにの案内を見たかは、この端末のこと"),
         "offline_mode" to Key.Excluded("オフラインモードは端末の設定(バックアップを戻して勝手に通信を始めない・止めない)"),
+        "video_download_wifi_only" to Key.Excluded(VIDEO_DOWNLOAD),
+        "video_download_max_total_bytes" to Key.Excluded(VIDEO_DOWNLOAD),
         "app_lock_enabled" to Key.Excluded(APP_LOCK),
         "app_lock_delay" to Key.Excluded(APP_LOCK),
         "app_lock_hide_content" to Key.Excluded(APP_LOCK),

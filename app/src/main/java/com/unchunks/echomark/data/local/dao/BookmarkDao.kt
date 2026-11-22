@@ -114,6 +114,10 @@ interface BookmarkDao {
     @Query("UPDATE bookmarks SET category = :category, categoryEdited = 1 WHERE id = :id")
     suspend fun setCategoryByUser(id: Long, category: String)
 
+    /** [setCategoryByUser] を複数件に(一覧の複数選択。呼び出し側で SQLite の変数の上限に収まる件数に区切る) */
+    @Query("UPDATE bookmarks SET category = :category, categoryEdited = 1 WHERE id IN (:ids)")
+    suspend fun setCategoryByUserAll(ids: List<Long>, category: String)
+
     /** カテゴリを AI に任せる状態に戻す(カテゴリは空になり、次の処理で AI が決める)。 */
     @Query("UPDATE bookmarks SET category = NULL, categoryEdited = 0 WHERE id = :id")
     suspend fun clearCategory(id: Long)
@@ -207,6 +211,22 @@ interface BookmarkDao {
 
     @Query("UPDATE bookmarks SET isArchived = :isArchived WHERE id = :id")
     suspend fun updateArchived(id: Long, isArchived: Boolean)
+
+    // ---- 一覧の複数選択のまとめて更新(呼び出し側で SQLite の変数の上限に収まる件数に区切り、1つのトランザクションで呼ぶ) ----
+
+    @Query("UPDATE bookmarks SET isFavorite = :isFavorite WHERE id IN (:ids)")
+    suspend fun updateFavoriteAll(ids: List<Long>, isFavorite: Boolean)
+
+    @Query("UPDATE bookmarks SET isArchived = :isArchived WHERE id IN (:ids)")
+    suspend fun updateArchivedAll(ids: List<Long>, isArchived: Boolean)
+
+    /** [markRead] を複数件に */
+    @Query("UPDATE bookmarks SET readAt = COALESCE(readAt, :now), readingListAt = NULL WHERE id IN (:ids)")
+    suspend fun markReadAll(ids: List<Long>, now: Long)
+
+    /** [markUnread] を複数件に */
+    @Query("UPDATE bookmarks SET readAt = NULL WHERE id IN (:ids)")
+    suspend fun markUnreadAll(ids: List<Long>)
 
     @Query("UPDATE bookmarks SET imageUrl = :imageUrl, siteName = :siteName WHERE id = :id")
     suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?)

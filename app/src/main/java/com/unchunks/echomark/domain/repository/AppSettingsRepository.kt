@@ -1,15 +1,17 @@
 package com.unchunks.echomark.domain.repository
 
-import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.lock.AppLockSettings
-import com.unchunks.echomark.domain.backup.AutoBackupSettings
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.SummaryStyle
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.DayOfWeek
@@ -147,6 +149,9 @@ interface AppSettingsRepository {
     /** ユーザーが保存したチャットのテンプレート(新しい順)。 */
     val chatTemplates: Flow<List<ChatTemplate>>
 
+    /** ポッドキャストの読み上げに使う、利用者の読みの辞書(新しく入れた順)。 */
+    val readingDictionary: Flow<List<ReadingEntry>>
+
     /** 検索の履歴(新しい順)。端末の中だけに残し、バックアップには含めない。 */
     val searchHistory: Flow<List<String>>
 
@@ -162,6 +167,13 @@ interface AppSettingsRepository {
     /** 夜間にリンク切れを確認する(#94)。確認は処理の設定(充電中だけ・Wi-Fi のときだけ)に従う。既定はオン */
     val linkCheckEnabled: Flow<Boolean>
 
+    /** 動画のファイルのオフライン保存の設定(Wi-Fi のときだけ・保存する合計の上限)。端末ごとの設定で、バックアップには入れない */
+    val videoDownloadSettings: Flow<VideoDownloadSettings>
+
+    suspend fun setVideoDownloadWifiOnly(enabled: Boolean)
+
+    suspend fun setVideoDownloadMaxTotalBytes(bytes: Long)
+
     /** 場所の画面で「地図の背景」を出す(#85)。オンにすると、画面を開いている間だけ地図のタイルをネットワークから読む。既定はオフ */
     val placesMapBackground: Flow<Boolean>
 
@@ -176,7 +188,7 @@ interface AppSettingsRepository {
 
     /**
      * オフラインモード。オンの間、アプリは一切ネットワークに接続しない(通信してよいかは
-     * [com.unchunks.echomark.data.network.NetworkGate] の1か所で決める)。通信の要る処理(本文の取得など)は
+     * [com.unchunks.components.web.NetworkGate] の1か所で決める)。通信の要る処理(本文の取得など)は
      * 処理待ちのまま残し、オフにしたら積み直す。既定はオフ。
      * 「全データを削除」で設定を初期化しても、オンのままにする(初期化をきっかけに通信を始めないように)。
      */
@@ -245,6 +257,9 @@ interface AppSettingsRepository {
 
     /** [transform] でチャットのテンプレートを書き換える */
     suspend fun updateChatTemplates(transform: (List<ChatTemplate>) -> List<ChatTemplate>)
+
+    /** [transform] で読みの辞書を書き換える */
+    suspend fun updateReadingDictionary(transform: (List<ReadingEntry>) -> List<ReadingEntry>)
     suspend fun setRediscoverEnabled(enabled: Boolean)
     suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int)
 

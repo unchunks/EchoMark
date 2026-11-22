@@ -346,6 +346,18 @@ class FakeBookmarkRepository : BookmarkRepository {
         }
     }
 
+    /** reprocessAll(一覧の複数選択の再処理。1件ずつ reprocess せず、順番の列にまとめて積む)の呼び出し */
+    val reprocessAllCalls = mutableListOf<List<Long>>()
+
+    /** reprocessAll の結果(順番の列に積んだか) */
+    var reprocessAllStarted = true
+
+    override suspend fun reprocessAll(ids: List<Long>): com.unchunks.echomark.domain.repository.ReprocessQueued {
+        reprocessAllCalls += ids
+        ids.forEach { id -> updateBookmark(id) { it.copy(aiStatus = AiStatus.PENDING) } }
+        return com.unchunks.echomark.domain.repository.ReprocessQueued(ids.size, reprocessAllStarted)
+    }
+
     override suspend fun updateTitleAndContent(id: Long, title: String, content: String?) =
         updateBookmark(id) { it.copy(title = title, content = content) }
 

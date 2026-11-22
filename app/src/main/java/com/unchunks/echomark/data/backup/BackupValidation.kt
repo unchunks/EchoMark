@@ -37,6 +37,7 @@ object BackupValidation {
         "reviewCards" to "復習のカード",
         "summaryHistory" to "要約の履歴",
         "chatTemplates" to "チャットのテンプレート",
+        "readingDictionary" to "読みの辞書",
         "settings" to "設定"
     )
 

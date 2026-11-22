@@ -2,8 +2,10 @@ package com.unchunks.echomark.data.feed
 
 import androidx.tracing.trace
 import androidx.tracing.traceAsync
+import com.unchunks.components.feed.FeedItem
+import com.unchunks.components.feed.FeedParser
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
-import com.unchunks.echomark.data.network.isOfflineModeBlock
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -200,10 +202,10 @@ class FeedChecker @Inject constructor(
             } else {
                 val watermark = maxOf(subscription.createdAt, subscription.lastSuccessAt ?: 0L) - GRACE_MILLIS
                 val unseen = sorted.filter { it.key !in seenSet }
-                val fresh = unseen.filter { it.publishedAt == null || it.publishedAt >= watermark }
+                val fresh = unseen.filter { item -> item.publishedAt.let { it == null || it >= watermark } }
                 toSave = fresh.take(limit)
                 // 古い日付の記事は保存せず「見た」ことにする。上限で保存しなかった新着は、次の確認に回すので「見た」にしない
-                skipped = unseen.filter { it.publishedAt != null && it.publishedAt < watermark }
+                skipped = unseen.filter { item -> item.publishedAt.let { it != null && it < watermark } }
             }
             val newSeen = (seen + toSave.map { it.key } + skipped.map { it.key }).distinct().takeLast(MAX_SEEN_KEYS)
             return Plan(toSave, newSeen.joinToString("\n"))

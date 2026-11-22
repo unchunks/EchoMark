@@ -1,22 +1,23 @@
 package com.unchunks.echomark.testing
 
-import com.unchunks.echomark.domain.lock.AppLockSettings
-import com.unchunks.echomark.domain.backup.AutoBackupSettings
-import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.securestorage.SecretCipher
 import com.unchunks.components.securestorage.UnrecoverableSecretException
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.BookmarkAnalysis
 import com.unchunks.echomark.domain.model.ChatMessage
-import com.unchunks.echomark.domain.provider.LlmProvider
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.SummaryStyle
+import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
@@ -25,6 +26,7 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -64,6 +66,7 @@ class FakeAppSettingsRepository(
     val bookmarkListDisplayFlow = MutableStateFlow(BookmarkListDisplay.CARD)
     val readingStyleFlow = MutableStateFlow(ReadingStyle())
     val chatTemplatesFlow = MutableStateFlow<List<ChatTemplate>>(emptyList())
+    val readingDictionaryFlow = MutableStateFlow<List<ReadingEntry>>(emptyList())
     val searchHistoryFlow = MutableStateFlow<List<String>>(emptyList())
     val duplicateSensitivityFlow = MutableStateFlow(DuplicateSensitivity.DEFAULT)
     val linkCheckEnabledFlow = MutableStateFlow(true)
@@ -120,6 +123,14 @@ class FakeAppSettingsRepository(
     override val duplicateSensitivity: Flow<DuplicateSensitivity> = duplicateSensitivityFlow
     override val linkCheckEnabled: Flow<Boolean> = linkCheckEnabledFlow
     override suspend fun setLinkCheckEnabled(enabled: Boolean) { linkCheckEnabledFlow.value = enabled }
+    val videoDownloadSettingsFlow = MutableStateFlow(VideoDownloadSettings())
+    override val videoDownloadSettings: Flow<VideoDownloadSettings> = videoDownloadSettingsFlow
+    override suspend fun setVideoDownloadWifiOnly(enabled: Boolean) {
+        videoDownloadSettingsFlow.value = videoDownloadSettingsFlow.value.copy(wifiOnly = enabled)
+    }
+    override suspend fun setVideoDownloadMaxTotalBytes(bytes: Long) {
+        videoDownloadSettingsFlow.value = videoDownloadSettingsFlow.value.copy(maxTotalBytes = bytes)
+    }
     override val placesMapBackground: Flow<Boolean> = placesMapBackgroundFlow
     override suspend fun setPlacesMapBackground(enabled: Boolean) { placesMapBackgroundFlow.value = enabled }
     override val offlineMode: Flow<Boolean> = offlineModeFlow
@@ -147,6 +158,10 @@ class FakeAppSettingsRepository(
     override suspend fun updateChatTemplates(transform: (List<ChatTemplate>) -> List<ChatTemplate>) {
         chatTemplatesFlow.update(transform)
     }
+    override val readingDictionary: Flow<List<ReadingEntry>> = readingDictionaryFlow
+    override suspend fun updateReadingDictionary(transform: (List<ReadingEntry>) -> List<ReadingEntry>) {
+        readingDictionaryFlow.update(transform)
+    }
     override suspend fun setRediscoverEnabled(enabled: Boolean) {
         rediscoverFlow.value = rediscoverFlow.value.copy(enabled = enabled)
     }
@@ -170,6 +185,7 @@ class FakeAppSettingsRepository(
         processingFlow.value = ProcessingSettings()
         summaryStyleFlow.value = SummaryStyle()
         chatTemplatesFlow.value = emptyList()
+        readingDictionaryFlow.value = emptyList()
     }
     override suspend fun getRediscoverNotified(): Map<Long, Long> = TODO("not used")
     override suspend fun recordRediscoverNotified(ids: List<Long>, notifiedAt: Long) = TODO("not used")

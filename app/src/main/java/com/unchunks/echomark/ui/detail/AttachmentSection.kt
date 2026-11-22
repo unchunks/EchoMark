@@ -73,6 +73,8 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
 import com.unchunks.echomark.domain.bookmark.model.contentKind
+import com.unchunks.echomark.domain.video.hasVideoTranscript
+import com.unchunks.echomark.domain.video.isOfflineVideoTarget
 import com.unchunks.echomark.ui.attachment.rememberMediaDuration
 import com.unchunks.echomark.ui.attachment.rememberPdfPage
 import com.unchunks.echomark.ui.attachment.rememberPdfPageCount
@@ -95,6 +97,8 @@ internal fun Bookmark.attachmentType(): BookmarkType? =
  * (本文には保存時のメモと、取り出した文字が入る)。
  */
 internal fun contentLabel(bookmark: Bookmark): String = when {
+    // 動画サイトのページの本文は、説明文と字幕(取れたとき)
+    bookmark.isOfflineVideoTarget() && hasVideoTranscript(bookmark.content) -> "説明・字幕・メモ"
     bookmark.type == BookmarkType.URL && bookmark.filePath == null -> "ページの本文・メモ"
     bookmark.type == BookmarkType.TEXT -> if (bookmark.filePath != null) "ファイルの内容・メモ" else "メモ"
     else -> when (bookmark.contentKind()) {
@@ -115,13 +119,15 @@ internal fun AttachmentPreview(
     file: File,
     type: BookmarkType,
     onOpenFile: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 動画をアプリの中で再生する(無ければ、ほかのアプリで開く) */
+    onPlayVideo: (() -> Unit)? = null
 ) {
     when (type) {
         BookmarkType.IMAGE -> ImagePreview(file, modifier)
         BookmarkType.PDF -> PdfPreview(file, onOpenFile, modifier)
         BookmarkType.AUDIO -> AudioPlayer(file, modifier.padding(horizontal = 16.dp))
-        BookmarkType.VIDEO -> VideoPreview(file, onOpenFile, modifier.padding(horizontal = 16.dp))
+        BookmarkType.VIDEO -> VideoPreview(file, onPlayVideo, onOpenFile, modifier.padding(horizontal = 16.dp))
         BookmarkType.TEXT, BookmarkType.URL -> Unit
     }
 }
@@ -293,7 +299,7 @@ private fun PdfPageTile(file: File, index: Int, widthPx: Int, onOpenFile: () -> 
 
 /** 動画: 1秒目あたりのコマと再生の印。押すとほかのアプリで再生する */
 @Composable
-private fun VideoPreview(file: File, onOpenFile: () -> Unit, modifier: Modifier) {
+private fun VideoPreview(file: File, onPlayVideo: (() -> Unit)?, onOpenFile: () -> Unit, modifier: Modifier) {
     val widthPx = with(LocalDensity.current) { 360.dp.roundToPx() }
     val frame by rememberVideoFrame(file, widthPx)
     val duration by rememberMediaDuration(file)
@@ -303,7 +309,10 @@ private fun VideoPreview(file: File, onOpenFile: () -> Unit, modifier: Modifier)
             .aspectRatio(16f / 9f)
             .clip(MaterialTheme.shapes.large)
             .background(Color.Black)
-            .clickable(onClickLabel = "ほかのアプリで再生", onClick = onOpenFile),
+            .clickable(
+                onClickLabel = if (onPlayVideo != null) "再生" else "ほかのアプリで再生",
+                onClick = onPlayVideo ?: onOpenFile
+            ),
         contentAlignment = Alignment.Center
     ) {
         frame?.let {

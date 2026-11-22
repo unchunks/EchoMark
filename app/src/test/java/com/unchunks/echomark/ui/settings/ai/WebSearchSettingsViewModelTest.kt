@@ -1,11 +1,11 @@
 package com.unchunks.echomark.ui.settings.ai
 
-import com.unchunks.echomark.data.network.OfflineModeException
+import com.unchunks.components.testing.MainDispatcherRule
+import com.unchunks.components.web.OfflineModeException
 import com.unchunks.echomark.domain.websearch.WebSearchClient
 import com.unchunks.echomark.domain.websearch.WebSearchException
 import com.unchunks.echomark.domain.websearch.WebSearchResult
 import com.unchunks.echomark.testing.FakeApiKeyRepository
-import com.unchunks.components.testing.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle

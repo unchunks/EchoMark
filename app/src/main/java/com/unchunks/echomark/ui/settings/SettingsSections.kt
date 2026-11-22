@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.ButtonDefaults
@@ -244,6 +245,14 @@ internal fun LazyListScope.managementItems(
             icon = Icons.Outlined.RssFeed,
             summary = "ブログやチャンネルの新着を、毎晩確認して自動で保存します",
             onClick = actions.onOpenSubscriptions
+        )
+    }
+    item("offline-videos") {
+        SettingsItem(
+            title = "オフラインの動画",
+            icon = Icons.Outlined.VideoLibrary,
+            summary = "保存した動画を見る・削除する。Wi-Fi のときだけ・保存する上限を決める",
+            onClick = actions.onOpenOfflineVideos
         )
     }
     item("storage") {

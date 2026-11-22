@@ -47,7 +47,9 @@ data class StorageUsage(
     /** 取り込んだ端末内モデル。未取り込みなら 0 */
     val modelBytes: Long,
     /** 保存した画像・PDF・音声・動画などのファイル */
-    val attachmentBytes: Long = 0L
+    val attachmentBytes: Long = 0L,
+    /** オフライン用に保存した動画のファイル(途中まで落としたものも含む) */
+    val offlineVideoBytes: Long = 0L
 )
 
 /** 画面に出せる文言を持つ、バックアップ・データ操作の失敗。 */

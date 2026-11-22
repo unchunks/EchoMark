@@ -10,10 +10,10 @@
 
 ## 仕組み
 
-- `ui/lock/AppLockManager`: ただ1つの持ち主。`Application.ActivityLifecycleCallbacks` で、アプリのすべての Activity の出入りを見る。
+- `AppLockManager`(部品の app-lock。`di/AppLockModule.kt` で設定から作る): ただ1つの持ち主。`Application.ActivityLifecycleCallbacks` で、アプリのすべての Activity の出入りを見る。
   入り口(ランチャー・ディープリンク・ショートカット・共有・引用・クイック設定タイル・ウィジェット・通知)ごとに守りを足す必要がない。
   `FLAG_SECURE` もここですべての Activity の窓に付ける
-- `domain/lock/AppLockStateMachine`: いつロックするかの純粋な処理(単体テストあり)
+- `AppLockStateMachine`(部品の app-lock): いつロックするかの純粋な処理(単体テストは部品の側)。設定は `domain/lock/AppLock.kt` の `toPolicy()` で渡す
   - プロセスが始まったときは、ロックがオンならロックする(状態はプロセスの中だけに持つ)
   - アプリの画面が1つも見えなくなってから、決めた時間以上たって戻るとロックする(時刻は端末の起動からの経過時間。時計を戻してもごまかせない)
   - 回転などで作り直すとき、アプリの中で別の画面に移るとき、本人を確かめている間(端末の PIN の画面に移る)は、離れたことにしない

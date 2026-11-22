@@ -18,6 +18,8 @@ import com.unchunks.echomark.data.local.dao.BookmarkNoteDao
 import com.unchunks.echomark.data.local.dao.CollectionDao
 import com.unchunks.echomark.data.local.dao.LinkCheckDao
 import com.unchunks.echomark.data.local.dao.ReviewCardDao
+import com.unchunks.echomark.data.local.dao.FactCheckDao
+import com.unchunks.echomark.data.local.dao.OfflineVideoDao
 import com.unchunks.echomark.data.local.dao.SmartFolderDao
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.dao.TagDao
@@ -114,6 +116,12 @@ object DatabaseModule {
     fun provideLinkCheckDao(database: AppDatabase): LinkCheckDao {
         return database.linkCheckDao()
     }
+
+    @Provides
+    fun provideFactCheckDao(database: AppDatabase): FactCheckDao = database.factCheckDao()
+
+    @Provides
+    fun provideOfflineVideoDao(database: AppDatabase): OfflineVideoDao = database.offlineVideoDao()
 
     @Provides
     fun provideReviewCardDao(database: AppDatabase): ReviewCardDao {

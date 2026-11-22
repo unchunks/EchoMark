@@ -10,13 +10,14 @@ import com.unchunks.components.llm.cloud.ClaudeApiClient
 import com.unchunks.components.llm.cloud.GeminiApiClient
 import com.unchunks.components.llm.cloud.OpenAiApiClient
 import com.unchunks.components.testing.TestDispatcherProvider
-import com.unchunks.echomark.data.ai.LocalLlmProviders
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.ai.LlmProviderResolver
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
-import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
@@ -27,7 +28,6 @@ import com.unchunks.echomark.testing.FakeApiUsageRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeLlmProvider
 import com.unchunks.echomark.testing.FakeNetworkGate
-import com.unchunks.echomark.data.network.isOfflineModeBlock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking

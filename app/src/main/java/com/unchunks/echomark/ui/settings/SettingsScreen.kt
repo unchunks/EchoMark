@@ -103,6 +103,8 @@ class SettingsActions(
     val onOpenProcessingQueue: () -> Unit = {},
     /** カテゴリの管理の画面を開く */
     val onOpenCategories: () -> Unit = {},
+    /** オフラインの動画(保存した動画・ダウンロードの設定)の画面を開く */
+    val onOpenOfflineVideos: () -> Unit = {},
     /** 再発見通知のスイッチ。オンにするときの権限要求は呼び出し側で行う */
     val onRediscoverToggle: (Boolean) -> Unit = {},
     val onRediscoverScheduleChange: (DayOfWeek, Int, Int) -> Unit = { _, _, _ -> },
@@ -141,6 +143,7 @@ internal fun SettingsScreen(
     onOpenOnboarding: (() -> Unit)? = null,
     onOpenProcessingQueue: () -> Unit = {},
     onOpenCategories: () -> Unit = {},
+    onOpenOfflineVideos: () -> Unit = {},
     layout: AdaptiveLayout = currentAdaptiveLayout(),
     viewModel: SettingsViewModel = hiltViewModel(),
     importViewModel: LinkImportViewModel = hiltViewModel()
@@ -232,6 +235,7 @@ internal fun SettingsScreen(
             onSummaryStyleChange = viewModel::updateSummaryStyle,
             onOpenProcessingQueue = onOpenProcessingQueue,
             onOpenCategories = onOpenCategories,
+            onOpenOfflineVideos = onOpenOfflineVideos,
             onRediscoverToggle = { enabled ->
                 when {
                     !enabled -> {
@@ -493,6 +497,7 @@ internal val StorageUsage.label: String
         add("データ ${formatFileSize(databaseBytes)}")
         add("検索用 ${formatFileSize(embeddingBytes)}")
         if (attachmentBytes > 0) add("ファイル ${formatFileSize(attachmentBytes)}")
+        if (offlineVideoBytes > 0) add("動画 ${formatFileSize(offlineVideoBytes)}")
         if (modelBytes > 0) add("モデル ${formatFileSize(modelBytes)}")
     }.joinToString("・")
 

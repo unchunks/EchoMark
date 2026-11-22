@@ -21,6 +21,7 @@ import com.unchunks.echomark.domain.bookmark.model.isDownloadableMimeType
 import com.unchunks.echomark.domain.bookmark.model.normalizeMimeType
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
 import com.unchunks.echomark.domain.extract.ExtractedContent
+import com.unchunks.echomark.domain.video.PeerTubeUrls
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -55,7 +56,12 @@ data class FetchedContent(
     /** ページ内のリンク(資料を探すときの候補。HTML 以外や、リンクを取らない取得では空) */
     val links: List<PageLink> = emptyList(),
     /** 有料・会員限定・ボット対策などで全文を見せてくれなかったページの、その理由(通常のページは null) */
-    val accessLimit: PageAccessLimit? = null
+    val accessLimit: PageAccessLimit? = null,
+    /**
+     * 動画のページで字幕を取れたとき、字幕が無かったら本文になっていたもの(説明文など)。
+     * 前に字幕なしで保存した本文に、後から字幕を入れるとき(動画のオフライン保存)に、その部分を置き換えるのに使う
+     */
+    val textWithoutTranscript: String? = null
 )
 
 /** リンク先が PDF・画像・音声・動画だったときに、本体を保存する先。 */
@@ -112,6 +118,8 @@ class UrlContentFetcher internal constructor(
         ?.let { YouTubeTranscriptFetcher(client, it, USER_AGENT) }
         ?: YouTubeTranscriptFetcher(client, userAgent = USER_AGENT)
 
+    private val peerTubeFetcher = PeerTubeFetcher(client, USER_AGENT)
+
     private val githubFetcher = githubApiEndpoint
         ?.let { GitHubRepoFetcher(client, USER_AGENT, it) }
         ?: GitHubRepoFetcher(client, USER_AGENT)
@@ -130,9 +138,63 @@ class UrlContentFetcher internal constructor(
                 // GitHub のコードのファイルは、ページの HTML ではなく中身をそのまま取る(取れなければ通常のページとして取る)
                 val codeFile = GitHubUrls.codeFileOf(url)
                 codeFile?.let { runCatching { withGitHubFile(it, fetchBlocking(it.rawUrl, null, progress)) }.getOrNull() }
-                    ?: withGitHubRepo(url, withTranscript(fetchBlocking(url, downloadSink, progress)))
+                    ?: withGitHubRepo(url, withPeerTube(url, withTranscript(fetchBlocking(url, downloadSink, progress))))
             }
         }
+    }
+
+    /**
+     * 画像([url])をダウンロードして [sink] に保存する(動画のサムネイル用)。JPEG・PNG・WebP・GIF のときだけ、[maxBytes] まで。
+     * 接続先の制限・リダイレクトの扱いは本文の取得と同じ。失敗は Result.failure。
+     */
+    suspend fun downloadImage(url: String, sink: DownloadSink, maxBytes: Long = MAX_IMAGE_BYTES): Result<StoredAttachment> =
+        withContext(dispatcherProvider.io) {
+            runCatching {
+                require(url.startsWith("http://") || url.startsWith("https://")) { "unsupported scheme: $url" }
+                var current = url.toHttpUrl()
+                repeat(MAX_REDIRECTS + 1) {
+                    val request = Request.Builder()
+                        .url(current)
+                        .header("User-Agent", USER_AGENT)
+                        .header("Accept", "image/webp,image/jpeg,image/png,image/gif")
+                        .build()
+                    client.newCall(request).execute().use { response ->
+                        if (response.isRedirect) {
+                            val next = response.header("Location")?.let { current.resolve(it) } ?: throw IOException("invalid redirect")
+                            if (!isAllowedRedirect(current, next)) throw IOException("redirect not allowed: ${current.scheme} -> ${next.scheme}")
+                            current = next
+                            return@use
+                        }
+                        if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                        val body = response.body
+                        val mimeType = normalizeMimeType(body.contentType()?.let { "${it.type}/${it.subtype}" })
+                        if (mimeType !in IMAGE_MIME_TYPES) throw IOException("unsupported image type: ${body.contentType()}")
+                        if (body.contentLength() > maxBytes) throw IOException("image too large: ${body.contentLength()} bytes")
+                        return@runCatching sink.save(body.byteStream(), mimeType!!, fileNameOf(null, current), maxBytes)
+                    }
+                }
+                throw IOException("too many redirects")
+            }
+        }
+
+    /**
+     * PeerTube の動画ページなら、そのサーバーの API から取った説明文・字幕で本文を差し替える。
+     * PeerTube のページは JS アプリで、HTML には本文がほとんど無いため。取れなければページの HTML から取った内容のまま。
+     */
+    internal fun withPeerTube(url: String, content: FetchedContent): FetchedContent {
+        if (content.file != null) return content
+        val ref = PeerTubeUrls.videoOf(url) ?: return content
+        val fetched = peerTubeFetcher.fetch(ref) ?: return content
+        val text = HtmlContentExtractor.youtubeText(fetched.video, fetched.transcript) ?: return content
+        return content.copy(
+            title = fetched.video.title ?: content.title,
+            // 本文に説明文が入るので、汎用の概要(og:description)は重複させない
+            description = null,
+            text = text,
+            imageUrl = content.imageUrl ?: fetched.thumbnailUrl,
+            siteName = content.siteName ?: "PeerTube",
+            textWithoutTranscript = if (fetched.transcript != null) HtmlContentExtractor.youtubeText(fetched.video, null) else null
+        )
     }
 
     /**
@@ -162,7 +224,7 @@ class UrlContentFetcher internal constructor(
         val transcript = transcriptFetcher.fetch(videoId) ?: return content
         val text = HtmlContentExtractor.youtubeText(video, transcript) ?: return content
         // 本文に説明文と字幕が入るので、汎用の概要(og:description)は重複させない
-        return content.copy(text = text, description = null)
+        return content.copy(text = text, description = null, textWithoutTranscript = content.text)
     }
 
     private fun fetchBlocking(url: String, downloadSink: DownloadSink?, progress: StageProgressReporter?): FetchedContent {
@@ -286,6 +348,12 @@ class UrlContentFetcher internal constructor(
         private const val MAX_REDIRECTS = 5
         private const val DOWNLOAD_TIMEOUT_MINUTES = 10L
         private const val DOWNLOAD_READ_TIMEOUT_SECONDS = 30L
+
+        /** サムネイルの画像の大きさの上限 */
+        const val MAX_IMAGE_BYTES: Long = 5L * 1024 * 1024
+
+        /** サムネイルとして保存する画像の形式(SVG などの、中に処理を書ける形式は保存しない) */
+        private val IMAGE_MIME_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/gif")
 
         /**
          * ファイルの MIME タイプ。汎用の application/octet-stream・不明なら URL の拡張子から推定する。

@@ -11,8 +11,8 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.unchunks.components.web.NetworkGate
 import com.unchunks.echomark.data.linkcheck.LinkChecker
-import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import dagger.Lazy
