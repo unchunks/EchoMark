@@ -27,12 +27,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalInspectionMode
+import kotlinx.coroutines.delay
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.intl.LocaleList
@@ -81,15 +91,35 @@ fun EmptyState(
     }
 }
 
-/** 読み込み中。中央にインジケーターと任意のメッセージを出す。 */
+/**
+ * 読み込み中。中央にインジケーターと任意のメッセージを出す。
+ *
+ * すぐ終わる読み込み(端末内のデータを読むだけのとき)で一瞬だけ出て画面がちらつかないよう、
+ * 少し待ってからふわっと出す。待っている間に読み込みが終われば、何も出ないまま中身に切り替わる。
+ * プレビュー・スクリーンショットでは最初から出す。
+ */
 @Composable
 fun LoadingState(
     modifier: Modifier = Modifier,
     message: String? = null
 ) {
+    val immediate = LocalInspectionMode.current
+    var visible by remember { mutableStateOf(immediate) }
+    LaunchedEffect(Unit) {
+        if (!visible) {
+            delay(LOADING_DELAY_MILLIS)
+            visible = true
+        }
+    }
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(LOADING_FADE_MILLIS),
+        label = "loadingAlpha"
+    )
     Column(
         modifier = modifier
             .fillMaxSize()
+            .graphicsLayer { this.alpha = alpha }
             .padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -141,6 +171,11 @@ fun ErrorState(
         }
     }
 }
+
+/** 読み込み中の表示を出すまでに待つ時間。これより早く終わる読み込みでは何も出さない */
+private const val LOADING_DELAY_MILLIS = 250L
+
+private const val LOADING_FADE_MILLIS = 200
 
 /** 見出し向けの折り返し(行長をそろえる)に、日本語の文節単位の改行を組み合わせたもの */
 private val PhraseHeadingLineBreak = LineBreak.Heading.copy(wordBreak = LineBreak.WordBreak.Phrase)

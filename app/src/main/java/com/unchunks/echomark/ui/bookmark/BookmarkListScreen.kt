@@ -152,6 +152,7 @@ import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
+import com.unchunks.echomark.ui.review.ReadLaterViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
 
@@ -162,6 +163,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
  * @param selectedBookmarkId 2 画面表示で右側に詳細を出しているブックマーク(カードを強調する)
  * @param onBookmarkRemoved 一覧での操作(削除・アーカイブ/戻す)でブックマークが今の一覧から外れたとき。
  *   2 画面表示で、右側に出しているものなら右側を空にするために使う
+ * @param readLaterViewModel 1件だけ選んだときの「その他」の「あとで読む」に使う。null なら項目を出さない(Hilt を使わないテスト用)
  */
 @Composable
 fun BookmarkListScreen(
@@ -177,7 +179,8 @@ fun BookmarkListScreen(
     onOpenBrokenLinks: () -> Unit = {},
     onOpenPodcasts: () -> Unit = {},
     onMakePodcast: (List<Long>) -> Unit = {},
-    viewModel: BookmarkViewModel = hiltViewModel()
+    viewModel: BookmarkViewModel = hiltViewModel(),
+    readLaterViewModel: ReadLaterViewModel? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -188,6 +191,14 @@ fun BookmarkListScreen(
     // ショートカット・ウィジェットの「URL を追加」から起動したら追加シートを開く
     LaunchedEffect(viewModel) {
         viewModel.addSheetRequests.collect { showAddSheet = true }
+    }
+
+    // 選択中の「その他」の「あとで読む」の結果
+    LaunchedEffect(readLaterViewModel, snackbarHostState) {
+        readLaterViewModel?.messages?.collect { message ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch { snackbarHostState.showSnackbar(message) }
+        }
     }
 
     LaunchedEffect(viewModel, snackbarHostState) {
@@ -285,6 +296,7 @@ fun BookmarkListScreen(
         onReprocess = viewModel::bulkReprocess,
         onExport = viewModel::bulkExport,
         onShare = { bookmark -> shareBookmark(context, bookmark) },
+        onToggleReadingList = readLaterViewModel?.let { readLater -> readLater::toggleReadingList },
         // 一覧に並んでいる順に紹介する
         onMakePodcast = { onMakePodcast(uiState.bookmarks.filter { it.id in selectedIds }.map { it.id }) }
     )

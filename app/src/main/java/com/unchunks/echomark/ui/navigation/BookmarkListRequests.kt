@@ -11,6 +11,7 @@ import androidx.navigation.NavController
 import com.unchunks.echomark.ui.bookmark.BookmarkListScreen
 import com.unchunks.echomark.ui.bookmark.BookmarkViewModel
 import com.unchunks.echomark.ui.bookmark.ListLaunchAction
+import com.unchunks.echomark.ui.review.ReadLaterViewModel
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
@@ -93,7 +94,8 @@ internal fun BookmarkListDestination(
     onOpenBrokenLinks: () -> Unit = {},
     onOpenPodcasts: () -> Unit = {},
     onMakePodcast: (List<Long>) -> Unit = {},
-    viewModel: BookmarkViewModel = hiltViewModel()
+    viewModel: BookmarkViewModel = hiltViewModel(),
+    readLaterViewModel: ReadLaterViewModel? = null
 ) {
     BookmarkListRequestsEffect(
         handle = entry.savedStateHandle,
@@ -113,6 +115,7 @@ internal fun BookmarkListDestination(
         onMakePodcast = onMakePodcast,
         selectedBookmarkId = selectedBookmarkId,
         onBookmarkRemoved = onBookmarkRemoved,
-        viewModel = viewModel
+        viewModel = viewModel,
+        readLaterViewModel = readLaterViewModel
     )
 }

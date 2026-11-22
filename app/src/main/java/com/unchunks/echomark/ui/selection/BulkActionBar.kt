@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
@@ -88,6 +89,8 @@ class BulkActionCallbacks(
     val onExport: (ExportFormat, String) -> Unit = { _, _ -> },
     /** 1件だけ選んでいるときの「共有」 */
     val onShare: (Bookmark) -> Unit = {},
+    /** 1件だけ選んでいるときの「あとで読む」に入れる・外す(渡したときだけ出す) */
+    val onToggleReadingList: ((Bookmark) -> Unit)? = null,
     /** 選んだものからポッドキャストを作る(渡したときだけ「ポッドキャストにする」を出す) */
     val onMakePodcast: (() -> Unit)? = null
 )
@@ -172,6 +175,17 @@ fun BulkActionBar(
                         MenuItem("共有", Icons.Outlined.Share) {
                             menuOpen = false
                             callbacks.onShare(selected.single())
+                        }
+                        callbacks.onToggleReadingList?.let { toggle ->
+                            // 開かずに一覧から、読むものを取り置ける(詳細画面のメニューと同じ操作)
+                            val target = selected.single()
+                            MenuItem(
+                                if (target.isInReadingList) "「あとで読む」から外す" else "あとで読む",
+                                Icons.Outlined.AutoStories
+                            ) {
+                                menuOpen = false
+                                toggle(target)
+                            }
                         }
                     }
                     MenuItem("タグを付ける", Icons.Outlined.LocalOffer) {
