@@ -13,30 +13,43 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerDialog
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.window.core.layout.WindowSizeClass
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -60,7 +73,7 @@ internal fun <T> ChoiceDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(Modifier.selectableGroup()) {
+            Column(Modifier.verticalScroll(rememberScrollState()).selectableGroup()) {
                 options.forEach { option ->
                     Row(
                         modifier = Modifier
@@ -115,13 +128,28 @@ internal fun DayOfWeekDialog(selected: DayOfWeek, onSelect: (DayOfWeek) -> Unit,
 @Composable
 internal fun TimeDialog(hour: Int, minute: Int, onConfirm: (Int, Int) -> Unit, onDismiss: () -> Unit) {
     val timeState = rememberTimePickerState(initialHour = hour, initialMinute = minute, is24Hour = true)
-    AlertDialog(
+    var keyboardMode by rememberSaveable { mutableStateOf(false) }
+    val useInputOnly = LocalConfiguration.current.screenHeightDp < WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND ||
+        LocalDensity.current.fontScale >= 1.5f
+    TimePickerDialog(
         onDismissRequest = onDismiss,
         title = { Text("通知する時刻") },
-        text = { TimePicker(state = timeState) },
-        confirmButton = { TextButton(onClick = { onConfirm(timeState.hour, timeState.minute) }) { Text("OK") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
-    )
+        confirmButton = { TextButton(onClick = { onConfirm(timeState.hour, timeState.minute) }) { Text("保存") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+        modeToggleButton = if (useInputOnly) null else {
+            {
+                IconButton(onClick = { keyboardMode = !keyboardMode }) {
+                    Icon(
+                        if (keyboardMode) Icons.Outlined.AccessTime else Icons.Outlined.Keyboard,
+                        contentDescription = if (keyboardMode) "時計で選ぶ" else "キーボードで入力"
+                    )
+                }
+            }
+        }
+    ) {
+        if (keyboardMode || useInputOnly) TimeInput(state = timeState)
+        else TimePicker(state = timeState)
+    }
 }
 
 @Composable
@@ -136,7 +164,10 @@ internal fun DeleteConfirmDialog(
         icon = { Icon(Icons.Outlined.DeleteForever, contentDescription = null) },
         title = { Text("すべてのデータを削除しますか?") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
                     "保存したブックマーク・タグ・会話・ファイルと、検索用のデータを削除します。必要なら先にバックアップを書き出してください。",
                     style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
@@ -177,9 +208,12 @@ internal fun DeleteFinalDialog(resetSettings: Boolean, onConfirm: () -> Unit, on
             )
         },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
             ) { Text("削除する") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
@@ -375,7 +409,13 @@ internal fun DataOperationDialog(
             onDismissRequest = onDismiss,
             icon = { Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
             title = { Text(state.title) },
-            text = { Text(state.message, style = MaterialTheme.typography.bodyMedium.japaneseParagraph()) },
+            text = {
+                Text(
+                    text = state.message,
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
+                )
+            },
             confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } }
         )
     }

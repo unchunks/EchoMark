@@ -2,16 +2,21 @@ package com.unchunks.echomark.ui.settings
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,7 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.LineBreak
@@ -64,7 +73,7 @@ fun SettingsItem(
         trailingContent = trailing,
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = modifier.then(
-            if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier
+            if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier
         )
     )
 }
@@ -95,9 +104,43 @@ fun SettingsSwitchItem(
     )
 }
 
+@Composable
+internal fun SettingsAiCard(ai: AiSummary, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = colors.primaryContainer,
+            contentColor = colors.onPrimaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+                Text("AI の設定", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null)
+            }
+            Text(
+                if (ai.isReady) "準備完了" else "設定が必要",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(ai.label, style = MaterialTheme.typography.bodyMedium.japaneseParagraph())
+        }
+    }
+}
+
 /**
- * 補足説明のカード(プライバシーの注意、バックアップに含まれないもの など)。
- * [isWarning] なら注意を引く色にする。
+ * 補足説明や回復手順を関連する設定の近くに表示する。
+ * [isWarning] のテキストは、表示されたときに読み上げる。
  */
 @Composable
 fun SettingsNotice(
@@ -107,29 +150,34 @@ fun SettingsNotice(
     isWarning: Boolean = false,
     action: (@Composable () -> Unit)? = null
 ) {
-    val container = if (isWarning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
-    val content = if (isWarning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
-    Card(
-        colors = CardDefaults.cardColors(containerColor = container, contentColor = content),
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        color = if (isWarning) colors.errorContainer else colors.surfaceContainerLow,
+        contentColor = if (isWarning) colors.onErrorContainer else colors.onSurfaceVariant,
+        shape = MaterialTheme.shapes.medium,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .padding(vertical = 4.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = if (action == null) 12.dp else 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Icon(icon, contentDescription = null, tint = content)
-            Text(text, style = MaterialTheme.typography.bodyMedium.japaneseParagraph(), color = content)
-        }
-        if (action != null) {
+        Column {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 8.dp, bottom = 4.dp),
-                horizontalArrangement = Arrangement.End
-            ) { action() }
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = if (action == null) 12.dp else 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(icon, contentDescription = null)
+                Text(
+                    text,
+                    modifier = if (isWarning) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier,
+                    style = MaterialTheme.typography.bodyMedium.japaneseParagraph()
+                )
+            }
+            if (action != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End
+                ) { action() }
+            }
         }
     }
 }

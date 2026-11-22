@@ -10,49 +10,20 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.BrightnessMedium
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Category
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.DeleteForever
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.EnhancedEncryption
-import androidx.compose.material.icons.outlined.FolderZip
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.MoveToInbox
-import androidx.compose.material.icons.outlined.RssFeed
-import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.NotificationsOff
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.PrivacyTip
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Upload
-import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -64,8 +35,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -75,20 +50,22 @@ import com.unchunks.echomark.ui.importer.LinkImportDialog
 import com.unchunks.echomark.ui.importer.LinkImportViewModel
 import com.unchunks.echomark.ui.subscription.SubscriptionsSheet
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.window.core.layout.WindowSizeClass
 import com.unchunks.components.composeui.MessageSnackbarEffect
-import com.unchunks.components.composeui.ReadableLazyColumn
 import com.unchunks.echomark.domain.model.SummaryStyle
-import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.components.LoadingState
-import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.lock.rememberAppLockConfirmation
-import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionState
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.backup.AutoBackupSettings
+import com.unchunks.echomark.ui.navigation.AdaptiveLayout
+import com.unchunks.echomark.ui.navigation.ListDetailPanes
+import com.unchunks.echomark.ui.navigation.NavigationLayout
+import com.unchunks.echomark.ui.navigation.centeredMaxWidth
+import com.unchunks.echomark.ui.navigation.currentAdaptiveLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -161,12 +138,13 @@ class SettingsActions(
 
 /** 設定タブ。状態は [SettingsViewModel]、表示は [SettingsContent]。 */
 @Composable
-fun SettingsScreen(
+internal fun SettingsScreen(
     onOpenAiSettings: () -> Unit,
     onOpenOnboarding: (() -> Unit)? = null,
     onOpenProcessingQueue: () -> Unit = {},
     onOpenCategories: () -> Unit = {},
     onOpenOfflineVideos: () -> Unit = {},
+    layout: AdaptiveLayout = currentAdaptiveLayout(),
     viewModel: SettingsViewModel = hiltViewModel(),
     importViewModel: LinkImportViewModel = hiltViewModel()
 ) {
@@ -244,6 +222,7 @@ fun SettingsScreen(
         uiState = uiState,
         notificationsBlocked = permissionDenied || (uiState.rediscover.enabled && !notificationsAllowed),
         snackbarHostState = snackbarHostState,
+        layout = layout,
         actions = SettingsActions(
             onOpenAiSettings = onOpenAiSettings,
             onThemeModeChange = viewModel::setThemeMode,
@@ -323,315 +302,80 @@ fun SettingsScreen(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsContent(
+internal fun SettingsContent(
     uiState: SettingsUiState,
     actions: SettingsActions,
     modifier: Modifier = Modifier,
     notificationsBlocked: Boolean = false,
     dynamicColorAvailable: Boolean = true,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
-    initialDialog: SettingsDialog? = null
+    initialDialog: SettingsDialog? = null,
+    layout: AdaptiveLayout = currentAdaptiveLayout()
 ) {
     var dialog by rememberSaveable { mutableStateOf(initialDialog) }
     var resetSettingsOnDelete by rememberSaveable { mutableStateOf(false) }
+    val compact = layout.navigation == NavigationLayout.BAR
+    val useLargeBar = compact &&
+        LocalConfiguration.current.screenHeightDp >= WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val singleColumnState = rememberLazyListState()
+    val preferencesState = rememberLazyListState()
+    val managementState = rememberLazyListState()
 
     Scaffold(
-        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = if (useLargeBar) modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else modifier,
         topBar = {
-            LargeTopAppBar(title = { Text("設定") }, scrollBehavior = scrollBehavior)
+            val title: @Composable () -> Unit = { Text("設定", Modifier.semantics { heading() }) }
+            if (useLargeBar) {
+                LargeTopAppBar(title = title, scrollBehavior = scrollBehavior)
+            } else {
+                TopAppBar(title = title)
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         if (!uiState.isLoaded) {
-            LoadingState(modifier = Modifier.padding(innerPadding))
+            LoadingState(modifier = Modifier.padding(innerPadding), message = "設定を読み込んでいます")
             return@Scaffold
         }
-        val layoutDirection = LocalLayoutDirection.current
-        ReadableLazyColumn(
-            contentPadding = PaddingValues(
-                start = innerPadding.calculateStartPadding(layoutDirection),
-                end = innerPadding.calculateEndPadding(layoutDirection),
-                top = innerPadding.calculateTopPadding(),
-                bottom = innerPadding.calculateBottomPadding() + 16.dp
-            )
-        ) {
-            item { SectionHeader("AI") }
-            item {
-                val ai = uiState.ai
-                SettingsItem(
-                    title = "AI の設定",
-                    icon = Icons.Outlined.AutoAwesome,
-                    summary = ai.label,
-                    onClick = actions.onOpenAiSettings,
-                    trailing = {
-                        Icon(
-                            if (ai.isReady) Icons.Outlined.CheckCircle else Icons.Outlined.WarningAmber,
-                            contentDescription = if (ai.isReady) "準備完了" else "設定が必要",
-                            tint = if (ai.isReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                        )
+        val openDialog: (SettingsDialog) -> Unit = {
+            if (it == SettingsDialog.DELETE_CONFIRM) resetSettingsOnDelete = false
+            dialog = it
+        }
+        val contentModifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
+        if (layout.isTwoPane) {
+            ListDetailPanes(
+                directive = layout.paneDirective,
+                modifier = contentModifier.fillMaxSize(),
+                list = {
+                    SettingsColumn(state = preferencesState, gutter = 24.dp) {
+                        preferenceItems(uiState, actions, notificationsBlocked, dynamicColorAvailable, openDialog)
                     }
-                )
-            }
-
-            item {
-                SettingsItem(
-                    title = "カテゴリ",
-                    icon = Icons.Outlined.Category,
-                    summary = "AI の分類に使うカテゴリを作る・説明を見る",
-                    onClick = actions.onOpenCategories
-                )
-            }
-
-            processingSettingsItems(
-                settings = uiState.processing,
-                onChange = actions.onProcessingSettingsChange,
-                onOpenDialog = { dialog = it },
-                onOpenQueue = actions.onOpenProcessingQueue
-            )
-
-            // クラウドの AI を無効にしている間は、使用量の欄も出さない(CLOUD_AI_ENABLED。記録も無い)
-            if (CLOUD_AI_ENABLED) apiUsageItems(uiState.apiUsage)
-
-            summarySettingsItems(
-                uiState.summaryStyle,
-                onOpenDialog = { dialog = it },
-                onChange = actions.onSummaryStyleChange
-            )
-
-            item { SectionHeader("通信") }
-            item {
-                SettingsSwitchItem(
-                    title = "オフラインモード",
-                    icon = Icons.Outlined.CloudOff,
-                    summary = OFFLINE_MODE_SUMMARY,
-                    checked = uiState.offlineMode,
-                    onCheckedChange = actions.onOfflineModeChange
-                )
-            }
-
-            item { SectionHeader("ロック") }
-            item {
-                SettingsSwitchItem(
-                    title = "アプリのロック",
-                    icon = Icons.Outlined.Lock,
-                    summary = APP_LOCK_SUMMARY,
-                    checked = uiState.appLock.enabled,
-                    onCheckedChange = actions.onAppLockChange
-                )
-            }
-            if (uiState.appLock.enabled) {
-                item {
-                    SettingsItem(
-                        title = "ロックするまでの時間",
-                        icon = Icons.Outlined.Timer,
-                        summary = "アプリを離れてから${uiState.appLock.delay.label}",
-                        onClick = { dialog = SettingsDialog.APP_LOCK_DELAY }
-                    )
-                }
-            }
-            databaseEncryptionItems(uiState.databaseEncryption, actions.onDismissDatabaseKeyLost)
-            item {
-                SettingsSwitchItem(
-                    title = "最近使ったアプリで内容を隠す",
-                    icon = Icons.Outlined.VisibilityOff,
-                    summary = "アプリの一覧に画面の内容を出しません。この設定の間は、スクリーンショットも撮れません",
-                    checked = uiState.appLock.hideContent,
-                    onCheckedChange = actions.onAppLockHideContentChange
-                )
-            }
-
-            item { SectionHeader("表示") }
-            item {
-                SettingsItem(
-                    title = "テーマ",
-                    icon = Icons.Outlined.BrightnessMedium,
-                    summary = uiState.themeMode.label,
-                    onClick = { dialog = SettingsDialog.THEME }
-                )
-            }
-            if (dynamicColorAvailable) {
-                item {
-                    SettingsSwitchItem(
-                        title = "ダイナミックカラー",
-                        icon = Icons.Outlined.Palette,
-                        summary = "壁紙の色をアプリの配色に使います",
-                        checked = uiState.dynamicColor,
-                        onCheckedChange = actions.onDynamicColorChange
-                    )
-                }
-            }
-
-            item { SectionHeader("通知") }
-            item {
-                SettingsSwitchItem(
-                    title = "再発見通知",
-                    icon = Icons.Outlined.NotificationsActive,
-                    summary = "週に1回、今週のふり返りと忘れかけたブックマークをお知らせ",
-                    checked = uiState.rediscover.enabled,
-                    onCheckedChange = actions.onRediscoverToggle
-                )
-            }
-            if (notificationsBlocked) {
-                item {
-                    SettingsNotice(
-                        text = "通知が許可されていません。端末の設定で EchoMark の通知をオンにしてください。",
-                        icon = Icons.Outlined.NotificationsOff,
-                        isWarning = true,
-                        action = {
-                            TextButton(
-                                onClick = actions.onOpenNotificationSettings,
-                                colors = ButtonDefaults.textButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            ) { Text("通知の設定を開く") }
-                        }
-                    )
-                }
-            }
-            if (uiState.rediscover.enabled) {
-                item {
-                    SettingsItem(
-                        title = "曜日",
-                        icon = Icons.Outlined.CalendarMonth,
-                        summary = uiState.rediscover.dayOfWeek.fullLabel,
-                        onClick = { dialog = SettingsDialog.DAY_OF_WEEK }
-                    )
-                }
-                item {
-                    SettingsItem(
-                        title = "時刻",
-                        icon = Icons.Outlined.Schedule,
-                        summary = "%02d:%02d".format(uiState.rediscover.hour, uiState.rediscover.minute),
-                        onClick = { dialog = SettingsDialog.TIME }
-                    )
-                }
-            }
-
-            item { SectionHeader("データ") }
-            item {
-                SettingsItem(
-                    title = "バックアップを書き出す",
-                    icon = Icons.Outlined.Upload,
-                    summary = "ブックマーク・タグ・会話・ノートなどを JSON ファイルに保存します(画像・PDF などのファイルは含めません)",
-                    onClick = actions.onExportBackup
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "ファイルも含めて書き出す",
-                    icon = Icons.Outlined.FolderZip,
-                    summary = "保存した画像・PDF・音声・動画と、オフラインコピーも入れた zip ファイルに保存します。大きくなることがあります",
-                    onClick = actions.onExportBackupWithFiles
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "バックアップを読み込む",
-                    icon = Icons.Outlined.Download,
-                    summary = "今のデータに追加します(JSON・zip)。同じ URL のブックマークはスキップします。壊れたファイルは何も読み込みません",
-                    onClick = actions.onImportBackup
-                )
-            }
-            autoBackupItems(
-                settings = uiState.autoBackup,
-                onToggle = actions.onAutoBackupToggle,
-                onPickFolder = actions.onPickAutoBackupFolder,
-                onOpenKeepDialog = { dialog = SettingsDialog.AUTO_BACKUP_KEEP },
-                onIncludeFilesChange = actions.onAutoBackupIncludeFilesChange,
-                onRunNow = actions.onRunAutoBackupNow
-            )
-            item {
-                SettingsItem(
-                    title = "他のサービスから取り込む",
-                    icon = Icons.Outlined.MoveToInbox,
-                    summary = "Pocket・Raindrop.io・Instapaper・Pinboard・ブラウザの書き出しファイル(HTML・CSV・JSON)から、リンクを追加します",
-                    onClick = actions.onImportFromServices
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "購読(RSS・YouTube)",
-                    icon = Icons.Outlined.RssFeed,
-                    summary = "ブログやチャンネルの新着を、毎晩確認して自動で保存します",
-                    onClick = actions.onOpenSubscriptions
-                )
-            }
-            item {
-                SettingsNotice(
-                    text = "API キーと端末内モデル、保存した画像・PDF・音声などのファイル本体はバックアップに含まれません。別の端末では設定し直してください(ファイルのブックマークは、要約・メモだけが読み込まれます)。",
-                    icon = Icons.Outlined.Info
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "オフラインの動画",
-                    icon = Icons.Outlined.VideoLibrary,
-                    summary = "保存した動画を見る・削除する。Wi-Fi のときだけ・保存する上限を決める",
-                    onClick = actions.onOpenOfflineVideos,
-                    trailing = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) }
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "ストレージ使用量",
-                    icon = Icons.Outlined.Storage,
-                    summary = uiState.storage?.label ?: "計算中…"
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "すべてのデータを削除",
-                    icon = Icons.Outlined.DeleteForever,
-                    summary = "ブックマーク・タグ・会話・ファイルを削除します",
-                    titleColor = MaterialTheme.colorScheme.error,
-                    iconTint = MaterialTheme.colorScheme.error,
-                    onClick = {
-                        resetSettingsOnDelete = false
-                        dialog = SettingsDialog.DELETE_CONFIRM
+                },
+                detail = {
+                    SettingsColumn(state = managementState, gutter = 24.dp) {
+                        managementItems(uiState, actions, openDialog)
                     }
-                )
-            }
-
-            item { SectionHeader("このアプリについて") }
-            actions.onOpenOnboarding?.let { onOpenOnboarding ->
-                item {
-                    SettingsItem(
-                        title = "はじめにの案内をもう一度見る",
-                        icon = Icons.Outlined.School,
-                        summary = "保存の仕方や AI の準備を確認できます",
-                        onClick = onOpenOnboarding,
-                        trailing = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) }
-                    )
                 }
-            }
-            item {
-                SettingsItem(
-                    title = "プライバシー",
-                    icon = Icons.Outlined.PrivacyTip,
-                    summary = "データの保存場所と送信先",
-                    onClick = { dialog = SettingsDialog.PRIVACY }
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "オープンソースライセンス",
-                    icon = Icons.Outlined.Description,
-                    onClick = { dialog = SettingsDialog.LICENSES }
-                )
-            }
-            item {
-                SettingsItem(
-                    title = "クラッシュログ",
-                    icon = Icons.Outlined.BugReport,
-                    summary = if (uiState.crashLog.count == 0) "記録はありません" else "${uiState.crashLog.count} 件を端末内に保存しています",
-                    onClick = { dialog = SettingsDialog.CRASH_LOG }
-                )
-            }
-            item {
-                SettingsItem(title = "バージョン", icon = Icons.Outlined.Info, summary = uiState.versionLabel)
+            )
+        } else {
+            SettingsColumn(
+                state = singleColumnState,
+                gutter = if (compact) 16.dp else 24.dp,
+                modifier = contentModifier
+            ) {
+                preferenceItems(uiState, actions, notificationsBlocked, dynamicColorAvailable, openDialog)
+                managementItems(uiState, actions, openDialog)
             }
         }
+    }
+    if (uiState.dataOperation != DataOperationState.Idle) {
+        DataOperationDialog(
+            state = uiState.dataOperation,
+            onDismiss = actions.onDataResultDismissed,
+            onRestoreSettings = actions.onRestoreBackupSettings
+        )
+        return
     }
 
     when (dialog) {
@@ -718,11 +462,22 @@ fun SettingsContent(
         )
         null -> Unit
     }
+}
 
-    DataOperationDialog(
-        state = uiState.dataOperation,
-        onDismiss = actions.onDataResultDismissed,
-        onRestoreSettings = actions.onRestoreBackupSettings
+@Composable
+private fun SettingsColumn(
+    state: LazyListState,
+    gutter: Dp,
+    modifier: Modifier = Modifier,
+    content: LazyListScope.() -> Unit
+) {
+    LazyColumn(
+        state = state,
+        modifier = modifier
+            .centeredMaxWidth(600.dp)
+            .semantics { isTraversalGroup = true },
+        contentPadding = PaddingValues(start = gutter, end = gutter, bottom = 24.dp),
+        content = content
     )
 }
 
@@ -737,7 +492,7 @@ internal val ThemeMode.label: String
 
 internal val DayOfWeek.fullLabel: String get() = getDisplayName(TextStyle.FULL, Locale.JAPANESE)
 
-private val StorageUsage.label: String
+internal val StorageUsage.label: String
     get() = buildList {
         add("データ ${formatFileSize(databaseBytes)}")
         add("検索用 ${formatFileSize(embeddingBytes)}")
@@ -782,36 +537,3 @@ internal const val OFFLINE_MODE_SUMMARY =
 /** [folderUri] の読み書きの許可を持ち続けているか */
 private fun hasFolderPermission(context: Context, folderUri: String): Boolean =
     context.contentResolver.persistedUriPermissions.any { it.uri.toString() == folderUri && it.isWritePermission }
-
-/** 保存したデータの暗号化の状態(#100)。うまくいっていないときは、理由とすることを出す */
-private fun androidx.compose.foundation.lazy.LazyListScope.databaseEncryptionItems(
-    state: DatabaseEncryptionState,
-    onDismissKeyLost: () -> Unit
-) {
-    item {
-        SettingsItem(
-            title = "保存したデータの暗号化",
-            icon = Icons.Outlined.EnhancedEncryption,
-            summary = when (state) {
-                DatabaseEncryptionState.PLAINTEXT_FALLBACK -> "暗号化できなかったため、今は暗号化せずに保存しています。次にアプリを開いたときにやり直します"
-                else -> DATABASE_ENCRYPTION_SUMMARY
-            }
-        )
-    }
-    if (state == DatabaseEncryptionState.KEY_LOST) {
-        item {
-            SettingsNotice(
-                text = "暗号化の鍵がこの端末で使えなくなったため、保存していたデータを読めず、新しく作り直しました。" +
-                    "バックアップがあれば、「データ」→「バックアップを読み込む」で戻してください。",
-                icon = Icons.Outlined.WarningAmber,
-                isWarning = true,
-                action = { TextButton(onClick = onDismissKeyLost) { Text("閉じる") } }
-            )
-        }
-    }
-}
-
-/** 暗号化の説明。何を守り、何は端末の暗号化に任せているかを書く */
-internal const val DATABASE_ENCRYPTION_SUMMARY =
-    "ブックマーク・タグ・会話・ノートなどのデータベースを、この端末だけの鍵で暗号化して保存しています。" +
-        "画像・PDF などのファイルと、検索用のデータは、端末の暗号化で守られます。"

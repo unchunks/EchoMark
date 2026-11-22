@@ -4,6 +4,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
@@ -20,10 +29,13 @@ import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.testing.aiTasks
+import com.unchunks.echomark.ui.navigation.EchoMarkAppScaffold
+import com.unchunks.echomark.ui.navigation.currentAdaptiveLayout
 import com.unchunks.echomark.ui.settings.AiSummary
 import com.unchunks.echomark.ui.settings.SettingsActions
 import com.unchunks.echomark.ui.settings.SettingsContent
 import com.unchunks.echomark.ui.settings.SettingsUiState
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -63,6 +75,59 @@ class SettingsScreenshotTest {
             )
         }
     }
+
+    @Composable
+    private fun AppFrame() {
+        val layout = currentAdaptiveLayout()
+        EchoMarkAppScaffold(
+            showNavigation = true,
+            selectedRoute = "settings",
+            onNavigate = {},
+            navigation = layout.navigation
+        ) { modifier ->
+            SettingsContent(
+                uiState = readyState,
+                actions = SettingsActions(onOpenOnboarding = {}),
+                modifier = modifier,
+                layout = layout
+            )
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h860dp-xhdpi")
+    fun settingsCompact() {
+        screenshot.captureScreenLightDark("settings_compact", heightDp = 860) { AppFrame() }
+        screenshot.composeRule.onNodeWithText("AI の設定").assertHasClickAction()
+        screenshot.composeRule.onNodeWithText("ダイナミックカラー")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
+            .assertIsOff()
+            .assertHasClickAction()
+    }
+
+    @Test
+    @Config(qualifiers = "w720dp-h1000dp-xhdpi")
+    fun settingsMedium() = screenshot.captureScreenLightDark("settings_medium", widthDp = 720, heightDp = 1000) {
+        AppFrame()
+    }
+
+    @Test
+    @Config(qualifiers = "w1000dp-h800dp-xhdpi")
+    fun settingsExpanded() {
+        screenshot.captureScreenLightDark("settings_expanded", widthDp = 1000) { AppFrame() }
+        val ai = screenshot.composeRule.onNodeWithText("AI").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val data = screenshot.composeRule.onNodeWithText("データ管理").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(ai.right < data.left)
+        assertTrue(ai.top == data.top)
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp-xhdpi")
+    fun settingsCompactLargeText() = screenshot.captureScreenLightDark(
+        "settings_compact_large_text",
+        widthDp = 320,
+        fontScale = 2f
+    ) { AppFrame() }
 
     /** スマートフォン1画面分(先頭) */
     @Test

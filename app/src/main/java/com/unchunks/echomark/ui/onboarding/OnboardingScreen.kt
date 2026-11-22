@@ -162,7 +162,7 @@ fun OnboardingContent(
     val scope = rememberCoroutineScope()
     val isLastPage = pagerState.currentPage == ONBOARDING_PAGE_COUNT - 1
 
-    Surface(color = MaterialTheme.colorScheme.background, modifier = modifier.fillMaxSize()) {
+    Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxSize()) {
         Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
             // 上部: スキップ(最後のページでは不要なので出さない。高さは保って位置をずらさない)
             Row(
