@@ -2,7 +2,7 @@ package com.unchunks.echomark.ui.factcheck
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.unchunks.echomark.data.network.isOfflineModeBlock
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.domain.factcheck.FactCheckProgress
 import com.unchunks.echomark.domain.factcheck.FactCheckRepository
 import com.unchunks.echomark.domain.factcheck.FactCheckResult

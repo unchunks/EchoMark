@@ -1,18 +1,18 @@
 package com.unchunks.echomark.domain.repository
 
-import com.unchunks.echomark.domain.model.ChatTemplate
-import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.lock.AppLockSettings
-import com.unchunks.echomark.domain.backup.AutoBackupSettings
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.SummaryStyle
-import kotlinx.coroutines.flow.Flow
+import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.video.VideoDownloadSettings
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.DayOfWeek
 
@@ -188,7 +188,7 @@ interface AppSettingsRepository {
 
     /**
      * オフラインモード。オンの間、アプリは一切ネットワークに接続しない(通信してよいかは
-     * [com.unchunks.echomark.data.network.NetworkGate] の1か所で決める)。通信の要る処理(本文の取得など)は
+     * [com.unchunks.components.web.NetworkGate] の1か所で決める)。通信の要る処理(本文の取得など)は
      * 処理待ちのまま残し、オフにしたら積み直す。既定はオフ。
      * 「全データを削除」で設定を初期化しても、オンのままにする(初期化をきっかけに通信を始めないように)。
      */

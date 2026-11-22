@@ -1,8 +1,8 @@
 package com.unchunks.echomark.data.podcast
 
+import com.unchunks.components.audio.WavAudio
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.ai.LocalLlmProviders
-import com.unchunks.echomark.data.podcast.audio.WavAudio
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.podcast.EpisodeStatus

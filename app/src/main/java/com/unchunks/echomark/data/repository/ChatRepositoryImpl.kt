@@ -5,6 +5,8 @@ import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.embedding.EmbeddingUnavailableException
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
+import com.unchunks.components.search.RankFusion
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.ai.ChatMemoryCompressor
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
@@ -35,13 +37,11 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
-import com.unchunks.echomark.data.network.isOfflineModeBlock
 import com.unchunks.echomark.domain.websearch.CollectedWebSource
 import com.unchunks.echomark.domain.websearch.WebSearchException
 import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.domain.websearch.WebSourceProvider
 import com.unchunks.echomark.domain.websearch.WebSourceText
-import com.unchunks.components.search.RankFusion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow

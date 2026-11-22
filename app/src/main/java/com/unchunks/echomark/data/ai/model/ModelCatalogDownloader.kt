@@ -2,7 +2,7 @@ package com.unchunks.echomark.data.ai.model
 
 import android.content.Context
 import com.unchunks.components.core.DispatcherProvider
-import com.unchunks.echomark.data.network.NetworkGate
+import com.unchunks.components.web.NetworkGate
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow

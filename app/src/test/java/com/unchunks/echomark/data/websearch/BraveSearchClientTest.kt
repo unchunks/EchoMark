@@ -1,8 +1,8 @@
 package com.unchunks.echomark.data.websearch
 
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.components.web.OfflineModeException
 import com.unchunks.components.websearch.SearchUserAgents
-import com.unchunks.echomark.data.network.OfflineModeException
 import com.unchunks.echomark.di.NetworkModule
 import com.unchunks.echomark.domain.websearch.WebSearchException
 import com.unchunks.echomark.testing.FakeApiKeyRepository

@@ -1,6 +1,8 @@
 package com.unchunks.echomark.data.network
 
 import com.unchunks.components.testing.TestDispatcherProvider
+import com.unchunks.components.web.OfflineModeException
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.ai.model.CatalogDownloadState
 import com.unchunks.echomark.data.ai.model.ModelCatalog
 import com.unchunks.echomark.data.ai.model.ModelCatalogDownloader
@@ -71,13 +73,6 @@ class OfflineModeTest {
         gate.offline = false
         server.enqueue(MockResponse.Builder().code(204).build())
         assertEquals(204, get(derived))
-    }
-
-    @Test
-    fun 断った失敗は包まれていても見分けられる() {
-        val wrapped = IllegalStateException("取得に失敗", IOException("包み", OfflineModeException("example.com")))
-        assertTrue(wrapped.isOfflineModeBlock())
-        assertFalse(IOException("ふつうの通信の失敗").isOfflineModeBlock())
     }
 
     @Test

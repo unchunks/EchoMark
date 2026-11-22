@@ -1,6 +1,6 @@
 package com.unchunks.echomark.testing
 
-import com.unchunks.echomark.data.network.NetworkGate
+import com.unchunks.components.web.NetworkGate
 import com.unchunks.echomark.data.network.OfflineModeController
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import kotlinx.coroutines.flow.Flow

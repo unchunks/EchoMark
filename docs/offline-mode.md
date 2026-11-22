@@ -1,7 +1,8 @@
 # オフラインモード(通信の経路の一覧と守り方)
 
 設定の「通信」→「オフラインモード」をオンにすると、アプリは一切ネットワークに接続しない。
-通信してよいかは `data/network/NetworkGate.kt` の1か所で決め、すべての経路がそこを通る。
+通信してよいかは `data/network/NetworkGate.kt`(`SettingsNetworkGate`)の1か所で決め、すべての経路がそこを通る。
+仕組み(`NetworkGate`・`OfflineModeInterceptor`・`ensureOnline`・`OfflineModeException`)は部品の web-content にある。
 
 ## 守り方
 

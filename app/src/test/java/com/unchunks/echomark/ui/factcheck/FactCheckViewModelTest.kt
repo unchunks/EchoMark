@@ -1,7 +1,7 @@
 package com.unchunks.echomark.ui.factcheck
 
 import com.unchunks.components.testing.MainDispatcherRule
-import com.unchunks.echomark.data.network.OfflineModeException
+import com.unchunks.components.web.OfflineModeException
 import com.unchunks.echomark.domain.factcheck.CheckedClaim
 import com.unchunks.echomark.domain.factcheck.ClaimVerdict
 import com.unchunks.echomark.domain.factcheck.FactCheckProgress
