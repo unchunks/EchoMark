@@ -19,9 +19,11 @@ import com.unchunks.components.llm.cloud.AttachmentKind
 import com.unchunks.components.llm.cloud.AttachmentPolicy
 import com.unchunks.components.llm.cloud.ClaudeApiClient
 import com.unchunks.components.llm.cloud.GeminiApiClient
+import com.unchunks.components.llm.cloud.OfflineGuardedApiLlmClient
 import com.unchunks.components.llm.cloud.OpenAiApiClient
 import com.unchunks.components.llm.cloud.completeJson
 import com.unchunks.components.web.NetworkGate
+import com.unchunks.components.web.OfflineModeException
 import com.unchunks.echomark.data.ai.AiPrompts
 import com.unchunks.echomark.data.ai.AnalysisSchema
 import com.unchunks.echomark.data.ai.StructuredOutput
@@ -116,7 +118,7 @@ class ApiLlmProvider @Inject constructor(
 
     // クラウド API はすべてここを通す。オフラインモードの間は呼ばない(Claude の SDK は共通の OkHttpClient を通らない)
     private val clients: Map<ApiProvider, ApiLlmClient> =
-        listOf(claude, gemini, openAi).map { OfflineGuardedApiLlmClient(it, gate) }.associateBy { it.provider }
+        listOf(claude, gemini, openAi).map { client -> OfflineGuardedApiLlmClient(client, gate::isOffline) { what -> OfflineModeException(what) } }.associateBy { it.provider }
 
     /** [task] の現在の設定での呼び出し先。キー未設定なら [LlmException.ApiKeyMissing]。 */
     private suspend fun current(task: AiTask): Pair<ApiLlmClient, ApiCredentials> {

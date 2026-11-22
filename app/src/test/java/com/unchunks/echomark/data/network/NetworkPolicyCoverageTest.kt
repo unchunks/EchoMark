@@ -57,7 +57,7 @@ class NetworkPolicyCoverageTest {
         Rule(
             "クラウド AI の API クライアント(Claude の SDK は OkHttp の共通の client を通らない)",
             Regex("""import com\.unchunks\.components\.llm\.cloud\.(ClaudeApiClient|GeminiApiClient|OpenAiApiClient)|import com\.anthropic\."""),
-            mapOf("com/unchunks/echomark/data/ai/api/ApiLlmProvider.kt" to "OfflineGuardedApiLlmClient(it, gate)")
+            mapOf("com/unchunks/echomark/data/ai/api/ApiLlmProvider.kt" to "OfflineGuardedApiLlmClient(client, gate::isOffline)")
         ),
         Rule(
             "クラウドの文字起こし",

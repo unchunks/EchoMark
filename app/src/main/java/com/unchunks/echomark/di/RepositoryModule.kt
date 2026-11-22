@@ -4,50 +4,48 @@ import com.unchunks.components.securestorage.KeystoreSecretCipher
 import com.unchunks.components.securestorage.SecretCipher
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.backup.DataManagementRepositoryImpl
+import com.unchunks.echomark.data.chat.ChatAttachmentLoader
+import com.unchunks.echomark.data.place.AndroidCurrentLocationProvider
+import com.unchunks.echomark.data.place.ExifPhotoLocationReader
+import com.unchunks.echomark.data.place.PhotoLocationReader
 import com.unchunks.echomark.data.repository.ApiKeyRepositoryImpl
+import com.unchunks.echomark.data.repository.ApiUsageRepositoryImpl
 import com.unchunks.echomark.data.repository.AppSettingsRepositoryImpl
 import com.unchunks.echomark.data.repository.BookmarkRepositoryImpl
-import com.unchunks.echomark.data.repository.ChatRepositoryImpl
-import com.unchunks.echomark.data.repository.ApiUsageRepositoryImpl
-import com.unchunks.echomark.data.repository.ProcessingStatsRepositoryImpl
 import com.unchunks.echomark.data.repository.CategoryRepositoryImpl
+import com.unchunks.echomark.data.repository.ChatRepositoryImpl
 import com.unchunks.echomark.data.repository.CollectionRepositoryImpl
 import com.unchunks.echomark.data.repository.DuplicateRepositoryImpl
-import com.unchunks.echomark.data.linkcheck.ConnectivityNetworkStatus
-import com.unchunks.echomark.data.linkcheck.NetworkStatus
 import com.unchunks.echomark.data.repository.ExportRepositoryImpl
 import com.unchunks.echomark.data.repository.LinkCheckRepositoryImpl
 import com.unchunks.echomark.data.repository.NoteRepositoryImpl
 import com.unchunks.echomark.data.repository.PlaceRepositoryImpl
+import com.unchunks.echomark.data.repository.ProcessingStatsRepositoryImpl
 import com.unchunks.echomark.data.repository.ReadingListRepositoryImpl
 import com.unchunks.echomark.data.repository.ReviewRepositoryImpl
-import com.unchunks.echomark.domain.repository.ReadingListRepository
-import com.unchunks.echomark.domain.repository.ReviewRepository
-import com.unchunks.echomark.data.place.AndroidCurrentLocationProvider
-import com.unchunks.echomark.data.place.ExifPhotoLocationReader
-import com.unchunks.echomark.data.place.PhotoLocationReader
-import com.unchunks.echomark.domain.repository.CurrentLocationProvider
-import com.unchunks.echomark.domain.repository.PlaceRepository
 import com.unchunks.echomark.data.repository.SmartFolderRepositoryImpl
 import com.unchunks.echomark.data.repository.TagRepositoryImpl
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.AttachmentRepository
-import com.unchunks.echomark.data.chat.ChatAttachmentLoader
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.CategoryRepository
 import com.unchunks.echomark.domain.repository.ChatAttachmentSource
 import com.unchunks.echomark.domain.repository.ChatRepository
-import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.CollectionRepository
+import com.unchunks.echomark.domain.repository.CurrentLocationProvider
+import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.DuplicateRepository
 import com.unchunks.echomark.domain.repository.ExportRepository
 import com.unchunks.echomark.domain.repository.LinkCheckRepository
 import com.unchunks.echomark.domain.repository.NoteRepository
+import com.unchunks.echomark.domain.repository.PlaceRepository
 import com.unchunks.echomark.domain.repository.ProcessingStatsRepository
-import com.unchunks.echomark.domain.usage.ApiUsageRepository
-import com.unchunks.echomark.domain.repository.CategoryRepository
+import com.unchunks.echomark.domain.repository.ReadingListRepository
+import com.unchunks.echomark.domain.repository.ReviewRepository
 import com.unchunks.echomark.domain.repository.SmartFolderRepository
 import com.unchunks.echomark.domain.repository.TagRepository
+import com.unchunks.echomark.domain.usage.ApiUsageRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -103,11 +101,6 @@ abstract class RepositoryModule {
     abstract fun bindLinkCheckRepository(
         impl: LinkCheckRepositoryImpl
     ): LinkCheckRepository
-
-    @Binds
-    abstract fun bindNetworkStatus(
-        impl: ConnectivityNetworkStatus
-    ): NetworkStatus
 
     @Binds
     abstract fun bindNoteRepository(

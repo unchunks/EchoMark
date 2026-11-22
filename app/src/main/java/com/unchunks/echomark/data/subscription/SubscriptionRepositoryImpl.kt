@@ -1,14 +1,14 @@
 package com.unchunks.echomark.data.subscription
 
 import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.feed.FeedBody
 import com.unchunks.components.feed.FeedDiscovery
+import com.unchunks.components.feed.FeedFetchException
+import com.unchunks.components.feed.FeedFetcher
 import com.unchunks.components.feed.FeedParser
+import com.unchunks.components.feed.FeedResponse
 import com.unchunks.components.feed.ParsedFeed
-import com.unchunks.echomark.data.feed.FeedBody
 import com.unchunks.echomark.data.feed.FeedChecker
-import com.unchunks.echomark.data.feed.FeedFetchException
-import com.unchunks.echomark.data.feed.FeedFetcher
-import com.unchunks.echomark.data.feed.FeedResponse
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.domain.repository.SubscriptionRepository

@@ -59,7 +59,7 @@ class FeedCheckerTest {
         server = MockWebServer()
         server.start()
         repository = FakeBookmarkRepository()
-        val fetcher = FeedFetcher(OkHttpClient(), TestDispatcherProvider(Dispatchers.Unconfined)) { true }
+        val fetcher = echoMarkFeedFetcher(OkHttpClient(), TestDispatcherProvider(Dispatchers.Unconfined)) { true }
         checker = FeedChecker(dao, fetcher) { repository }
     }
 
@@ -114,7 +114,7 @@ class FeedCheckerTest {
         val id = subscribe()
         subscribe(path = "/other.xml")
         val offlineClient = NetworkModule.baseOkHttpClient(FakeNetworkGate(offline = true))
-        val offlineChecker = FeedChecker(dao, FeedFetcher(offlineClient, TestDispatcherProvider(Dispatchers.Unconfined)) { true }) { repository }
+        val offlineChecker = FeedChecker(dao, echoMarkFeedFetcher(offlineClient, TestDispatcherProvider(Dispatchers.Unconfined)) { true }) { repository }
 
         val summary = offlineChecker.checkAll(now = base + day)
 

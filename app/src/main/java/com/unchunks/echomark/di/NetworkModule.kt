@@ -1,14 +1,21 @@
 package com.unchunks.echomark.di
 
+import android.content.Context
+import com.unchunks.components.connectivity.ConnectivityNetworkStatus
+import com.unchunks.components.connectivity.NetworkStatus
+import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.feed.FeedFetcher
 import com.unchunks.components.web.NetworkGate
 import com.unchunks.components.web.OfflineModeInterceptor
 import com.unchunks.components.websearch.SearchUserAgents
+import com.unchunks.echomark.data.feed.echoMarkFeedFetcher
 import com.unchunks.echomark.data.network.DefaultOfflineModeController
 import com.unchunks.echomark.data.network.OfflineModeController
 import com.unchunks.echomark.data.network.SettingsNetworkGate
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -51,4 +58,15 @@ object NetworkModule {
         app = "EchoMark/1.0 (Android; +https://github.com/unchunks/EchoMark)",
         browser = "${SearchUserAgents.DEFAULT_BROWSER} EchoMark/1.0"
     )
+
+    /** 端末が今インターネットに通信できるか(部品の connectivity。オフラインモードの間は false) */
+    @Provides
+    fun provideNetworkStatus(@ApplicationContext context: Context, gate: NetworkGate): NetworkStatus =
+        ConnectivityNetworkStatus(context, gate)
+
+    /** フィード・ページの取得(部品の feed)。EchoMark の名前を名乗り、オフラインモードのときは設定の場所を添えて知らせる */
+    @Provides
+    @Singleton
+    fun provideFeedFetcher(okHttpClient: OkHttpClient, dispatcherProvider: DispatcherProvider): FeedFetcher =
+        echoMarkFeedFetcher(okHttpClient, dispatcherProvider)
 }
