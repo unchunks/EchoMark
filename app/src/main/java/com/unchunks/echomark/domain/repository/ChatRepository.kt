@@ -9,12 +9,22 @@ import com.unchunks.echomark.domain.model.Conversation
 import com.unchunks.echomark.domain.model.ConversationBranch
 import com.unchunks.echomark.domain.model.ConversationMatch
 import com.unchunks.echomark.domain.model.ConversationPreview
+import com.unchunks.echomark.domain.websearch.WebSource
 import kotlinx.coroutines.flow.Flow
 
 /** [ChatRepository.sendMessageStream] の進行状況。 */
 sealed interface ChatStreamEvent {
     /** ユーザー発言を保存し、文脈に使うブックマークが決まった。 */
-    data class Started(val referencedBookmarkIds: List<Long>) : ChatStreamEvent
+    data class Started(val referencedBookmarkIds: List<Long>, val webSourceCount: Int = 0) : ChatStreamEvent
+
+    /** Web を検索して、結果のページを読んでいる(Web 検索をオンにした質問だけ。[Started] の前に流す)。 */
+    data object SearchingWeb : ChatStreamEvent
+
+    /**
+     * Web を検索できなかった(オフラインモード・キーが無効・上限など)。保存内容だけで答えを続ける。
+     * @param reason 画面に出す日本語
+     */
+    data class WebSearchSkipped(val reason: String) : ChatStreamEvent
 
     /** 生成途中の回答(先頭からの全文)。 */
     data class Delta(val textSoFar: String) : ChatStreamEvent
@@ -36,7 +46,7 @@ interface ChatRepository {
      * (「このブックマークについて質問」でブックマーク名を使うときなど)。
      * @param aboutBookmarkId 「このブックマークについて質問」の対象。会話に保存し、開き直したときも固定する
      */
-    suspend fun createConversation(title: String? = null, aboutBookmarkId: Long? = null): Long
+    suspend fun createConversation(title: String? = null, aboutBookmarkId: Long? = null, webSearchEnabled: Boolean = false): Long
 
     /** 会話一覧用。最終更新の新しい順に、最後のメッセージを添えて流す。 */
     fun observeConversationPreviews(): Flow<List<ConversationPreview>>
@@ -55,6 +65,8 @@ interface ChatRepository {
      * @param isRetry 失敗した質問の再試行。会話の最後が同じ内容のユーザー発言なら、それを使い回して二重に保存しない
      * @param attachment 質問に添付したファイルの内容。この回答の根拠にだけ使い、会話には保存しない(ユーザー発言は本文だけ保存する)
      * @param scope 資料を探す範囲。null なら保存全体。[pinnedBookmarkId] があるときは使わない
+     * @param webSearch 質問から Web を検索し、結果のページも根拠にする(検索語が端末の外に出る)。
+     *   検索できなければ [ChatStreamEvent.WebSearchSkipped] を流し、保存内容だけで答える
      */
     fun sendMessageStream(
         conversationId: Long,
@@ -62,7 +74,8 @@ interface ChatRepository {
         pinnedBookmarkId: Long? = null,
         isRetry: Boolean = false,
         attachment: ChatAttachmentContext? = null,
-        scope: BookmarkQuery? = null
+        scope: BookmarkQuery? = null,
+        webSearch: Boolean = false
     ): Flow<ChatStreamEvent>
 
     /**
@@ -83,6 +96,12 @@ interface ChatRepository {
 
     /** 回答をメモ(テキストのブックマーク)として保存する。保存したブックマークの ID を返す。 */
     suspend fun saveNote(title: String, content: String): Long
+
+    /** 会話の質問で Web を検索するかを切り替える。 */
+    suspend fun setWebSearchEnabled(conversationId: Long, enabled: Boolean)
+
+    /** 回答の根拠にした Web のページを、URL のブックマークとして保存する(取得・要約は通常の保存と同じく後で行う)。 */
+    suspend fun saveWebSource(source: WebSource): SaveResult
 
     /** 会話を一覧の先頭に固定する / 外す。 */
     suspend fun setPinned(conversationId: Long, pinned: Boolean)

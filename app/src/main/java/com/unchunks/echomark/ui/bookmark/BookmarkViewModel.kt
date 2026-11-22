@@ -1,9 +1,12 @@
 package com.unchunks.echomark.ui.bookmark
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
+import com.unchunks.echomark.domain.bookmark.model.BookmarkCollection
+import com.unchunks.echomark.domain.bookmark.model.CollectionResult
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
@@ -26,6 +29,8 @@ import com.unchunks.echomark.domain.bookmark.model.SearchSuggester
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.bookmark.model.TagCandidate
 import com.unchunks.echomark.domain.bookmark.model.splitSearchTerms
+import com.unchunks.echomark.domain.export.ExportFormat
+import com.unchunks.echomark.domain.model.CategoryEntry
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.model.TagWithCount
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
@@ -35,11 +40,16 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.domain.repository.SmartFolderRepository
 import com.unchunks.echomark.domain.repository.CategoryRepository
+import com.unchunks.echomark.domain.repository.CollectionRepository
 import com.unchunks.echomark.domain.repository.TagRepository
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import com.unchunks.echomark.ui.common.SearchHighlights
 import com.unchunks.echomark.ui.common.SelectedFile
 import com.unchunks.echomark.ui.common.normalizeUrlInput
+import com.unchunks.echomark.ui.selection.BulkBookmarkActions
+import com.unchunks.echomark.ui.selection.BulkMessage
+import com.unchunks.echomark.ui.selection.SelectionHolder
+import com.unchunks.echomark.ui.selection.SelectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -80,7 +90,10 @@ class BookmarkViewModel @Inject constructor(
     private val appSettings: AppSettingsRepository,
     private val dispatchers: DispatcherProvider,
     private val searchHighlights: SearchHighlights,
-    private val smartFolderRepository: SmartFolderRepository
+    private val smartFolderRepository: SmartFolderRepository,
+    private val collectionRepository: CollectionRepository,
+    private val bulk: BulkBookmarkActions,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     /** 検索語以外の表示条件 */
@@ -171,7 +184,7 @@ class BookmarkViewModel @Inject constructor(
                 val query = request.search
                 // 絞り込み・並べ替え済みの一覧。検索時は「表示してよいもの」の判定(検索結果との積)と、DB 変更時の再検索のきっかけに使う。
                 // 検索自体はタグ・カテゴリを知らない(絞り込みの条件はここだけで持つ)
-                val visible = repository.observeBookmarks(request.filter, request.sortOrder)
+                val visible = repository.observeBookmarkList(request.filter, request.sortOrder)
                 val result = if (query.isNotBlank()) {
                     // 検索語の埋め込み(意味検索の準備)は、モデルの読み込みや AI 処理との順番待ちで時間がかかることがある。
                     // 待つ間はキーワードの結果を先に出す。準備は検索語ごとに1回だけで、DB の変更で検索し直しても待ち直さない
@@ -233,13 +246,35 @@ class BookmarkViewModel @Inject constructor(
             emit(null)
         }
 
-    /** 絞り込みチップに出すカテゴリ。ブックマークがあるものだけ(選択中のものは、画面を組み立てるときに足す) */
-    private val categoryNamesFlow: Flow<List<String>> = categoryRepository.observeCategories()
-        .map { list -> list.filter { it.bookmarkCount > 0 }.map { it.name } }
+    /** カテゴリの一覧(標準のものも含む)。補助的な表示なので、読めなければ空として扱う */
+    private val categoryEntriesFlow: Flow<List<CategoryEntry>> = categoryRepository.observeCategories()
         .catch { e ->
             if (e is CancellationException) throw e
             emit(emptyList())
         }
+
+    /** 絞り込みチップに出すカテゴリ。ブックマークがあるものだけ(選択中のものは、画面を組み立てるときに足す) */
+    private val categoryNamesFlow: Flow<List<String>> = categoryEntriesFlow
+        .map { list -> list.filter { it.bookmarkCount > 0 }.map { it.name } }
+
+    /** 複数選択の「コレクションに追加」に出すコレクション。補助的な表示なので、読めなければ空として扱う */
+    private val collectionsFlow: Flow<List<BookmarkCollection>> = collectionRepository.observeCollections()
+        .catch { e ->
+            if (e is CancellationException) throw e
+            emit(emptyList())
+        }
+
+    /** 複数選択(長押し・メニューの「選択」)の状態。回転やプロセスの再作成のあとも保つ */
+    private val selection = SelectionHolder(savedStateHandle)
+
+    private data class ListExtras(
+        val rediscover: List<Bookmark>,
+        val recommendations: List<Recommendation>,
+        val smartFolders: List<SmartFolder>,
+        val selection: SelectionState,
+        val collections: List<BookmarkCollection>,
+        val categoryChoices: List<CategoryEntry>
+    )
 
     /** スマートフォルダ(#34)。補助的な表示なので、読めなければ空として扱う */
     private val smartFoldersFlow: Flow<List<SmartFolder>> = smartFolderRepository.observeFolders()
@@ -271,9 +306,19 @@ class BookmarkViewModel @Inject constructor(
         combine(listFlow, searchQueryFlow, shownControlsFlow, searchHistoryFlow, queryRevisionFlow, ::ListInputs),
         tagCountsFlow,
         categoryNamesFlow,
-        combine(rediscoverFlow, recommendationsFlow, smartFoldersFlow, ::Triple),
+        combine(
+            combine(rediscoverFlow, recommendationsFlow, smartFoldersFlow, ::Triple),
+            selection.state,
+            collectionsFlow,
+            categoryEntriesFlow
+        ) { (rediscover, recommendations, smartFolders), selectionState, collections, categoryChoices ->
+            ListExtras(rediscover, recommendations, smartFolders, selectionState, collections, categoryChoices)
+        },
         repository.observeBookmarkCount()
-    ) { (list, rawQuery, controls, history, revision), tagCounts, categoryNames, (rediscoverAll, recommendations, smartFolders), total ->
+    ) { (list, rawQuery, controls, history, revision), tagCounts, categoryNames, extras, total ->
+        val rediscoverAll = extras.rediscover
+        val recommendations = extras.recommendations
+        val smartFolders = extras.smartFolders
         // 「次に読む」に出したものは、「今日の再発見」には出さない(同じカードを2回見せない)
         val recommendedIds = recommendations.mapTo(HashSet()) { it.bookmark.id }
         val rediscover = rediscoverAll.filter { it.id !in recommendedIds }
@@ -328,6 +373,11 @@ class BookmarkViewModel @Inject constructor(
             // 開いたフォルダの条件を変えた(どのフォルダとも同じ条件でない)ときだけ、そのフォルダを「更新」できる
             smartFolderToUpdate = smartFolders.firstOrNull { it.id == controls.folderId }
                 ?.takeIf { activeFolder == null && query != BookmarkQuery() },
+            isSelecting = extras.selection.active,
+            // 絞り込みや検索で今の一覧から外れたものは、選んでいる数・操作の対象に入れない(見えないものを操作しない)
+            selectedIds = extras.selection.ids.intersect(list.bookmarks.mapTo(HashSet()) { it.id }),
+            collections = extras.collections,
+            categoryChoices = extras.categoryChoices,
             totalCount = total
         )
     }.stateIn(
@@ -691,6 +741,80 @@ class BookmarkViewModel @Inject constructor(
     /** 削除の取り消し。同じ ID・タグで復元し、埋め込みを再生成する */
     fun restoreBookmark(bookmark: Bookmark) {
         viewModelScope.launch { repository.restoreBookmark(bookmark) }
+    }
+
+    // ---- 複数選択 ----
+
+    /** 選択モードに入る。[id] を渡すと、それを選んだ状態で始める(長押し) */
+    fun onEnterSelection(id: Long? = null) = selection.enter(id)
+
+    /** [id] の選択を切り替える(選択モードの間のタップ) */
+    fun onToggleSelection(id: Long) = selection.toggle(id)
+
+    /** 今の一覧(検索結果・スマートフォルダ・絞り込みの結果)に出ているものすべてを選ぶ */
+    fun onSelectAll() = selection.selectAll(uiState.value.bookmarks.map { it.id })
+
+    /** 選びを解く(選択モードのまま) */
+    fun onClearSelection() = selection.clear()
+
+    /** 選択モードを終える(戻る) */
+    fun onExitSelection() = selection.exit()
+
+    fun bulkSetFavorite(favorite: Boolean) = runBulk { bulk.setFavorite(it, favorite) }
+
+    fun bulkSetRead(read: Boolean) = runBulk { bulk.setRead(it, read) }
+
+    fun bulkSetArchived(archived: Boolean) = runBulk { bulk.setArchived(it, archived) }
+
+    fun bulkAddTag(tagName: String) = runBulk { bulk.addTag(it, tagName) }
+
+    fun bulkRemoveTag(tagName: String) = runBulk { bulk.removeTag(it, tagName) }
+
+    fun bulkSetCategory(category: String) = runBulk { bulk.setCategory(it, category) }
+
+    fun bulkAddToCollection(collection: BookmarkCollection) = runBulk { bulk.addToCollection(it, collection.id, collection.name) }
+
+    /** 再処理。1件ずつ順番に処理する列に積む(件ごとに急がない) */
+    fun bulkReprocess() = runBulk { bulk.reprocess(it) }
+
+    fun bulkExport(format: ExportFormat, uri: String) = runBulk { bulk.export(it, format, uri) }
+
+    /** 選んだものを削除する。Snackbar の「元に戻す」で [undoBulkDelete] できるよう知らせる */
+    fun bulkDelete() = runBulk { bulk.delete(it) }
+
+    /** 新しいコレクションを作って、選んだものを入れる。名前の誤りは [onResult] で返す(入れない) */
+    fun bulkCreateCollectionAndAdd(name: String, onResult: (CollectionResult) -> Unit) {
+        val targets = uiState.value.selectedBookmarks
+        if (targets.isEmpty()) return
+        viewModelScope.launch {
+            val (result, message) = bulk.createCollectionAndAdd(targets, name)
+            onResult(result)
+            if (message != null) finishBulk(targets, message)
+        }
+    }
+
+    fun undoBulkArchive(before: List<Bookmark>) {
+        viewModelScope.launch { bulk.undoArchived(before) }
+    }
+
+    fun undoBulkDelete(bookmarks: List<Bookmark>) {
+        viewModelScope.launch { bulk.undoDeleted(bookmarks) }
+    }
+
+    /** 選んでいるもの(今の一覧に出ているもの)に [action] をして、結果を知らせる */
+    private fun runBulk(action: suspend (List<Bookmark>) -> BulkMessage) {
+        val targets = uiState.value.selectedBookmarks
+        if (targets.isEmpty()) return
+        viewModelScope.launch { finishBulk(targets, action(targets)) }
+    }
+
+    /** 操作を終えた: 失敗したときは選んだままにして(もう一度試せる)、成功したら選択モードを終える */
+    private suspend fun finishBulk(targets: List<Bookmark>, message: BulkMessage) {
+        if (message !is BulkMessage.Failed) selection.exit()
+        if (message is BulkMessage.Archived && message.archived || message is BulkMessage.Deleted) {
+            targets.forEach { removeFromRediscover(it.id) }
+        }
+        messageChannel.send(BookmarkListMessage.Bulk(message))
     }
 
     // ---- 追加 ----

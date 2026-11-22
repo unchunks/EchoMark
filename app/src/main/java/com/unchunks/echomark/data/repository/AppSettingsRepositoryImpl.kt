@@ -1,14 +1,19 @@
 package com.unchunks.echomark.data.repository
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.echomark.data.backup.BackupCoverage
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
@@ -17,20 +22,23 @@ import com.unchunks.echomark.domain.bookmark.model.ReadingFont
 import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
-import com.unchunks.echomark.domain.model.SummaryFormat
-import com.unchunks.echomark.domain.model.SummaryLanguage
-import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.domain.repository.defaultApiModel
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -137,6 +145,106 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { it[KEY_LINK_CHECK_ENABLED] = enabled }
     }
 
+    override val videoDownloadSettings: Flow<VideoDownloadSettings> = data.map { prefs ->
+        VideoDownloadSettings(
+            wifiOnly = prefs[KEY_VIDEO_DOWNLOAD_WIFI_ONLY] ?: true,
+            maxTotalBytes = prefs[KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES]?.takeIf { it > 0 } ?: VideoDownloadSettings.DEFAULT_MAX_TOTAL_BYTES
+        )
+    }.distinctUntilChanged()
+
+    override suspend fun setVideoDownloadWifiOnly(enabled: Boolean) {
+        dataStore.edit { it[KEY_VIDEO_DOWNLOAD_WIFI_ONLY] = enabled }
+    }
+
+    override suspend fun setVideoDownloadMaxTotalBytes(bytes: Long) {
+        dataStore.edit { it[KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES] = bytes }
+    }
+
+    override val offlineMode: Flow<Boolean> = data.map { it[KEY_OFFLINE_MODE] ?: false }.distinctUntilChanged()
+
+    override suspend fun setOfflineMode(enabled: Boolean) {
+        dataStore.edit { it[KEY_OFFLINE_MODE] = enabled }
+    }
+
+    override val autoBackup: Flow<AutoBackupSettings> = data.map { it.toAutoBackup() }.distinctUntilChanged()
+
+    override suspend fun updateAutoBackup(transform: (AutoBackupSettings) -> AutoBackupSettings) {
+        dataStore.edit { prefs ->
+            val next = transform(prefs.toAutoBackup())
+            prefs[KEY_AUTO_BACKUP_ENABLED] = next.enabled
+            prefs.setOrRemove(KEY_AUTO_BACKUP_FOLDER, next.folderUri)
+            prefs.setOrRemove(KEY_AUTO_BACKUP_FOLDER_LABEL, next.folderLabel)
+            prefs[KEY_AUTO_BACKUP_KEEP] = next.keep.coerceIn(1, MAX_AUTO_BACKUP_KEEP)
+            prefs[KEY_AUTO_BACKUP_INCLUDE_FILES] = next.includeFiles
+            if (next.lastSuccessAt == null) prefs.remove(KEY_AUTO_BACKUP_LAST_SUCCESS_AT) else prefs[KEY_AUTO_BACKUP_LAST_SUCCESS_AT] = next.lastSuccessAt
+            prefs.setOrRemove(KEY_AUTO_BACKUP_LAST_ERROR, next.lastError)
+        }
+    }
+
+    private fun Preferences.toAutoBackup() = AutoBackupSettings(
+        enabled = this[KEY_AUTO_BACKUP_ENABLED] ?: false,
+        folderUri = this[KEY_AUTO_BACKUP_FOLDER],
+        folderLabel = this[KEY_AUTO_BACKUP_FOLDER_LABEL],
+        keep = (this[KEY_AUTO_BACKUP_KEEP] ?: AutoBackupSettings.DEFAULT_KEEP).coerceIn(1, MAX_AUTO_BACKUP_KEEP),
+        includeFiles = this[KEY_AUTO_BACKUP_INCLUDE_FILES] ?: false,
+        lastSuccessAt = this[KEY_AUTO_BACKUP_LAST_SUCCESS_AT],
+        lastError = this[KEY_AUTO_BACKUP_LAST_ERROR]
+    )
+
+    private fun MutablePreferences.setOrRemove(key: Preferences.Key<String>, value: String?) {
+        if (value == null) remove(key) else this[key] = value
+    }
+
+    override suspend fun exportBackupSettings(): Map<String, Any> =
+        data.first().asMap().mapNotNull { (key, value) ->
+            val type = BackupCoverage.settingTypeOf(key.name) ?: return@mapNotNull null
+            value.takeIf { it.matches(type) }?.let { key.name to it }
+        }.toMap()
+
+    override suspend fun restoreBackupSettings(values: Map<String, Any>): Int {
+        var restored = 0
+        dataStore.edit { prefs ->
+            // 戻す設定のうち、バックアップに無いものは既定に戻す(書き出した端末で既定のままだったもの)
+            prefs.asMap().keys.filter { BackupCoverage.settingTypeOf(it.name) != null && it.name !in values }.forEach { prefs.remove(it) }
+            values.forEach { (name, value) ->
+                // 型の違う値と、端末の外にデータを送る値(クラウド AI を選ぶなど)は書かない(今の値のまま)
+                if (!BackupCoverage.isRestorable(name, value)) return@forEach
+                when (BackupCoverage.settingTypeOf(name)) {
+                    BackupCoverage.SettingType.BOOLEAN -> (value as? Boolean)?.let { prefs[booleanPreferencesKey(name)] = it; restored++ }
+                    BackupCoverage.SettingType.INT -> (value as? Number)?.toLong()?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
+                        ?.let { prefs[intPreferencesKey(name)] = it.toInt(); restored++ }
+                    BackupCoverage.SettingType.STRING -> (value as? String)?.let { prefs[stringPreferencesKey(name)] = it; restored++ }
+                    // 戻さない設定(ロック・オフラインモード・この端末だけの設定など)と、知らない名前は書かない
+                    null -> Unit
+                }
+            }
+        }
+        return restored
+    }
+
+    private fun Any.matches(type: BackupCoverage.SettingType): Boolean = when (type) {
+        BackupCoverage.SettingType.BOOLEAN -> this is Boolean
+        BackupCoverage.SettingType.INT -> this is Int
+        BackupCoverage.SettingType.STRING -> this is String
+    }
+
+    override val appLock: Flow<AppLockSettings> = data.map { it.toAppLock() }.distinctUntilChanged()
+
+    override suspend fun updateAppLock(transform: (AppLockSettings) -> AppLockSettings) {
+        dataStore.edit { prefs ->
+            val next = transform(prefs.toAppLock())
+            prefs[KEY_APP_LOCK_ENABLED] = next.enabled
+            prefs[KEY_APP_LOCK_DELAY] = next.delay.name
+            prefs[KEY_APP_LOCK_HIDE_CONTENT] = next.hideContent
+        }
+    }
+
+    private fun Preferences.toAppLock() = AppLockSettings(
+        enabled = this[KEY_APP_LOCK_ENABLED] ?: false,
+        delay = AppLockDelay.fromName(this[KEY_APP_LOCK_DELAY]),
+        hideContent = this[KEY_APP_LOCK_HIDE_CONTENT] ?: false
+    )
+
     override suspend fun setDuplicateSensitivity(sensitivity: DuplicateSensitivity) {
         dataStore.edit { it[KEY_DUPLICATE_SENSITIVITY] = sensitivity.name }
     }
@@ -170,6 +278,17 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { prefs ->
             val current = prefs[KEY_CHAT_TEMPLATES]?.let(ChatTemplateCodec::decode).orEmpty()
             prefs[KEY_CHAT_TEMPLATES] = ChatTemplateCodec.encode(transform(current))
+        }
+    }
+
+    override val readingDictionary: Flow<List<ReadingEntry>> = data.map { prefs ->
+        prefs[KEY_READING_DICTIONARY]?.let(ReadingDictionaryCodec::decode).orEmpty()
+    }.distinctUntilChanged()
+
+    override suspend fun updateReadingDictionary(transform: (List<ReadingEntry>) -> List<ReadingEntry>) {
+        dataStore.edit { prefs ->
+            val current = prefs[KEY_READING_DICTIONARY]?.let(ReadingDictionaryCodec::decode).orEmpty()
+            prefs[KEY_READING_DICTIONARY] = ReadingDictionaryCodec.encode(transform(current))
         }
     }
 
@@ -314,8 +433,18 @@ class AppSettingsRepositoryImpl @Inject constructor(
     override suspend fun resetToDefaults() {
         dataStore.edit { prefs ->
             val onboardingCompleted = prefs[KEY_ONBOARDING_COMPLETED]
+            val offlineMode = prefs[KEY_OFFLINE_MODE]
+            val appLock = prefs.toAppLock()
             prefs.clear()
             if (onboardingCompleted != null) prefs[KEY_ONBOARDING_COMPLETED] = onboardingCompleted
+            // 初期化をきっかけに通信を始めないよう、オンにしたオフラインモードは残す
+            if (offlineMode == true) prefs[KEY_OFFLINE_MODE] = true
+            // 初期化をきっかけに守りを外さないよう、オンにしたロック(と内容を隠す設定)も残す
+            if (appLock.enabled) {
+                prefs[KEY_APP_LOCK_ENABLED] = true
+                prefs[KEY_APP_LOCK_DELAY] = appLock.delay.name
+            }
+            if (appLock.hideContent) prefs[KEY_APP_LOCK_HIDE_CONTENT] = true
         }
     }
 
@@ -341,10 +470,25 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_CHAT_TEMPLATES = stringPreferencesKey("chat_templates")
+        val KEY_READING_DICTIONARY = stringPreferencesKey("reading_dictionary")
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
         val KEY_DUPLICATE_SENSITIVITY = stringPreferencesKey("duplicate_sensitivity")
         val KEY_LINK_CHECK_ENABLED = booleanPreferencesKey("link_check_enabled")
+        val KEY_VIDEO_DOWNLOAD_WIFI_ONLY = booleanPreferencesKey("video_download_wifi_only")
+        val KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES = longPreferencesKey("video_download_max_total_bytes")
         val KEY_PLACES_MAP_BACKGROUND = booleanPreferencesKey("places_map_background")
+        val KEY_OFFLINE_MODE = booleanPreferencesKey("offline_mode")
+        val KEY_APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
+        val KEY_APP_LOCK_DELAY = stringPreferencesKey("app_lock_delay")
+        val KEY_APP_LOCK_HIDE_CONTENT = booleanPreferencesKey("app_lock_hide_content")
+        val KEY_AUTO_BACKUP_ENABLED = booleanPreferencesKey("auto_backup_enabled")
+        val KEY_AUTO_BACKUP_FOLDER = stringPreferencesKey("auto_backup_folder")
+        val KEY_AUTO_BACKUP_FOLDER_LABEL = stringPreferencesKey("auto_backup_folder_label")
+        val KEY_AUTO_BACKUP_KEEP = intPreferencesKey("auto_backup_keep")
+        val KEY_AUTO_BACKUP_INCLUDE_FILES = booleanPreferencesKey("auto_backup_include_files")
+        val KEY_AUTO_BACKUP_LAST_SUCCESS_AT = longPreferencesKey("auto_backup_last_success_at")
+        val KEY_AUTO_BACKUP_LAST_ERROR = stringPreferencesKey("auto_backup_last_error")
+        const val MAX_AUTO_BACKUP_KEEP = 50
         val KEY_DISMISSED_DUPLICATES = stringPreferencesKey("dismissed_duplicates")
         val KEY_BOOKMARK_LIST_DISPLAY = stringPreferencesKey("bookmark_list_display")
         val KEY_READING_FONT_SIZE = stringPreferencesKey("reading_font_size")

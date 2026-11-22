@@ -1,6 +1,7 @@
 package com.unchunks.echomark
 
 import android.app.Application
+import android.os.StrictMode
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.work.HiltWorkerFactory
@@ -14,15 +15,16 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.unchunks.components.applock.AppLockManager
 import com.unchunks.components.core.ComponentLog
 import com.unchunks.components.core.LogSink
-import com.unchunks.echomark.data.ai.local.LocalLlmProvider
 import com.unchunks.echomark.crash.CrashReporter
 import com.unchunks.echomark.crash.CrashReporter.recordWorkerFailures
+import com.unchunks.echomark.data.ai.local.LocalLlmProvider
 import com.unchunks.echomark.data.attachment.UnusedAttachmentCleaner
 import com.unchunks.echomark.ui.widget.RediscoverWidgetUpdater
-import com.unchunks.echomark.worker.ReembedAllWorker
 import com.unchunks.echomark.worker.BulkProcessingNotifier
+import com.unchunks.echomark.worker.ReembedAllWorker
 import com.unchunks.echomark.worker.StalledAiProcessingRecovery
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
@@ -41,6 +43,7 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
     @Inject lateinit var stalledAiProcessingRecovery: StalledAiProcessingRecovery
     @Inject lateinit var bulkProcessingNotifier: BulkProcessingNotifier
     @Inject lateinit var unusedAttachmentCleaner: UnusedAttachmentCleaner
+    @Inject lateinit var appLockManager: AppLockManager
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -51,6 +54,8 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
 
     override fun onCreate() {
         super.onCreate()
+        // debug ビルドでは、メインスレッドでのディスクの読み書き・通信を Logcat に出す(もたつきの原因を探すため。release では何もしない)
+        if (BuildConfig.DEBUG) enableStrictMode()
 
         // 捕まえられない例外などを端末内のファイルに残す(外部サービスには送らない)。設定画面から見る・共有する・消す
         CrashReporter.install(this)
@@ -59,6 +64,9 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
         if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
         // 部品(components)のうち Android に依存しないもののログも Timber に流す
         ComponentLog.sink = LogSink { level, tag, message, error -> Timber.tag(tag).log(level.priority, error, message) }
+
+        // アプリのロック。最初の Activity が作られる前に、すべての Activity の出入りを見始める
+        appLockManager.install(this)
 
         createNotificationChannels()
         // ブックマークの保存・削除・閲覧に合わせて、ホーム画面ウィジェットを描き直す
@@ -100,6 +108,18 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
             .crossfade(true)
             .build()
 
+    /** メインスレッドでのディスクの読み書き・通信を、止めずに Logcat(タグ StrictMode)へ出す */
+    private fun enableStrictMode() {
+        StrictMode.setThreadPolicy(
+            StrictMode.ThreadPolicy.Builder()
+                .detectDiskReads()
+                .detectDiskWrites()
+                .detectNetwork()
+                .penaltyLog()
+                .build()
+        )
+    }
+
     /** 通知チャンネルを作成する(既存なら何もしない)。 */
     private fun createNotificationChannels() {
         val channel = NotificationChannelCompat.Builder(
@@ -110,9 +130,17 @@ class EchoMarkApplication : Application(), Configuration.Provider, SingletonImag
             .setDescription(getString(R.string.notification_channel_rediscover_desc))
             .build()
         NotificationManagerCompat.from(this).createNotificationChannel(channel)
+        // 自動バックアップを保存できなかったとき(保存先のフォルダを使えなくなったなど)の知らせ
+        NotificationManagerCompat.from(this).createNotificationChannel(
+            NotificationChannelCompat.Builder(AUTO_BACKUP_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT)
+                .setName(getString(R.string.notification_channel_auto_backup))
+                .setDescription(getString(R.string.notification_channel_auto_backup_desc))
+                .build()
+        )
     }
 
     companion object {
         const val REDISCOVER_CHANNEL_ID = "rediscover_digest"
+        const val AUTO_BACKUP_CHANNEL_ID = "auto_backup"
     }
 }

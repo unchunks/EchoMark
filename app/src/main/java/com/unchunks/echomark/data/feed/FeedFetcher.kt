@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.feed
 
 import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.web.OfflineModeException
 import com.unchunks.components.web.PublicAddressInterceptor
 import com.unchunks.components.web.PublicOnlyDns
 import com.unchunks.components.web.isAllowedRedirect
@@ -77,6 +78,8 @@ class FeedFetcher internal constructor(
                 throw e
             } catch (e: IllegalArgumentException) {
                 throw FeedFetchException("URL の形式が正しくありません", e)
+            } catch (e: OfflineModeException) {
+                throw FeedFetchException("オフラインモードのため取得しませんでした。設定の「オフラインモード」をオフにしてください", e)
             } catch (e: IOException) {
                 throw FeedFetchException("取得できませんでした(通信できないか、サイトが応答しません)", e)
             }

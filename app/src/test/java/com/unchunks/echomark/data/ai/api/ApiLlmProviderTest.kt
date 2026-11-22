@@ -10,13 +10,14 @@ import com.unchunks.components.llm.cloud.ClaudeApiClient
 import com.unchunks.components.llm.cloud.GeminiApiClient
 import com.unchunks.components.llm.cloud.OpenAiApiClient
 import com.unchunks.components.testing.TestDispatcherProvider
-import com.unchunks.echomark.data.ai.LocalLlmProviders
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.ai.LlmProviderResolver
+import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.domain.bookmark.model.ContentKind
+import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
 import com.unchunks.echomark.domain.model.AnalysisScope
-import com.unchunks.echomark.domain.chat.ChatContextLimits
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.provider.LlmProvider
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
@@ -26,6 +27,7 @@ import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeApiUsageRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeLlmProvider
+import com.unchunks.echomark.testing.FakeNetworkGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -49,6 +51,7 @@ class ApiLlmProviderTest {
     private lateinit var server: MockWebServer
     private val settings = FakeAppSettingsRepository(backend = LlmBackend.API, provider = ApiProvider.GEMINI)
     private val usage = FakeApiUsageRepository()
+    private val gate = FakeNetworkGate()
 
     @Before
     fun setUp() {
@@ -74,7 +77,8 @@ class ApiLlmProviderTest {
             appSettings = settings,
             apiKeyRepository = keys,
             attachmentLoader = loader,
-            usageRepository = usage
+            usageRepository = usage,
+            gate = gate
         )
     }
 
@@ -132,6 +136,39 @@ class ApiLlmProviderTest {
                     """"thoughtsTokenCount":$thoughtTokens}}""" + "\n\n"
             )
             .build()
+
+    @Test
+    fun オフラインモードの間はどの提供元にも通信しない() = runBlocking {
+        gate.offline = true
+        val keys = FakeApiKeyRepository(
+            mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000", ApiProvider.CLAUDE to "sk-ant-test", ApiProvider.OPENAI to "sk-test")
+        )
+        for (target in ApiProvider.entries) {
+            settings.setApiProvider(AiTask.SUMMARY, target)
+            try {
+                provider(keys).analyze(AnalysisInput(title = "", text = "本文", kind = ContentKind.WEB_PAGE), emptyList())
+                fail("オフラインモードなのに呼び出せた: $target")
+            } catch (e: LlmException.Network) {
+                assertTrue(e.isOfflineModeBlock())
+            }
+            // 接続テストも断る
+            try {
+                apiLlmProvider(keys).testConnection(target, "", null)
+                fail("オフラインモードなのに接続テストができた: $target")
+            } catch (e: LlmException.Network) {
+                assertTrue(e.isOfflineModeBlock())
+            }
+        }
+        // チャットのストリームも断る
+        settings.setApiProvider(AiTask.CHAT, ApiProvider.CLAUDE)
+        try {
+            provider(keys, AiTask.CHAT).chatStream("こんにちは", emptyList(), emptyList()).toList()
+            fail("オフラインモードなのにチャットできた")
+        } catch (e: LlmException.Network) {
+            assertTrue(e.isOfflineModeBlock())
+        }
+        assertEquals(0, server.requestCount)
+    }
 
     @Test
     fun 要約の呼び出しごとに使ったトークン数を用途とモデルつきで記録する() = runBlocking {

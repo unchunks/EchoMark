@@ -1,12 +1,13 @@
 package com.unchunks.echomark.data.repository
 
-import com.unchunks.echomark.domain.model.ChatTemplate
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
@@ -15,6 +16,9 @@ import com.unchunks.echomark.domain.bookmark.model.ReadingFont
 import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.lock.AppLockSettings
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.SummaryFormat
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
@@ -194,6 +198,25 @@ class AppSettingsRepositoryImplTest {
         repository.updateChatTemplates { it + template }
 
         assertEquals(listOf(template), repository.chatTemplates.first())
+    }
+
+    @Test
+    fun 読みの辞書を保存して読み出せる() = runTest {
+        val repository = createRepository()
+        assertEquals(emptyList<ReadingEntry>(), repository.readingDictionary.first())
+
+        repository.updateReadingDictionary { it + ReadingEntry("日本橋", "にほんばし") + ReadingEntry("GitHub", "ギットハブ") }
+
+        assertEquals(listOf(ReadingEntry("日本橋", "にほんばし"), ReadingEntry("GitHub", "ギットハブ")), repository.readingDictionary.first())
+    }
+
+    @Test
+    fun 読めない読みの辞書は空として扱い_誤りのある1件は除く() {
+        assertEquals(emptyList<ReadingEntry>(), ReadingDictionaryCodec.decode("壊れた値"))
+        assertEquals(
+            listOf(ReadingEntry("東京", "とうきょう")),
+            ReadingDictionaryCodec.decode("""[{"surface":"東京","reading":"とうきょう"},{"surface":"","reading":"から"},{"x":1},"a"]""")
+        )
     }
 
     @Test
@@ -385,6 +408,114 @@ class AppSettingsRepositoryImplTest {
         assertEquals(SummaryStyle(qualityCheck = false), repository.summaryStyle.first())
         repository.resetToDefaults()
         assertTrue(repository.summaryStyle.first().qualityCheck)
+    }
+
+    @Test
+    fun アプリのロックは既定でオフ_保存でき_設定を初期化しても残す() = runTest {
+        val repository = createRepository()
+        assertEquals(AppLockSettings(), repository.appLock.first())
+
+        repository.updateAppLock { it.copy(enabled = true, delay = AppLockDelay.MINUTES_5, hideContent = true) }
+        assertEquals(AppLockSettings(true, AppLockDelay.MINUTES_5, hideContent = true), repository.appLock.first())
+
+        // 初期化をきっかけに守りを外さない
+        repository.resetToDefaults()
+        assertEquals(AppLockSettings(true, AppLockDelay.MINUTES_5, hideContent = true), repository.appLock.first())
+
+        repository.updateAppLock { it.copy(enabled = false, hideContent = false) }
+        repository.resetToDefaults()
+        assertEquals(AppLockSettings(), repository.appLock.first())
+    }
+
+    @Test
+    fun 端末の設定はバックアップに書き出して戻せ_ロックや端末だけの設定には触れない() = runTest {
+        val source = createRepository()
+        source.setThemeMode(ThemeMode.DARK)
+        source.setBookmarkSortOrder(BookmarkSortOrder.OLDEST)
+        source.updateProcessingSettings { it.copy(chargingOnly = true, nightlyHour = 3) }
+        source.setApiModel(AiTask.SUMMARY, ApiProvider.GEMINI, "gemini-test")
+        source.setLocalModel(AiTask.SUMMARY, "my-model")
+        source.setLocalLlmUseGpu(true)
+        source.updateAppLock { it.copy(enabled = true) }
+        source.setOfflineMode(true)
+
+        val exported = source.exportBackupSettings()
+
+        assertEquals("DARK", exported["theme_mode"])
+        assertEquals(3, exported["processing_nightly_hour"])
+        assertEquals("gemini-test", exported["api_model_summary_gemini"])
+        listOf("local_model_summary", "local_llm_use_gpu", "app_lock_enabled", "offline_mode").forEach { assertFalse(it, it in exported) }
+
+        // 戻す先: ロックとオフラインモードは今のまま、戻す設定のうちバックアップに無いものは既定に戻る
+        val target = createRepository()
+        target.setDynamicColor(true)
+        target.updateAppLock { it.copy(hideContent = true) }
+        // 書き換えられたファイル: ロックを外そうとする値・型の違う値・知らない名前は書かない
+        val restored = target.restoreBackupSettings(exported + mapOf("app_lock_enabled" to false, "theme_mode_x" to "?", "rediscover_hour" to "夜"))
+
+        assertEquals(exported.size, restored)
+        assertEquals(ThemeMode.DARK, target.themeMode.first())
+        assertEquals(BookmarkSortOrder.OLDEST, target.bookmarkSortOrder.first())
+        assertEquals(3, target.processingSettings.first().nightlyHour)
+        assertTrue(target.processingSettings.first().chargingOnly)
+        assertEquals("gemini-test", target.aiTaskSettings.first().getValue(AiTask.SUMMARY).apiModels[ApiProvider.GEMINI])
+        assertFalse(target.dynamicColor.first())
+        assertEquals(null, target.aiTaskSettings.first().getValue(AiTask.SUMMARY).localModelId)
+        assertTrue(target.appLock.first().hideContent)
+        assertFalse(target.appLock.first().enabled)
+        assertFalse(target.offlineMode.first())
+        assertEquals(RediscoverSettings().hour, target.rediscoverSettings.first().hour)
+    }
+
+    @Test
+    fun 自動バックアップの設定は既定でオフ_保存できる() = runTest {
+        val repository = createRepository()
+        assertEquals(AutoBackupSettings(), repository.autoBackup.first())
+
+        repository.updateAutoBackup {
+            it.copy(enabled = true, folderUri = "content://tree/x", folderLabel = "Backup", keep = 10, includeFiles = true, lastSuccessAt = 5, lastError = "x")
+        }
+        assertEquals(AutoBackupSettings(true, "content://tree/x", "Backup", 10, true, 5, "x"), repository.autoBackup.first())
+
+        repository.updateAutoBackup { it.copy(lastError = null, keep = 0) }
+        assertEquals(null, repository.autoBackup.first().lastError)
+        // 残す数は 1 以上
+        assertEquals(1, repository.autoBackup.first().keep)
+    }
+
+    @Test
+    fun バックアップの設定から端末の外にデータを送る設定はオンにしない() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        repository.setSendFilesToCloud(false)
+        repository.setPlacesMapBackground(false)
+        repository.setLinkCheckEnabled(false)
+
+        // 書き換えた・人から受け取ったファイルが、データを送る設定をオンにしようとしている
+        val restored = repository.restoreBackupSettings(
+            mapOf(
+                "send_files_to_cloud" to true,
+                "places_map_background" to true,
+                "link_check_enabled" to true,
+                "llm_backend_summary" to "API",
+                "llm_backend_chat" to "LOCAL",
+                "theme_mode" to "DARK"
+            )
+        )
+
+        assertEquals(2, restored)
+        assertFalse(repository.sendFilesToCloud.first())
+        assertFalse(repository.placesMapBackground.first())
+        assertFalse(repository.linkCheckEnabled.first())
+        val prefs = dataStore.data.first()
+        assertEquals(null, prefs[stringPreferencesKey("llm_backend_summary")])
+        assertEquals("LOCAL", prefs[stringPreferencesKey("llm_backend_chat")])
+        assertEquals(ThemeMode.DARK, repository.themeMode.first())
+
+        // 書き出しにも入れない
+        repository.setPlacesMapBackground(true)
+        val exported = repository.exportBackupSettings()
+        listOf("send_files_to_cloud", "places_map_background", "link_check_enabled").forEach { assertFalse(it, it in exported) }
     }
 
 }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import timber.log.Timber
+import java.io.ByteArrayInputStream
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -39,7 +40,12 @@ internal enum class SnapshotStep { LOADING, SAVING_PAGE, MAKING_PDF }
  * 利用者に見える画面で動かす(見えていない WebView は描かれず、PDF が空になる)。ページのスクリプトは読み込み中だけ動かし、
  * 保存したコピーを開くときは動かさない([SnapshotViewerActivity])。
  */
-internal class PageSnapshotter(private val webView: WebView, private val density: Float) {
+internal class PageSnapshotter(
+    private val webView: WebView,
+    private val density: Float,
+    /** オフラインモードがオンか。WebView は OkHttp を通らないため、読み込む前と、ページの中の読み込みのたびに確かめる */
+    private val isOffline: () -> Boolean
+) {
 
     init {
         configure()
@@ -100,6 +106,7 @@ internal class PageSnapshotter(private val webView: WebView, private val density
     }
 
     private suspend fun load(url: String) {
+        if (isOffline()) throw SnapshotCaptureException(OFFLINE_SNAPSHOT_MESSAGE)
         try {
             withTimeout(LOAD_TIMEOUT_MILLIS) {
                 suspendCancellableCoroutine<Unit> { continuation ->
@@ -119,6 +126,10 @@ internal class PageSnapshotter(private val webView: WebView, private val density
                                 continuation.resumeWithException(SnapshotCaptureException("ページを読み込めませんでした(${errorResponse.statusCode})"))
                             }
                         }
+
+                        // 読み込みの途中でオフラインモードにされたら、ページの中の読み込み(画像・スクリプトなど)もしない
+                        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                            if (isOffline()) offlineBlocked() else null
 
                         // http / https 以外(アプリを開く intent: など)には移らない
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
@@ -203,3 +214,10 @@ internal class PageSnapshotter(private val webView: WebView, private val density
         const val PROBE_SCALE = 0.25f
     }
 }
+
+/** オフラインモードの間に作ろうとしたときの知らせ */
+internal const val OFFLINE_SNAPSHOT_MESSAGE =
+    "オフラインモードの間はオフラインコピーを作れません。設定の「オフラインモード」をオフにしてください"
+
+private fun offlineBlocked() =
+    WebResourceResponse("text/plain", "utf-8", 403, "Offline mode", emptyMap(), ByteArrayInputStream(ByteArray(0)))

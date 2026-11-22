@@ -23,6 +23,19 @@ runs:
       with:
         cache-read-only: ${{ github.ref != 'refs/heads/develop' }}
 
+    # CI だけ Gradle のビルドキャッシュと並列実行を有効にする(手元のビルドの設定は変えない)。
+    # ビルドキャッシュは Gradle User Home(~/.gradle/caches/build-cache-1)に置かれ、上の setup-gradle が
+    # develop への push で保存し、PR で復元する。PR で変わらない部品(components)のコンパイルや Lint の解析は
+    # キャッシュから取り出され、作り直さない。並列実行は部品の各モジュールを同時にビルドする
+    - name: Gradle のビルドキャッシュと並列実行を有効にする
+      shell: bash
+      run: |
+        mkdir -p "${GRADLE_USER_HOME:-$HOME/.gradle}"
+        cat >> "${GRADLE_USER_HOME:-$HOME/.gradle}/gradle.properties" <<'EOF'
+        org.gradle.caching=true
+        org.gradle.parallel=true
+        EOF
+
     - name: gradlew に実行権限を付ける
       shell: bash
       run: chmod +x gradlew

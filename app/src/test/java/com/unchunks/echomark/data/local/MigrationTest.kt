@@ -887,4 +887,145 @@ class MigrationTest {
         }
         connection.close()
     }
+
+    @Test
+    fun migrate28To29_addsWebSearchColumnsTurnedOff() {
+        helper.createDatabase(28).apply {
+            execSQL(
+                "INSERT INTO conversations (id, title, isTitleManuallySet, createdAt, updatedAt, isPinned) VALUES (1, '会話', 0, 100, 200, 1)"
+            )
+            execSQL(
+                "INSERT INTO chat_messages (id, conversationId, role, content, referencedBookmarkIds, createdAt) " +
+                    "VALUES (1, 1, 'ASSISTANT', '回答 [1]', '5', 150)"
+            )
+            close()
+        }
+
+        // スキーマ v29 と一致するか(列・既定値)も検証される
+        val connection = helper.runMigrationsAndValidate(29, listOf(MIGRATION_28_29))
+
+        // 既存の会話は Web 検索オフ(質問の語句を勝手に外に出さない)。ほかの値は変わらない
+        connection.prepare("SELECT title, isPinned, webSearchEnabled FROM conversations").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("会話", stmt.getText(0))
+            assertEquals(1L, stmt.getLong(1))
+            assertEquals(0L, stmt.getLong(2))
+        }
+        // 既存の回答は Web のページを使っていない(NULL)
+        connection.prepare("SELECT content, referencedBookmarkIds, webSources FROM chat_messages").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("回答 [1]", stmt.getText(0))
+            assertEquals("5", stmt.getText(1))
+            assertTrue(stmt.isNull(2))
+        }
+        connection.close()
+    }
+
+    @Test
+    fun migrate29To30_addsBookmarkIndexesAndKeepsRows() {
+        helper.createDatabase(29).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, contentUri, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (1, 'URL', '記事', 'https://example.com/a', 100, 200, 'PENDING', 0, 0, 0, 0)"
+            )
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (2, 'TEXT', 'メモ', 300, 50, 'DONE', 1, 0, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v30 と一致するか(インデックスも)検証される
+        val connection = helper.runMigrationsAndValidate(30, listOf(MIGRATION_29_30))
+
+        // 行と値はそのまま
+        connection.prepare("SELECT id, title, aiStatus, lastAccessedAt FROM bookmarks ORDER BY id").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("記事", stmt.getText(1))
+            assertEquals("PENDING", stmt.getText(2))
+            assertTrue(stmt.step())
+            assertEquals("メモ", stmt.getText(1))
+            assertEquals(50L, stmt.getLong(3))
+            assertFalse(stmt.step())
+        }
+        // 足したインデックスがある
+        val indexes = connection.prepare("PRAGMA index_list(`bookmarks`)").use { stmt ->
+            // 列は seq, name, unique, origin, partial
+            buildSet { while (stmt.step()) add(stmt.getText(1)) }
+        }
+        assertTrue(
+            indexes.containsAll(
+                setOf("index_bookmarks_contentUri", "index_bookmarks_aiStatus", "index_bookmarks_lastAccessedAt", "index_bookmarks_createdAt")
+            )
+        )
+        connection.close()
+    }
+
+    @Test
+    fun migrate30To31_addsEmptyFactChecksWithOneRowPerTarget() {
+        helper.createDatabase(30).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, title, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (1, 'TEXT', '記事', 100, 200, 'DONE', 0, 0, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v31 と一致するか(テーブル・一意の索引)も検証される
+        val connection = helper.runMigrationsAndValidate(31, listOf(MIGRATION_30_31))
+
+        connection.prepare("SELECT COUNT(*) FROM fact_checks").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        connection.prepare("SELECT title FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("記事", stmt.getText(0))
+        }
+        // 対象ごとに1行(同じ対象をもう一度入れると失敗する。アプリは置き換えで入れる)
+        connection.execSQL("INSERT INTO fact_checks (targetType, targetId, textHash, claims, checkedAt) VALUES ('BOOKMARK_SUMMARY', 1, 'h', '[]', 5)")
+        val twice = runCatching {
+            connection.execSQL("INSERT INTO fact_checks (targetType, targetId, textHash, claims, checkedAt) VALUES ('BOOKMARK_SUMMARY', 1, 'h2', '[]', 6)")
+        }
+        assertTrue(twice.isFailure)
+        connection.close()
+    }
+
+    @Test
+    fun migrate31To32_addsEmptyOfflineVideosWithOneRowPerBookmark() {
+        helper.createDatabase(31).apply {
+            execSQL(
+                "INSERT INTO bookmarks (id, type, contentUri, title, content, summary, createdAt, lastAccessedAt, aiStatus, isFavorite, isArchived, summaryEdited, categoryEdited) " +
+                    "VALUES (1, 'URL', 'https://www.youtube.com/watch?v=abcdefghijk', '動画', '字幕:\nこんにちは', '要約', 100, 200, 'DONE', 0, 0, 0, 0)"
+            )
+            close()
+        }
+
+        // スキーマ v32 と一致するか(テーブル・主キー)も検証される
+        val connection = helper.runMigrationsAndValidate(32, listOf(MIGRATION_31_32))
+
+        connection.prepare("SELECT COUNT(*) FROM offline_videos").use { stmt ->
+            stmt.step()
+            assertEquals(0L, stmt.getLong(0))
+        }
+        // 既存のブックマークの本文(字幕)・要約はそのまま
+        connection.prepare("SELECT title, content, summary FROM bookmarks").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("動画", stmt.getText(0))
+            assertEquals("字幕:\nこんにちは", stmt.getText(1))
+            assertEquals("要約", stmt.getText(2))
+        }
+        // 動画の列は空のまま入れられる。ブックマークごとに1行(同じブックマークをもう一度入れると失敗する)
+        connection.execSQL("INSERT INTO offline_videos (bookmarkId, thumbnailPath, savedAt) VALUES (1, 'attachments/a.jpg', 5)")
+        connection.prepare("SELECT thumbnailPath, savedAt, videoPath, videoSize FROM offline_videos WHERE bookmarkId = 1").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("attachments/a.jpg", stmt.getText(0))
+            assertEquals(5L, stmt.getLong(1))
+            assertTrue(stmt.isNull(2))
+            assertTrue(stmt.isNull(3))
+        }
+        val twice = runCatching { connection.execSQL("INSERT INTO offline_videos (bookmarkId, savedAt) VALUES (1, 6)") }
+        assertTrue(twice.isFailure)
+        connection.close()
+    }
 }

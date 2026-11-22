@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.bookmark
 import com.unchunks.echomark.domain.model.CategoryKind
 import com.unchunks.echomark.domain.model.CategoryEntry
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
+import androidx.lifecycle.SavedStateHandle
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.ui.common.SearchHighlights
@@ -19,11 +20,14 @@ import com.unchunks.echomark.testing.FakeAppSettingsRepository
 import com.unchunks.echomark.testing.FakeAttachmentRepository
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeCategoryRepository
+import com.unchunks.echomark.testing.FakeCollectionRepository
+import com.unchunks.echomark.testing.FakeExportRepository
 import com.unchunks.echomark.testing.FakeSmartFolderRepository
 import com.unchunks.echomark.testing.FakeTagRepository
 import com.unchunks.echomark.testing.testBookmark
 import com.unchunks.echomark.ui.common.RecentlyDeletedBookmarks
 import com.unchunks.echomark.ui.common.SelectedFile
+import com.unchunks.echomark.ui.selection.BulkBookmarkActions
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -60,7 +64,15 @@ class BookmarkViewModelTest {
     private val settings = FakeAppSettingsRepository()
     private val highlights = SearchHighlights()
     private val smartFolders = FakeSmartFolderRepository()
-    private fun createViewModel() = BookmarkViewModel(repository, tagRepository, categories, recentlyDeleted, attachments, settings, TestDispatcherProvider(Dispatchers.Unconfined), highlights, smartFolders)
+    private val collections = FakeCollectionRepository()
+    private val exports = FakeExportRepository()
+    private val bulk = BulkBookmarkActions(repository, collections, exports)
+
+    /** [handle] を渡すと、回転やプロセスの再作成のあとの ViewModel を作れる(同じ SavedStateHandle から選択を戻す) */
+    private fun createViewModel(handle: SavedStateHandle = SavedStateHandle()) = BookmarkViewModel(
+        repository, tagRepository, categories, recentlyDeleted, attachments, settings, TestDispatcherProvider(Dispatchers.Unconfined), highlights, smartFolders,
+        collections, bulk, handle
+    )
 
     /**
      * uiState を購読し、届いたメッセージを集める。
@@ -842,7 +854,7 @@ class BookmarkViewModelTest {
     }
 
     @Test
-    fun スワイプ削除は削除して取り消し用のメッセージを出し元に戻せる() = runTest {
+    fun 削除すると取り消し用のメッセージを出し元に戻せる() = runTest {
         val target = testBookmark(1)
         repository.bookmarks.value = listOf(target)
         val viewModel = createViewModel()
@@ -859,7 +871,7 @@ class BookmarkViewModelTest {
     }
 
     @Test
-    fun スワイプでアーカイブし取り消すと元に戻る() = runTest {
+    fun アーカイブして取り消すと元に戻る() = runTest {
         val target = testBookmark(1)
         repository.bookmarks.value = listOf(target, testBookmark(2))
         val viewModel = createViewModel()

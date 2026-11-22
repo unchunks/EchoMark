@@ -142,6 +142,16 @@ fun ProcessingQueueContent(
                     }
                     if (queue.waiting.isNotEmpty()) {
                         item { SectionHeader("処理待ち(${queue.waiting.size} 件)") }
+                        if (uiState.offlineMode) {
+                            item {
+                                Text(
+                                    OFFLINE_WAITING_NOTICE,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
                         if (uiState.settings.nightlyBatch) {
                             item {
                                 Text(
@@ -224,3 +234,8 @@ private fun QueueRow(
         modifier = Modifier.clickable(onClick = onClick)
     )
 }
+
+/** オフラインモードの間の、処理待ちの説明 */
+internal const val OFFLINE_WAITING_NOTICE =
+    "オフラインモードのため、リンクの本文の取得など通信の要る処理は待っています。" +
+        "設定の「オフラインモード」をオフにすると始まります。"

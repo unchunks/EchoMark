@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.StopCircle
+import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,6 +54,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -73,6 +75,7 @@ import com.unchunks.components.composeui.MarkdownText
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ConversationBranch
+import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.ui.components.BookmarkThumbnail
 
 /**
@@ -196,14 +199,19 @@ internal fun AssistantMessageItem(
     onBranch: (() -> Unit)? = null,
     onSaveNote: (() -> Unit)? = null,
     isSpeaking: Boolean = false,
-    onToggleSpeaking: (() -> Unit)? = null
+    onToggleSpeaking: (() -> Unit)? = null,
+    onFactCheck: (() -> Unit)? = null,
+    savedWebUrls: Set<String> = emptySet(),
+    onOpenWebSource: (String) -> Unit = {},
+    onSaveWebSource: (WebSource) -> Unit = {}
 ) {
     val ids = message.referencedBookmarkIds
+    val webNumbers = remember(message.webSources) { message.webSources.mapTo(HashSet()) { it.number } }
     var highlighted by rememberSaveable(message.id) { mutableStateOf<Int?>(null) }
     AssistantRow(modifier = modifier) {
         MarkdownText(
             markdown = message.content,
-            isCitationAvailable = { n -> ids.getOrNull(n - 1)?.let { it in referencedBookmarks } == true },
+            isCitationAvailable = { n -> n in webNumbers || ids.getOrNull(n - 1)?.let { it in referencedBookmarks } == true },
             onCitationClick = { n -> highlighted = n.takeIf { it != highlighted } },
             modifier = Modifier
                 .fillMaxWidth()
@@ -216,7 +224,10 @@ internal fun AssistantMessageItem(
                 ids = ids,
                 bookmarks = referencedBookmarks,
                 highlighted = highlighted,
-                onOpenBookmark = onOpenBookmark
+                onOpenBookmark = onOpenBookmark,
+                savedWebUrls = savedWebUrls,
+                onOpenWebSource = onOpenWebSource,
+                onSaveWebSource = onSaveWebSource
             )
         }
         // アイコンの左端を本文にそろえる(IconButton の内側の余白ぶん左へずらす)
@@ -259,6 +270,16 @@ internal fun AssistantMessageItem(
                     )
                 }
             }
+            if (onFactCheck != null) {
+                IconButton(onClick = onFactCheck) {
+                    Icon(
+                        Icons.Outlined.TravelExplore,
+                        contentDescription = "Web で確かめる",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
             if (onToggleSpeaking != null) {
                 IconButton(onClick = onToggleSpeaking) {
                     Icon(
@@ -281,7 +302,9 @@ internal fun AssistantMessageItem(
 internal fun StreamingMessageItem(
     text: String,
     pendingReferenceCount: Int?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSearchingWeb: Boolean = false,
+    pendingWebSourceCount: Int? = null
 ) {
     AssistantRow(modifier = modifier) {
         if (text.isEmpty()) {
@@ -292,7 +315,7 @@ internal fun StreamingMessageItem(
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    text = progressLabel(pendingReferenceCount),
+                    text = progressLabel(pendingReferenceCount, isSearchingWeb, pendingWebSourceCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -316,10 +339,21 @@ internal fun StreamingMessageItem(
     }
 }
 
-internal fun progressLabel(pendingReferenceCount: Int?): String = when {
-    pendingReferenceCount == null -> "関連するブックマークを探しています…"
-    pendingReferenceCount == 0 -> "回答を作成しています…"
-    else -> "${pendingReferenceCount}件のブックマークをもとに回答を作成しています…"
+/**
+ * 生成中の進み具合の文。
+ * @param isSearchingWeb Web を検索している(ブックマークを探し終えた後)
+ * @param webCount 文脈に入れた Web のページの数(Web を検索しないときは null)
+ */
+internal fun progressLabel(pendingReferenceCount: Int?, isSearchingWeb: Boolean = false, webCount: Int? = null): String {
+    val web = webCount?.takeIf { it > 0 }
+    return when {
+        pendingReferenceCount == null && isSearchingWeb -> "Web を検索しています…"
+        pendingReferenceCount == null -> "関連するブックマークを探しています…"
+        web != null && pendingReferenceCount > 0 -> "${pendingReferenceCount}件のブックマークと${web}件の Web ページをもとに回答を作成しています…"
+        web != null -> "${web}件の Web ページをもとに回答を作成しています…"
+        pendingReferenceCount == 0 -> "回答を作成しています…"
+        else -> "${pendingReferenceCount}件のブックマークをもとに回答を作成しています…"
+    }
 }
 
 /** 送信の失敗。原因と、再試行・AI 設定への導線を出す。 */

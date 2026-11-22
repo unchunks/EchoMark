@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.backup
 
 import com.unchunks.components.llm.ChatRole
+import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.data.attachment.isValidAttachmentPath
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.entity.BookmarkNoteEntity
@@ -12,34 +13,37 @@ import com.unchunks.echomark.data.local.entity.RemovedTagEntity
 import com.unchunks.echomark.data.local.entity.ReviewCardEntity
 import com.unchunks.echomark.data.local.entity.SmartFolderEntity
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
+import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
+import com.unchunks.echomark.data.local.entity.TagAliasEntity
+import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.data.mapper.SmartFolderCodec
+import com.unchunks.echomark.data.mapper.WebSourcesJson
 import com.unchunks.echomark.data.mapper.smartFolderEntity
+import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
-import com.unchunks.echomark.domain.bookmark.model.CollectionNames
-import com.unchunks.echomark.domain.bookmark.model.NoteText
 import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
+import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.domain.bookmark.model.CollectionNames
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
+import com.unchunks.echomark.domain.bookmark.model.NoteText
 import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.SmartFolderNames
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
-import com.unchunks.echomark.data.local.entity.TagAliasEntity
-import com.unchunks.echomark.data.local.entity.TagEntity
-import com.unchunks.echomark.domain.bookmark.model.AiStatus
-import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.place.GeoPoint
-import com.unchunks.echomark.domain.review.SpacedRepetition
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
+import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.echomark.domain.review.SpacedRepetition
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.Writer
 
 /**
- * バックアップの中身。DB のテーブルをそのまま写したもの。
- * API キー・端末内モデル・埋め込みベクトル(読み込み後に再生成する)・添付ファイルの本体
- * (画像・PDF・音声など。ファイル名などの情報だけを含める)は含めない。
+ * バックアップの中身。DB のテーブルをそのまま写したもの。何を含め、何を含めないか(と理由)は [BackupCoverage] に一覧がある。
+ * API キー・端末内モデル・埋め込みベクトル(読み込み後に再生成する)は含めない。添付ファイル・オフラインコピーの本体は、
+ * 「ファイルも含めて書き出す」(zip。[BackupArchive])のときだけ含め、JSON だけのときはファイル名などの情報だけを含める。
  */
 data class BackupData(
     val exportedAt: Long,
@@ -65,7 +69,18 @@ data class BackupData(
     /** リンク切れの確認で「確認しない」を選んだブックマークの ID(書き出し元の ID)。確認の状態そのものは端末の中のもので含めない */
     val linkCheckMutedBookmarkIds: List<Long> = emptyList(),
     /** 復習に入れたブックマークの状態(#90)。[ReviewCardEntity.bookmarkId] は [bookmarks] の ID */
-    val reviewCards: List<ReviewCardEntity> = emptyList()
+    val reviewCards: List<ReviewCardEntity> = emptyList(),
+    /** 要約の履歴(AI が作った版・手で直した版)。[SummaryHistoryEntity.bookmarkId] は [bookmarks] の ID */
+    val summaryHistory: List<SummaryHistoryEntity> = emptyList(),
+    /** 自分で作ったチャットのテンプレート(DataStore の chat_templates) */
+    val chatTemplates: List<ChatTemplate> = emptyList(),
+    /** ポッドキャストの読みの辞書(DataStore の reading_dictionary) */
+    val readingDictionary: List<ReadingEntry> = emptyList(),
+    /**
+     * 端末の設定(DataStore のキーの名前 → 値。どれを入れるかは BackupCoverage)。読み込んだあと、利用者が選んだときだけ戻す。
+     * 値は Boolean・Int・String
+     */
+    val settings: Map<String, Any> = emptyMap()
 )
 
 /** バックアップに入れるコレクション(#91)。ID は持たず、名前で同じコレクションかを見分ける。 */
@@ -128,7 +143,14 @@ fun SmartFolderBackup.toEntity(tagIds: Collection<Long>): SmartFolderEntity = sm
 )
 
 /** 読み込んだバックアップと、壊れていて読み飛ばした要素の数。 */
-data class DecodedBackup(val data: BackupData, val invalidRecords: Int)
+data class DecodedBackup(
+    val data: BackupData,
+    /** 読み取れなかった要素の数(JSON の配列の名前 → 数)。0 の配列は入れない */
+    val invalidByArray: Map<String, Int> = emptyMap()
+) {
+    /** 読み取れなかった要素の合計 */
+    val invalidRecords: Int get() = invalidByArray.values.sum()
+}
 
 /** バックアップとして扱えないファイル。[message] はそのまま画面に出せる文言。 */
 class BackupFormatException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -142,7 +164,7 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "bookmarks": [ {全列。summaryEdited・categoryEdited は手で直した・選んだときだけ} ], "tags": [ {id, name, isUserCreated, parentId は親があるときだけ} ],
  *   "bookmarkTags": [ {bookmarkId, tagId, source("USER" / "AI")} ],
  *   "conversations": [ {全列。aboutBookmarkId・summaryCoveredUntil・branchedFromId・branchedAt は無ければ省略} ],
- *   "messages": [ {全列。referencedBookmarkIds は数値の配列} ],
+ *   "messages": [ {全列。referencedBookmarkIds は数値の配列。webSources はオブジェクトの配列で、無ければ省略} ],
  *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ],
  *   "categories": [ {name, description, createdAt} ],
  *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ],
@@ -150,7 +172,11 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ],
  *   "collections": [ {name, description は無ければ省略, createdAt, items: [ {bookmarkId, addedAt} ]} ],
  *   "linkCheckMuted": [ リンク切れの確認で「確認しない」を選んだブックマークの ID ],
- *   "reviewCards": [ {bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, lastReviewedAt は無ければ省略, createdAt} ] }
+ *   "reviewCards": [ {bookmarkId, dueAt, intervalDays, easePermille, repetitions, lapses, lastReviewedAt は無ければ省略, createdAt} ],
+ *   "summaryHistory": [ {bookmarkId, summary, source, generator と style は無ければ省略, createdAt} ],
+ *   "chatTemplates": [ {id, title, text} ],
+ *   "readingDictionary": [ {surface, reading} ],
+ *   "settings": { DataStore のキーの名前: 値(真偽・整数・文字列) } }
  * ```
  * ID は書き出し元の DB のもの。読み込み側で振り直し、紐付けはその対応表で付け替える。
  * 処理の段・日時・失敗の理由(DB v12 の processingStage など)は端末の中の一時的な状態のため書き出さず、読み込んだ
@@ -194,10 +220,29 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  * - 19: ブックマークの readingListAt(「あとで読む」に入れた日時。DB v28 の bookmarks の列)と、復習のカード(reviewCards。review_cards)を追加。
  *   18 以前は「あとで読む」も復習も無いものとして読む。カードの bookmarkId は書き出し元の ID で、読み込むときに付け替える。
  *   間隔・伸びやすさ・回数が範囲外・負のカードは、範囲内に丸めて読む。すでに同じブックマークにカードがあれば、読み込んだものは足さない
+ * - 20: すべてのテーブルを見直して足した([BackupCoverage])。要約の履歴(summaryHistory。DB v15 の summary_history)、
+ *   ブックマークのオフラインコピー(snapshotPath・snapshotPdfPath・snapshotAt)、自分で作ったチャットのテンプレート(chatTemplates。DataStore)。
+ *   19 以前は、履歴・オフラインコピー・テンプレートが無いものとして読む。オフラインコピーのファイルは添付ファイルと同じく、
+ *   読み込む端末に無ければ(zip に入っていなければ)外す。履歴は読み込んで追加したブックマークにだけ付ける
+ * - 21: 端末の設定(settings。テーマ・並び順・読書モード・AI の選び方・処理の時間など。BackupCoverage で決めたもの)を追加。
+ *   20 以前は設定が無いものとして読む。設定は読み込んだあとに利用者が選んだときだけ戻す。知らない名前(新しい版の設定)は読み飛ばし、
+ *   型の違う値は壊れた要素として数える。アプリのロック・オフラインモード・API キー・この端末だけの設定は入れない
+ * - 22: チャットの回答に webSources(回答の根拠にした Web のページ。DB v29 の chat_messages.webSources)を追加。
+ *   21 以前は Web のページが無いものとして読む。http/https 以外の URL・番号の無いものは除く。
+ *   会話の webSearchEnabled(Web 検索のオン・オフ)は質問の語句を端末の外に送る設定なので入れず、読み込んだ会話ではオフにする
+ * - 23: ポッドキャストの読みの辞書(readingDictionary。DataStore の reading_dictionary)を追加。22 以前は辞書が無いものとして読む。
+ *   読み込むときは今の辞書に足し、同じ表記(全角・半角・大文字・小文字の違いを含む)は今の読みを残す。ポッドキャストの音声とエピソードは入れない
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 19
+    const val CURRENT_VERSION = 23
+
+    /** 要約の履歴の1版の長さの上限(文字)。壊れた・書き換えられたファイルで巨大な文字列を入れない */
+    private const val MAX_SUMMARY_LENGTH = 100_000
+
+    /** チャットのテンプレートの名前・本文の長さの上限(文字) */
+    private const val MAX_TEMPLATE_TITLE_LENGTH = 200
+    private const val MAX_TEMPLATE_TEXT_LENGTH = 20_000
 
     /** 場所の名前の長さの上限(文字) */
     private const val MAX_PLACE_NAME_LENGTH = 100
@@ -241,6 +286,15 @@ object BackupJson {
         writer.write(",")
         writeArray(writer, "reviewCards", data.reviewCards) { it.toJson() }
         writer.write(",")
+        writeArray(writer, "summaryHistory", data.summaryHistory) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "chatTemplates", data.chatTemplates) { it.toJson() }
+        writer.write(",")
+        writeArray(writer, "readingDictionary", data.readingDictionary) { it.toJson() }
+        writer.write(",")
+        writer.write("\"settings\":")
+        writer.write(JSONObject(data.settings).toString())
+        writer.write(",")
         writer.write("\"linkCheckMuted\":")
         writer.write(JSONArray(data.linkCheckMutedBookmarkIds).toString())
         writer.write("}")
@@ -269,7 +323,7 @@ object BackupJson {
             throw BackupFormatException("新しいバージョンのアプリで作られたバックアップです。アプリを更新してから読み込んでください")
         }
 
-        var invalid = 0
+        val invalid = linkedMapOf<String, Int>()
         fun <T> readArray(name: String, parse: (JSONObject) -> T?): List<T> {
             val array = root.optJSONArray(name) ?: return emptyList()
             return (0 until array.length()).mapNotNull { index ->
@@ -278,7 +332,7 @@ object BackupJson {
                 } catch (e: JSONException) {
                     null
                 }
-                if (parsed == null) invalid++
+                if (parsed == null) invalid[name] = (invalid[name] ?: 0) + 1
                 parsed
             }
         }
@@ -298,11 +352,32 @@ object BackupJson {
             notes = readArray("notes") { it.toNote() },
             collections = readArray("collections") { it.toCollection() },
             reviewCards = readArray("reviewCards") { it.toReviewCard() },
+            summaryHistory = readArray("summaryHistory") { it.toSummaryHistory() },
+            chatTemplates = readArray("chatTemplates") { it.toChatTemplate() },
+            readingDictionary = readArray("readingDictionary") { it.toReadingEntry() },
+            settings = root.optJSONObject("settings")?.let { readSettings(it) { invalid["settings"] = (invalid["settings"] ?: 0) + 1 } }.orEmpty(),
             linkCheckMutedBookmarkIds = root.optJSONArray("linkCheckMuted")?.let { array ->
                 (0 until array.length()).mapNotNull { index -> array.optLong(index, -1L).takeIf { it >= 0 } }
             }.orEmpty()
         )
         return DecodedBackup(data, invalid)
+    }
+
+    /** 設定を読む。知らない名前は読み飛ばし(新しい版の設定)、型の違う値は [onInvalid] で数えて読み飛ばす */
+    private fun readSettings(json: JSONObject, onInvalid: () -> Unit): Map<String, Any> {
+        val values = LinkedHashMap<String, Any>()
+        for (name in json.keys()) {
+            val type = BackupCoverage.settingTypeOf(name) ?: continue
+            val value = json.opt(name)
+            val parsed: Any? = when (type) {
+                BackupCoverage.SettingType.BOOLEAN -> value as? Boolean
+                BackupCoverage.SettingType.INT -> (value as? Number)?.takeIf { it is Int || it is Long }?.toLong()
+                    ?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }?.toInt()
+                BackupCoverage.SettingType.STRING -> value as? String
+            }
+            if (parsed == null) onInvalid() else values[name] = parsed
+        }
+        return values
     }
 
     private fun <T> writeArray(writer: Writer, name: String, items: List<T>, toJson: (T) -> JSONObject) {
@@ -343,6 +418,47 @@ object BackupJson {
         .apply { longitude?.let { put("longitude", it) } }
         .putNullable("placeName", placeName)
         .apply { readingListAt?.let { put("readingListAt", it) } }
+        .putNullable("snapshotPath", snapshotPath)
+        .putNullable("snapshotPdfPath", snapshotPdfPath)
+        .apply { snapshotAt?.let { put("snapshotAt", it) } }
+
+    private fun SummaryHistoryEntity.toJson() = JSONObject()
+        .put("bookmarkId", bookmarkId)
+        .put("summary", summary)
+        .put("source", source)
+        .putNullable("generator", generator)
+        .putNullable("style", style)
+        .put("createdAt", createdAt)
+
+    private fun ChatTemplate.toJson() = JSONObject().put("id", id).put("title", title).put("text", text)
+
+    private fun ReadingEntry.toJson() = JSONObject().put("surface", surface).put("reading", reading)
+
+    /** 誤りのあるもの(空・長すぎる・読みが表記と同じ)は壊れた要素として数える */
+    private fun JSONObject.toReadingEntry(): ReadingEntry? {
+        val surface = stringOrNull("surface") ?: return null
+        val reading = stringOrNull("reading") ?: return null
+        return if (ReadingEntry.problemOf(surface, reading) == null) ReadingEntry(ReadingEntry.normalize(surface), ReadingEntry.normalize(reading)) else null
+    }
+
+    private fun JSONObject.toSummaryHistory(): SummaryHistoryEntity? {
+        val summary = stringOrNull("summary")?.takeIf { it.isNotBlank() }?.take(MAX_SUMMARY_LENGTH) ?: return null
+        return SummaryHistoryEntity(
+            bookmarkId = longOrNull("bookmarkId") ?: return null,
+            summary = summary,
+            // 読めない値は読み出しで AI として扱われる(SummaryHistoryEntity の KDoc)ので、文字列のまま持つ
+            source = stringOrNull("source")?.takeIf { it.isNotBlank() } ?: return null,
+            generator = stringOrNull("generator"),
+            style = stringOrNull("style"),
+            createdAt = longOrNull("createdAt") ?: return null
+        )
+    }
+
+    private fun JSONObject.toChatTemplate(): ChatTemplate? {
+        val title = stringOrNull("title")?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_TEMPLATE_TITLE_LENGTH) ?: return null
+        val text = stringOrNull("text")?.takeIf { it.isNotBlank() }?.take(MAX_TEMPLATE_TEXT_LENGTH) ?: return null
+        return ChatTemplate(id = stringOrNull("id")?.takeIf { it.isNotBlank() } ?: return null, title = title, text = text)
+    }
 
     private fun TagEntity.toJson() = JSONObject()
         .put("id", id)
@@ -388,6 +504,9 @@ object BackupJson {
         .put("content", content)
         .put("referencedBookmarkIds", JSONArray(parseReferencedIds(referencedBookmarkIds)))
         .put("createdAt", createdAt)
+        .apply {
+            WebSourcesJson.decode(webSources).takeIf { it.isNotEmpty() }?.let { put("webSources", WebSourcesJson.toJsonArray(it)) }
+        }
 
     // ---- JSON → エンティティ(必須項目が無い・未知の種類なら null) ----
 
@@ -440,6 +559,10 @@ object BackupJson {
             },
             // version 18 以前には無い(「あとで読む」に入れていないものとして読む)
             readingListAt = if (version >= 19) longOrNull("readingListAt") else null,
+            // version 19 以前には無い。添付ファイルの置き場所以外を指すパスは受け付けない(ファイルがあるかは読み込む側で確かめる)
+            snapshotPath = if (version >= 20) stringOrNull("snapshotPath")?.takeIf { isValidAttachmentPath(it) } else null,
+            snapshotPdfPath = if (version >= 20) stringOrNull("snapshotPdfPath")?.takeIf { isValidAttachmentPath(it) } else null,
+            snapshotAt = if (version >= 20) longOrNull("snapshotAt") else null,
             latitude = geoPoint?.latitude,
             longitude = geoPoint?.longitude,
             placeName = if (version >= 18) stringOrNull("placeName")?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_PLACE_NAME_LENGTH) else null,
@@ -657,7 +780,9 @@ object BackupJson {
             role = enumOrNull<ChatRole>(optString("role")) ?: return null,
             content = stringOrNull("content") ?: return null,
             referencedBookmarkIds = formatReferencedIds(ids),
-            createdAt = longOrNull("createdAt") ?: return null
+            createdAt = longOrNull("createdAt") ?: return null,
+            // version 21 以前には無い(Web のページは無いものとして読む)。形のおかしいものは除く
+            webSources = optJSONArray("webSources")?.let { WebSourcesJson.encode(WebSourcesJson.fromJsonArray(it)) }
         )
     }
 

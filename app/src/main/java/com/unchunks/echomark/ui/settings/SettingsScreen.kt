@@ -21,10 +21,14 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.EnhancedEncryption
+import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoveToInbox
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.NotificationsActive
@@ -34,7 +38,10 @@ import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,6 +85,10 @@ import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.SectionHeader
+import com.unchunks.echomark.ui.lock.rememberAppLockConfirmation
+import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionState
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,7 +103,7 @@ import java.util.Locale
 /** 設定画面で開くダイアログ。スクリーンショットテストでは最初から開いた状態を渡せる。 */
 enum class SettingsDialog {
     THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG,
-    NIGHTLY_HOUR, CONCURRENCY, API_RATE, SUMMARY_LANGUAGE, SUMMARY_FORMAT
+    NIGHTLY_HOUR, CONCURRENCY, API_RATE, SUMMARY_LANGUAGE, SUMMARY_FORMAT, APP_LOCK_DELAY, AUTO_BACKUP_KEEP
 }
 
 /** 設定画面の操作。既定は何もしない(プレビュー・スクリーンショット用)。 */
@@ -100,6 +111,13 @@ class SettingsActions(
     val onOpenAiSettings: () -> Unit = {},
     val onThemeModeChange: (ThemeMode) -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
+    /** オフラインモードのスイッチ */
+    val onOfflineModeChange: (Boolean) -> Unit = {},
+    /** アプリのロックのスイッチ。オンにするときの本人の確認は呼び出し側で行う */
+    val onAppLockChange: (Boolean) -> Unit = {},
+    val onAppLockDelayChange: (AppLockDelay) -> Unit = {},
+    /** 最近使ったアプリの一覧に内容を出さない(FLAG_SECURE) */
+    val onAppLockHideContentChange: (Boolean) -> Unit = {},
     /** 処理の設定(充電中だけ・夜間にまとめて・同時に処理する数など)を書き換える */
     val onProcessingSettingsChange: ((ProcessingSettings) -> ProcessingSettings) -> Unit = {},
     /** 要約の言語・書き方を書き換える */
@@ -108,11 +126,15 @@ class SettingsActions(
     val onOpenProcessingQueue: () -> Unit = {},
     /** カテゴリの管理の画面を開く */
     val onOpenCategories: () -> Unit = {},
+    /** オフラインの動画(保存した動画・ダウンロードの設定)の画面を開く */
+    val onOpenOfflineVideos: () -> Unit = {},
     /** 再発見通知のスイッチ。オンにするときの権限要求は呼び出し側で行う */
     val onRediscoverToggle: (Boolean) -> Unit = {},
     val onRediscoverScheduleChange: (DayOfWeek, Int, Int) -> Unit = { _, _, _ -> },
     val onOpenNotificationSettings: () -> Unit = {},
     val onExportBackup: () -> Unit = {},
+    /** 添付ファイル・オフラインコピーも入れて(zip で)書き出す */
+    val onExportBackupWithFiles: () -> Unit = {},
     val onImportBackup: () -> Unit = {},
     /** 他のサービス(Pocket・Raindrop.io・ブラウザなど)の書き出しファイルを取り込む(ファイルを選ぶ) */
     val onImportFromServices: () -> Unit = {},
@@ -120,6 +142,17 @@ class SettingsActions(
     val onOpenSubscriptions: () -> Unit = {},
     val onDeleteAllData: (resetSettings: Boolean) -> Unit = {},
     val onDataResultDismissed: () -> Unit = {},
+    /** 読み込んだバックアップの設定も戻す */
+    val onRestoreBackupSettings: () -> Unit = {},
+    /** 自動バックアップのスイッチ(保存先を選んでいなければ、選ぶ画面を開く) */
+    val onAutoBackupToggle: (Boolean) -> Unit = {},
+    /** 自動バックアップの保存先のフォルダを選ぶ */
+    val onPickAutoBackupFolder: () -> Unit = {},
+    val onAutoBackupKeepChange: (Int) -> Unit = {},
+    val onAutoBackupIncludeFilesChange: (Boolean) -> Unit = {},
+    val onRunAutoBackupNow: () -> Unit = {},
+    /** 暗号化の鍵が失われた知らせを閉じる */
+    val onDismissDatabaseKeyLost: () -> Unit = {},
     val onShareCrashLog: () -> Unit = {},
     val onClearCrashLog: () -> Unit = {},
     /** null なら「はじめにの案内」の行を出さない */
@@ -133,6 +166,7 @@ fun SettingsScreen(
     onOpenOnboarding: (() -> Unit)? = null,
     onOpenProcessingQueue: () -> Unit = {},
     onOpenCategories: () -> Unit = {},
+    onOpenOfflineVideos: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
     importViewModel: LinkImportViewModel = hiltViewModel()
 ) {
@@ -164,8 +198,28 @@ fun SettingsScreen(
         }
     }
 
+    // ロックをオンにする前に、この端末で本人を確かめられるかを試す(締め出されないように)
+    val confirmAppLock = rememberAppLockConfirmation(
+        onConfirmed = { viewModel.setAppLockEnabled(true) },
+        onUnavailable = viewModel::onAppLockUnavailable
+    )
+    // 自動バックアップの保存先。選んだフォルダの読み書きの許可を持ち続ける(前のフォルダの許可は手放す)
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (takeFolderPermission(context, uri)) {
+            val previous = uiState.autoBackup.folderUri
+            if (previous != null && previous != uri.toString()) releaseFolderPermission(context, previous)
+            viewModel.setAutoBackupFolder(uri.toString(), folderLabelOf(context, uri))
+        } else {
+            viewModel.onAutoBackupFolderUnavailable()
+        }
+    }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME_TYPE)) { uri ->
         if (uri != null) viewModel.exportBackup(uri.toString())
+    }
+    // 添付ファイル・オフラインコピーも入れた zip
+    val archiveExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_ARCHIVE_MIME_TYPE)) { uri ->
+        if (uri != null) viewModel.exportBackup(uri.toString(), includeFiles = true)
     }
     // .json の MIME タイプはファイルアプリによって異なるため、よく使われるものをまとめて許可し、中身で判定する
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -194,10 +248,15 @@ fun SettingsScreen(
             onOpenAiSettings = onOpenAiSettings,
             onThemeModeChange = viewModel::setThemeMode,
             onDynamicColorChange = viewModel::setDynamicColor,
+            onOfflineModeChange = viewModel::setOfflineMode,
+            onAppLockChange = { enabled -> if (enabled) confirmAppLock() else viewModel.setAppLockEnabled(false) },
+            onAppLockDelayChange = viewModel::setAppLockDelay,
+            onAppLockHideContentChange = viewModel::setAppLockHideContent,
             onProcessingSettingsChange = viewModel::updateProcessingSettings,
             onSummaryStyleChange = viewModel::updateSummaryStyle,
             onOpenProcessingQueue = onOpenProcessingQueue,
             onOpenCategories = onOpenCategories,
+            onOpenOfflineVideos = onOpenOfflineVideos,
             onRediscoverToggle = { enabled ->
                 when {
                     !enabled -> {
@@ -224,11 +283,27 @@ fun SettingsScreen(
                 }
             },
             onExportBackup = { exportLauncher.launch("echomark-backup-${LocalDate.now()}.json") },
-            onImportBackup = { importLauncher.launch(arrayOf(BACKUP_MIME_TYPE, "text/plain", "application/octet-stream")) },
+            onExportBackupWithFiles = { archiveExportLauncher.launch("echomark-backup-${LocalDate.now()}.zip") },
+            onImportBackup = { importLauncher.launch(arrayOf(BACKUP_MIME_TYPE, BACKUP_ARCHIVE_MIME_TYPE, "text/plain", "application/octet-stream")) },
             onImportFromServices = { linkImportLauncher.launch(arrayOf("*/*")) },
             onOpenSubscriptions = { showSubscriptions = true },
             onDeleteAllData = viewModel::deleteAllData,
             onDataResultDismissed = viewModel::onDataResultDismissed,
+            onRestoreBackupSettings = viewModel::restoreBackupSettings,
+            onAutoBackupToggle = { enabled ->
+                val backup = uiState.autoBackup
+                when {
+                    !enabled -> viewModel.setAutoBackupEnabled(false)
+                    // 保存先を選んでいない、または許可がなくなっていれば、選んでもらう
+                    backup.folderUri == null || !hasFolderPermission(context, backup.folderUri) -> folderLauncher.launch(null)
+                    else -> viewModel.setAutoBackupEnabled(true)
+                }
+            },
+            onPickAutoBackupFolder = { folderLauncher.launch(null) },
+            onAutoBackupKeepChange = viewModel::setAutoBackupKeep,
+            onAutoBackupIncludeFilesChange = viewModel::setAutoBackupIncludeFiles,
+            onRunAutoBackupNow = viewModel::runAutoBackupNow,
+            onDismissDatabaseKeyLost = viewModel::dismissDatabaseKeyLost,
             onShareCrashLog = {
                 scope.launch {
                     val text = viewModel.crashLogText() ?: return@launch
@@ -324,6 +399,48 @@ fun SettingsContent(
                 onChange = actions.onSummaryStyleChange
             )
 
+            item { SectionHeader("通信") }
+            item {
+                SettingsSwitchItem(
+                    title = "オフラインモード",
+                    icon = Icons.Outlined.CloudOff,
+                    summary = OFFLINE_MODE_SUMMARY,
+                    checked = uiState.offlineMode,
+                    onCheckedChange = actions.onOfflineModeChange
+                )
+            }
+
+            item { SectionHeader("ロック") }
+            item {
+                SettingsSwitchItem(
+                    title = "アプリのロック",
+                    icon = Icons.Outlined.Lock,
+                    summary = APP_LOCK_SUMMARY,
+                    checked = uiState.appLock.enabled,
+                    onCheckedChange = actions.onAppLockChange
+                )
+            }
+            if (uiState.appLock.enabled) {
+                item {
+                    SettingsItem(
+                        title = "ロックするまでの時間",
+                        icon = Icons.Outlined.Timer,
+                        summary = "アプリを離れてから${uiState.appLock.delay.label}",
+                        onClick = { dialog = SettingsDialog.APP_LOCK_DELAY }
+                    )
+                }
+            }
+            databaseEncryptionItems(uiState.databaseEncryption, actions.onDismissDatabaseKeyLost)
+            item {
+                SettingsSwitchItem(
+                    title = "最近使ったアプリで内容を隠す",
+                    icon = Icons.Outlined.VisibilityOff,
+                    summary = "アプリの一覧に画面の内容を出しません。この設定の間は、スクリーンショットも撮れません",
+                    checked = uiState.appLock.hideContent,
+                    onCheckedChange = actions.onAppLockHideContentChange
+                )
+            }
+
             item { SectionHeader("表示") }
             item {
                 SettingsItem(
@@ -396,18 +513,34 @@ fun SettingsContent(
                 SettingsItem(
                     title = "バックアップを書き出す",
                     icon = Icons.Outlined.Upload,
-                    summary = "ブックマーク・タグ・会話を JSON ファイルに保存します",
+                    summary = "ブックマーク・タグ・会話・ノートなどを JSON ファイルに保存します(画像・PDF などのファイルは含めません)",
                     onClick = actions.onExportBackup
+                )
+            }
+            item {
+                SettingsItem(
+                    title = "ファイルも含めて書き出す",
+                    icon = Icons.Outlined.FolderZip,
+                    summary = "保存した画像・PDF・音声・動画と、オフラインコピーも入れた zip ファイルに保存します。大きくなることがあります",
+                    onClick = actions.onExportBackupWithFiles
                 )
             }
             item {
                 SettingsItem(
                     title = "バックアップを読み込む",
                     icon = Icons.Outlined.Download,
-                    summary = "今のデータに追加します。同じ URL のブックマークはスキップします",
+                    summary = "今のデータに追加します(JSON・zip)。同じ URL のブックマークはスキップします。壊れたファイルは何も読み込みません",
                     onClick = actions.onImportBackup
                 )
             }
+            autoBackupItems(
+                settings = uiState.autoBackup,
+                onToggle = actions.onAutoBackupToggle,
+                onPickFolder = actions.onPickAutoBackupFolder,
+                onOpenKeepDialog = { dialog = SettingsDialog.AUTO_BACKUP_KEEP },
+                onIncludeFilesChange = actions.onAutoBackupIncludeFilesChange,
+                onRunNow = actions.onRunAutoBackupNow
+            )
             item {
                 SettingsItem(
                     title = "他のサービスから取り込む",
@@ -428,6 +561,15 @@ fun SettingsContent(
                 SettingsNotice(
                     text = "API キーと端末内モデル、保存した画像・PDF・音声などのファイル本体はバックアップに含まれません。別の端末では設定し直してください(ファイルのブックマークは、要約・メモだけが読み込まれます)。",
                     icon = Icons.Outlined.Info
+                )
+            }
+            item {
+                SettingsItem(
+                    title = "オフラインの動画",
+                    icon = Icons.Outlined.VideoLibrary,
+                    summary = "保存した動画を見る・削除する。Wi-Fi のときだけ・保存する上限を決める",
+                    onClick = actions.onOpenOfflineVideos,
+                    trailing = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) }
                 )
             }
             item {
@@ -552,10 +694,36 @@ fun SettingsContent(
             onChange = actions.onSummaryStyleChange,
             onDismiss = { dialog = null }
         )
+        SettingsDialog.APP_LOCK_DELAY -> ChoiceDialog(
+            title = "ロックするまでの時間",
+            options = AppLockDelay.entries,
+            selected = uiState.appLock.delay,
+            label = { "アプリを離れてから${it.label}" },
+            onSelect = { delay ->
+                actions.onAppLockDelayChange(delay)
+                dialog = null
+            },
+            onDismiss = { dialog = null }
+        )
+        SettingsDialog.AUTO_BACKUP_KEEP -> ChoiceDialog(
+            title = "残すバックアップの数",
+            options = AutoBackupSettings.KEEP_CHOICES,
+            selected = uiState.autoBackup.keep,
+            label = { "新しい ${it} 個" },
+            onSelect = { keep ->
+                actions.onAutoBackupKeepChange(keep)
+                dialog = null
+            },
+            onDismiss = { dialog = null }
+        )
         null -> Unit
     }
 
-    DataOperationDialog(state = uiState.dataOperation, onDismiss = actions.onDataResultDismissed)
+    DataOperationDialog(
+        state = uiState.dataOperation,
+        onDismiss = actions.onDataResultDismissed,
+        onRestoreSettings = actions.onRestoreBackupSettings
+    )
 }
 
 // ---- 表示用の文言 ----
@@ -574,10 +742,12 @@ private val StorageUsage.label: String
         add("データ ${formatFileSize(databaseBytes)}")
         add("検索用 ${formatFileSize(embeddingBytes)}")
         if (attachmentBytes > 0) add("ファイル ${formatFileSize(attachmentBytes)}")
+        if (offlineVideoBytes > 0) add("動画 ${formatFileSize(offlineVideoBytes)}")
         if (modelBytes > 0) add("モデル ${formatFileSize(modelBytes)}")
     }.joinToString("・")
 
 private const val BACKUP_MIME_TYPE = "application/json"
+private const val BACKUP_ARCHIVE_MIME_TYPE = "application/zip"
 
 /** クラッシュログを1つのテキストファイルにして、共有先を選ばせる(FileProvider で一時的な読み取り権限つきで渡す)。 */
 private suspend fun shareCrashLog(context: Context, text: String) {
@@ -597,3 +767,51 @@ private suspend fun shareCrashLog(context: Context, text: String) {
         Timber.w(e, "クラッシュログの共有先がない")
     }
 }
+
+/** アプリのロックのスイッチの説明 */
+internal const val APP_LOCK_SUMMARY =
+    "開くときに、指紋・顔、または端末の画面ロック(PIN など)で本人を確かめます。" +
+        "共有・引用・クイック設定のタイル・ウィジェット・通知から開くときも確かめ、ロック中はウィジェットに内容を出しません。"
+
+/** オフラインモードのスイッチの説明。止まるものと、そのまま使えるものを並べる */
+internal const val OFFLINE_MODE_SUMMARY =
+    "オンの間、アプリは一切通信しません。保存・検索・端末内 AI・オフラインコピーはそのまま使えます。" +
+        "リンクの本文の取得・フィードとリンク切れの確認・モデルのダウンロード・地図の背景は止まり、" +
+        "本文の取得などはオフにしたときに始まります。"
+
+/** [folderUri] の読み書きの許可を持ち続けているか */
+private fun hasFolderPermission(context: Context, folderUri: String): Boolean =
+    context.contentResolver.persistedUriPermissions.any { it.uri.toString() == folderUri && it.isWritePermission }
+
+/** 保存したデータの暗号化の状態(#100)。うまくいっていないときは、理由とすることを出す */
+private fun androidx.compose.foundation.lazy.LazyListScope.databaseEncryptionItems(
+    state: DatabaseEncryptionState,
+    onDismissKeyLost: () -> Unit
+) {
+    item {
+        SettingsItem(
+            title = "保存したデータの暗号化",
+            icon = Icons.Outlined.EnhancedEncryption,
+            summary = when (state) {
+                DatabaseEncryptionState.PLAINTEXT_FALLBACK -> "暗号化できなかったため、今は暗号化せずに保存しています。次にアプリを開いたときにやり直します"
+                else -> DATABASE_ENCRYPTION_SUMMARY
+            }
+        )
+    }
+    if (state == DatabaseEncryptionState.KEY_LOST) {
+        item {
+            SettingsNotice(
+                text = "暗号化の鍵がこの端末で使えなくなったため、保存していたデータを読めず、新しく作り直しました。" +
+                    "バックアップがあれば、「データ」→「バックアップを読み込む」で戻してください。",
+                icon = Icons.Outlined.WarningAmber,
+                isWarning = true,
+                action = { TextButton(onClick = onDismissKeyLost) { Text("閉じる") } }
+            )
+        }
+    }
+}
+
+/** 暗号化の説明。何を守り、何は端末の暗号化に任せているかを書く */
+internal const val DATABASE_ENCRYPTION_SUMMARY =
+    "ブックマーク・タグ・会話・ノートなどのデータベースを、この端末だけの鍵で暗号化して保存しています。" +
+        "画像・PDF などのファイルと、検索用のデータは、端末の暗号化で守られます。"

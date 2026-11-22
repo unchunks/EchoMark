@@ -273,7 +273,8 @@ private val OPEN_SOURCE_LIBRARIES = listOf(
     "Bouncy Castle" to "Bouncy Castle Licence",
     "LMDB(ObjectBox のネイティブライブラリに含まれる)" to "OpenLDAP Public License 2.8",
     "MapLibre Native(場所の画面の地図の背景)" to "BSD 2-Clause License",
-    "MapLibre の Java ユーティリティ(turf・geojson)" to "Apache License 2.0"
+    "MapLibre の Java ユーティリティ(turf・geojson)" to "Apache License 2.0",
+    "SQLCipher for Android(保存したデータの暗号化)" to "BSD 形式のライセンス(下に文面)"
 )
 
 /** アプリに同梱される、オープンソースでないライブラリ・モデルと利用規約。 */
@@ -303,6 +304,13 @@ internal fun LicensesDialog(onDismiss: () -> Unit) {
                 HorizontalDivider()
                 Text("オープンソースでないもの(利用規約)", style = MaterialTheme.typography.titleSmall)
                 NON_OPEN_SOURCE_COMPONENTS.forEach { (name, terms) -> LicenseEntry(name, terms) }
+                HorizontalDivider()
+                Text("SQLCipher のライセンス", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    SQLCIPHER_LICENSE_TEXT,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } }
@@ -323,7 +331,12 @@ private fun LicenseEntry(name: String, license: String) {
 
 /** バックアップ・削除の実行中表示と、読み込み結果・エラーのダイアログ。 */
 @Composable
-internal fun DataOperationDialog(state: DataOperationState, onDismiss: () -> Unit) {
+internal fun DataOperationDialog(
+    state: DataOperationState,
+    onDismiss: () -> Unit,
+    /** 読み込んだバックアップの設定も戻す */
+    onRestoreSettings: () -> Unit = {}
+) {
     when (state) {
         DataOperationState.Idle -> Unit
         is DataOperationState.Running -> AlertDialog(
@@ -342,8 +355,21 @@ internal fun DataOperationDialog(state: DataOperationState, onDismiss: () -> Uni
             onDismissRequest = onDismiss,
             icon = { Icon(Icons.Outlined.CheckCircle, contentDescription = null) },
             title = { Text("読み込みました") },
-            text = { ImportSummaryText(state.summary) },
-            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } }
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) { ImportSummaryText(state.summary) }
+            },
+            confirmButton = {
+                if (state.summary.settings != null) {
+                    TextButton(onClick = onRestoreSettings) { Text("設定も戻す") }
+                } else {
+                    TextButton(onClick = onDismiss) { Text("OK") }
+                }
+            },
+            dismissButton = if (state.summary.settings != null) {
+                { TextButton(onClick = onDismiss) { Text("今の設定のまま") } }
+            } else {
+                null
+            }
         )
         is DataOperationState.Failed -> AlertDialog(
             onDismissRequest = onDismiss,
@@ -363,7 +389,33 @@ private fun ImportSummaryText(summary: BackupImportSummary) {
         SummaryRow("追加したタグ", "${summary.tagsAdded} 件")
         SummaryRow("追加した会話", "${summary.conversationsAdded} 件")
         if (summary.conversationsSkipped > 0) SummaryRow("登録済みの会話", "${summary.conversationsSkipped} 件")
-        if (summary.invalidRecords > 0) SummaryRow("壊れていて読み飛ばした項目", "${summary.invalidRecords} 件")
+        if (summary.filesRestored > 0) SummaryRow("戻したファイル(画像・オフラインコピーなど)", "${summary.filesRestored} 件")
+        if (summary.skipped.isNotEmpty()) {
+            Spacer(Modifier.size(4.dp))
+            Text(
+                "壊れていたため読み飛ばしたもの(ほかは読み込みました)",
+                style = MaterialTheme.typography.titleSmall.japaneseParagraph(),
+                color = MaterialTheme.colorScheme.error
+            )
+            summary.skipped.forEach { skipped ->
+                SummaryRow(skipped.label, "${skipped.count} 件")
+                Text(
+                    skipped.reason,
+                    style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        summary.settings?.let { settings ->
+            Spacer(Modifier.size(4.dp))
+            Text(
+                "このバックアップには、端末の設定(テーマ・並び順・読書モード・AI の選び方・処理の時間など)が ${settings.count} 件入っています。" +
+                    "「設定も戻す」を選ぶと、この端末の設定をバックアップのものに置き換えます。" +
+                    "アプリのロック・オフラインモード・API キー・取り込んだモデルは変わりません。",
+                style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         if (summary.bookmarksAdded > 0) {
             Spacer(Modifier.size(4.dp))
             Text(

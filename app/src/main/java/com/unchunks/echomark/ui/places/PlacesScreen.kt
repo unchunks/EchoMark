@@ -199,8 +199,9 @@ private fun MapArea(uiState: PlacesUiState, onSelect: (String?) -> Unit, isOnlin
     var failure by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
     // スイッチを入れ直したとき・ネットワークが戻ったときは、失敗の記録を外してもう一度試す
-    LaunchedEffect(uiState.mapBackgroundEnabled, isOnline) { failure = null }
-    val useTiles = uiState.mapBackgroundEnabled && isOnline && failure == null
+    LaunchedEffect(uiState.mapBackgroundEnabled, isOnline, uiState.offlineMode) { failure = null }
+    // オフラインモードの間は地図を作らない(タイルを読みに行かない。通信そのものは共通の OkHttpClient でも断る)
+    val useTiles = uiState.mapBackgroundEnabled && isOnline && !uiState.offlineMode && failure == null
 
     Column {
         if (useTiles) {
@@ -225,13 +226,16 @@ private fun MapArea(uiState: PlacesUiState, onSelect: (String?) -> Unit, isOnlin
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    if (!isOnline) "オフラインのため、地図の背景は出せません。分布図を表示しています。"
-                    else "地図の背景を読み込めませんでした。分布図を表示しています。",
+                    when {
+                        uiState.offlineMode -> "オフラインモードのため、地図の背景は出しません。分布図を表示しています。"
+                        !isOnline -> "オフラインのため、地図の背景は出せません。分布図を表示しています。"
+                        else -> "地図の背景を読み込めませんでした。分布図を表示しています。"
+                    },
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (isOnline) {
+                if (isOnline && !uiState.offlineMode) {
                     TextButton(onClick = { failure = null; attempt++ }) { Text("もう一度試す") }
                 }
             }

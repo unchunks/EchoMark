@@ -77,6 +77,24 @@ class RediscoverWidgetContentTest {
     }
 
     @Test
+    fun アプリのロック中はブックマークも処理の件数も出さず_押すとアプリを開く() = runGlanceAppWidgetUnitTest {
+        setContext(context)
+        provideComposable {
+            RediscoverWidgetContent(
+                items,
+                RediscoverWidgetData.layoutFor(RediscoverWidgetData.LARGE_SIZE, hasProcessing = false),
+                hidden = true
+            )
+        }
+
+        onNode(hasTextEqualTo(HIDDEN_MESSAGE)).assertExists()
+        items.forEach { onNode(hasTextEqualTo(it.title)).assertDoesNotExist() }
+        onNode(hasStartActivityClickAction(appIntent(context)).and(hasAnyDescendant(hasTextEqualTo(HIDDEN_MESSAGE)))).assertExists()
+        // 追加・チャットのボタンは残る(開いたところで本人を確かめる)
+        onNode(hasContentDescriptionEqualTo(ADD_LABEL)).assertExists()
+    }
+
+    @Test
     fun 空のときは案内を出す() = runGlanceAppWidgetUnitTest {
         setContext(context)
         provideComposable { RediscoverWidgetContent(emptyList(), RediscoverWidgetData.layoutFor(RediscoverWidgetData.LARGE_SIZE)) }

@@ -5,6 +5,8 @@ import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.embedding.EmbeddingUnavailableException
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
+import com.unchunks.components.search.RankFusion
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.ai.ChatMemoryCompressor
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
@@ -34,7 +36,12 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
-import com.unchunks.components.search.RankFusion
+import com.unchunks.echomark.domain.repository.SaveResult
+import com.unchunks.echomark.domain.websearch.CollectedWebSource
+import com.unchunks.echomark.domain.websearch.WebSearchException
+import com.unchunks.echomark.domain.websearch.WebSource
+import com.unchunks.echomark.domain.websearch.WebSourceProvider
+import com.unchunks.echomark.domain.websearch.WebSourceText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -56,10 +63,11 @@ class ChatRepositoryImpl @Inject constructor(
     private val llmProviderResolver: LlmProviderResolver,
     private val bookmarkRepository: BookmarkRepository,
     private val chatMemory: ChatMemoryCompressor,
-    private val dispatcherProvider: DispatcherProvider
+    private val dispatcherProvider: DispatcherProvider,
+    private val webSourceProvider: WebSourceProvider
 ) : ChatRepository {
 
-    override suspend fun createConversation(title: String?, aboutBookmarkId: Long?): Long =
+    override suspend fun createConversation(title: String?, aboutBookmarkId: Long?, webSearchEnabled: Boolean): Long =
         withContext(dispatcherProvider.io) {
             val now = System.currentTimeMillis()
             val fixedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
@@ -70,7 +78,8 @@ class ChatRepositoryImpl @Inject constructor(
                     isTitleManuallySet = fixedTitle != null,
                     createdAt = now,
                     updatedAt = now,
-                    aboutBookmarkId = aboutBookmarkId
+                    aboutBookmarkId = aboutBookmarkId,
+                    webSearchEnabled = webSearchEnabled
                 )
             )
         }
@@ -90,7 +99,8 @@ class ChatRepositoryImpl @Inject constructor(
         pinnedBookmarkId: Long?,
         isRetry: Boolean,
         attachment: ChatAttachmentContext?,
-        scope: BookmarkQuery?
+        scope: BookmarkQuery?,
+        webSearch: Boolean
     ): Flow<ChatStreamEvent> = flow {
         // AI を使えなくても質問は保存する(再試行で使い回す)ため、失敗は準備の後で知らせる
         var providerFailure: Exception? = null
@@ -102,16 +112,31 @@ class ChatRepositoryImpl @Inject constructor(
             providerFailure = e
             null
         }
+        val limits = provider?.chatContextLimits() ?: ChatContextLimits.COMPACT
         val prepared = try {
-            val limits = provider?.chatContextLimits() ?: ChatContextLimits.COMPACT
-            prepare(conversationId, userMessage, pinnedBookmarkId, isRetry, attachment, limits, scope)
+            prepare(conversationId, userMessage, pinnedBookmarkId, isRetry, attachment, limits, scope, webSearch)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             emit(ChatStreamEvent.Failed(e))
             return@flow
         }
-        emit(ChatStreamEvent.Started(prepared.referencedIds))
+        // Web を検索して、結果のページを資料の続きの番号で足す(AI を使えないときは、検索語を外に出さない)
+        val webSources = if (webSearch && provider != null) {
+            emit(ChatStreamEvent.SearchingWeb)
+            when (val web = collectWebSources(prepared, limits)) {
+                is WebOutcome.Found -> web.sources
+                is WebOutcome.Skipped -> {
+                    emit(ChatStreamEvent.WebSearchSkipped(web.reason))
+                    emptyList()
+                }
+            }
+        } else {
+            emptyList()
+        }
+        val context = prepared.contextWith(webSources.map { WebSourceText.formatContextEntry(it.number, it.domain, it.title, it.excerpt) })
+        val savedWebSources = webSources.map { it.saved }
+        emit(ChatStreamEvent.Started(prepared.referencedIds, webSources.size))
         if (provider == null) {
             providerFailure?.let { emit(ChatStreamEvent.Failed(it)) }
             return@flow
@@ -121,7 +146,7 @@ class ChatRepositoryImpl @Inject constructor(
         var failure: Throwable? = null
         var contextTight = false
         try {
-            provider.chatStream(userMessage, prepared.context, prepared.history, prepared.memory) { contextTight = it.isTight }
+            provider.chatStream(userMessage, context, prepared.history, prepared.memory) { contextTight = it.isTight }
                 // 生成側の失敗だけを受け取る(collect 側の例外は素通し)
                 .catch { failure = it }
                 .collect { chunk ->
@@ -133,7 +158,7 @@ class ChatRepositoryImpl @Inject constructor(
             val partial = answer.toString().trimEnd()
             if (partial.isNotEmpty()) {
                 withContext(NonCancellable) {
-                    saveAssistantMessage(conversationId, partial + STOPPED_SUFFIX, prepared.referencedIds)
+                    saveAssistantMessage(conversationId, partial + STOPPED_SUFFIX, prepared.referencedIds, savedWebSources)
                 }
             }
             throw e
@@ -151,7 +176,7 @@ class ChatRepositoryImpl @Inject constructor(
             emit(ChatStreamEvent.Failed(LlmException.Unexpected("応答が空でした")))
             return@flow
         }
-        val messageId = saveAssistantMessage(conversationId, text, prepared.referencedIds)
+        val messageId = saveAssistantMessage(conversationId, text, prepared.referencedIds, savedWebSources)
         chatMemory.compressIfNeeded(conversationId, contextTight)
         emit(ChatStreamEvent.Completed(messageId))
     }.flowOn(dispatcherProvider.io)
@@ -164,7 +189,8 @@ class ChatRepositoryImpl @Inject constructor(
         isRetry: Boolean,
         attachment: ChatAttachmentContext?,
         limits: ChatContextLimits,
-        scope: BookmarkQuery?
+        scope: BookmarkQuery?,
+        webSearch: Boolean
     ): PreparedChat {
         // 0. 今回の発言を保存する前に、直近の会話履歴を取得しておく(今回分を含めないため)。
         //    再試行で、失敗した同じ発言が最後に残っているなら、それを履歴から外して使い回す(二重に保存しない)
@@ -205,7 +231,7 @@ class ChatRepositoryImpl @Inject constructor(
         } else {
             // 範囲を選んでいるときは、その範囲の保存の中から探す(対象が固定されていれば範囲は使わない)
             val range = scope.takeIf { pinned == null }
-            val allowed = range?.let { inScope -> bookmarkRepository.observeBookmarks(inScope, BookmarkSortOrder.NEWEST).first().mapTo(HashSet()) { it.id } }
+            val allowed = range?.let { inScope -> bookmarkRepository.observeBookmarkList(inScope, BookmarkSortOrder.NEWEST).first().mapTo(HashSet()) { it.id } }
             val searched = try {
                 findRelevantBookmarks(query, keywords, limits.maxSources, allowed)
             } catch (e: CancellationException) {
@@ -224,12 +250,16 @@ class ChatRepositoryImpl @Inject constructor(
                 // 最近保存したものを渡す。関係があるかは AI に判断させる
                 .ifEmpty { if (pinned == null) recentBookmarks(limits.maxSources, range ?: BookmarkQuery()) else emptyList() }
         }
-        // 添付があるときは、資料を減らして添付の分の文脈を残す
+        // 添付があるとき・Web を検索するときは、資料を減らして添付・Web のページの分の文脈を残す
         val usedBookmarks = RagSupport.pinFirst(
             pinned,
             candidates,
             idOf = { it.id },
-            limit = if (attachment == null) limits.maxSources else limits.maxSourcesWithAttachment
+            limit = listOfNotNull(
+                limits.maxSources,
+                limits.maxSourcesWithAttachment.takeIf { attachment != null },
+                limits.maxSourcesWithWeb.takeIf { webSearch }
+            ).min()
         )
         val now = System.currentTimeMillis()
         val bookmarkContext = usedBookmarks.mapIndexed { i, b ->
@@ -256,11 +286,39 @@ class ChatRepositoryImpl @Inject constructor(
         }
         return PreparedChat(
             history.map(RagSupport::withoutCitations),
-            // 文脈に入りきらないときは後ろから外れるため、ユーザーが選んで渡した添付を先に置く
-            listOfNotNull(attachmentContext) + bookmarkContext,
+            attachmentContext,
+            bookmarkContext,
             usedBookmarks.map { it.id },
-            memory = conversation?.summary?.takeIf { coveredUntil != null }
+            memory = conversation?.summary?.takeIf { coveredUntil != null },
+            webQuery = followUpQuery,
+            keywords = RagSupport.keywordsOf(followUpQuery),
+            nextNumber = usedBookmarks.size + (if (attachmentContext != null) 1 else 0) + 1
         )
+    }
+
+    /**
+     * 質問から Web を検索し、結果のページの抜粋を、資料の続きの番号で返す。検索できなかったら、その理由を返す
+     * (回答は保存内容だけで続ける)。検索語は質問そのもの(前の質問の続きなら、前の質問と合わせたもの)で、保存内容は送らない。
+     */
+    private suspend fun collectWebSources(prepared: PreparedChat, limits: ChatContextLimits): WebOutcome {
+        val query = WebSourceText.queryFor(prepared.webQuery)
+        if (query.isEmpty()) return WebOutcome.Skipped(WEB_NOT_FOUND)
+        val collected = try {
+            webSourceProvider.collect(query, prepared.keywords, limits.webSources, limits.webChars)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w("Web 検索に失敗したため、保存内容だけで答える: %s", e.javaClass.simpleName)
+            return WebOutcome.Skipped(webFailureReason(e))
+        }
+        if (collected.isEmpty()) return WebOutcome.Skipped(WEB_NOT_FOUND)
+        return WebOutcome.Found(collected.mapIndexed { i, source -> NumberedWebSource(prepared.nextNumber + i, source) })
+    }
+
+    private fun webFailureReason(e: Exception): String = when {
+        e.isOfflineModeBlock() -> "オフラインモードのため、Web は検索しませんでした"
+        e is WebSearchException -> e.message ?: WEB_FAILED
+        else -> WEB_FAILED
     }
 
     /**
@@ -342,7 +400,8 @@ class ChatRepositoryImpl @Inject constructor(
     private suspend fun saveAssistantMessage(
         conversationId: Long,
         content: String,
-        referencedIds: List<Long>
+        referencedIds: List<Long>,
+        webSources: List<WebSource>
     ): Long {
         val answerTime = System.currentTimeMillis()
         val id = chatMessageDao.insert(
@@ -351,7 +410,8 @@ class ChatRepositoryImpl @Inject constructor(
                 role = ChatRole.ASSISTANT,
                 content = content,
                 referencedBookmarkIds = referencedIds,
-                createdAt = answerTime
+                createdAt = answerTime,
+                webSources = webSources
             ).toEntity()
         )
         conversationDao.touch(conversationId, answerTime)
@@ -389,7 +449,9 @@ class ChatRepositoryImpl @Inject constructor(
                     aboutBookmarkId = source.aboutBookmarkId,
                     summaryCoveredUntil = source.summaryCoveredUntil.takeIf { keepSummary },
                     branchedFromId = source.id,
-                    branchedAt = lastShared
+                    branchedAt = lastShared,
+                    // 分けた会話でも、元の会話と同じく Web を検索する(この端末で利用者が選んだもの)
+                    webSearchEnabled = source.webSearchEnabled
                 ),
                 shared
             )
@@ -412,6 +474,12 @@ class ChatRepositoryImpl @Inject constructor(
             )
         ).id
     }
+
+    override suspend fun setWebSearchEnabled(conversationId: Long, enabled: Boolean): Unit =
+        withContext(dispatcherProvider.io) { conversationDao.setWebSearchEnabled(conversationId, enabled) }
+
+    override suspend fun saveWebSource(source: WebSource): SaveResult =
+        bookmarkRepository.saveUrlBookmark(source.url, source.title.takeIf { it != source.domain }, memo = null)
 
     override suspend fun setPinned(conversationId: Long, pinned: Boolean): Unit =
         withContext(dispatcherProvider.io) { conversationDao.setPinned(conversationId, pinned) }
@@ -463,7 +531,7 @@ class ChatRepositoryImpl @Inject constructor(
 
     override fun observeScopeChoices(): Flow<ChatScopeChoices> = combine(
         bookmarkRepository.observeAllTags(),
-        bookmarkRepository.observeBookmarks(BookmarkQuery(), BookmarkSortOrder.NEWEST)
+        bookmarkRepository.observeBookmarkList(BookmarkQuery(), BookmarkSortOrder.NEWEST)
     ) { tags, bookmarks ->
         val tagCounts = bookmarks.flatMap { it.tags }.groupingBy { it }.eachCount()
         val categoryCounts = bookmarks.mapNotNull { it.category }.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
@@ -474,15 +542,46 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     override fun observeScopeCount(scope: BookmarkQuery): Flow<Int> =
-        bookmarkRepository.observeBookmarks(scope, BookmarkSortOrder.NEWEST).map { it.size }
+        bookmarkRepository.observeBookmarkList(scope, BookmarkSortOrder.NEWEST).map { it.size }
 
     private class PreparedChat(
         val history: List<ChatMessage>,
-        val context: List<String>,
+        /** 添付の文脈(添付が無ければ null) */
+        val attachmentContext: String?,
+        /** 資料(ブックマーク)の文脈。番号 1 から */
+        val bookmarkContext: List<String>,
         val referencedIds: List<Long>,
         /** 会話の古い発言の要約。無ければ null */
-        val memory: String?
-    )
+        val memory: String?,
+        /** Web を検索するときの元の文(質問。続きの質問なら前の質問と合わせたもの) */
+        val webQuery: String,
+        /** ページの本文から質問に関係する部分を選ぶ語 */
+        val keywords: List<String>,
+        /** Web のページに振る最初の番号(資料・添付の続き) */
+        val nextNumber: Int
+    ) {
+        /**
+         * AI に渡す文脈。入りきらないときは後ろから外れるため、ユーザーが選んで渡した添付を先に置く。
+         * Web 検索をオンにしたときは、いちばん近い資料の次に Web のページを置く(Web を検索した質問で、ページが外れないように)。
+         */
+        fun contextWith(webContext: List<String>): List<String> =
+            listOfNotNull(attachmentContext) + bookmarkContext.take(1) + webContext + bookmarkContext.drop(1)
+    }
+
+    /** Web の資料と、回答の中の番号 */
+    private class NumberedWebSource(val number: Int, source: CollectedWebSource) {
+        val domain = source.domain
+        val title = source.title
+        val excerpt = source.excerpt
+
+        /** 回答と一緒に保存する形(検索結果の概要は残さない) */
+        val saved: WebSource = source.toWebSource(number)
+    }
+
+    private sealed interface WebOutcome {
+        class Found(val sources: List<NumberedWebSource>) : WebOutcome
+        class Skipped(val reason: String) : WebOutcome
+    }
 
     companion object {
         /** 「関連する部分: 「」」の見出しの分の文字数 */
@@ -496,6 +595,9 @@ class ChatRepositoryImpl @Inject constructor(
 
         /** 生成を途中で止めた回答の末尾に付ける印。 */
         const val STOPPED_SUFFIX = "\n\n(停止)"
+
+        private const val WEB_NOT_FOUND = "Web で関係するページが見つかりませんでした"
+        private const val WEB_FAILED = "Web 検索に失敗しました。保存内容だけで答えます"
 
         /** 最初の発言が来るまでの会話タイトル。 */
         const val DEFAULT_TITLE = "新しいチャット"

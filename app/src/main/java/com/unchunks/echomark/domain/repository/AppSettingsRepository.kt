@@ -1,13 +1,17 @@
 package com.unchunks.echomark.domain.repository
 
-import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
+import com.unchunks.echomark.domain.lock.AppLockSettings
+import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.SummaryStyle
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.DayOfWeek
@@ -145,6 +149,9 @@ interface AppSettingsRepository {
     /** ユーザーが保存したチャットのテンプレート(新しい順)。 */
     val chatTemplates: Flow<List<ChatTemplate>>
 
+    /** ポッドキャストの読み上げに使う、利用者の読みの辞書(新しく入れた順)。 */
+    val readingDictionary: Flow<List<ReadingEntry>>
+
     /** 検索の履歴(新しい順)。端末の中だけに残し、バックアップには含めない。 */
     val searchHistory: Flow<List<String>>
 
@@ -160,6 +167,13 @@ interface AppSettingsRepository {
     /** 夜間にリンク切れを確認する(#94)。確認は処理の設定(充電中だけ・Wi-Fi のときだけ)に従う。既定はオン */
     val linkCheckEnabled: Flow<Boolean>
 
+    /** 動画のファイルのオフライン保存の設定(Wi-Fi のときだけ・保存する合計の上限)。端末ごとの設定で、バックアップには入れない */
+    val videoDownloadSettings: Flow<VideoDownloadSettings>
+
+    suspend fun setVideoDownloadWifiOnly(enabled: Boolean)
+
+    suspend fun setVideoDownloadMaxTotalBytes(bytes: Long)
+
     /** 場所の画面で「地図の背景」を出す(#85)。オンにすると、画面を開いている間だけ地図のタイルをネットワークから読む。既定はオフ */
     val placesMapBackground: Flow<Boolean>
 
@@ -171,6 +185,41 @@ interface AppSettingsRepository {
 
     /** 読書モードの見た目(文字の大きさ・背景・書体)。 */
     val readingStyle: Flow<ReadingStyle>
+
+    /**
+     * オフラインモード。オンの間、アプリは一切ネットワークに接続しない(通信してよいかは
+     * [com.unchunks.components.web.NetworkGate] の1か所で決める)。通信の要る処理(本文の取得など)は
+     * 処理待ちのまま残し、オフにしたら積み直す。既定はオフ。
+     * 「全データを削除」で設定を初期化しても、オンのままにする(初期化をきっかけに通信を始めないように)。
+     */
+    val offlineMode: Flow<Boolean>
+
+    /**
+     * アプリのロック(#100)。既定はオフ。「全データを削除」で設定を初期化しても、オンにしたロックは残す
+     * (初期化をきっかけに守りを外さないように)
+     */
+    val appLock: Flow<AppLockSettings>
+
+    /** 自動バックアップ(毎晩、選んだフォルダに書き出す)。既定はオフ */
+    val autoBackup: Flow<AutoBackupSettings>
+
+    suspend fun updateAutoBackup(transform: (AutoBackupSettings) -> AutoBackupSettings)
+
+    /**
+     * バックアップに入れる端末の設定(名前 → 値)。どれを入れるかは BackupCoverage(API キー・この端末だけの設定・ロックは入らない)。
+     * 値は保存してあるものだけ(既定のままのものは入らない)
+     */
+    suspend fun exportBackupSettings(): Map<String, Any>
+
+    /**
+     * バックアップの設定に置き換える(利用者が「設定も戻す」を選んだとき)。BackupCoverage で戻すと決めた設定だけを、
+     * 決めた型のときだけ書く。戻す設定のうちバックアップに無いものは既定に戻す(書き出した端末で既定のままだったもの)。
+     * 戻した数を返す
+     */
+    suspend fun restoreBackupSettings(values: Map<String, Any>): Int
+
+    /** アプリのロックの設定を書き換える(オンにする前に、画面で本人を確かめること) */
+    suspend fun updateAppLock(transform: (AppLockSettings) -> AppLockSettings)
 
     suspend fun setLlmBackend(task: AiTask, backend: LlmBackend)
     suspend fun setApiProvider(task: AiTask, provider: ApiProvider)
@@ -194,6 +243,12 @@ interface AppSettingsRepository {
     suspend fun setLinkCheckEnabled(enabled: Boolean)
     suspend fun setPlacesMapBackground(enabled: Boolean)
 
+    /**
+     * オフラインモードを保存する。画面からは [com.unchunks.echomark.data.network.OfflineModeController] を通して切り替える
+     * (待っている処理の積み直し・ダウンロードの取り消しも行う)。
+     */
+    suspend fun setOfflineMode(enabled: Boolean)
+
     /** [transform] で「両方残す」と答えた重複の組を書き換える */
     suspend fun updateDismissedDuplicates(transform: (Set<DuplicatePair>) -> Set<DuplicatePair>)
 
@@ -202,6 +257,9 @@ interface AppSettingsRepository {
 
     /** [transform] でチャットのテンプレートを書き換える */
     suspend fun updateChatTemplates(transform: (List<ChatTemplate>) -> List<ChatTemplate>)
+
+    /** [transform] で読みの辞書を書き換える */
+    suspend fun updateReadingDictionary(transform: (List<ReadingEntry>) -> List<ReadingEntry>)
     suspend fun setRediscoverEnabled(enabled: Boolean)
     suspend fun setRediscoverSchedule(dayOfWeek: DayOfWeek, hour: Int, minute: Int)
 
@@ -213,7 +271,8 @@ interface AppSettingsRepository {
 
     /**
      * 設定を既定値に戻す(全データ削除で「設定も初期化」を選んだとき)。
-     * オンボーディング済みの記録だけは残す(削除直後に案内が再表示されないように)。
+     * オンボーディング済みの記録は残す(削除直後に案内が再表示されないように)。
+     * オンにしたオフラインモード・アプリのロックも残す(初期化をきっかけに通信を始めない・守りを外さないように)。
      */
     suspend fun resetToDefaults()
 }

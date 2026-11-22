@@ -7,6 +7,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
+import com.unchunks.echomark.domain.lock.AppLockDelay
+import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.model.SummaryFormat
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
@@ -71,6 +74,35 @@ class SettingsScreenshotTest {
     @Test
     fun settingsAll() = screenshot.captureLightDark("settings_all") {
         Screen(readyState, height = 2500)
+    }
+
+    /** 自動バックアップをオンにしていて、保存先を使えなくなっている(「データ」の欄) */
+    @Test
+    fun settingsAutoBackup() = screenshot.captureLightDark("settings_auto_backup") {
+        Screen(
+            readyState.copy(
+                autoBackup = AutoBackupSettings(
+                    enabled = true, folderUri = "content://tree/x", folderLabel = "EchoMark のバックアップ", keep = 5,
+                    lastSuccessAt = 1_700_000_000_000L, lastError = "保存先のフォルダを使えなくなりました。設定の「自動バックアップ」で、保存先を選び直してください"
+                )
+            ),
+            height = 3000
+        )
+    }
+
+    /** アプリのロックと、内容を隠す設定をオンにしている(「ロック」の欄) */
+    @Test
+    fun settingsAppLock() = screenshot.captureLightDark("settings_app_lock") {
+        Screen(
+            readyState.copy(appLock = AppLockSettings(enabled = true, delay = AppLockDelay.MINUTE_1, hideContent = true)),
+            height = 1300
+        )
+    }
+
+    /** オフラインモードをオンにしている(「通信」の欄) */
+    @Test
+    fun settingsOfflineMode() = screenshot.captureLightDark("settings_offline_mode") {
+        Screen(readyState.copy(offlineMode = true), height = 1100)
     }
 
     /** 処理の設定(充電中だけ・夜間にまとめて処理する・同時に処理する数) */

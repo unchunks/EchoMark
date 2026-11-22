@@ -8,6 +8,32 @@ object Routes {
     /** カテゴリの管理(設定の「AI」の欄から開くサブ画面)。"settings/..." なのでボトムバーは設定タブが選択状態になる */
     const val CATEGORIES = "settings/categories"
 
+    /** オフラインの動画(保存した動画の一覧・ダウンロードの設定)。設定の「データ」の欄から開く */
+    const val OFFLINE_VIDEOS = "settings/offline-videos"
+
+    /** ポッドキャストのエピソードの一覧(一覧のメニュー・できた通知から開く) */
+    const val PODCASTS = "podcasts"
+
+    /** ポッドキャストができた通知から一覧を開くディープリンク。MainActivity の intent-filter と一致させること */
+    const val PODCASTS_DEEP_LINK = "echomark://podcasts"
+
+    /** ポッドキャストの再生(エピソードの一覧・再生の通知から開く) */
+    const val ARG_PODCAST_EPISODE_ID = "episodeId"
+    const val PODCAST_PLAYER = "podcasts/play/{$ARG_PODCAST_EPISODE_ID}"
+    fun podcastPlayer(episodeId: String) = "podcasts/play/$episodeId"
+
+    /** 再生の通知から再生の画面を開くディープリンク(MainActivity の echomark://podcasts の intent-filter に当たる) */
+    const val PODCAST_PLAYER_DEEP_LINK = "echomark://podcasts/play/{$ARG_PODCAST_EPISODE_ID}"
+    fun podcastPlayerDeepLink(episodeId: String) = "echomark://podcasts/play/$episodeId"
+
+    /** ポッドキャストを作る(詳細画面・複数選択から開く)。ブックマークの ID をカンマ区切りで渡す */
+    const val ARG_PODCAST_BOOKMARK_IDS = "bookmarkIds"
+    const val PODCAST_NEW = "podcasts/new?$ARG_PODCAST_BOOKMARK_IDS={$ARG_PODCAST_BOOKMARK_IDS}"
+    fun podcastNew(bookmarkIds: List<Long>) = "podcasts/new?$ARG_PODCAST_BOOKMARK_IDS=${bookmarkIds.joinToString(",")}"
+
+    /** ポッドキャストの読みの辞書(表記 → 読み) */
+    const val READING_DICTIONARY = "podcasts/reading-dictionary"
+
     /** タグの管理(ブックマーク一覧のメニューから開くサブ画面) */
     const val TAGS = "tags"
 

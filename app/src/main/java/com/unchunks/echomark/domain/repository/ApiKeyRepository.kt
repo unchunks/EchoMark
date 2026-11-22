@@ -18,4 +18,15 @@ interface ApiKeyRepository {
     suspend fun setKey(provider: ApiProvider, apiKey: String)
 
     suspend fun clearKey(provider: ApiProvider)
+
+    /** Web 検索(Brave Search API)のキーを保存しているか。 */
+    val webSearchKeyConfigured: Flow<Boolean>
+
+    /** 復号した Web 検索のキー。未設定・復号できなければ null。 */
+    suspend fun getWebSearchKey(): String?
+
+    /** 前後の空白を除いて保存する。空なら削除と同じ。 */
+    suspend fun setWebSearchKey(apiKey: String)
+
+    suspend fun clearWebSearchKey()
 }

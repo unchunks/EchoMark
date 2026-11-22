@@ -5,6 +5,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.snapshot.PageSnapshotRepository
 import com.unchunks.echomark.domain.snapshot.StoredSnapshot
+import com.unchunks.echomark.testing.FakeNetworkGate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -24,6 +25,7 @@ class PageSnapshotViewModelTest {
     val mainRule = MainDispatcherRule()
 
     private val repository = FakePageSnapshotRepository()
+    private val gate = FakeNetworkGate()
     private val link = Bookmark(
         id = 7, type = BookmarkType.URL, contentUri = "https://example.com/a", title = "記事", createdAt = 1, lastAccessedAt = 1
     )
@@ -32,7 +34,7 @@ class PageSnapshotViewModelTest {
 
     @Test
     fun リンクのブックマークで始めると読み込み中になる() {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
 
         viewModel.start(link)
 
@@ -40,8 +42,23 @@ class PageSnapshotViewModelTest {
     }
 
     @Test
+    fun オフラインモードの間は読み込まずに理由を知らせる() = runTest {
+        gate.offline = true
+        val viewModel = PageSnapshotViewModel(repository, gate)
+        val messages = mutableListOf<SnapshotMessage>()
+        backgroundScope.launch { viewModel.messages.toList(messages) }
+
+        viewModel.start(link)
+        runCurrent()
+
+        assertEquals(SnapshotOperation.Idle, viewModel.operation.value)
+        assertEquals(listOf(SnapshotMessage.Failed(OFFLINE_SNAPSHOT_MESSAGE)), messages)
+        assertTrue(viewModel.isOffline())
+    }
+
+    @Test
     fun リンクでないブックマークでは始めない() {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
 
         viewModel.start(link.copy(type = BookmarkType.TEXT, contentUri = null))
         assertEquals(SnapshotOperation.Idle, viewModel.operation.value)
@@ -52,7 +69,7 @@ class PageSnapshotViewModelTest {
 
     @Test
     fun 作っている最中に重ねて始めない() {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
 
         viewModel.start(link)
         viewModel.start(link.copy(id = 8, contentUri = "https://example.com/b"))
@@ -62,7 +79,7 @@ class PageSnapshotViewModelTest {
 
     @Test
     fun できたコピーを保存して知らせる() = runTest {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
         val messages = mutableListOf<SnapshotMessage>()
         backgroundScope.launch { viewModel.messages.toList(messages) }
         val mhtml = tempFile("snap-a")
@@ -79,7 +96,7 @@ class PageSnapshotViewModelTest {
 
     @Test
     fun PDFが無いコピーはPDFなしとして知らせる() = runTest {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
         val messages = mutableListOf<SnapshotMessage>()
         backgroundScope.launch { viewModel.messages.toList(messages) }
 
@@ -93,7 +110,7 @@ class PageSnapshotViewModelTest {
     @Test
     fun 保存に失敗したら一時ファイルを消して失敗を知らせる() = runTest {
         repository.failure = IllegalStateException("容量不足")
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
         val messages = mutableListOf<SnapshotMessage>()
         backgroundScope.launch { viewModel.messages.toList(messages) }
         val mhtml = tempFile("snap-a")
@@ -111,7 +128,7 @@ class PageSnapshotViewModelTest {
 
     @Test
     fun 作っていないときに届いた一時ファイルは保存せず消す() = runTest {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
         val mhtml = tempFile("snap-a")
 
         viewModel.onCaptured(mhtml, null)
@@ -123,7 +140,7 @@ class PageSnapshotViewModelTest {
 
     @Test
     fun 読み込めなかったら理由を知らせて元に戻る() = runTest {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
         val messages = mutableListOf<SnapshotMessage>()
         backgroundScope.launch { viewModel.messages.toList(messages) }
 
@@ -137,7 +154,7 @@ class PageSnapshotViewModelTest {
 
     @Test
     fun やめたら元に戻る() {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
 
         viewModel.start(link)
         viewModel.cancel()
@@ -147,7 +164,7 @@ class PageSnapshotViewModelTest {
 
     @Test
     fun コピーを消すと知らせる() = runTest {
-        val viewModel = PageSnapshotViewModel(repository)
+        val viewModel = PageSnapshotViewModel(repository, gate)
         val messages = mutableListOf<SnapshotMessage>()
         backgroundScope.launch { viewModel.messages.toList(messages) }
 

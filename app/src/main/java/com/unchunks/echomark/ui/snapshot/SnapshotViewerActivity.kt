@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -22,6 +22,7 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.isDark
 import com.unchunks.echomark.data.attachment.attachmentFile
 import com.unchunks.echomark.ui.common.openUrl
+import com.unchunks.echomark.ui.lock.AppLockGate
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
@@ -31,7 +32,7 @@ import timber.log.Timber
  * 表示は [SnapshotWebView] で、JavaScript・通信・ほかのファイルの読み込みを許さない設定にしている。
  */
 @AndroidEntryPoint
-internal class SnapshotViewerActivity : ComponentActivity() {
+internal class SnapshotViewerActivity : FragmentActivity() {
 
     private val viewModel: SnapshotViewerViewModel by viewModels()
 
@@ -46,19 +47,22 @@ internal class SnapshotViewerActivity : ComponentActivity() {
             val appState by appViewModel.uiState.collectAsState()
             val ready = appState as? MainUiState.Ready ?: return@setContent
             EchoMarkTheme(darkTheme = ready.themeMode.isDark(isSystemInDarkTheme()), dynamicColor = ready.dynamicColor) {
-                val state by viewModel.state.collectAsState()
-                val context = LocalContext.current
-                SnapshotViewerContent(
-                    state = state,
-                    onBack = { finish() },
-                    onOpenPdf = { (state as? SnapshotViewerState.Ready)?.let { openSnapshotPdf(context, it.pdfPath) } },
-                    onOpenOriginal = { (state as? SnapshotViewerState.Ready)?.originalUrl?.let { openUrl(context, it) } }
-                ) { page ->
-                    SnapshotWebView(
-                        fileUrl = page.fileUrl,
-                        onOpenInBrowser = { openUrl(context, it) },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                // 一覧から開くほか、プロセスが終わったあとに、この画面から作り直されることもある
+                AppLockGate {
+                    val state by viewModel.state.collectAsState()
+                    val context = LocalContext.current
+                    SnapshotViewerContent(
+                        state = state,
+                        onBack = { finish() },
+                        onOpenPdf = { (state as? SnapshotViewerState.Ready)?.let { openSnapshotPdf(context, it.pdfPath) } },
+                        onOpenOriginal = { (state as? SnapshotViewerState.Ready)?.originalUrl?.let { openUrl(context, it) } }
+                    ) { page ->
+                        SnapshotWebView(
+                            fileUrl = page.fileUrl,
+                            onOpenInBrowser = { openUrl(context, it) },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }

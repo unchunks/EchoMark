@@ -9,6 +9,7 @@ import com.unchunks.components.embedding.EmbeddingInputBuilder
 import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.embedding.EmbeddingUnavailableException
 import com.unchunks.components.llm.LlmException
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.ai.AiPerfLog
 import com.unchunks.echomark.data.ai.AiPrewarmer
 import com.unchunks.echomark.data.ai.BookmarkAnalyzer
@@ -17,14 +18,14 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
-import com.unchunks.echomark.domain.bookmark.model.isProcessingCancelled
 import com.unchunks.echomark.domain.bookmark.model.StageDurationKey
 import com.unchunks.echomark.domain.bookmark.model.contentKind
+import com.unchunks.echomark.domain.bookmark.model.isProcessingCancelled
 import com.unchunks.echomark.domain.bookmark.model.summaryProfile
 import com.unchunks.echomark.domain.model.AnalysisAttachment
 import com.unchunks.echomark.domain.model.AnalysisInput
-import com.unchunks.echomark.domain.model.CategoryNames
 import com.unchunks.echomark.domain.model.AnalysisScope
+import com.unchunks.echomark.domain.model.CategoryNames
 import com.unchunks.echomark.domain.provider.ModelNotAvailableException
 import com.unchunks.echomark.domain.provider.NothingToAnalyzeException
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -165,6 +166,8 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    // オフラインモードで断られた(クラウド API)。外側で処理待ちのまま残す
+                    if (e.isOfflineModeBlock()) throw e
                     analysisOutcome = classifyAnalysisError(e)
                     // 再試行で回復しうる失敗は外側の catch でリトライさせる
                     if (analysisOutcome == AnalysisOutcome.RETRY) throw e
@@ -223,6 +226,13 @@ class BookmarkAiProcessingWorker @AssistedInject constructor(
             repository.finishProcessing(bookmarkId, AiStatus.FAILED, failureReasonOf(e))
             Result.success()
         } catch (e: Exception) {
+            if (e.isOfflineModeBlock()) {
+                // オフラインモードの間は失敗にも再試行にもせず、処理待ちのまま残す(オフにしたら積み直される。
+                // 再試行にすると、指数バックオフで長く待たされたり、試行回数を使い切ったりする)
+                Timber.i("AI 処理: オフラインモードのため処理待ちのまま残す id=$bookmarkId")
+                withContext(NonCancellable) { stageStartedAt?.let { repository.endProcessingStage(bookmarkId, it) } }
+                return Result.failure()
+            }
             Timber.e(e, "AI 処理に失敗: id=$bookmarkId attempt=$runAttemptCount")
             // 再試行の間隔は WorkManager の指数バックオフ(30 秒から倍々、最大 5 時間)に任せる
             if (runAttemptCount + 1 >= maxAttemptsFor(e)) {

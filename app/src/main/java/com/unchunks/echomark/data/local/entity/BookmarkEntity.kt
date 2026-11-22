@@ -11,9 +11,15 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 
 // ここを変更するときは、ccom.unchunks.echomark.domain.bookmark.model.Bookmark.kt の変更が不要か確認すること
 // contentUri に unique index を張り、同一URLの重複保存を防ぐ(NULLは複数可)
+// aiStatus・lastAccessedAt・createdAt は、よく読み直す問い合わせの絞り込み・並べ替えに使う(処理の状況、再発見・最近読んだもの、未読の新しい順)
 @Entity(
     tableName = "bookmarks",
-    indices = [Index(value = ["contentUri"], unique = true)]
+    indices = [
+        Index(value = ["contentUri"], unique = true),
+        Index(value = ["aiStatus"]),
+        Index(value = ["lastAccessedAt"]),
+        Index(value = ["createdAt"])
+    ]
 )
 data class BookmarkEntity (
     @PrimaryKey(autoGenerate = true)
@@ -58,7 +64,7 @@ data class BookmarkEntity (
     // v20 で追加。読んだ(詳細画面を開いた・読んだことにした)日時。null なら未読(#60)
     val readAt: Long? = null,
     // v21 で追加。ページのオフラインコピー(MHTML と PDF。#80)。端末の中のファイル(attachments/ 内)を指す。
-    // ファイルはバックアップに含めない(大きく、リンク先から取り直せる)ので、これらの列もバックアップには含めない
+    // バックアップ v20 から列を含める。ファイルは「ファイルも含めて書き出す」(zip)のときだけ入り、読み込む端末に無ければ外す
     val snapshotPath: String? = null,
     val snapshotPdfPath: String? = null,
     val snapshotAt: Long? = null,

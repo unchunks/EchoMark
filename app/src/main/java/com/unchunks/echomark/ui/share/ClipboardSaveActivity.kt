@@ -2,7 +2,7 @@ package com.unchunks.echomark.ui.share
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.unchunks.echomark.MainActivity
@@ -19,7 +19,7 @@ import dagger.hilt.android.AndroidEntryPoint
  * 保存できるものがクリップボードに無ければ、追加シートを開く。
  */
 @AndroidEntryPoint
-class ClipboardSaveActivity : ComponentActivity() {
+class ClipboardSaveActivity : FragmentActivity() {
 
     private val viewModel: ShareViewModel by viewModels()
     private val appViewModel: MainViewModel by viewModels()

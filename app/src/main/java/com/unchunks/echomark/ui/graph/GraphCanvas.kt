@@ -24,10 +24,10 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import com.unchunks.components.composeui.chartPalette
 import com.unchunks.echomark.domain.graph.EdgeKind
 import com.unchunks.echomark.domain.graph.GraphLayout
 import com.unchunks.echomark.domain.graph.KnowledgeGraph
-import com.unchunks.echomark.ui.insights.chartPalette
 import kotlin.math.hypot
 
 /** ズームの範囲 */

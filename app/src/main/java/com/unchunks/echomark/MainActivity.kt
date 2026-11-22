@@ -4,7 +4,7 @@ import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.view.ViewTreeObserver
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.unchunks.echomark.ui.lock.AppLockGate
 import com.unchunks.echomark.ui.navigation.EchoMarkNavHost
 import com.unchunks.echomark.ui.navigation.LaunchTarget
 import com.unchunks.echomark.ui.onboarding.OnboardingExit
@@ -24,7 +25,7 @@ import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -51,18 +52,21 @@ class MainActivity : ComponentActivity() {
             }
 
             EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor) {
-                if (ready.onboardingCompleted) {
-                    EchoMarkNavHost(
-                        launchTarget = launchTarget,
-                        onLaunchTargetHandled = { launchTarget = null }
-                    )
-                } else {
-                    // 初回だけ、ボトムバーのない全画面で案内する。完了が保存されると一覧に切り替わる
-                    OnboardingScreen(
-                        onFinish = { exit ->
-                            if (exit == OnboardingExit.AI_SETTINGS) launchTarget = LaunchTarget.AI_SETTINGS
-                        }
-                    )
+                // アプリのロック中は中身を出さない(ショートカット・ウィジェット・通知・ディープリンクから開いたときも)
+                AppLockGate {
+                    if (ready.onboardingCompleted) {
+                        EchoMarkNavHost(
+                            launchTarget = launchTarget,
+                            onLaunchTargetHandled = { launchTarget = null }
+                        )
+                    } else {
+                        // 初回だけ、ボトムバーのない全画面で案内する。完了が保存されると一覧に切り替わる
+                        OnboardingScreen(
+                            onFinish = { exit ->
+                                if (exit == OnboardingExit.AI_SETTINGS) launchTarget = LaunchTarget.AI_SETTINGS
+                            }
+                        )
+                    }
                 }
             }
         }

@@ -1,6 +1,7 @@
 package com.unchunks.echomark.ui.bookmark
 
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.bookmark.model.BookmarkCollection
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
@@ -12,8 +13,10 @@ import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.SmartFolder
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
+import com.unchunks.echomark.domain.model.CategoryEntry
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.common.SelectedFile
+import com.unchunks.echomark.ui.selection.BulkMessage
 
 /** 一覧が空のとき、どの理由で空なのか(空状態の文言を変えるため)。 */
 enum class ListEmptyKind {
@@ -91,10 +94,21 @@ data class BookmarkListUiState(
     /** 「今日の再発見」(しばらく開いていないもの)。空なら出さない */
     val rediscover: List<Bookmark> = emptyList(),
     /** 保存済みの総数(アーカイブも含む) */
+    /** 複数選択のモードか(長押し・メニューの「選択」)。選んでいなくても true のことがある */
+    val isSelecting: Boolean = false,
+    /** 選んでいるブックマークの ID(今の一覧に出ているものだけ) */
+    val selectedIds: Set<Long> = emptySet(),
+    /** 複数選択の「コレクションに追加」に出すコレクション */
+    val collections: List<BookmarkCollection> = emptyList(),
+    /** 複数選択の「カテゴリを設定」に出すカテゴリ(標準のものも含む) */
+    val categoryChoices: List<CategoryEntry> = emptyList(),
     val totalCount: Int = 0
 ) {
     /** 検索語が入っていて、検索結果を表示している状態か */
     val isShowingSearchResults: Boolean get() = isSearchActive && searchQuery.isNotBlank()
+
+    /** 複数選択で選んでいるブックマーク(一覧の順) */
+    val selectedBookmarks: List<Bookmark> get() = bookmarks.filter { it.id in selectedIds }
 
     /** 選んでいるタグ(絞り込み用のタグに無いものは含まない) */
     val selectedTags: List<Tag> get() = allTags.filter { it.id in selectedTagIds }
@@ -169,4 +183,7 @@ sealed interface BookmarkListMessage {
 
     /** ファイルを保存した。[savedCount] 件を保存し、[failedCount] 件は保存できなかった */
     data class FilesSaved(val firstId: Long, val savedCount: Int, val failedCount: Int) : BookmarkListMessage
+
+    /** 複数選択の操作の結果 */
+    data class Bulk(val message: BulkMessage) : BookmarkListMessage
 }

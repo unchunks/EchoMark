@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import com.unchunks.echomark.MainUiState
 import com.unchunks.echomark.MainViewModel
 import com.unchunks.echomark.isDark
+import com.unchunks.echomark.ui.lock.AppLockGate
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import kotlinx.coroutines.delay
 
@@ -40,23 +41,26 @@ internal fun ComponentActivity.setQuickSaveContent(
             onDispose {}
         }
         EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor) {
-            val status by viewModel.status.collectAsState()
-            val suggestedTags by viewModel.suggestedTags.collectAsState()
-            LaunchedEffect(status) {
-                if (status is ShareSaveStatus.Saved) {
-                    // 保存できなかったものがあるときは、読めるよう長めに見せる
-                    delay(if ((status as ShareSaveStatus.Saved).failedCount > 0) PARTIAL_SAVED_DISPLAY_MILLIS else SAVED_DISPLAY_MILLIS)
-                    finish()
+            // アプリのロック中は、共有・引用・タイルから開いても中身(既存のタグの候補など)を出さない
+            AppLockGate {
+                val status by viewModel.status.collectAsState()
+                val suggestedTags by viewModel.suggestedTags.collectAsState()
+                LaunchedEffect(status) {
+                    if (status is ShareSaveStatus.Saved) {
+                        // 保存できなかったものがあるときは、読めるよう長めに見せる
+                        delay(if ((status as ShareSaveStatus.Saved).failedCount > 0) PARTIAL_SAVED_DISPLAY_MILLIS else SAVED_DISPLAY_MILLIS)
+                        finish()
+                    }
                 }
+                QuickSaveSheet(
+                    shared = shared,
+                    status = status,
+                    suggestedTags = suggestedTags,
+                    onInputChange = { title, memo -> viewModel.updateSuggestions(shared, title, memo) },
+                    onSave = { title, memo, tags -> viewModel.save(shared, title, memo, tags) },
+                    onDismiss = { finish() }
+                )
             }
-            QuickSaveSheet(
-                shared = shared,
-                status = status,
-                suggestedTags = suggestedTags,
-                onInputChange = { title, memo -> viewModel.updateSuggestions(shared, title, memo) },
-                onSave = { title, memo, tags -> viewModel.save(shared, title, memo, tags) },
-                onDismiss = { finish() }
-            )
         }
     }
 }

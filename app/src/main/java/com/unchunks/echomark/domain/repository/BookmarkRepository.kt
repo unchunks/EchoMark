@@ -18,9 +18,16 @@ import com.unchunks.echomark.domain.model.SummaryVersion
 import com.unchunks.echomark.domain.model.EmbeddingProgress
 import com.unchunks.echomark.domain.model.Tag
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /** URLブックマーク保存の結果。isDuplicate=true なら既存のブックマークを再利用した */
 data class SaveResult(val id: Long, val isDuplicate: Boolean)
+
+/**
+ * まとめての再処理([BookmarkRepository.reprocessAll])の結果。[count] 件を処理待ちにした。
+ * [started] が false なら、順番の列には積んでいない(夜間にまとめて処理する設定・オフラインモードのとき。処理待ちのまま、条件が整うと始まる)。
+ */
+data class ReprocessQueued(val count: Int, val started: Boolean)
 
 /**
  * ハイブリッド検索の結果(一覧画面の表示用)。
@@ -163,6 +170,41 @@ interface BookmarkRepository {
      */
     suspend fun enqueueWaitingProcessing(nightly: Boolean): Int
 
+    // ---- まとめての操作(一覧の複数選択) ----
+    // 1件ずつの操作と同じ結果になる。実装は書き込みを1つのトランザクションにまとめる
+    // (1件ずつ書くと、書き込みのたびに一覧などの見ている問い合わせが読み直される)。
+
+    /** [ids] すべてのお気に入りを [isFavorite] にする。 */
+    suspend fun setFavoriteAll(ids: List<Long>, isFavorite: Boolean) = ids.forEach { setFavorite(it, isFavorite) }
+
+    /** [ids] すべてのアーカイブを [isArchived] にする。 */
+    suspend fun setArchivedAll(ids: List<Long>, isArchived: Boolean) = ids.forEach { setArchived(it, isArchived) }
+
+    /** [ids] すべてを読んだことにする / 未読に戻す。 */
+    suspend fun setReadAll(ids: List<Long>, isRead: Boolean) = ids.forEach { setRead(it, isRead) }
+
+    /** [ids] すべてにユーザーのタグ [tagName] を付ける。 */
+    suspend fun addTagAll(ids: List<Long>, tagName: String) = ids.forEach { addTag(it, tagName) }
+
+    /** [ids] すべてからタグ [tagName] を外す。 */
+    suspend fun removeTagAll(ids: List<Long>, tagName: String) = ids.forEach { removeTag(it, tagName) }
+
+    /** [ids] すべてのカテゴリを、自分で選んだものとして [category] にする。 */
+    suspend fun setCategoryAll(ids: List<Long>, category: String) = ids.forEach { setCategory(it, category) }
+
+    /**
+     * [ids] の AI 処理をやり直す。1件ずつ順番に処理する列([reprocess] のように件ごとに急がない)に積み、数百件でも同時には処理しない。
+     * 手で直した要約は置き換えず、タグ・カテゴリ・埋め込みだけをやり直す。夜間にまとめて処理する設定・オフラインモードでは、
+     * 処理待ちにするだけで列には積まない([ReprocessQueued.started] が false)。
+     */
+    suspend fun reprocessAll(ids: List<Long>): ReprocessQueued
+
+    /** [bookmarks] をまとめて削除する([deleteBookmark] と同じ後始末)。取り消しは [restoreBookmarks]。 */
+    suspend fun deleteBookmarks(bookmarks: List<Bookmark>) = bookmarks.forEach { deleteBookmark(it) }
+
+    /** [deleteBookmarks] の取り消し。[restoreBookmark] と同じく、同じ ID・タグで復元し、処理は1件ずつ順番の列に積み直す。 */
+    suspend fun restoreBookmarks(bookmarks: List<Bookmark>) = bookmarks.forEach { restoreBookmark(it) }
+
     // Delete
     suspend fun deleteBookmark(bookmark: Bookmark)
 
@@ -201,6 +243,16 @@ interface BookmarkRepository {
 
     // Observe / Search
     fun observeBookmarks(): Flow<List<Bookmark>>
+
+    /**
+     * 最後に開いた日時が古い順に [limit] 件(同じなら ID の順)。再発見ウィジェットの候補。
+     * タイトル・出どころ・日時・アーカイブかどうかだけが入り、本文・要約・タグは入らない
+     * ([observeBookmarks] は全件を本文・タグごと読み直すため、変わるたびに読み直すものには重い)
+     */
+    fun observeLeastRecentlyAccessed(limit: Int): Flow<List<Bookmark>> =
+        observeBookmarks().map { list ->
+            list.sortedWith(compareBy<Bookmark> { it.lastAccessedAt }.thenBy { it.id }).take(limit)
+        }
     fun observeAllTags(): Flow<List<Tag>>
     fun observeBookmark(id: Long): Flow<Bookmark?>
 
@@ -213,6 +265,16 @@ interface BookmarkRepository {
         query: BookmarkQuery,
         sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST
     ): Flow<List<Bookmark>>
+
+    /**
+     * 一覧の画面に出すもの。[observeBookmarks]([query], [sortOrder])と同じものを同じ順に流すが、本文([Bookmark.content])は入れず、
+     * 読む時間の目安を [Bookmark.estimatedReadingMinutes] に入れる(一覧はブックマークが変わるたびに全件を読み直すため、本文まで読むと重い)。
+     * 本文の要るところ(チャットに渡すなど)では [observeBookmarks] を使う
+     */
+    fun observeBookmarkList(
+        query: BookmarkQuery,
+        sortOrder: BookmarkSortOrder = BookmarkSortOrder.NEWEST
+    ): Flow<List<Bookmark>> = observeBookmarks(query, sortOrder)
 
     /**
      * ハイブリッド検索。キーワード(LIKE)とベクトル類似の結果を RRF で統合して返す。

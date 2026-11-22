@@ -2,7 +2,14 @@ package com.unchunks.echomark.di
 
 import com.unchunks.echomark.worker.FeedCheckNightlyTask
 import com.unchunks.echomark.worker.LinkCheckNightlyTask
+import com.unchunks.echomark.data.backup.AutoBackupNotifier
+import com.unchunks.echomark.data.backup.BackupFolder
+import com.unchunks.echomark.data.backup.SafBackupFolder
+import com.unchunks.echomark.worker.AutoBackupController
+import com.unchunks.echomark.worker.AutoBackupNightlyTask
 import com.unchunks.echomark.worker.NightlyProcessingTask
+import com.unchunks.echomark.worker.NotificationAutoBackupNotifier
+import com.unchunks.echomark.worker.WorkManagerAutoBackupController
 import com.unchunks.echomark.worker.NightlyTask
 import com.unchunks.echomark.worker.ProcessingScheduleController
 import com.unchunks.echomark.worker.RediscoverScheduleController
@@ -42,4 +49,18 @@ abstract class SchedulerModule {
     @Binds
     @IntoSet
     abstract fun bindLinkCheckNightlyTask(impl: LinkCheckNightlyTask): NightlyTask
+
+    /** 自動バックアップ。処理の設定の「充電中だけ」を条件にしたワークとして積む */
+    @Binds
+    @IntoSet
+    abstract fun bindAutoBackupNightlyTask(impl: AutoBackupNightlyTask): NightlyTask
+
+    @Binds
+    abstract fun bindAutoBackupController(impl: WorkManagerAutoBackupController): AutoBackupController
+
+    @Binds
+    abstract fun bindAutoBackupNotifier(impl: NotificationAutoBackupNotifier): AutoBackupNotifier
+
+    @Binds
+    abstract fun bindBackupFolder(impl: SafBackupFolder): BackupFolder
 }

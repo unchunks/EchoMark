@@ -44,12 +44,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.ui.components.BookmarkThumbnail
 
 /**
  * 回答の下に出す、引用元の一覧と、引用しなかった資料・資料との照らし合わせの結果。
  * @param ids 回答の文脈に入れた資料の ID(n 番目が引用番号 n)
  * @param highlighted 回答の中で押された引用番号。その引用元を目立たせ、見える位置に出す
+ * @param savedWebUrls この画面でブックマークに保存した Web のページ
+ * @param onOpenWebSource Web のページを開く
+ * @param onSaveWebSource Web のページをブックマークに保存する
  */
 @Composable
 internal fun AnswerSources(
@@ -57,12 +61,16 @@ internal fun AnswerSources(
     ids: List<Long>,
     bookmarks: Map<Long, Bookmark>,
     highlighted: Int?,
-    onOpenBookmark: (Long) -> Unit
+    onOpenBookmark: (Long) -> Unit,
+    savedWebUrls: Set<String> = emptySet(),
+    onOpenWebSource: (String) -> Unit = {},
+    onSaveWebSource: (WebSource) -> Unit = {}
 ) {
-    if (review.sources.isNotEmpty()) {
+    val citedCount = review.sources.size + review.webSources.size
+    if (citedCount > 0) {
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "引用元 ${review.sources.size}件",
+            text = "引用元 ${citedCount}件",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.semantics { heading() }
@@ -79,9 +87,26 @@ internal fun AnswerSources(
                     )
                 }
             }
+            review.webSources.forEach { source ->
+                CitedWebSourceCard(
+                    source = source,
+                    isHighlighted = source.number == highlighted,
+                    isSaved = source.source.url in savedWebUrls,
+                    onOpen = onOpenWebSource,
+                    onSave = onSaveWebSource
+                )
+            }
+        }
+        if (review.webSources.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Web のページは今回の質問で検索したものです。内容が正しいとは限りません",
+                style = MaterialTheme.typography.labelSmall.copy(lineBreak = LineBreak.Paragraph),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
-    UncitedSources(review.uncitedNumbers, ids, bookmarks, onOpenBookmark)
+    UncitedSources(review.uncitedNumbers, ids, bookmarks, onOpenBookmark, review.uncitedWeb, savedWebUrls, onOpenWebSource, onSaveWebSource)
     AnswerCheck(review)
 }
 
@@ -132,15 +157,23 @@ private fun UncitedSources(
     numbers: List<Int>,
     ids: List<Long>,
     bookmarks: Map<Long, Bookmark>,
-    onOpenBookmark: (Long) -> Unit
+    onOpenBookmark: (Long) -> Unit,
+    webSources: List<WebSource>,
+    savedWebUrls: Set<String>,
+    onOpenWebSource: (String) -> Unit,
+    onSaveWebSource: (WebSource) -> Unit
 ) {
     val visible = numbers.mapNotNull { number -> ids.getOrNull(number - 1)?.let(bookmarks::get)?.let { number to it } }
-    if (visible.isEmpty()) return
+    if (visible.isEmpty() && webSources.isEmpty()) return
     var expanded by rememberSaveable { mutableStateOf(false) }
     TextButton(onClick = { expanded = !expanded }) {
-        Text(if (expanded) "引用しなかった資料を閉じる" else "引用しなかった資料 ${visible.size}件")
+        Text(if (expanded) "引用しなかった資料を閉じる" else "引用しなかった資料 ${visible.size + webSources.size}件")
     }
-    if (expanded) {
+    if (expanded && webSources.isNotEmpty()) {
+        UncitedWebSourceCards(webSources, savedWebUrls, onOpenWebSource, onSaveWebSource)
+        if (visible.isNotEmpty()) Spacer(Modifier.height(8.dp))
+    }
+    if (expanded && visible.isNotEmpty()) {
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)

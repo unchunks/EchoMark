@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.video.VideoFileStore
 import com.unchunks.echomark.domain.bookmark.model.AttachmentError
 import com.unchunks.echomark.domain.bookmark.model.AttachmentException
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
@@ -166,7 +167,7 @@ class AttachmentStoreTest {
                     filePath = kept.filePath, mimeType = kept.mimeType
                 )
             )
-            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, TestDispatcherProvider(Dispatchers.Unconfined))
+            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { db.offlineVideoDao() }, { VideoFileStore(context, TestDispatcherProvider(Dispatchers.Unconfined)) }, TestDispatcherProvider(Dispatchers.Unconfined))
 
             assertEquals(1, cleaner.cleanUp(now = 1_000L + 2 * DAY))
 
@@ -191,13 +192,45 @@ class AttachmentStoreTest {
                     contentUri = "https://example.com/a", snapshotPath = mhtml, snapshotPdfPath = pdf, snapshotAt = 5L
                 )
             )
-            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, TestDispatcherProvider(Dispatchers.Unconfined))
+            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { db.offlineVideoDao() }, { VideoFileStore(context, TestDispatcherProvider(Dispatchers.Unconfined)) }, TestDispatcherProvider(Dispatchers.Unconfined))
 
             assertEquals(1, cleaner.cleanUp(now = 1_000L + 2 * DAY))
 
             assertTrue(File(context.filesDir, mhtml).isFile)
             assertTrue(File(context.filesDir, pdf).isFile)
             assertFalse(File(context.filesDir, orphan).exists())
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun 起動時の掃除は動画の保存のサムネイルを残しブックマークの無い保存の記録を消す() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val thumbnail = store.saveStream(byteArrayOf(1).inputStream(), "image/jpeg", "thumb.jpg", 1024)
+            val orphanThumbnail = store.saveStream(byteArrayOf(2).inputStream(), "image/jpeg", "orphan.jpg", 1024)
+            listOf(thumbnail, orphanThumbnail).forEach { File(context.filesDir, it.filePath).setLastModified(1_000L) }
+            val id = db.bookmarkDao().insert(
+                BookmarkEntity(
+                    type = BookmarkType.URL, title = "動画", createdAt = 1L, lastAccessedAt = 1L,
+                    contentUri = "https://www.youtube.com/watch?v=abcdefghijk"
+                )
+            )
+            val videos = db.offlineVideoDao()
+            assertTrue(videos.saveThumbnail(id, thumbnail.filePath, savedAt = 5L))
+            // 削除されたブックマークの行(外部キーにしていないので残っている)
+            db.openHelper.writableDatabase.execSQL(
+                "INSERT INTO offline_videos (bookmarkId, thumbnailPath, savedAt) VALUES (999, '${orphanThumbnail.filePath}', 5)"
+            )
+            val cleaner = UnusedAttachmentCleaner({ store }, { db.bookmarkDao() }, { videos }, { VideoFileStore(context, TestDispatcherProvider(Dispatchers.Unconfined)) }, TestDispatcherProvider(Dispatchers.Unconfined))
+
+            assertEquals(1, cleaner.cleanUp(now = 1_000L + 2 * DAY))
+
+            assertTrue(File(context.filesDir, thumbnail.filePath).isFile)
+            assertFalse(File(context.filesDir, orphanThumbnail.filePath).exists())
+            assertNull(videos.get(999))
+            assertEquals(thumbnail.filePath, videos.get(id)?.thumbnailPath)
         } finally {
             db.close()
         }

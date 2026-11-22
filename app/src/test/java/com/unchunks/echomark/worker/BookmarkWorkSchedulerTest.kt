@@ -65,6 +65,35 @@ class BookmarkWorkSchedulerTest {
     }
 
     @Test
+    fun オフラインモードの間は通信の要る処理を積まずに処理待ちのまま残す() = runBlocking {
+        settings.offlineModeFlow.value = true
+
+        // 本文の取得が要るものは積まない(オフにしたら積み直される)
+        assertEquals(false, scheduler.enqueue(1L, fetchContent = true))
+        assertTrue(unfinished(1L).isEmpty())
+        // 端末内 AI だけで済むものは積む
+        assertEquals(true, scheduler.enqueue(2L, fetchContent = false, extractContent = true))
+        assertEquals(2, unfinished(2L).size)
+
+        // 一括の列も、通信の要るものだけ外す
+        scheduler.enqueueSequential(
+            listOf(BookmarkWorkScheduler.Target(3L, fetchContent = true), BookmarkWorkScheduler.Target(4L, fetchContent = false))
+        )
+        assertEquals(setOf(2L, 4L), scheduler.bookmarkIdsWithUnfinishedWork())
+        // 通信の要るものしか無ければ積まない
+        assertEquals(false, scheduler.enqueueSequential(listOf(BookmarkWorkScheduler.Target(5L, fetchContent = true))))
+    }
+
+    @Test
+    fun オフラインモードでクラウドAIを使う設定なら本文の取得が無くても積まない() = runBlocking {
+        settings.offlineModeFlow.value = true
+        settings.setLlmBackend(AiTask.SUMMARY, LlmBackend.API)
+
+        assertEquals(false, scheduler.enqueue(1L, fetchContent = false))
+        assertTrue(unfinished(1L).isEmpty())
+    }
+
+    @Test
     fun 取り消しは対象のブックマークだけ() = runBlocking {
         scheduler.enqueue(1L, fetchContent = true)
         scheduler.enqueue(2L, fetchContent = true)

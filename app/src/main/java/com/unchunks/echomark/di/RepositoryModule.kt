@@ -170,6 +170,21 @@ abstract class RepositoryModule {
     ): com.unchunks.echomark.domain.snapshot.PageSnapshotRepository
 
     @Binds
+    abstract fun bindOfflineVideoRepository(
+        impl: com.unchunks.echomark.data.video.OfflineVideoRepositoryImpl
+    ): com.unchunks.echomark.domain.video.OfflineVideoRepository
+
+    @Binds
+    abstract fun bindVideoDownloadScheduler(
+        impl: com.unchunks.echomark.worker.VideoDownloadWorkScheduler
+    ): com.unchunks.echomark.domain.video.VideoDownloadScheduler
+
+    @Binds
+    abstract fun bindVideoOfflineScheduler(
+        impl: com.unchunks.echomark.worker.VideoOfflineWorkScheduler
+    ): com.unchunks.echomark.domain.video.VideoOfflineScheduler
+
+    @Binds
     abstract fun bindAttachmentRepository(
         impl: AttachmentStore
     ): AttachmentRepository

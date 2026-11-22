@@ -23,6 +23,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <!-- ポッドキャストのバックグラウンドの再生(PodcastPlaybackService) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!-- 端末内の音声認識サービス(文字起こし)に接続するため、パッケージの可視性を宣言する -->
     <queries>
@@ -83,6 +85,17 @@
 
                 <data
                     android:host="processing-queue"
+                    android:scheme="echomark" />
+            </intent-filter>
+
+            <!-- ポッドキャストができた通知 → echomark://podcasts でエピソードの一覧へ -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data
+                    android:host="podcasts"
                     android:scheme="echomark" />
             </intent-filter>
 
@@ -181,6 +194,13 @@
             android:exported="false"
             android:theme="@style/Theme.EchoMark" />
 
+        <!-- 端末に保存した動画の再生(Media3)。向きを変えても再生を続けるよう、作り直さない -->
+        <activity
+            android:name=".ui.video.VideoPlayerActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:theme="@style/Theme.EchoMark" />
+
         <service
             android:name=".ui.tile.ClipboardSaveTileService"
             android:exported="true"
@@ -218,6 +238,20 @@
 
         <!-- WorkManager のフォアグラウンド実行用サービスに、フォアグラウンドのワーカーが使う種類(dataSync・mediaProcessing)を付ける。
              ForegroundInfo に渡す種類は、ここで宣言したものに含まれている必要がある(Android 14+) -->
+        <!--
+            ポッドキャストの再生(Media3 の MediaSessionService)。メディアの通知・ロック画面・Bluetooth から操作できるよう exported にするが、
+            つなげる相手はサービスの中で限る(このアプリ・通知・端末・車の画面だけ)。読むのはエピソードの置き場所の音声だけ
+        -->
+        <service
+            android:name=".data.podcast.playback.PodcastPlaybackService"
+            tools:ignore="ExportedService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync|mediaProcessing"
@@ -254,6 +288,15 @@
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-car.so" android:required="false" />
         <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
+
+        <!--
+            ML Kit(文字認識・ラベル付け)は、Google Data Transport でアプリの中から利用状況を Google に送る。
+            OkHttp を通らずオフラインモードで止められないため、送信先(CCT)の登録を外して常に送らないようにする
+            (文字認識・ラベル付けの機能は送信と関係なく動く。docs/offline-mode.md)
+        -->
+        <service
+            android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery"
+            tools:node="remove" />
     </application>
 
 </manifest>

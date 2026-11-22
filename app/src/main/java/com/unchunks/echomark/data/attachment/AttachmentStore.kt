@@ -213,6 +213,27 @@ class AttachmentStore @Inject constructor(
             }
         }
 
+    /**
+     * バックアップ(zip)から展開したファイル([source])を、同じ名前([filePath])で置き場所に入れる。
+     * 同じ名前のファイルが既にあれば何もしない(名前は UUID なので、同じファイル)。新しく入れたら true。
+     * `.part` に書いてから名前を変えるので、途中で失敗しても壊れたファイルは残らない。
+     */
+    suspend fun restore(filePath: String, source: File): Boolean = withContext(dispatcherProvider.io) {
+        val dest = fileOf(filePath) ?: throw IllegalArgumentException("unsafe path: $filePath")
+        if (dest.isFile) return@withContext false
+        ensureSpace(source.length())
+        val part = File(dest.path + PART_SUFFIX)
+        try {
+            // 展開先(キャッシュ)と同じ領域なら移すだけで済む
+            if (!source.renameTo(part)) source.copyTo(part, overwrite = true)
+            if (!part.renameTo(dest)) throw IOException("rename failed")
+        } catch (e: IOException) {
+            part.delete()
+            throw AttachmentException(AttachmentError.ReadFailed, e)
+        }
+        true
+    }
+
     /** 表示名とサイズ(不明なら -1)。 */
     private fun queryNameAndSize(uri: Uri): Pair<String?, Long> {
         val info = context.contentResolver.queryOpenableInfo(uri)
@@ -225,6 +246,9 @@ class AttachmentStore @Inject constructor(
             throw AttachmentException(AttachmentError.InsufficientStorage)
         }
     }
+
+    /** バックアップから戻すファイルに使ってよい容量(取り込みと同じ余裕を残す) */
+    fun restorableBytes(): Long = (allocatableBytes() - STORAGE_MARGIN_BYTES).coerceAtLeast(0L)
 
     /** 保存先に確保できる容量。消去可能なキャッシュ分も含めて見積もる。 */
     private fun allocatableBytes(): Long = context.allocatableBytes(directory)

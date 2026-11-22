@@ -45,8 +45,11 @@ internal fun PageSnapshotDialog(
     url: String,
     onCaptured: (SnapshotCapture) -> Unit,
     onFailed: (String) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    /** オフラインモードがオンか(読み込む前と、ページの中の読み込みのたびに確かめる) */
+    isOffline: () -> Boolean
 ) {
+    val currentIsOffline by rememberUpdatedState(isOffline)
     val context = LocalContext.current
     val density = context.resources.displayMetrics.density
     val webView = remember { WebView(context) }
@@ -65,7 +68,7 @@ internal fun PageSnapshotDialog(
         try {
             // 前の作りかけが残っていれば消す
             dir.listFiles()?.forEach { it.delete() }
-            val capture = PageSnapshotter(webView, density).capture(url, dir) { step = it }
+            val capture = PageSnapshotter(webView, density) { currentIsOffline() }.capture(url, dir) { step = it }
             currentOnCaptured(capture)
         } catch (e: CancellationException) {
             dir.listFiles()?.forEach { it.delete() }

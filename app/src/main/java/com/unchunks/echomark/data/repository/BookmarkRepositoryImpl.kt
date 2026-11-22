@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.repository
 
+import androidx.tracing.traceAsync
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.search.RankFusion
@@ -51,6 +52,7 @@ import com.unchunks.echomark.domain.model.TagSource
 import com.unchunks.echomark.domain.model.TagSuggestions
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.BookmarkSearchResult
+import com.unchunks.echomark.domain.repository.ReprocessQueued
 import com.unchunks.echomark.domain.repository.SaveResult
 import com.unchunks.echomark.worker.BookmarkWorkScheduler
 import kotlinx.coroutines.CancellationException
@@ -62,6 +64,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.text.Normalizer
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
 class BookmarkRepositoryImpl @Inject constructor(
@@ -78,6 +81,9 @@ class BookmarkRepositoryImpl @Inject constructor(
     private val attachmentStore: AttachmentStore,
     private val deletedExtras: DeletedBookmarkExtrasStash = DeletedBookmarkExtrasStash()
 ) : BookmarkRepository {
+
+    // 一覧の読む時間の目安の覚え(一覧の画面の ViewModel が持つこのインスタンスの間、使い回す)
+    private val readingMinutes = ReadingMinutesCache()
 
     override suspend fun saveBookmark(bookmark: Bookmark): SaveResult =
         withContext(dispatcherProvider.io) {
@@ -135,45 +141,68 @@ class BookmarkRepositoryImpl @Inject constructor(
         folderAsTag: Boolean,
         onProgress: (done: Int, total: Int) -> Unit
     ): ImportResult = withContext(dispatcherProvider.io) {
+        traceAsync(TRACE_IMPORT, nextTraceCookie()) { importLinksTraced(links, folderAsTag, onProgress) }
+    }
+
+    private suspend fun importLinksTraced(
+        links: List<ImportedLink>,
+        folderAsTag: Boolean,
+        onProgress: (done: Int, total: Int) -> Unit
+    ): ImportResult {
         val now = System.currentTimeMillis()
         var duplicates = 0
         var failed = 0
         val newIds = ArrayList<Long>()
-        links.forEachIndexed { index, link ->
-            try {
-                // 元の保存日時を引き継ぐ(未来の日時や 0 は今にそろえる)。アーカイブ済みは読んだものとして扱う
-                val savedAt = (link.savedAt ?: now).coerceIn(1L, now)
-                val entity = Bookmark(
-                    type = BookmarkType.URL,
-                    content = link.note,
-                    contentUri = link.url,
-                    title = link.title ?: link.url,
-                    createdAt = savedAt,
-                    lastAccessedAt = savedAt,
-                    isFavorite = link.favorite,
-                    isArchived = link.archived,
-                    readAt = if (link.archived) savedAt else null
-                ).toEntity().copy(queuedAt = now)
-                val id = bookmarkDao.insertIgnore(entity)
-                if (id == -1L) {
-                    duplicates++
-                } else {
-                    newIds += id
-                    val tags = if (folderAsTag && link.folder != null) link.tags + link.folder else link.tags
-                    if (tags.isNotEmpty()) tagDao.addTagsToBookmark(id, tags, TagSource.USER)
+        // 区切りごとに1つのトランザクションで書く。1件ずつ書くと、書き込みのたびに一覧などの見ている問い合わせが
+        // 全件を読み直し(購読の新着 30 件で 90 回の書き込み)、そのあいだアプリ全体が重くなる
+        var done = 0
+        links.chunked(IMPORT_PROGRESS_STEP).forEach { chunk ->
+            bookmarkDao.inTransaction {
+                chunk.forEach { link ->
+                    when (val id = importOne(link, now, folderAsTag)) {
+                        null -> failed++
+                        -1L -> duplicates++
+                        else -> newIds += id
+                    }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Timber.w(e, "取り込みで1件の保存に失敗")
-                failed++
             }
-            if ((index + 1) % IMPORT_PROGRESS_STEP == 0 || index == links.lastIndex) onProgress(index + 1, links.size)
+            done += chunk.size
+            onProgress(done, links.size)
         }
-        // 数千件を同時に処理しないよう、1件ずつ順番の列に積む(夜間にまとめて処理する設定なら積まれない)
-        val started = newIds.isNotEmpty() && enqueueSequentialProcessing(newIds)
-        ImportResult(added = newIds.size, duplicates = duplicates, failed = failed, processingStarted = started)
+        // 数千件を同時に処理しないよう、1件ずつ順番の列に積む(夜間にまとめて処理する設定なら積まれない)。
+        // 入れたものは処理待ち(queuedAt は今)になっているので、処理待ちにし直す書き込みはしない
+        val started = newIds.isNotEmpty() && workScheduler.enqueueSequential(targetsOf(newIds))
+        return ImportResult(added = newIds.size, duplicates = duplicates, failed = failed, processingStarted = started)
     }
+
+    /** 取り込みの1件を書く。入れたブックマークの ID、重複なら -1、失敗したら null */
+    private suspend fun importOne(link: ImportedLink, now: Long, folderAsTag: Boolean): Long? =
+        try {
+            // 元の保存日時を引き継ぐ(未来の日時や 0 は今にそろえる)。アーカイブ済みは読んだものとして扱う
+            val savedAt = (link.savedAt ?: now).coerceIn(1L, now)
+            val entity = Bookmark(
+                type = BookmarkType.URL,
+                content = link.note,
+                contentUri = link.url,
+                title = link.title ?: link.url,
+                createdAt = savedAt,
+                lastAccessedAt = savedAt,
+                isFavorite = link.favorite,
+                isArchived = link.archived,
+                readAt = if (link.archived) savedAt else null
+            ).toEntity().copy(queuedAt = now)
+            val id = bookmarkDao.insertIgnore(entity)
+            if (id != -1L) {
+                val tags = if (folderAsTag && link.folder != null) link.tags + link.folder else link.tags
+                if (tags.isNotEmpty()) tagDao.addTagsToBookmark(id, tags, TagSource.USER)
+            }
+            id
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "取り込みで1件の保存に失敗")
+            null
+        }
 
     override suspend fun saveFileBookmark(attachment: StoredAttachment, title: String?, memo: String?): SaveResult {
         val type = bookmarkTypeOfMimeType(attachment.mimeType)
@@ -231,8 +260,9 @@ class BookmarkRepositoryImpl @Inject constructor(
      * 状態を「処理待ち」に戻し、1件ずつ順番に処理する列に積む(一括の再処理。同時に API を呼びすぎない)。
      * 夜間にまとめて処理する設定なら、処理待ちにするだけで積まない(夜に積む)。積んだら true。
      */
-    private suspend fun enqueueSequentialProcessing(ids: List<Long>): Boolean {
-        val targets = targetsOf(ids)
+    private suspend fun enqueueSequentialProcessing(ids: List<Long>, scopes: Map<Long, AnalysisScope> = emptyMap()): Boolean {
+        // [scopes] にあるものは、その範囲だけをやり直す(無ければ全部)
+        val targets = targetsOf(ids).map { target -> scopes[target.bookmarkId]?.let { target.copy(scope = it) } ?: target }
         val now = System.currentTimeMillis()
         targets.forEach { bookmarkDao.markQueued(it.bookmarkId, now) }
         return workScheduler.enqueueSequential(targets)
@@ -531,30 +561,44 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun restoreBookmark(bookmark: Bookmark) {
         withContext(dispatcherProvider.io) {
-            // 同じ ID で挿入し直す(削除済みなので競合しない)。ベクトルは削除時に消えているため再生成する
-            bookmarkDao.insert(
-                bookmark.copy(
-                    aiStatus = AiStatus.PENDING,
-                    processing = ProcessingInfo(queuedAt = System.currentTimeMillis())
-                ).toEntity()
-            )
-            // 削除のときに預かったノート・コレクションへの所属・復習のカードも戻す(コレクションが消えていた分は外部キーで入らないので除く)
-            val extras = deletedExtras.take(bookmark.id)
-            noteDao.insertAll(extras.notes)
-            extras.reviewCard?.let { reviewCardDao.insert(it) }
-            if (extras.collectionItems.isNotEmpty()) {
-                val existing = collectionDao.getAll().mapTo(HashSet()) { it.id }
-                collectionDao.insertItems(extras.collectionItems.filter { it.collectionId in existing })
-            }
-            // 付けた人も元どおりにする(AI のタグをユーザーのタグに変えてしまわない)
-            val (aiTags, userTags) = bookmark.tags.partition { it in bookmark.aiTags }
-            tagDao.addTagsToBookmark(bookmark.id, userTags, TagSource.USER)
-            tagDao.addTagsToBookmark(bookmark.id, aiTags, TagSource.AI)
-            // 削除で履歴は消えている。今の要約だけは版として残す
-            bookmark.summary?.takeIf { it.isNotBlank() }?.let {
-                addSummaryVersion(bookmark.id, it, if (bookmark.summaryEdited) SummarySource.MANUAL else SummarySource.AI, null)
-            }
+            restoreRows(bookmark)
             enqueueReprocessing(bookmark)
+        }
+    }
+
+    override suspend fun restoreBookmarks(bookmarks: List<Bookmark>) {
+        if (bookmarks.isEmpty()) return
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.inTransaction { bookmarks.forEach { restoreRows(it) } }
+            // 件ごとに急いで処理せず、1件ずつ順番の列に積む(ベクトルは削除時に消えているので、AI 処理で作り直す)
+            enqueueSequentialProcessing(bookmarks.map { it.id })
+        }
+    }
+
+    /** 削除したブックマークを、ノートなどと一緒にデータベースへ戻す(AI 処理を積むのは呼び出し側) */
+    private suspend fun restoreRows(bookmark: Bookmark) {
+        // 同じ ID で挿入し直す(削除済みなので競合しない)。ベクトルは削除時に消えているため再生成する
+        bookmarkDao.insert(
+            bookmark.copy(
+                aiStatus = AiStatus.PENDING,
+                processing = ProcessingInfo(queuedAt = System.currentTimeMillis())
+            ).toEntity()
+        )
+        // 削除のときに預かったノート・コレクションへの所属・復習のカードも戻す(コレクションが消えていた分は外部キーで入らないので除く)
+        val extras = deletedExtras.take(bookmark.id)
+        noteDao.insertAll(extras.notes)
+        extras.reviewCard?.let { reviewCardDao.insert(it) }
+        if (extras.collectionItems.isNotEmpty()) {
+            val existing = collectionDao.getAll().mapTo(HashSet()) { it.id }
+            collectionDao.insertItems(extras.collectionItems.filter { it.collectionId in existing })
+        }
+        // 付けた人も元どおりにする(AI のタグをユーザーのタグに変えてしまわない)
+        val (aiTags, userTags) = bookmark.tags.partition { it in bookmark.aiTags }
+        tagDao.addTagsToBookmark(bookmark.id, userTags, TagSource.USER)
+        tagDao.addTagsToBookmark(bookmark.id, aiTags, TagSource.AI)
+        // 削除で履歴は消えている。今の要約だけは版として残す
+        bookmark.summary?.takeIf { it.isNotBlank() }?.let {
+            addSummaryVersion(bookmark.id, it, if (bookmark.summaryEdited) SummarySource.MANUAL else SummarySource.AI, null)
         }
     }
 
@@ -603,6 +647,71 @@ class BookmarkRepositoryImpl @Inject constructor(
             bookmarkDao.updateArchived(id, isArchived)
         }
 
+    // ---- まとめての操作(一覧の複数選択)。書き込みは1つのトランザクションにまとめる ----
+
+    override suspend fun setFavoriteAll(ids: List<Long>, isFavorite: Boolean) =
+        inChunks(ids) { chunk -> bookmarkDao.updateFavoriteAll(chunk, isFavorite) }
+
+    override suspend fun setArchivedAll(ids: List<Long>, isArchived: Boolean) =
+        inChunks(ids) { chunk -> bookmarkDao.updateArchivedAll(chunk, isArchived) }
+
+    override suspend fun setReadAll(ids: List<Long>, isRead: Boolean) {
+        val now = System.currentTimeMillis()
+        inChunks(ids) { chunk -> if (isRead) bookmarkDao.markReadAll(chunk, now) else bookmarkDao.markUnreadAll(chunk) }
+    }
+
+    override suspend fun setCategoryAll(ids: List<Long>, category: String) {
+        val name = CategoryNames.clean(category)
+        if (name.isEmpty()) return
+        inChunks(ids) { chunk -> bookmarkDao.setCategoryByUserAll(chunk, name) }
+    }
+
+    override suspend fun addTagAll(ids: List<Long>, tagName: String) {
+        val name = tagName.trim()
+        if (name.isEmpty() || ids.isEmpty()) return
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.inTransaction { ids.forEach { tagDao.addTagsToBookmark(it, listOf(name), TagSource.USER) } }
+        }
+    }
+
+    override suspend fun removeTagAll(ids: List<Long>, tagName: String) {
+        if (ids.isEmpty()) return
+        withContext(dispatcherProvider.io) {
+            val removedAt = System.currentTimeMillis()
+            bookmarkDao.inTransaction { ids.forEach { tagDao.removeTagFromBookmark(it, tagName, removedAt) } }
+        }
+    }
+
+    override suspend fun reprocessAll(ids: List<Long>): ReprocessQueued =
+        withContext(dispatcherProvider.io) {
+            val targets = ids.distinct().chunked(ID_QUERY_CHUNK_SIZE).flatMap { bookmarkDao.getByIds(it) }
+            if (targets.isEmpty()) return@withContext ReprocessQueued(0, started = false)
+            val now = System.currentTimeMillis()
+            // 手で直した要約は置き換えない(#19。[reprocess] と同じ)。それ以外は要約を消して作り直す
+            // (要約が残っていると、AI 処理は要約を作り直さない)
+            val scopes = HashMap<Long, AnalysisScope>()
+            bookmarkDao.inTransaction {
+                targets.forEach { bookmark ->
+                    if (bookmark.summaryEdited && !bookmark.summary.isNullOrBlank()) {
+                        scopes[bookmark.id] = AnalysisScope.TAGS
+                    } else {
+                        bookmarkDao.resetAiResult(bookmark.id, now)
+                    }
+                }
+            }
+            // 件ごとに急がず、1件ずつ順番に処理する列に積む
+            val started = enqueueSequentialProcessing(targets.map { it.id }, scopes)
+            ReprocessQueued(targets.size, started)
+        }
+
+    /** [ids] を SQLite の変数の上限に収まる件数ずつに区切り、全体を1つのトランザクションで書く */
+    private suspend fun inChunks(ids: List<Long>, write: suspend (List<Long>) -> Unit) {
+        if (ids.isEmpty()) return
+        withContext(dispatcherProvider.io) {
+            bookmarkDao.inTransaction { ids.distinct().chunked(ID_QUERY_CHUNK_SIZE).forEach { write(it) } }
+        }
+    }
+
     override suspend fun updateLinkMetadata(id: Long, imageUrl: String?, siteName: String?) =
         withContext(dispatcherProvider.io) {
             bookmarkDao.updateLinkMetadata(id, imageUrl, siteName)
@@ -633,25 +742,46 @@ class BookmarkRepositoryImpl @Inject constructor(
         withContext(dispatcherProvider.io) {
             // 処理待ち・実行中の本文取得・AI 処理を止める(削除後にクラウドへ送ったり、書き込んだりしない)
             workScheduler.cancel(bookmark.id)
-            // ノート・コレクションへの所属・復習のカードは削除で連鎖して消えるので、「元に戻す」に備えて先に預ける
-            deletedExtras.put(
-                bookmark.id,
-                DeletedBookmarkExtras(
-                    noteDao.getByBookmark(bookmark.id), collectionDao.getItemsOfBookmark(bookmark.id), reviewCardDao.getByBookmark(bookmark.id)
-                )
-            )
-            bookmarkDao.delete(bookmark.toEntity())
+            deleteRows(bookmark)
             // 紐付けは連鎖して消えるため、AI だけが付けていてどこにも付かなくなったタグを消す
             // (取り消したときは restoreBookmark が同じ名前で付け直す)
             tagDao.deleteOrphanAiTags()
-            // ObjectBox側の埋め込みも削除する(孤児ベクトルを残さない)
-            vectorSearch.deleteByBookmarkId(bookmark.id)
-            // 添付ファイルは「元に戻す」に備えてすぐには消さない。掃除までの猶予を削除の時点から数える
-            bookmark.filePath?.let { attachmentStore.touch(it) }
-            bookmark.snapshotPath?.let { attachmentStore.touch(it) }
-            bookmark.snapshotPdfPath?.let { attachmentStore.touch(it) }
-            Unit
+            cleanUpAfterDelete(bookmark)
         }
+
+    override suspend fun deleteBookmarks(bookmarks: List<Bookmark>) {
+        if (bookmarks.isEmpty()) return
+        withContext(dispatcherProvider.io) {
+            bookmarks.forEach { workScheduler.cancel(it.id) }
+            // 1つのトランザクションで消す。1件ずつ消すと、消すたびに一覧などの見ている問い合わせが全件を読み直す
+            bookmarkDao.inTransaction {
+                bookmarks.forEach { deleteRows(it) }
+                tagDao.deleteOrphanAiTags()
+            }
+            bookmarks.forEach { cleanUpAfterDelete(it) }
+        }
+    }
+
+    /** ノート・コレクションへの所属・復習のカードを預けて、ブックマークの行を消す(連鎖して消えるものは「元に戻す」に備えて先に預ける) */
+    private suspend fun deleteRows(bookmark: Bookmark) {
+        deletedExtras.put(
+            bookmark.id,
+            DeletedBookmarkExtras(
+                noteDao.getByBookmark(bookmark.id), collectionDao.getItemsOfBookmark(bookmark.id), reviewCardDao.getByBookmark(bookmark.id)
+            )
+        )
+        bookmarkDao.delete(bookmark.toEntity())
+    }
+
+    /** データベースの外の後始末(埋め込み・添付ファイル) */
+    private suspend fun cleanUpAfterDelete(bookmark: Bookmark) {
+        // ObjectBox側の埋め込みも削除する(孤児ベクトルを残さない)
+        vectorSearch.deleteByBookmarkId(bookmark.id)
+        // 添付ファイルは「元に戻す」に備えてすぐには消さない。掃除までの猶予を削除の時点から数える
+        bookmark.filePath?.let { attachmentStore.touch(it) }
+        bookmark.snapshotPath?.let { attachmentStore.touch(it) }
+        bookmark.snapshotPdfPath?.let { attachmentStore.touch(it) }
+    }
 
     override suspend fun getBookmarkById(id: Long): Bookmark? =
         withContext(dispatcherProvider.io) {
@@ -710,6 +840,11 @@ class BookmarkRepositoryImpl @Inject constructor(
             .map { list -> list.map { it.toDomain() } }
             .flowOn(dispatcherProvider.io)
 
+    override fun observeLeastRecentlyAccessed(limit: Int): Flow<List<Bookmark>> =
+        bookmarkDao.observeLeastRecentlyAccessed(limit)
+            .map { rows -> rows.map { it.toDomain() } }
+            .flowOn(dispatcherProvider.io)
+
     override fun observeAllTags(): Flow<List<Tag>> =
         tagDao.getAllTags().map { list -> list.map { Tag(it.id, it.name) } }
             .flowOn(dispatcherProvider.io)
@@ -723,26 +858,52 @@ class BookmarkRepositoryImpl @Inject constructor(
         query: BookmarkQuery,
         sortOrder: BookmarkSortOrder
     ): Flow<List<Bookmark>> =
-        bookmarkDao.observeFiltered(
-            archived = query.filter == BookmarkFilter.ARCHIVED,
-            favoriteOnly = query.filter == BookmarkFilter.FAVORITES,
-            tagIds = query.tagIds.toList(),
-            tagCount = query.tagIds.size,
-            matchAll = query.tagMatch == TagMatch.ALL,
-            categories = query.categories.toList(),
-            categoryCount = query.categories.size,
-            types = query.types.map { it.name },
-            typeCount = query.types.size,
-            createdSince = query.period?.sinceMillis(System.currentTimeMillis()) ?: 0L,
-            readFilter = when (query.readState) {
+        query.filtered(sortOrder, bookmarkDao::observeFiltered)
+            .map { list -> list.map { it.toDomain() } }
+            .flowOn(dispatcherProvider.io)
+
+    override fun observeBookmarkList(
+        query: BookmarkQuery,
+        sortOrder: BookmarkSortOrder
+    ): Flow<List<Bookmark>> =
+        query.filtered(sortOrder, bookmarkDao::observeFilteredWithoutContent)
+            .map { rows ->
+                // 読む時間の目安は、本文が変わったものだけ本文を読んで求め直す
+                val lengths = rows.mapNotNull { row -> row.contentLength?.takeIf { it > 0 }?.let { row.bookmark.id to it } }.toMap()
+                val minutes = readingMinutes.minutesFor(lengths) { ids ->
+                    bookmarkDao.getContents(ids).associate { it.id to it.content }
+                }
+                rows.map { row -> row.toDomain().copy(estimatedReadingMinutes = minutes[row.bookmark.id]) }
+            }
+            .flowOn(dispatcherProvider.io)
+
+    /** 一覧の絞り込み・並べ替え([BookmarkDao.observeFiltered] の引数)で [observe] を呼ぶ */
+    private fun <T> BookmarkQuery.filtered(
+        sortOrder: BookmarkSortOrder,
+        observe: (
+            archived: Boolean?, favoriteOnly: Boolean, tagIds: List<Long>, tagCount: Int, matchAll: Boolean,
+            categories: List<String>, categoryCount: Int, types: List<String>, typeCount: Int,
+            createdSince: Long, readFilter: Int, sortOrder: String
+        ) -> Flow<List<T>>
+    ): Flow<List<T>> =
+        observe(
+            filter == BookmarkFilter.ARCHIVED,
+            filter == BookmarkFilter.FAVORITES,
+            tagIds.toList(),
+            tagIds.size,
+            tagMatch == TagMatch.ALL,
+            categories.toList(),
+            categories.size,
+            types.map { it.name },
+            types.size,
+            period?.sinceMillis(System.currentTimeMillis()) ?: 0L,
+            when (readState) {
                 null -> 0
                 ReadState.UNREAD -> 1
                 ReadState.READ -> 2
             },
-            sortOrder = sortOrder.name
+            sortOrder.name
         )
-            .map { list -> list.map { it.toDomain() } }
-            .flowOn(dispatcherProvider.io)
 
     override suspend fun search(query: String): List<Bookmark> =
         searchWithDetails(query).bookmarks
@@ -877,8 +1038,12 @@ class BookmarkRepositoryImpl @Inject constructor(
         /** ID の一覧で問い合わせるときの1回あたりの件数(SQLite の変数の上限より十分小さく) */
         const val ID_QUERY_CHUNK_SIZE = 500
 
-        /** 取り込みの進み具合を知らせる間隔(件数) */
+        /** 取り込みの進み具合を知らせる間隔(件数)。1つのトランザクションでまとめて書く件数でもある */
         const val IMPORT_PROGRESS_STEP = 50
+
+        private const val TRACE_IMPORT = "BookmarkRepository.importLinks"
+        private val traceCookies = AtomicInteger()
+        private fun nextTraceCookie(): Int = traceCookies.incrementAndGet()
 
         /** 要約の履歴に残す版の数(これを超えたら古い版から消す) */
         const val SUMMARY_HISTORY_LIMIT = 20

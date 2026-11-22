@@ -1,5 +1,10 @@
 package com.unchunks.echomark.data.feed
 
+import androidx.tracing.trace
+import androidx.tracing.traceAsync
+import com.unchunks.components.feed.FeedItem
+import com.unchunks.components.feed.FeedParser
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.domain.importer.ImportedLink
@@ -13,6 +18,7 @@ import dagger.Lazy
 import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
 /**
@@ -52,7 +58,11 @@ class FeedChecker @Inject constructor(
         val plan: Plan
     )
 
-    private suspend fun check(subscriptions: List<SubscriptionEntity>, maxNew: Int, manual: Boolean, now: Long): FeedCheckSummary {
+    private suspend fun check(subscriptions: List<SubscriptionEntity>, maxNew: Int, manual: Boolean, now: Long): FeedCheckSummary =
+        // Perfetto で確認全体の長さを見られるように(端末で重さを調べるとき)
+        traceAsync(TRACE_CHECK, nextTraceCookie()) { checkTraced(subscriptions, maxNew, manual, now) }
+
+    private suspend fun checkTraced(subscriptions: List<SubscriptionEntity>, maxNew: Int, manual: Boolean, now: Long): FeedCheckSummary {
         // 長く確認していないものを先に(上限で打ち切っても、同じフィードばかり確認して残りが後回しにならない)
         val ordered = subscriptions.sortedWith(compareBy({ it.lastCheckedAt ?: Long.MIN_VALUE }, { it.id }))
         var remaining = maxNew
@@ -68,7 +78,9 @@ class FeedChecker @Inject constructor(
                 when (val response = fetcher.fetch(subscription.feedUrl, subscription.etag, subscription.lastModified)) {
                     FeedResponse.NotModified -> subscriptionDao.recordNotModified(subscription.id, now)
                     is FeedResponse.Body -> {
-                        val parsed = FeedParser.parse(response.body.bytes, response.body.charsetName, response.body.finalUrl)
+                        val parsed = trace(TRACE_PARSE) {
+                            FeedParser.parse(response.body.bytes, response.body.charsetName, response.body.finalUrl)
+                        }
                         if (parsed == null) {
                             failed++
                             subscriptionDao.recordFailure(subscription.id, now, NOT_A_FEED_MESSAGE)
@@ -83,13 +95,19 @@ class FeedChecker @Inject constructor(
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: FeedFetchException) {
-                failed++
-                subscriptionDao.recordFailure(subscription.id, now, e.message ?: "取得できませんでした")
             } catch (e: Exception) {
-                Timber.w(e, "フィードの確認に失敗: %s", subscription.feedUrl)
+                // オフラインモードにされた。フィードの失敗には数えず、残りも確かめずに終える(次の確認に回る)
+                if (e.isOfflineModeBlock()) {
+                    checked--
+                    break
+                }
                 failed++
-                subscriptionDao.recordFailure(subscription.id, now, "確認できませんでした")
+                if (e is FeedFetchException) {
+                    subscriptionDao.recordFailure(subscription.id, now, e.message ?: "取得できませんでした")
+                } else {
+                    Timber.w(e, "フィードの確認に失敗: %s", subscription.feedUrl)
+                    subscriptionDao.recordFailure(subscription.id, now, "確認できませんでした")
+                }
             }
         }
 
@@ -151,6 +169,11 @@ class FeedChecker @Inject constructor(
         /** 見た記事の目印として覚える最大数(1つのフィードから読む最大数より十分多くする) */
         const val MAX_SEEN_KEYS = 500
 
+        private const val TRACE_CHECK = "FeedChecker.check"
+        private const val TRACE_PARSE = "FeedParser.parse"
+        private val traceCookies = AtomicInteger()
+        private fun nextTraceCookie(): Int = traceCookies.incrementAndGet()
+
         private const val NOT_A_FEED_MESSAGE = "フィードとして読めませんでした(RSS・Atom ではありません)"
         private const val MAX_TAG_CHARS = 40
 
@@ -179,10 +202,10 @@ class FeedChecker @Inject constructor(
             } else {
                 val watermark = maxOf(subscription.createdAt, subscription.lastSuccessAt ?: 0L) - GRACE_MILLIS
                 val unseen = sorted.filter { it.key !in seenSet }
-                val fresh = unseen.filter { it.publishedAt == null || it.publishedAt >= watermark }
+                val fresh = unseen.filter { item -> item.publishedAt.let { it == null || it >= watermark } }
                 toSave = fresh.take(limit)
                 // 古い日付の記事は保存せず「見た」ことにする。上限で保存しなかった新着は、次の確認に回すので「見た」にしない
-                skipped = unseen.filter { it.publishedAt != null && it.publishedAt < watermark }
+                skipped = unseen.filter { item -> item.publishedAt.let { it != null && it < watermark } }
             }
             val newSeen = (seen + toSave.map { it.key } + skipped.map { it.key }).distinct().takeLast(MAX_SEEN_KEYS)
             return Plan(toSave, newSeen.joinToString("\n"))

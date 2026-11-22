@@ -2,6 +2,7 @@ package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.repository.BackupExportSummary
 import com.unchunks.echomark.domain.repository.BackupImportSummary
+import com.unchunks.echomark.domain.repository.BackupSettings
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
@@ -14,18 +15,21 @@ class FakeDataManagementRepository : DataManagementRepository {
     var exportSummary = BackupExportSummary(bookmarks = 3, tags = 2, conversations = 1, messages = 4)
     var importSummary = BackupImportSummary(
         bookmarksAdded = 2, bookmarksSkipped = 1, tagsAdded = 1,
-        conversationsAdded = 1, conversationsSkipped = 0, messagesAdded = 2, invalidRecords = 0
+        conversationsAdded = 1, conversationsSkipped = 0, messagesAdded = 2
     )
     var storage = StorageUsage(databaseBytes = 1024, embeddingBytes = 2048, modelBytes = 0)
     var failure: Throwable? = null
 
     val exportedUris = mutableListOf<String>()
+    /** 書き出しでファイルも含めたか(書き出しごと) */
+    val exportIncludeFiles = mutableListOf<Boolean>()
     val importedUris = mutableListOf<String>()
     val deleteCalls = mutableListOf<Boolean>()
     var storageCalls = 0
 
-    override suspend fun exportBackup(uri: String): BackupExportSummary {
+    override suspend fun exportBackup(uri: String, includeFiles: Boolean): BackupExportSummary {
         exportedUris += uri
+        exportIncludeFiles += includeFiles
         failure?.let { throw it }
         return exportSummary
     }
@@ -34,6 +38,15 @@ class FakeDataManagementRepository : DataManagementRepository {
         importedUris += uri
         failure?.let { throw it }
         return importSummary
+    }
+
+    /** restoreSettings で受け取った設定 */
+    val restoredSettings = mutableListOf<BackupSettings>()
+
+    override suspend fun restoreSettings(settings: BackupSettings): Int {
+        restoredSettings += settings
+        failure?.let { throw it }
+        return settings.count
     }
 
     override suspend fun storageUsage(): StorageUsage {
@@ -61,5 +74,13 @@ class FakeProcessingScheduleController : ProcessingScheduleController {
     override fun ensureScheduled(settings: ProcessingSettings) = Unit
     override suspend fun onSettingsChanged(previous: ProcessingSettings, current: ProcessingSettings) {
         changes += previous to current
+    }
+}
+
+/** 「今すぐバックアップ」の呼び出しを数える Fake。 */
+class FakeAutoBackupController : com.unchunks.echomark.worker.AutoBackupController {
+    var runs = 0
+    override fun runNow() {
+        runs++
     }
 }

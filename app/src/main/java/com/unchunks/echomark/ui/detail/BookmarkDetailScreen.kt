@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AddToHomeScreen
 import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -61,6 +62,10 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.TravelExplore
+import com.unchunks.echomark.domain.factcheck.FactCheckTarget
+import com.unchunks.echomark.ui.factcheck.FactCheckSheet
+import com.unchunks.echomark.ui.factcheck.FactCheckViewModel
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.AlertDialog
@@ -152,6 +157,12 @@ import com.unchunks.echomark.ui.snapshot.PageSnapshotCallbacks
 import com.unchunks.echomark.ui.snapshot.PageSnapshotDialog
 import com.unchunks.echomark.ui.snapshot.PageSnapshotSection
 import com.unchunks.echomark.ui.snapshot.PageSnapshotViewModel
+import com.unchunks.echomark.domain.video.isOfflineVideoTarget
+import com.unchunks.echomark.ui.video.VideoOfflineCallbacks
+import com.unchunks.echomark.ui.video.VideoOfflineSection
+import com.unchunks.echomark.ui.video.VideoOfflineUiState
+import com.unchunks.echomark.ui.video.VideoOfflineViewModel
+import com.unchunks.echomark.ui.video.VideoPlayerActivity
 import com.unchunks.echomark.ui.places.PlaceCallbacks
 import com.unchunks.echomark.ui.places.PlaceEditViewModel
 import com.unchunks.echomark.ui.places.PlaceSection
@@ -188,6 +199,7 @@ import java.time.format.DateTimeFormatter
  * ブックマークの詳細。ViewModel をつなぐだけの薄いラッパーで、描画は [BookmarkDetailContent] が行う。
  *
  * @param onAskAi このブックマークについて AI に質問する(チャットの新規会話を開く)
+ * @param onMakePodcast このブックマークからポッドキャストを作る(作る画面を開く)
  * @param onOpenAiSettings AI の準備ができていないときに、AI 設定を開く
  * @param showBackButton トップバーに戻るボタンを出すか。2 画面表示の右側では出さない
  *   ([onBack] は削除後や「見つかりません」の「戻る」で、右側を空にするのに使われる)
@@ -197,19 +209,34 @@ fun BookmarkDetailScreen(
     onBack: () -> Unit,
     onOpenBookmark: (Long) -> Unit,
     onAskAi: (Long) -> Unit = {},
+    onMakePodcast: (Long) -> Unit = {},
     onOpenAiSettings: () -> Unit = {},
     showBackButton: Boolean = true,
     viewModel: BookmarkDetailViewModel = hiltViewModel(),
     snapshotViewModel: PageSnapshotViewModel = hiltViewModel(),
     placeViewModel: PlaceEditViewModel = hiltViewModel(),
-    readLaterViewModel: ReadLaterViewModel = hiltViewModel()
+    readLaterViewModel: ReadLaterViewModel = hiltViewModel(),
+    factCheckViewModel: FactCheckViewModel = hiltViewModel(),
+    videoOfflineViewModel: VideoOfflineViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val factCheck by factCheckViewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val snapshotOperation by snapshotViewModel.operation.collectAsState()
     val reviewIds by readLaterViewModel.reviewIds.collectAsState()
     var confirmRemoveSnapshot by rememberSaveable { mutableStateOf(false) }
+    val videoOffline by videoOfflineViewModel.uiState.collectAsState()
+    var confirmRemoveVideoOffline by rememberSaveable { mutableStateOf(false) }
+    var confirmRemoveVideoFile by rememberSaveable { mutableStateOf(false) }
+
+    // 動画のオフライン保存の結果(保存した・やめた・消した・失敗)
+    LaunchedEffect(videoOfflineViewModel, snackbarHostState) {
+        videoOfflineViewModel.messages.collect { message ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            launch { snackbarHostState.showSnackbar(message) }
+        }
+    }
 
     // 「あとで読む」「復習に入れる」の結果
     LaunchedEffect(readLaterViewModel, snackbarHostState) {
@@ -307,7 +334,11 @@ fun BookmarkDetailScreen(
             onOpenBookmark = onOpenBookmark,
             onOpenInBrowser = { url -> openUrl(context, url) },
             onOpenFile = { openAttachment(context, it) },
+            onPlayAttachmentVideo = { bookmark ->
+                bookmark.filePath?.let { context.startActivity(VideoPlayerActivity.intent(context, it, bookmark.title)) }
+            },
             onAskAi = onAskAi,
+            onMakePodcast = onMakePodcast,
             onOpenAiSettings = onOpenAiSettings,
             onShare = { shareBookmark(context, it) },
             onPinShortcut = { PinnedShortcuts.request(context, PinnedShortcuts.forBookmark(it)) },
@@ -328,6 +359,7 @@ fun BookmarkDetailScreen(
             onSelectCategory = viewModel::setCategory,
             onResetCategory = viewModel::resetCategory,
             onRestoreSummary = viewModel::restoreSummary,
+            onFactCheck = { summary -> uiState.bookmark?.let { factCheckViewModel.open(FactCheckTarget.bookmark(it.id), summary) } },
             onTranslateSummary = viewModel::translateSummary,
             onClearTranslation = viewModel::clearTranslation,
             onAddTag = viewModel::addTag,
@@ -358,9 +390,70 @@ fun BookmarkDetailScreen(
                 fetchCurrentLocation = placeViewModel::currentLocation,
                 onOpenInMap = { point, title -> openInMapApp(context, point, title) }
             ),
-            snapshotBusy = snapshotOperation != SnapshotOperation.Idle
+            snapshotBusy = snapshotOperation != SnapshotOperation.Idle,
+            videoOffline = VideoOfflineCallbacks(
+                onSave = videoOfflineViewModel::save,
+                onCancel = videoOfflineViewModel::cancel,
+                onRemove = { confirmRemoveVideoOffline = true },
+                onDownloadVideo = videoOfflineViewModel::downloadVideo,
+                onCancelDownload = videoOfflineViewModel::cancelDownload,
+                onPlayVideo = {
+                    videoOffline.saved?.video?.path?.let { path ->
+                        context.startActivity(VideoPlayerActivity.intent(context, path, uiState.bookmark?.title))
+                    }
+                },
+                onRemoveVideo = { confirmRemoveVideoFile = true }
+            ),
+            videoOfflineState = videoOffline
         ),
         showBackButton = showBackButton
+    )
+
+    if (confirmRemoveVideoOffline) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveVideoOffline = false },
+            title = { Text("オフライン用の保存を削除しますか?") },
+            text = { Text("端末に保存したサムネイルと動画を削除します。字幕と要約はブックマークに残ります。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRemoveVideoOffline = false
+                        videoOfflineViewModel.remove()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemoveVideoOffline = false }) { Text("キャンセル") } }
+        )
+    }
+
+    if (confirmRemoveVideoFile) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveVideoFile = false },
+            title = { Text("保存した動画を削除しますか?") },
+            text = { Text("端末に保存した動画のファイルを削除します。字幕・要約・サムネイルは残ります。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRemoveVideoFile = false
+                        videoOfflineViewModel.removeVideo()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemoveVideoFile = false }) { Text("キャンセル") } }
+        )
+    }
+
+    FactCheckSheet(
+        state = factCheck,
+        onCheck = factCheckViewModel::check,
+        onOpenUrl = { url -> openUrl(context, url) },
+        onOpenAiSettings = {
+            factCheckViewModel.close()
+            onOpenAiSettings()
+        },
+        onDismiss = factCheckViewModel::close
     )
 
     // ページを読み込んでオフラインコピーを作っている間の画面
@@ -369,7 +462,8 @@ fun BookmarkDetailScreen(
             url = capturing.url,
             onCaptured = { snapshotViewModel.onCaptured(it.mhtml, it.pdf) },
             onFailed = snapshotViewModel::onFailed,
-            onCancel = snapshotViewModel::cancel
+            onCancel = snapshotViewModel::cancel,
+            isOffline = snapshotViewModel::isOffline
         )
     }
 
@@ -399,7 +493,11 @@ class BookmarkDetailCallbacks(
     val onOpenInBrowser: (String) -> Unit = {},
     /** 保存したファイルをほかのアプリで開く */
     val onOpenFile: (Bookmark) -> Unit = {},
+    /** 保存した動画のファイルを、アプリの中で再生する */
+    val onPlayAttachmentVideo: (Bookmark) -> Unit = {},
     val onAskAi: (Long) -> Unit = {},
+    /** このブックマークからポッドキャストを作る */
+    val onMakePodcast: (Long) -> Unit = {},
     val onOpenAiSettings: () -> Unit = {},
     val onShare: (Bookmark) -> Unit = {},
     /** ホーム画面にショートカットを置く */
@@ -425,6 +523,8 @@ class BookmarkDetailCallbacks(
     val onResetCategory: () -> Unit = {},
     /** 履歴の版(ID)に要約を戻す(#20) */
     val onRestoreSummary: (Long) -> Unit = {},
+    /** 要約(引数)を Web で確かめるシートを開く。要約は書き換えない */
+    val onFactCheck: (String) -> Unit = {},
     /** 要約を [SummaryLanguage] に翻訳する(#24) */
     val onTranslateSummary: (SummaryLanguage) -> Unit = {},
     /** 翻訳を閉じる */
@@ -448,7 +548,10 @@ class BookmarkDetailCallbacks(
     /** 場所(#85)の操作 */
     val place: PlaceCallbacks = PlaceCallbacks(),
     /** オフラインコピーを作っている(または保存している)最中 */
-    val snapshotBusy: Boolean = false
+    val snapshotBusy: Boolean = false,
+    /** 動画のオフライン保存(字幕・要約・サムネイル)の操作と状態 */
+    val videoOffline: VideoOfflineCallbacks = VideoOfflineCallbacks(),
+    val videoOfflineState: VideoOfflineUiState = VideoOfflineUiState()
 )
 
 /**
@@ -743,6 +846,14 @@ private fun DetailTopBar(
                     }
                 )
                 DropdownMenuItem(
+                    text = { Text("ポッドキャストにする") },
+                    leadingIcon = { Icon(Icons.Outlined.Podcasts, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        callbacks.onMakePodcast(bookmark.id)
+                    }
+                )
+                DropdownMenuItem(
                     text = { Text("ホーム画面に追加") },
                     leadingIcon = { Icon(Icons.Outlined.AddToHomeScreen, contentDescription = null) },
                     onClick = {
@@ -795,13 +906,20 @@ private fun DetailBody(
         val file = rememberAttachmentFile(bookmark)
         val fileType = bookmark.attachmentType()
         val imageUrl = bookmark.imageUrl
+        // 動画のオフライン保存で端末に保存したサムネイルがあれば、通信せずに出せるようそちらを使う
+        val savedThumbnail = callbacks.videoOfflineState.thumbnailFile
         if (file != null && fileType != null && fileType != BookmarkType.TEXT) {
-            AttachmentPreview(file, fileType, onOpenFile = { callbacks.onOpenFile(bookmark) })
+            AttachmentPreview(
+                file,
+                fileType,
+                onOpenFile = { callbacks.onOpenFile(bookmark) },
+                onPlayVideo = { callbacks.onPlayAttachmentVideo(bookmark) }
+            )
             Spacer(Modifier.height(16.dp))
-        } else if (!imageUrl.isNullOrBlank()) {
+        } else if (savedThumbnail != null || !imageUrl.isNullOrBlank()) {
             // 装飾扱い(内容はタイトルで伝わる)。OG 画像の標準比率 1.91:1 で切り出す
             AsyncImage(
-                model = imageUrl,
+                model = savedThumbnail ?: imageUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -842,8 +960,14 @@ private fun DetailBody(
                     onMute = callbacks.onMuteLink
                 )
             }
-            // http / https のリンクだけに出す(それ以外では何も描かない)
-            if (canSnapshot(bookmark.contentUri)) {
+            if (bookmark.isOfflineVideoTarget()) {
+                // 動画サイトのページは、ページのコピーではなく字幕・要約・サムネイルを保存する(動画そのものは保存しない)
+                Spacer(Modifier.height(16.dp))
+                VideoOfflineSection(bookmark = bookmark, state = callbacks.videoOfflineState, callbacks = callbacks.videoOffline)
+            }
+            // http / https のリンクだけに出す(それ以外では何も描かない)。動画サイトのページでは、前に作ったコピーがあるときだけ
+            // (開く・消すため)
+            if (canSnapshot(bookmark.contentUri) && (!bookmark.isOfflineVideoTarget() || bookmark.hasSnapshot)) {
                 Spacer(Modifier.height(16.dp))
                 PageSnapshotSection(bookmark = bookmark, callbacks = callbacks.snapshot, busy = callbacks.snapshotBusy)
             }
@@ -1187,6 +1311,12 @@ private fun AiSection(
                         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                         Text("翻訳")
                     }
+                }
+                // 要約の事実の文を Web のページと照らし合わせる(手がかりを出すだけで、要約は書き換えない)
+                TextButton(onClick = { callbacks.onFactCheck(summary) }) {
+                    Icon(Icons.Outlined.TravelExplore, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text("Web で確かめる")
                 }
                 if (showEvidence) {
                     val body = listOfNotNull(bookmark.title, bookmark.content).joinToString("\n")

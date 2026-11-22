@@ -35,6 +35,9 @@ import javax.inject.Inject
  *   ([OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST])。一括の再処理は急がないため通常のワークのまま
  * - 処理の設定([ProcessingSettings])に従い、充電中・従量課金でない接続を条件に付け、夜間にまとめて処理する設定なら
  *   保存したもの・一括の再処理を積まずに夜を待つ(ユーザーが 1 件を再処理したときはすぐ積む)
+ * - オフラインモードの間は、通信の要る処理(本文の取得・クラウド API の AI 処理)を積まずに処理待ちのまま残す。
+ *   オフにしたら [com.unchunks.echomark.data.network.OfflineModeController] が積み直す。積んだ後にオンにされたものは、
+ *   ワーカーが通信の前に止め、処理待ちのまま残す
  * - すべてのワークに [TAG] を付け、全データ削除でまとめて取り消せるようにする
  * - ワークにはブックマークごとのタグ([bookmarkTag])も付け、未完了の処理がどのブックマークのものか調べられるようにする
  */
@@ -73,10 +76,14 @@ class BookmarkWorkScheduler @Inject constructor(
         val settings = appSettings.processingSettings.first()
         // 夜間にまとめて処理する設定なら、保存したものは積まずに処理待ちのまま夜を待つ(NightlyProcessingTask が積む)
         if (deferrable && settings.nightlyBatch) return false
+        val target = Target(bookmarkId, fetchContent, extractContent, scope)
+        val policy = policy(settings)
+        // オフラインモードの間は、通信の要る処理を積まずに処理待ちのまま残す(オフにしたら OfflineModeController が積む)
+        if (policy.needsNetwork(target) && appSettings.offlineMode.first()) return false
         enqueueChain(
             uniqueWorkName(bookmarkId),
             ExistingWorkPolicy.REPLACE,
-            requestsFor(Target(bookmarkId, fetchContent, extractContent, scope), policy(settings), expedited = true)
+            requestsFor(target, policy, expedited = true)
         )
         return true
     }
@@ -93,8 +100,11 @@ class BookmarkWorkScheduler @Inject constructor(
         val settings = appSettings.processingSettings.first()
         if (settings.nightlyBatch && !nightly) return false
         val policy = policy(settings).let { if (nightly) it.copy(requiresCharging = true) else it }
+        // オフラインモードの間は、通信の要るものを積まずに処理待ちのまま残す(端末の中だけで済むものは積む)
+        val runnable = if (appSettings.offlineMode.first()) targets.filterNot { policy.needsNetwork(it) } else targets
+        if (runnable.isEmpty()) return false
         // 1回の登録で長い列を作りすぎないよう、区切って後ろに続けていく
-        targets.chunked(SEQUENTIAL_CHUNK_SIZE).forEach { chunk ->
+        runnable.chunked(SEQUENTIAL_CHUNK_SIZE).forEach { chunk ->
             enqueueChain(
                 BULK_WORK_NAME,
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
@@ -203,6 +213,9 @@ class BookmarkWorkScheduler @Inject constructor(
 
         val extractionConstraints: Constraints
             get() = Constraints.Builder().setRequiresCharging(requiresCharging).build()
+
+        /** [target] の処理に通信が要るか(本文の取得、またはクラウド API の AI 処理)。オフラインモードの間は積まない */
+        fun needsNetwork(target: Target): Boolean = target.fetchContent || aiUsesApi
 
         val aiConstraints: Constraints
             get() = Constraints.Builder()

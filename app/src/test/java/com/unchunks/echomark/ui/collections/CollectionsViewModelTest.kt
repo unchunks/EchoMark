@@ -8,8 +8,11 @@ import com.unchunks.echomark.domain.bookmark.model.CollectionResult
 import com.unchunks.echomark.domain.export.ExportException
 import com.unchunks.echomark.domain.export.ExportFormat
 import com.unchunks.echomark.domain.export.ExportResult
+import com.unchunks.echomark.testing.FakeBookmarkRepository
+import com.unchunks.echomark.testing.FakeCategoryRepository
 import com.unchunks.echomark.testing.FakeCollectionRepository
 import com.unchunks.echomark.testing.FakeExportRepository
+import com.unchunks.echomark.ui.selection.BulkBookmarkActions
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -32,6 +35,7 @@ class CollectionsViewModelTest {
 
     private val repository = FakeCollectionRepository()
     private val exports = FakeExportRepository()
+    private val bookmarkRepository = FakeBookmarkRepository()
 
     private fun bookmark(id: Long) = Bookmark(id = id, type = BookmarkType.TEXT, title = "題$id", createdAt = id, lastAccessedAt = id)
 
@@ -120,7 +124,9 @@ class CollectionsViewModelTest {
     // ---- コレクションの中身 ----
 
     private fun detailViewModel(id: Long) =
-        CollectionDetailViewModel(SavedStateHandle(mapOf(CollectionDetailViewModel.ARG_COLLECTION_ID to id)), repository, exports)
+        CollectionDetailViewModel(
+            SavedStateHandle(mapOf(CollectionDetailViewModel.ARG_COLLECTION_ID to id)), repository, exports, FakeCategoryRepository(), BulkBookmarkActions(bookmarkRepository, repository, exports)
+        )
 
     private fun TestScope.start(viewModel: CollectionDetailViewModel): MutableList<CollectionDetailMessage> {
         val messages = mutableListOf<CollectionDetailMessage>()

@@ -19,6 +19,7 @@ import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.FakeAiSetupRepository
 import com.unchunks.echomark.testing.FakeApiKeyRepository
 import com.unchunks.echomark.testing.FakeAppSettingsRepository
+import com.unchunks.echomark.testing.FakeNetworkGate
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -66,8 +67,26 @@ class DiscoverViewModelTest {
             llmProviderResolver = LlmProviderResolver(LocalLlmProviders { llm }, { llm }, FakeAppSettingsRepository(LlmBackend.LOCAL), FakeApiKeyRepository()),
             bookmarkRepository = bookmarks
         ),
-        FakeAiSetupRepository()
+        FakeAiSetupRepository(),
+        gate
     )
+
+    private val gate = FakeNetworkGate()
+
+    @Test
+    fun オフラインモードの間は検索せずに理由を出す() = runTest {
+        gate.offline = true
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+
+        viewModel.searchTopic("Kotlin")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(OFFLINE_DISCOVER_MESSAGE, state.errorMessage)
+        assertTrue(state.resources.isEmpty())
+        assertNull(state.step)
+    }
 
     @Test
     fun 探すとAIのおすすめを選んだ状態で並べる() = runTest {
