@@ -10,15 +10,17 @@ import java.io.File
 /**
  * 動画のブックマークを、通信できなくても見られるように保存した記録。
  * 字幕と要約はブックマークの本文・要約に入っている(DB の中なので、もともと通信せずに読める)。
- * ここには、それ以外に端末へ保存したもの(サムネイル)を持つ。
+ * ここには、それ以外に端末へ保存したもの(サムネイル・ダウンロードが認められた動画のファイル)を持つ。
  *
  * @property thumbnailPath サムネイルの画像の保存先(filesDir からの相対パス)。保存できなかったときは null
  * @property savedAt 保存した(最後に保存し直した)日時
+ * @property video 保存した動画のファイル。保存していなければ null
  */
 data class OfflineVideo(
     val bookmarkId: Long,
     val thumbnailPath: String?,
-    val savedAt: Long
+    val savedAt: Long,
+    val video: SavedVideoFile? = null
 )
 
 /** 動画のオフライン保存の記録の読み書き。字幕の取得・サムネイルのダウンロードは [VideoOfflineScheduler] が積むワーカーが行う */
@@ -34,11 +36,41 @@ interface OfflineVideoRepository {
      */
     suspend fun markSaved(bookmarkId: Long, thumbnailPath: String?, savedAt: Long): Boolean
 
-    /** 保存した記録とサムネイルを消す(ブックマークの本文の字幕・要約は残す)。無ければ何もしない */
+    /** 保存した記録とサムネイル・動画のファイルを消す(ブックマークの本文の字幕・要約は残す)。無ければ何もしない */
     suspend fun remove(bookmarkId: Long)
 
     /** 保存先の相対パス [path] のファイル。無い・保存先でないパスなら null */
     fun fileOf(path: String?): File?
+
+    /** 保存した動画のファイルの一覧(新しく保存した順。容量の管理の画面) */
+    fun observeSavedVideos(): Flow<List<SavedVideoListItem>>
+
+    /** 保存した動画のファイルの合計(バイト) */
+    fun observeVideoBytes(): Flow<Long>
+
+    /** 保存した動画のファイルの合計(バイト)。[excludingBookmarkId] の分は数えない(保存し直すときの上限の確認) */
+    suspend fun totalVideoBytes(excludingBookmarkId: Long? = null): Long
+
+    /**
+     * ダウンロードし終えた動画のファイル([video])を結びつける(記録が無ければ作る)。前のファイルが違うものなら消す。
+     * ブックマークが無ければ何もせずファイルを消して false。
+     */
+    suspend fun saveVideo(bookmarkId: Long, video: SavedVideoFile): Boolean
+
+    /** 動画のファイルを消す(サムネイル・字幕・要約は残す)。ダウンロードの途中のファイルも消す */
+    suspend fun removeVideo(bookmarkId: Long)
+
+    /** ダウンロードの途中のファイルを消す(保存した動画は残す) */
+    suspend fun discardPartialVideo(bookmarkId: Long)
+
+    /** すべての動画のファイルを消す */
+    suspend fun removeAllVideos()
+
+    /** 保存した動画のファイル(相対パス [path])。無い・保存先でないパスなら null */
+    fun videoFileOf(path: String?): File?
+
+    /** 動画の置き場所の空き容量(バイト) */
+    suspend fun freeBytes(): Long
 }
 
 /** 動画のオフライン保存の作業(WorkManager)を積む・止める・見守る */

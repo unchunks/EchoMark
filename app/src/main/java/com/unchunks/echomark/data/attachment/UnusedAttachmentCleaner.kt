@@ -3,6 +3,7 @@ package com.unchunks.echomark.data.attachment
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.OfflineVideoDao
+import com.unchunks.echomark.data.video.VideoFileStore
 import dagger.Lazy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +27,7 @@ class UnusedAttachmentCleaner @Inject constructor(
     private val attachmentStore: Lazy<AttachmentStore>,
     private val bookmarkDao: Lazy<BookmarkDao>,
     private val offlineVideoDao: Lazy<OfflineVideoDao>,
+    private val videoFileStore: Lazy<VideoFileStore>,
     dispatcherProvider: DispatcherProvider
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcherProvider.io)
@@ -52,11 +54,22 @@ class UnusedAttachmentCleaner @Inject constructor(
         // ブックマークが無くなった動画の保存の記録を先に消す(そのサムネイルは参照されなくなり、猶予の後に消える)
         videos.deleteOrphans()
         val referenced = (dao.getAllFilePaths() + dao.getAllSnapshotPaths() + videos.getAllThumbnailPaths()).toSet()
-        return attachmentStore.get().deleteUnreferenced(referenced, olderThanMillis = now - GRACE_MILLIS)
+        val attachments = attachmentStore.get().deleteUnreferenced(referenced, olderThanMillis = now - GRACE_MILLIS)
+        // 動画のファイル(別の置き場所)も同じ規則で消す。途中まで落としたものは、ブックマークが無いか、長く止まったままのものだけ
+        val videoFiles = videoFileStore.get().deleteUnreferenced(
+            referenced = videos.getAllVideoPaths().toSet(),
+            existingBookmarkIds = dao.getAllIds().toSet(),
+            olderThanMillis = now - GRACE_MILLIS,
+            partOlderThanMillis = now - PART_GRACE_MILLIS
+        )
+        return attachments + videoFiles
     }
 
     companion object {
         /** 参照されなくなってから消すまでの猶予 */
         val GRACE_MILLIS: Long = TimeUnit.DAYS.toMillis(1)
+
+        /** 途中まで落とした動画のファイルを、続きを落とさないまま残しておく期間 */
+        val PART_GRACE_MILLIS: Long = TimeUnit.DAYS.toMillis(7)
     }
 }

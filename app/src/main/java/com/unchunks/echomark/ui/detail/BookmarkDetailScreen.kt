@@ -162,6 +162,7 @@ import com.unchunks.echomark.ui.video.VideoOfflineCallbacks
 import com.unchunks.echomark.ui.video.VideoOfflineSection
 import com.unchunks.echomark.ui.video.VideoOfflineUiState
 import com.unchunks.echomark.ui.video.VideoOfflineViewModel
+import com.unchunks.echomark.ui.video.VideoPlayerActivity
 import com.unchunks.echomark.ui.places.PlaceCallbacks
 import com.unchunks.echomark.ui.places.PlaceEditViewModel
 import com.unchunks.echomark.ui.places.PlaceSection
@@ -227,6 +228,7 @@ fun BookmarkDetailScreen(
     var confirmRemoveSnapshot by rememberSaveable { mutableStateOf(false) }
     val videoOffline by videoOfflineViewModel.uiState.collectAsState()
     var confirmRemoveVideoOffline by rememberSaveable { mutableStateOf(false) }
+    var confirmRemoveVideoFile by rememberSaveable { mutableStateOf(false) }
 
     // 動画のオフライン保存の結果(保存した・やめた・消した・失敗)
     LaunchedEffect(videoOfflineViewModel, snackbarHostState) {
@@ -332,6 +334,9 @@ fun BookmarkDetailScreen(
             onOpenBookmark = onOpenBookmark,
             onOpenInBrowser = { url -> openUrl(context, url) },
             onOpenFile = { openAttachment(context, it) },
+            onPlayAttachmentVideo = { bookmark ->
+                bookmark.filePath?.let { context.startActivity(VideoPlayerActivity.intent(context, it, bookmark.title)) }
+            },
             onAskAi = onAskAi,
             onMakePodcast = onMakePodcast,
             onOpenAiSettings = onOpenAiSettings,
@@ -389,7 +394,15 @@ fun BookmarkDetailScreen(
             videoOffline = VideoOfflineCallbacks(
                 onSave = videoOfflineViewModel::save,
                 onCancel = videoOfflineViewModel::cancel,
-                onRemove = { confirmRemoveVideoOffline = true }
+                onRemove = { confirmRemoveVideoOffline = true },
+                onDownloadVideo = videoOfflineViewModel::downloadVideo,
+                onCancelDownload = videoOfflineViewModel::cancelDownload,
+                onPlayVideo = {
+                    videoOffline.saved?.video?.path?.let { path ->
+                        context.startActivity(VideoPlayerActivity.intent(context, path, uiState.bookmark?.title))
+                    }
+                },
+                onRemoveVideo = { confirmRemoveVideoFile = true }
             ),
             videoOfflineState = videoOffline
         ),
@@ -400,7 +413,7 @@ fun BookmarkDetailScreen(
         AlertDialog(
             onDismissRequest = { confirmRemoveVideoOffline = false },
             title = { Text("オフライン用の保存を削除しますか?") },
-            text = { Text("端末に保存したサムネイルを削除します。字幕と要約はブックマークに残ります。") },
+            text = { Text("端末に保存したサムネイルと動画を削除します。字幕と要約はブックマークに残ります。") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -411,6 +424,24 @@ fun BookmarkDetailScreen(
                 ) { Text("削除") }
             },
             dismissButton = { TextButton(onClick = { confirmRemoveVideoOffline = false }) { Text("キャンセル") } }
+        )
+    }
+
+    if (confirmRemoveVideoFile) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveVideoFile = false },
+            title = { Text("保存した動画を削除しますか?") },
+            text = { Text("端末に保存した動画のファイルを削除します。字幕・要約・サムネイルは残ります。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRemoveVideoFile = false
+                        videoOfflineViewModel.removeVideo()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("削除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemoveVideoFile = false }) { Text("キャンセル") } }
         )
     }
 
@@ -462,6 +493,8 @@ class BookmarkDetailCallbacks(
     val onOpenInBrowser: (String) -> Unit = {},
     /** 保存したファイルをほかのアプリで開く */
     val onOpenFile: (Bookmark) -> Unit = {},
+    /** 保存した動画のファイルを、アプリの中で再生する */
+    val onPlayAttachmentVideo: (Bookmark) -> Unit = {},
     val onAskAi: (Long) -> Unit = {},
     /** このブックマークからポッドキャストを作る */
     val onMakePodcast: (Long) -> Unit = {},
@@ -876,7 +909,12 @@ private fun DetailBody(
         // 動画のオフライン保存で端末に保存したサムネイルがあれば、通信せずに出せるようそちらを使う
         val savedThumbnail = callbacks.videoOfflineState.thumbnailFile
         if (file != null && fileType != null && fileType != BookmarkType.TEXT) {
-            AttachmentPreview(file, fileType, onOpenFile = { callbacks.onOpenFile(bookmark) })
+            AttachmentPreview(
+                file,
+                fileType,
+                onOpenFile = { callbacks.onOpenFile(bookmark) },
+                onPlayVideo = { callbacks.onPlayAttachmentVideo(bookmark) }
+            )
             Spacer(Modifier.height(16.dp))
         } else if (savedThumbnail != null || !imageUrl.isNullOrBlank()) {
             // 装飾扱い(内容はタイトルで伝わる)。OG 画像の標準比率 1.91:1 で切り出す

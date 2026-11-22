@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 動画のファイルのオフライン保存(VideoFileDownloadWorker) -->
+    <string name="notification_channel_video_download">動画の保存</string>
+    <string name="notification_channel_video_download_desc">オフライン用に動画のファイルをダウンロードしている間に表示します</string>
+    <string name="video_download_notification_title">動画をオフライン用に保存しています…</string>
+</resources>

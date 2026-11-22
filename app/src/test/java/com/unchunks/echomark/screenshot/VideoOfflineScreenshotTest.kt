@@ -9,6 +9,12 @@ import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.video.OfflineVideo
+import com.unchunks.echomark.domain.video.SavedVideoFile
+import com.unchunks.echomark.domain.video.SavedVideoListItem
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
+import com.unchunks.echomark.domain.video.VideoDownloadWork
+import com.unchunks.echomark.ui.video.OfflineVideosContent
+import com.unchunks.echomark.ui.video.OfflineVideosUiState
 import com.unchunks.echomark.domain.video.VideoOfflineStage
 import com.unchunks.echomark.domain.video.VideoOfflineWork
 import com.unchunks.echomark.ui.components.PreviewSamples
@@ -83,6 +89,96 @@ class VideoOfflineScreenshotTest {
                 callbacks = VideoOfflineCallbacks()
             )
         }
+    }
+
+    private val peerTube = video.copy(
+        id = 302,
+        contentUri = "https://peertube.example/w/9c9de5e8xQNXhHR4Fvu8Qa",
+        siteName = "PeerTube",
+        title = "自転車の旅 — 瀬戸内の島をめぐる"
+    )
+
+    private val savedVideo = SavedVideoFile(
+        path = "offline_videos/302-a.mp4",
+        mimeType = "video/mp4",
+        size = 284_000_000L,
+        sourceUrl = "https://peertube.example/download/videos/720.mp4",
+        label = "720p",
+        savedAt = savedAt
+    )
+
+    @Test
+    fun videoFileStates() = screenshot.captureLightDark("video_offline_file_states") {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // PeerTube: 字幕などは保存済み、動画はまだ
+            VideoOfflineSection(
+                bookmark = peerTube,
+                state = VideoOfflineUiState(
+                    saved = OfflineVideo(bookmarkId = peerTube.id, thumbnailPath = "attachments/thumb.jpg", savedAt = savedAt),
+                    thumbnailFile = File("thumb.jpg")
+                ),
+                callbacks = VideoOfflineCallbacks()
+            )
+            // 動画のファイルへの直接のリンク: 落としている途中
+            VideoOfflineSection(
+                bookmark = peerTube.copy(contentUri = "https://example.com/media/lecture.mp4", content = null),
+                state = VideoOfflineUiState(download = VideoDownloadWork.Downloading(120_000_000L, 340_000_000L)),
+                callbacks = VideoOfflineCallbacks()
+            )
+            // 直接のリンク: Wi-Fi を待っている
+            VideoOfflineSection(
+                bookmark = peerTube.copy(contentUri = "https://example.com/media/lecture.mp4", content = null),
+                state = VideoOfflineUiState(download = VideoDownloadWork.Waiting),
+                callbacks = VideoOfflineCallbacks()
+            )
+            // PeerTube: 動画も保存済み
+            VideoOfflineSection(
+                bookmark = peerTube,
+                state = VideoOfflineUiState(
+                    saved = OfflineVideo(peerTube.id, thumbnailPath = "attachments/thumb.jpg", savedAt = savedAt, video = savedVideo),
+                    thumbnailFile = File("thumb.jpg"),
+                    videoFile = File("302-a.mp4")
+                ),
+                callbacks = VideoOfflineCallbacks()
+            )
+        }
+    }
+
+    @Test
+    fun offlineVideosScreen() = screenshot.captureScreenLightDark("video_offline_storage_screen") {
+        OfflineVideosContent(
+            uiState = OfflineVideosUiState(
+                isLoading = false,
+                settings = VideoDownloadSettings(),
+                items = listOf(
+                    SavedVideoListItem(302, "自転車の旅 — 瀬戸内の島をめぐる", "offline_videos/302-a.mp4", 284_000_000L, "720p", savedAt),
+                    SavedVideoListItem(303, "講義 第3回 線形代数の基礎", "offline_videos/303-b.mp4", 512_000_000L, null, savedAt - 86_400_000L)
+                ),
+                usedBytes = 796_000_000L,
+                freeBytes = 18_500_000_000L
+            ),
+            snackbarHostState = SnackbarHostState(),
+            onBack = {},
+            onWifiOnlyChange = {},
+            onMaxTotalBytesChange = {},
+            onPlay = {},
+            onDelete = {},
+            onDeleteAll = {}
+        )
+    }
+
+    @Test
+    fun offlineVideosScreenEmpty() = screenshot.captureScreenLightDark("video_offline_storage_screen_empty") {
+        OfflineVideosContent(
+            uiState = OfflineVideosUiState(isLoading = false, settings = VideoDownloadSettings(wifiOnly = false)),
+            snackbarHostState = SnackbarHostState(),
+            onBack = {},
+            onWifiOnlyChange = {},
+            onMaxTotalBytesChange = {},
+            onPlay = {},
+            onDelete = {},
+            onDeleteAll = {}
+        )
     }
 
     @Test

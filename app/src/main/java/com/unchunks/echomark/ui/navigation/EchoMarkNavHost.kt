@@ -68,6 +68,7 @@ import com.unchunks.echomark.ui.collections.CollectionDetailViewModel
 import com.unchunks.echomark.ui.collections.CollectionsScreen
 import com.unchunks.echomark.ui.discover.DiscoverScreen
 import com.unchunks.echomark.ui.linkcheck.BrokenLinksScreen
+import com.unchunks.echomark.ui.video.OfflineVideosScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.graph.GraphScreen
 import com.unchunks.echomark.ui.insights.InsightsScreen
@@ -458,8 +459,17 @@ fun EchoMarkNavHost(
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                     onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) },
                     onOpenProcessingQueue = { navController.navigate(Routes.PROCESSING_QUEUE) },
-                    onOpenCategories = { navController.navigate(Routes.CATEGORIES) }
+                    onOpenCategories = { navController.navigate(Routes.CATEGORIES) },
+                    onOpenOfflineVideos = { navController.navigate(Routes.OFFLINE_VIDEOS) }
                 )
+            }
+            // オフラインの動画(設定の「データ」の欄から開く)
+            composable(
+                route = Routes.OFFLINE_VIDEOS,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                OfflineVideosScreen(onBack = navController.popBackAction())
             }
             // カテゴリの管理(設定の「AI」の欄から開く)
             composable(

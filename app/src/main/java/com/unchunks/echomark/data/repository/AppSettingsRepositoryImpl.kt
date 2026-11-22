@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
@@ -142,6 +143,21 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setLinkCheckEnabled(enabled: Boolean) {
         dataStore.edit { it[KEY_LINK_CHECK_ENABLED] = enabled }
+    }
+
+    override val videoDownloadSettings: Flow<VideoDownloadSettings> = data.map { prefs ->
+        VideoDownloadSettings(
+            wifiOnly = prefs[KEY_VIDEO_DOWNLOAD_WIFI_ONLY] ?: true,
+            maxTotalBytes = prefs[KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES]?.takeIf { it > 0 } ?: VideoDownloadSettings.DEFAULT_MAX_TOTAL_BYTES
+        )
+    }.distinctUntilChanged()
+
+    override suspend fun setVideoDownloadWifiOnly(enabled: Boolean) {
+        dataStore.edit { it[KEY_VIDEO_DOWNLOAD_WIFI_ONLY] = enabled }
+    }
+
+    override suspend fun setVideoDownloadMaxTotalBytes(bytes: Long) {
+        dataStore.edit { it[KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES] = bytes }
     }
 
     override val offlineMode: Flow<Boolean> = data.map { it[KEY_OFFLINE_MODE] ?: false }.distinctUntilChanged()
@@ -458,6 +474,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
         val KEY_DUPLICATE_SENSITIVITY = stringPreferencesKey("duplicate_sensitivity")
         val KEY_LINK_CHECK_ENABLED = booleanPreferencesKey("link_check_enabled")
+        val KEY_VIDEO_DOWNLOAD_WIFI_ONLY = booleanPreferencesKey("video_download_wifi_only")
+        val KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES = longPreferencesKey("video_download_max_total_bytes")
         val KEY_PLACES_MAP_BACKGROUND = booleanPreferencesKey("places_map_background")
         val KEY_OFFLINE_MODE = booleanPreferencesKey("offline_mode")
         val KEY_APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")

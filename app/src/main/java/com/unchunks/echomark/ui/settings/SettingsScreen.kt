@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -125,6 +126,8 @@ class SettingsActions(
     val onOpenProcessingQueue: () -> Unit = {},
     /** カテゴリの管理の画面を開く */
     val onOpenCategories: () -> Unit = {},
+    /** オフラインの動画(保存した動画・ダウンロードの設定)の画面を開く */
+    val onOpenOfflineVideos: () -> Unit = {},
     /** 再発見通知のスイッチ。オンにするときの権限要求は呼び出し側で行う */
     val onRediscoverToggle: (Boolean) -> Unit = {},
     val onRediscoverScheduleChange: (DayOfWeek, Int, Int) -> Unit = { _, _, _ -> },
@@ -163,6 +166,7 @@ fun SettingsScreen(
     onOpenOnboarding: (() -> Unit)? = null,
     onOpenProcessingQueue: () -> Unit = {},
     onOpenCategories: () -> Unit = {},
+    onOpenOfflineVideos: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
     importViewModel: LinkImportViewModel = hiltViewModel()
 ) {
@@ -252,6 +256,7 @@ fun SettingsScreen(
             onSummaryStyleChange = viewModel::updateSummaryStyle,
             onOpenProcessingQueue = onOpenProcessingQueue,
             onOpenCategories = onOpenCategories,
+            onOpenOfflineVideos = onOpenOfflineVideos,
             onRediscoverToggle = { enabled ->
                 when {
                     !enabled -> {
@@ -560,6 +565,15 @@ fun SettingsContent(
             }
             item {
                 SettingsItem(
+                    title = "オフラインの動画",
+                    icon = Icons.Outlined.VideoLibrary,
+                    summary = "保存した動画を見る・削除する。Wi-Fi のときだけ・保存する上限を決める",
+                    onClick = actions.onOpenOfflineVideos,
+                    trailing = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) }
+                )
+            }
+            item {
+                SettingsItem(
                     title = "ストレージ使用量",
                     icon = Icons.Outlined.Storage,
                     summary = uiState.storage?.label ?: "計算中…"
@@ -728,6 +742,7 @@ private val StorageUsage.label: String
         add("データ ${formatFileSize(databaseBytes)}")
         add("検索用 ${formatFileSize(embeddingBytes)}")
         if (attachmentBytes > 0) add("ファイル ${formatFileSize(attachmentBytes)}")
+        if (offlineVideoBytes > 0) add("動画 ${formatFileSize(offlineVideoBytes)}")
         if (modelBytes > 0) add("モデル ${formatFileSize(modelBytes)}")
     }.joinToString("・")
 

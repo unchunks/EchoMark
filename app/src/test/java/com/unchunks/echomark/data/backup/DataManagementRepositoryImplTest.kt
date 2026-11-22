@@ -93,6 +93,7 @@ class DataManagementRepositoryImplTest {
             apiKeyRepository = FakeApiKeyRepository(),
             workScheduler = scheduler,
             attachmentStore = AttachmentStore(context, dispatcherProvider),
+            videoFileStore = com.unchunks.echomark.data.video.VideoFileStore(context, dispatcherProvider),
             databaseLeftovers = leftovers,
             dispatcherProvider = dispatcherProvider
         )
