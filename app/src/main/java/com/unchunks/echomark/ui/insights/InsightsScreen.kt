@@ -1,5 +1,6 @@
 package com.unchunks.echomark.ui.insights
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -48,7 +48,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.components.composeui.BarChart
+import com.unchunks.components.composeui.ChartLegend
+import com.unchunks.components.composeui.ChartSeries
+import com.unchunks.components.composeui.HorizontalBars
+import com.unchunks.components.composeui.LineChart
 import com.unchunks.components.composeui.ReadableLazyColumn
+import com.unchunks.components.composeui.chartPalette
 import com.unchunks.echomark.domain.insights.InterestChange
 import com.unchunks.echomark.domain.insights.InterestChangeKind
 import com.unchunks.echomark.domain.insights.InterestTrend

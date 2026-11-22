@@ -5,6 +5,8 @@ import com.unchunks.components.embedding.EmbeddingProvider
 import com.unchunks.components.embedding.EmbeddingUnavailableException
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.components.llm.LlmException
+import com.unchunks.components.search.RankFusion
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.ai.ChatMemoryCompressor
 import com.unchunks.echomark.data.ai.LlmProviderResolver
 import com.unchunks.echomark.data.local.dao.ChatMessageDao
@@ -35,13 +37,11 @@ import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.repository.ChatRepository
 import com.unchunks.echomark.domain.repository.ChatStreamEvent
 import com.unchunks.echomark.domain.repository.SaveResult
-import com.unchunks.echomark.data.network.isOfflineModeBlock
 import com.unchunks.echomark.domain.websearch.CollectedWebSource
 import com.unchunks.echomark.domain.websearch.WebSearchException
 import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.domain.websearch.WebSourceProvider
 import com.unchunks.echomark.domain.websearch.WebSourceText
-import com.unchunks.components.search.RankFusion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -231,7 +231,7 @@ class ChatRepositoryImpl @Inject constructor(
         } else {
             // 範囲を選んでいるときは、その範囲の保存の中から探す(対象が固定されていれば範囲は使わない)
             val range = scope.takeIf { pinned == null }
-            val allowed = range?.let { inScope -> bookmarkRepository.observeBookmarks(inScope, BookmarkSortOrder.NEWEST).first().mapTo(HashSet()) { it.id } }
+            val allowed = range?.let { inScope -> bookmarkRepository.observeBookmarkList(inScope, BookmarkSortOrder.NEWEST).first().mapTo(HashSet()) { it.id } }
             val searched = try {
                 findRelevantBookmarks(query, keywords, limits.maxSources, allowed)
             } catch (e: CancellationException) {
@@ -531,7 +531,7 @@ class ChatRepositoryImpl @Inject constructor(
 
     override fun observeScopeChoices(): Flow<ChatScopeChoices> = combine(
         bookmarkRepository.observeAllTags(),
-        bookmarkRepository.observeBookmarks(BookmarkQuery(), BookmarkSortOrder.NEWEST)
+        bookmarkRepository.observeBookmarkList(BookmarkQuery(), BookmarkSortOrder.NEWEST)
     ) { tags, bookmarks ->
         val tagCounts = bookmarks.flatMap { it.tags }.groupingBy { it }.eachCount()
         val categoryCounts = bookmarks.mapNotNull { it.category }.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
@@ -542,7 +542,7 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     override fun observeScopeCount(scope: BookmarkQuery): Flow<Int> =
-        bookmarkRepository.observeBookmarks(scope, BookmarkSortOrder.NEWEST).map { it.size }
+        bookmarkRepository.observeBookmarkList(scope, BookmarkSortOrder.NEWEST).map { it.size }
 
     private class PreparedChat(
         val history: List<ChatMessage>,

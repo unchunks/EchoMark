@@ -116,7 +116,9 @@ internal fun BookmarkListDetailDestination(
     onOpenInsights: () -> Unit = {},
     onOpenReview: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
-    onOpenBrokenLinks: () -> Unit = {}
+    onOpenBrokenLinks: () -> Unit = {},
+    onOpenPodcasts: () -> Unit = {},
+    onMakePodcast: (List<Long>) -> Unit = {}
 ) {
     val handle = entry.savedStateHandle
     val selectedId by handle.getStateFlow<Long?>(PaneSelection.KEY_BOOKMARK_ID, null).collectAsState()
@@ -146,6 +148,8 @@ internal fun BookmarkListDetailDestination(
                 onOpenReview = onOpenReview,
                 onOpenCollections = onOpenCollections,
                 onOpenBrokenLinks = onOpenBrokenLinks,
+                onOpenPodcasts = onOpenPodcasts,
+                onMakePodcast = onMakePodcast,
                 selectedBookmarkId = if (twoPane) selectedId else null,
                 onBookmarkRemoved = { id -> if (id == selectedId) select(null) },
                 // 長押しのメニューの「あとで読む」用。右側の詳細(同じストアに既定のキーで作る)とは別のものにして、
@@ -164,6 +168,7 @@ internal fun BookmarkListDetailDestination(
                         onBack = { select(null) },
                         onOpenBookmark = { select(it) },
                         onAskAi = onAskAi,
+                        onMakePodcast = { onMakePodcast(listOf(it)) },
                         onOpenAiSettings = onOpenAiSettings,
                         showBackButton = false,
                         viewModel = paneViewModel(

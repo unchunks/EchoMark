@@ -4,15 +4,16 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.feed.FeedItem
 import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
+import com.unchunks.echomark.di.NetworkModule
 import com.unchunks.echomark.domain.subscription.INITIAL_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_RUN
 import com.unchunks.echomark.domain.subscription.SubscriptionType
-import com.unchunks.echomark.di.NetworkModule
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import com.unchunks.echomark.testing.FakeNetworkGate
 import kotlinx.coroutines.Dispatchers

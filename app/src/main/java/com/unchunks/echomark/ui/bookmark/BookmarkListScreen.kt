@@ -38,10 +38,12 @@ import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
@@ -110,6 +112,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -133,6 +136,11 @@ import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.shareBookmark
+import com.unchunks.echomark.ui.selection.BulkActionBar
+import com.unchunks.echomark.ui.selection.BulkActionCallbacks
+import com.unchunks.echomark.ui.selection.SelectionMark
+import com.unchunks.echomark.ui.selection.SelectionTopBar
+import com.unchunks.echomark.ui.selection.showBulkMessage
 import com.unchunks.echomark.ui.common.shortTitle
 import com.unchunks.echomark.ui.components.BookmarkCard
 import com.unchunks.echomark.ui.components.BookmarkGridTile
@@ -152,7 +160,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
  * @param selectedBookmarkId 2 画面表示で右側に詳細を出しているブックマーク(カードを強調する)
  * @param onBookmarkRemoved 一覧での操作(削除・アーカイブ/戻す)でブックマークが今の一覧から外れたとき。
  *   2 画面表示で、右側に出しているものなら右側を空にするために使う
- * @param readLaterViewModel 長押しのメニューの「あとで読む」に使う。null なら項目を出さない(Hilt を使わないテスト用)
+ * @param readLaterViewModel 1件だけ選んだときの「その他」の「あとで読む」に使う。null なら項目を出さない(Hilt を使わないテスト用)
  */
 @Composable
 fun BookmarkListScreen(
@@ -166,6 +174,8 @@ fun BookmarkListScreen(
     onOpenReview: () -> Unit = {},
     onOpenCollections: () -> Unit = {},
     onOpenBrokenLinks: () -> Unit = {},
+    onOpenPodcasts: () -> Unit = {},
+    onMakePodcast: (List<Long>) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel(),
     readLaterViewModel: ReadLaterViewModel? = null
 ) {
@@ -173,7 +183,6 @@ fun BookmarkListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
-    var actionTarget by remember { mutableStateOf<Bookmark?>(null) }
     val currentOnOpenBookmark by rememberUpdatedState(onOpenBookmark)
 
     // ショートカット・ウィジェットの「URL を追加」から起動したら追加シートを開く
@@ -181,7 +190,7 @@ fun BookmarkListScreen(
         viewModel.addSheetRequests.collect { showAddSheet = true }
     }
 
-    // 長押しのメニューの「あとで読む」の結果
+    // 選択中の「その他」の「あとで読む」の結果
     LaunchedEffect(readLaterViewModel, snackbarHostState) {
         readLaterViewModel?.messages?.collect { message ->
             snackbarHostState.currentSnackbarData?.dismiss()
@@ -221,6 +230,11 @@ fun BookmarkListScreen(
                         )
                         if (result == SnackbarResult.ActionPerformed) currentOnOpenBookmark(message.id)
                     }
+                    is BookmarkListMessage.Bulk -> snackbarHostState.showBulkMessage(
+                        message.message,
+                        onUndoArchive = viewModel::undoBulkArchive,
+                        onUndoDelete = viewModel::undoBulkDelete
+                    )
                     is BookmarkListMessage.SaveFailed -> snackbarHostState.showSnackbar(message.message)
                     is BookmarkListMessage.SmartFolderSaved -> snackbarHostState.showSnackbar("スマートフォルダ「${message.name}」を保存しました")
                     is BookmarkListMessage.SmartFolderUpdated -> snackbarHostState.showSnackbar("スマートフォルダ「${message.name}」を今の条件に更新しました")
@@ -258,6 +272,31 @@ fun BookmarkListScreen(
         viewModel.deleteBookmark(bookmark)
         onBookmarkRemoved(bookmark.id)
     }
+    // 複数選択の操作。アーカイブ・削除で今の一覧から外れるものは、2 画面表示の右側に出していたら空にする
+    val selectedIds = uiState.selectedIds
+    val bulkCallbacks = BulkActionCallbacks(
+        onSetFavorite = viewModel::bulkSetFavorite,
+        onSetRead = viewModel::bulkSetRead,
+        onSetArchived = { archived ->
+            viewModel.bulkSetArchived(archived)
+            selectedIds.forEach(onBookmarkRemoved)
+        },
+        onDelete = {
+            viewModel.bulkDelete()
+            selectedIds.forEach(onBookmarkRemoved)
+        },
+        onAddTag = viewModel::bulkAddTag,
+        onRemoveTag = viewModel::bulkRemoveTag,
+        onSetCategory = viewModel::bulkSetCategory,
+        onAddToCollection = viewModel::bulkAddToCollection,
+        onCreateCollectionAndAdd = viewModel::bulkCreateCollectionAndAdd,
+        onReprocess = viewModel::bulkReprocess,
+        onExport = viewModel::bulkExport,
+        onShare = { bookmark -> shareBookmark(context, bookmark) },
+        onToggleReadingList = readLaterViewModel?.let { readLater -> readLater::toggleReadingList },
+        // 一覧に並んでいる順に紹介する
+        onMakePodcast = { onMakePodcast(uiState.bookmarks.filter { it.id in selectedIds }.map { it.id }) }
+    )
 
     BookmarkListContent(
         uiState = uiState,
@@ -294,7 +333,12 @@ fun BookmarkListScreen(
             onToggleFavorite = viewModel::toggleFavorite,
             onSetArchived = setArchived,
             onDelete = delete,
-            onLongPress = { actionTarget = it },
+            onEnterSelection = viewModel::onEnterSelection,
+            onToggleSelection = viewModel::onToggleSelection,
+            onSelectAll = viewModel::onSelectAll,
+            onClearSelection = viewModel::onClearSelection,
+            onExitSelection = viewModel::onExitSelection,
+            bulk = bulkCallbacks,
             onAddClick = { showAddSheet = true },
             onOpenTagManagement = onOpenTagManagement,
             onOpenDiscover = onOpenDiscover,
@@ -303,6 +347,7 @@ fun BookmarkListScreen(
             onOpenReview = onOpenReview,
             onOpenCollections = onOpenCollections,
             onOpenBrokenLinks = onOpenBrokenLinks,
+            onOpenPodcasts = onOpenPodcasts,
             onRetry = viewModel::retry
         ),
         selectedBookmarkId = selectedBookmarkId
@@ -315,19 +360,6 @@ fun BookmarkListScreen(
                 viewModel.save(input)
                 showAddSheet = false
             }
-        )
-    }
-
-    actionTarget?.let { target ->
-        BookmarkActionSheet(
-            bookmark = target,
-            onDismiss = { actionTarget = null },
-            onToggleFavorite = { viewModel.toggleFavorite(target) },
-            onToggleRead = { viewModel.toggleRead(target) },
-            onToggleArchive = { setArchived(target, !target.isArchived) },
-            onShare = { shareBookmark(context, target) },
-            onDelete = { delete(target) },
-            onToggleReadingList = readLaterViewModel?.let { readLater -> { readLater.toggleReadingList(target) } }
         )
     }
 }
@@ -389,7 +421,15 @@ class BookmarkListCallbacks(
     val onToggleFavorite: (Bookmark) -> Unit = {},
     val onSetArchived: (Bookmark, Boolean) -> Unit = { _, _ -> },
     val onDelete: (Bookmark) -> Unit = {},
-    val onLongPress: (Bookmark) -> Unit = {},
+    /** 複数選択のモードに入る(長押しならそのブックマークの ID、メニューの「選択」なら null) */
+    val onEnterSelection: (Long?) -> Unit = {},
+    /** 複数選択の間のタップ(選ぶ・外す) */
+    val onToggleSelection: (Long) -> Unit = {},
+    val onSelectAll: () -> Unit = {},
+    val onClearSelection: () -> Unit = {},
+    val onExitSelection: () -> Unit = {},
+    /** 複数選択の操作バーの操作 */
+    val bulk: BulkActionCallbacks = BulkActionCallbacks(),
     val onAddClick: () -> Unit = {},
     val onOpenTagManagement: () -> Unit = {},
     val onOpenDiscover: () -> Unit = {},
@@ -398,6 +438,7 @@ class BookmarkListCallbacks(
     val onOpenReview: () -> Unit = {},
     val onOpenCollections: () -> Unit = {},
     val onOpenBrokenLinks: () -> Unit = {},
+    val onOpenPodcasts: () -> Unit = {},
     val onRetry: () -> Unit = {}
 )
 
@@ -424,7 +465,9 @@ fun BookmarkListContent(
     // 一番上にいるか、上へ戻る方向にスクロールしたときだけ、追加ボタンを文字つきで大きく出す
     val fabExpanded by remember { derivedStateOf { !listState.canScrollBackward || listState.lastScrolledBackward } }
 
-    BackHandler(enabled = uiState.isSearchActive) { callbacks.onSearchActiveChange(false) }
+    BackHandler(enabled = uiState.isSearchActive && !uiState.isSelecting) { callbacks.onSearchActiveChange(false) }
+    // 戻るでまず選択をやめる(検索中なら、その次の戻るで検索を閉じる)
+    BackHandler(enabled = uiState.isSelecting, onBack = callbacks.onExitSelection)
     var showConditionSheet by rememberSaveable { mutableStateOf(false) }
     var smartFolderDialog by remember { mutableStateOf<SmartFolderDialog?>(null) }
     var smartFolderError by remember { mutableStateOf<String?>(null) }
@@ -509,7 +552,17 @@ fun BookmarkListContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            if (uiState.isSearchActive) {
+            if (uiState.isSelecting) {
+                // 複数選択の間は、検索中でも通常のバーでもなく、選んだ件数のバーにする
+                SelectionTopBar(
+                    count = uiState.selectedIds.size,
+                    total = uiState.bookmarks.size,
+                    onClose = callbacks.onExitSelection,
+                    onSelectAll = callbacks.onSelectAll,
+                    onClear = callbacks.onClearSelection,
+                    scrollBehavior = scrollBehavior
+                )
+            } else if (uiState.isSearchActive) {
                 SearchTopBar(
                     query = uiState.searchQuery,
                     queryRevision = uiState.queryRevision,
@@ -531,12 +584,26 @@ fun BookmarkListContent(
                     onOpenInsights = callbacks.onOpenInsights,
                     onOpenReview = callbacks.onOpenReview,
                     onOpenCollections = callbacks.onOpenCollections,
-                    onOpenBrokenLinks = callbacks.onOpenBrokenLinks
+                    onOpenBrokenLinks = callbacks.onOpenBrokenLinks,
+                    onOpenPodcasts = callbacks.onOpenPodcasts,
+                    canSelect = uiState.bookmarks.isNotEmpty(),
+                    onEnterSelection = { callbacks.onEnterSelection(null) }
+                )
+            }
+        },
+        bottomBar = {
+            if (uiState.isSelecting) {
+                BulkActionBar(
+                    selected = uiState.selectedBookmarks,
+                    tagSuggestions = uiState.allTags.map { it.name },
+                    categories = uiState.categoryChoices,
+                    collections = uiState.collections,
+                    callbacks = callbacks.bulk
                 )
             }
         },
         floatingActionButton = {
-            if (!uiState.isSearchActive) {
+            if (!uiState.isSearchActive && !uiState.isSelecting) {
                 ExtendedFloatingActionButton(
                     text = { Text("追加") },
                     icon = { Icon(Icons.Filled.Add, contentDescription = null) },
@@ -682,56 +749,78 @@ private fun BookmarkList(
             val archiveLabel = if (bookmark.isArchived) "アーカイブから戻す" else "アーカイブ"
             val searchTerms = if (uiState.isShowingSearchResults) uiState.searchTerms else emptyList()
             val searchMatch = if (uiState.isShowingSearchResults) uiState.searchMatches[bookmark.id] else null
-            val selected = bookmark.id == selectedBookmarkId
-            val onClick = { callbacks.onOpenBookmark(bookmark.id) }
-            val onLongClick = { callbacks.onLongPress(bookmark) }
-            // 長押しのメニューと同じ操作を、TalkBack のカスタムアクションにも出す。
-            // TalkBack がフォーカスするのはカード(クリックできるノード)なので、カードに付ける
-            val accessibility = Modifier.semantics {
-                customActions = listOf(
-                    CustomAccessibilityAction(if (bookmark.isRead) "未読に戻す" else "既読にする") { callbacks.onToggleRead(bookmark); true },
-                    CustomAccessibilityAction(archiveLabel) { onArchiveToggle(); true },
-                    CustomAccessibilityAction("削除") { onDelete(); true }
-                )
+            val selecting = uiState.isSelecting
+            val checked = bookmark.id in uiState.selectedIds
+            // 複数選択の間は、タップも長押しも選ぶ・外す。そうでなければ、タップで開き、長押しで選択を始める
+            // (これまで長押しで出していた操作メニューの操作は、選択モードの操作バーから行う)
+            val selected = bookmark.id == selectedBookmarkId || checked
+            val onClick = if (selecting) {
+                { callbacks.onToggleSelection(bookmark.id) }
+            } else {
+                { callbacks.onOpenBookmark(bookmark.id) }
             }
+            val onLongClick = if (selecting) {
+                { callbacks.onToggleSelection(bookmark.id) }
+            } else {
+                { callbacks.onEnterSelection(bookmark.id) }
+            }
+            val longClickLabel = if (selecting) "選択を切り替える" else "選択を始める"
+            // 複数選択の間は、選んでいるかを TalkBack で読む。そうでないときは、操作の入り口(スワイプや長押しのメニューの代わり)を
+            // TalkBack のカスタムアクションに出す。TalkBack がフォーカスするのはカード(クリックできるノード)なので、カードに付ける
+            val accessibility = if (selecting) {
+                Modifier.semantics { stateDescription = if (checked) "選択中" else "選択していません" }
+            } else {
+                Modifier.semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction(if (bookmark.isRead) "未読に戻す" else "既読にする") { callbacks.onToggleRead(bookmark); true },
+                        CustomAccessibilityAction(archiveLabel) { onArchiveToggle(); true },
+                        CustomAccessibilityAction("削除") { onDelete(); true }
+                    )
+                }
+            }
+            // 選んでいる間は、星のボタンで1件だけが変わらないよう出さない
+            val onToggleFavorite = if (selecting) null else ({ callbacks.onToggleFavorite(bookmark) })
             val item: @Composable () -> Unit = {
                 Column {
                     if (bookmark.id in uiState.semanticMatchIds) SemanticMatchLabel()
-                    when (uiState.display) {
-                        BookmarkListDisplay.CARD -> BookmarkCard(
-                            bookmark = bookmark,
-                            searchTerms = searchTerms,
-                            searchMatch = searchMatch,
-                            selected = selected,
-                            onClick = onClick,
-                            onToggleFavorite = { callbacks.onToggleFavorite(bookmark) },
-                            onLongClick = onLongClick,
-                            onLongClickLabel = "操作メニューを開く",
-                            nowMillis = nowMillis,
-                            modifier = accessibility
-                        )
-                        BookmarkListDisplay.COMPACT -> CompactBookmarkRow(
-                            bookmark = bookmark,
-                            searchTerms = searchTerms,
-                            searchMatch = searchMatch,
-                            selected = selected,
-                            onClick = onClick,
-                            onToggleFavorite = { callbacks.onToggleFavorite(bookmark) },
-                            onLongClick = onLongClick,
-                            onLongClickLabel = "操作メニューを開く",
-                            nowMillis = nowMillis,
-                            modifier = accessibility
-                        )
-                        BookmarkListDisplay.GRID -> BookmarkGridTile(
-                            bookmark = bookmark,
-                            searchTerms = searchTerms,
-                            selected = selected,
-                            onClick = onClick,
-                            onLongClick = onLongClick,
-                            onLongClickLabel = "操作メニューを開く",
-                            nowMillis = nowMillis,
-                            modifier = accessibility
-                        )
+                    Box {
+                        when (uiState.display) {
+                            BookmarkListDisplay.CARD -> BookmarkCard(
+                                bookmark = bookmark,
+                                searchTerms = searchTerms,
+                                searchMatch = searchMatch,
+                                selected = selected,
+                                onClick = onClick,
+                                onToggleFavorite = onToggleFavorite,
+                                onLongClick = onLongClick,
+                                onLongClickLabel = longClickLabel,
+                                nowMillis = nowMillis,
+                                modifier = accessibility
+                            )
+                            BookmarkListDisplay.COMPACT -> CompactBookmarkRow(
+                                bookmark = bookmark,
+                                searchTerms = searchTerms,
+                                searchMatch = searchMatch,
+                                selected = selected,
+                                onClick = onClick,
+                                onToggleFavorite = onToggleFavorite,
+                                onLongClick = onLongClick,
+                                onLongClickLabel = longClickLabel,
+                                nowMillis = nowMillis,
+                                modifier = accessibility
+                            )
+                            BookmarkListDisplay.GRID -> BookmarkGridTile(
+                                bookmark = bookmark,
+                                searchTerms = searchTerms,
+                                selected = selected,
+                                onClick = onClick,
+                                onLongClick = onLongClick,
+                                onLongClickLabel = longClickLabel,
+                                nowMillis = nowMillis,
+                                modifier = accessibility
+                            )
+                        }
+                        if (selecting) SelectionMark(checked, Modifier.align(Alignment.TopStart).padding(8.dp))
                     }
                 }
             }
@@ -755,7 +844,10 @@ private fun ListTopBar(
     onOpenInsights: () -> Unit,
     onOpenReview: () -> Unit,
     onOpenCollections: () -> Unit,
-    onOpenBrokenLinks: () -> Unit
+    onOpenBrokenLinks: () -> Unit,
+    onOpenPodcasts: () -> Unit,
+    canSelect: Boolean,
+    onEnterSelection: () -> Unit
 ) {
     var sortMenuOpen by remember { mutableStateOf(false) }
     var displayMenuOpen by remember { mutableStateOf(false) }
@@ -820,6 +912,15 @@ private fun ListTopBar(
                 }
                 DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
                     DropdownMenuItem(
+                        text = { Text("選択") },
+                        leadingIcon = { Icon(Icons.Outlined.Checklist, contentDescription = null) },
+                        enabled = canSelect,
+                        onClick = {
+                            overflowOpen = false
+                            onEnterSelection()
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text("資料を探す") },
                         leadingIcon = { Icon(Icons.Outlined.TravelExplore, contentDescription = null) },
                         onClick = {
@@ -873,6 +974,14 @@ private fun ListTopBar(
                         onClick = {
                             overflowOpen = false
                             onOpenReview()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("ポッドキャスト") },
+                        leadingIcon = { Icon(Icons.Outlined.Podcasts, contentDescription = null) },
+                        onClick = {
+                            overflowOpen = false
+                            onOpenPodcasts()
                         }
                     )
                 }

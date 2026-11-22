@@ -105,6 +105,30 @@ class CollectionRepositoryImpl @Inject constructor(
         collectionDao.deleteItem(collectionId, bookmarkId)
     }
 
+    override suspend fun addAll(collectionId: Long, bookmarkIds: List<Long>): Int = withContext(dispatcherProvider.io) {
+        if (bookmarkIds.isEmpty() || collectionDao.getById(collectionId) == null) return@withContext 0
+        val addedAt = System.currentTimeMillis()
+        var count = 0
+        bookmarkDao.inTransaction {
+            val items = bookmarkIds.distinct().filter { bookmarkDao.exists(it) }.map { CollectionItemEntity(collectionId, it, addedAt) }
+            collectionDao.insertItems(items)
+            count = items.size
+        }
+        count
+    }
+
+    override suspend fun removeAll(collectionId: Long, bookmarkIds: List<Long>) = withContext(dispatcherProvider.io) {
+        if (bookmarkIds.isEmpty()) return@withContext
+        bookmarkDao.inTransaction {
+            bookmarkIds.distinct().chunked(REMOVE_CHUNK_SIZE).forEach { collectionDao.deleteItems(collectionId, it) }
+        }
+    }
+
+    private companion object {
+        /** SQLite の変数の上限に収まる、1回の IN に渡す件数 */
+        const val REMOVE_CHUNK_SIZE = 500
+    }
+
     /** 大文字小文字・全角半角を区別せず、[name] と同じ名前のコレクションが([exceptId] 以外に)あるか */
     private suspend fun isNameTaken(name: String, exceptId: Long?): Boolean {
         val key = CollectionNames.key(name)

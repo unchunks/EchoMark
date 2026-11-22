@@ -30,6 +30,12 @@ android {
         compose = true
     }
 
+    lint {
+        // テストコード(test / androidTest)は Lint の対象にしない。checkTestSources が false の既定でも
+        // lintAnalyzeDebugUnitTest はテスト全体を解析し、CI の Lint が約 9 分のうち 3〜4 分をこれに使っていたため
+        ignoreTestSources = true
+    }
+
     androidResources {
         // MediaPipe はモデル(assets の .task)を AssetFileDescriptor 経由でファイルとして直接読むため、無圧縮で格納する
         noCompress += "task"
@@ -82,8 +88,14 @@ dependencies {
     implementation(libs.unchunks.search)
     implementation(libs.unchunks.web.content)
     implementation(libs.unchunks.web.search)
+    implementation(libs.unchunks.feed)
+    implementation(libs.unchunks.audio)
+    implementation(libs.unchunks.archive)
+    // アプリのロック(指紋・顔・端末の画面ロックで本人を確かめる。androidx.biometric はこの部品から入る)
+    implementation(libs.unchunks.app.lock)
     implementation(libs.unchunks.secure.storage)
     implementation(libs.unchunks.speech)
+    implementation(libs.unchunks.speech.text)
     implementation(libs.unchunks.document.text)
     implementation(libs.unchunks.llm.ondevice)
     implementation(libs.unchunks.file.storage)
@@ -94,8 +106,6 @@ dependencies {
     // 重い処理の区間を Perfetto のトレースに出す(端末でのもたつきの調査用)
     implementation(libs.androidx.tracing.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    // アプリのロック(指紋・顔・端末の画面ロックで本人を確かめる)
-    implementation(libs.androidx.biometric)
     // 保存したデータ(Room の DB)の暗号化(#100)。SQLCipher の Room 2 向けの SupportOpenHelperFactory が androidx.sqlite 2.7 を求める
     implementation(libs.sqlcipher.android) { artifact { type = "aar" } }
     implementation(libs.androidx.sqlite)
@@ -144,6 +154,11 @@ dependencies {
     // 画像読み込み(OG 画像のサムネイル)。通信は共通の OkHttpClient を使う(EchoMarkApplication)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    // オフライン用に保存した動画・添付の動画をアプリの中で再生する(端末のファイルだけを読む。通信する部品は入れない)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+    // ポッドキャストのバックグラウンドの再生とメディアの通知(端末のファイルだけを読む)
+    implementation(libs.androidx.media3.session)
 
     // ホーム画面ウィジェット(Jetpack Glance)
     implementation(libs.androidx.glance.appwidget)

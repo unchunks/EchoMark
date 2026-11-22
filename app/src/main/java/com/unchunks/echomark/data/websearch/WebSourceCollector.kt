@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.websearch
 
 import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.websearch.BraveSearchClient
 import com.unchunks.echomark.data.remote.FetchedContent
 import com.unchunks.echomark.data.remote.UrlContentFetcher
 import com.unchunks.echomark.domain.chat.RagSupport

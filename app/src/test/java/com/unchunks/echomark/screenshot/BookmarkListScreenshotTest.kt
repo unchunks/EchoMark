@@ -22,7 +22,6 @@ import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.ui.bookmark.AddBookmarkForm
 import com.unchunks.echomark.ui.bookmark.AddBookmarkSheetContent
 import com.unchunks.echomark.ui.bookmark.AddMode
-import com.unchunks.echomark.ui.bookmark.BookmarkActionSheetContent
 import com.unchunks.echomark.ui.bookmark.BookmarkListCallbacks
 import com.unchunks.echomark.ui.bookmark.BookmarkListContent
 import com.unchunks.echomark.ui.bookmark.BookmarkListUiState
@@ -163,6 +162,65 @@ class BookmarkListScreenshotTest {
         )
     )
 
+    /** 複数選択(カード): 件数のバー・選んでいるカードのしるしと枠・下の操作バー */
+    @Test
+    fun selectionCard() = screenshot.captureScreenLightDark(
+        "library_list_selection_card",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = PreviewSamples.all,
+                allTags = tags,
+                totalCount = PreviewSamples.all.size,
+                isSelecting = true,
+                selectedIds = setOf(PreviewSamples.all[0].id, PreviewSamples.all[2].id)
+            )
+        )
+    )
+
+    @Test
+    fun selectionCompact() = screenshot.captureScreenLightDark(
+        "library_list_selection_compact",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = PreviewSamples.all,
+                allTags = tags,
+                display = BookmarkListDisplay.COMPACT,
+                totalCount = PreviewSamples.all.size,
+                isSelecting = true,
+                selectedIds = setOf(PreviewSamples.all[1].id)
+            )
+        )
+    )
+
+    @Test
+    fun selectionGrid() = screenshot.captureScreenLightDark(
+        "library_list_selection_grid",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = PreviewSamples.all,
+                allTags = tags,
+                display = BookmarkListDisplay.GRID,
+                totalCount = PreviewSamples.all.size,
+                isSelecting = true,
+                selectedIds = setOf(PreviewSamples.all[0].id, PreviewSamples.all[3].id)
+            )
+        )
+    )
+
+    /** 選択モードに入った直後(何も選んでいない) */
+    @Test
+    fun selectionNothingSelected() = screenshot.captureScreenLightDark(
+        "library_list_selection_none",
+        content = content(
+            BookmarkListUiState(
+                bookmarks = PreviewSamples.all,
+                allTags = tags,
+                totalCount = PreviewSamples.all.size,
+                isSelecting = true
+            )
+        )
+    )
+
     @Test
     fun compactDisplay() = screenshot.captureScreenLightDark(
         "library_list_compact",
@@ -291,23 +349,6 @@ class BookmarkListScreenshotTest {
             )
         )
     )
-
-    /** カードの長押しで出す操作メニュー(一覧から「あとで読む」に入れられる) */
-    @Test
-    fun actionSheet() = screenshot.captureLightDark("library_action_sheet") {
-        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
-            BookmarkActionSheetContent(
-                bookmark = PreviewSamples.urlBookmark,
-                onAction = {},
-                onToggleFavorite = {},
-                onToggleRead = {},
-                onToggleArchive = {},
-                onShare = {},
-                onDelete = {},
-                onToggleReadingList = {}
-            )
-        }
-    }
 
     @Test
     fun addSheet() = screenshot.captureLightDark("library_add_sheet") {

@@ -58,8 +58,22 @@ class CollectionsScreenshotTest {
         )
     }
 
+    /** コレクションの中での複数選択(「コレクションから外す」はメニューに入る) */
     @Test
-    fun detailEmpty() = screenshot.captureScreenLightDark("collections_detail_empty") {
+    fun detailSelecting() = screenshot.captureScreenLightDark("collections_detail_selecting") {
+        CollectionDetailContent(
+            uiState = CollectionDetailUiState(
+                isLoading = false, collection = collections[0], bookmarks = PreviewSamples.all,
+                isSelecting = true, selectedIds = setOf(PreviewSamples.all[0].id, PreviewSamples.all[1].id)
+            ),
+            snackbarHostState = SnackbarHostState(),
+            onBack = {}, onOpenBookmark = {}, onRemove = {}, onExport = {},
+            nowMillis = PreviewSamples.NOW
+        )
+    }
+
+    @Test
+    fun detailEmpty() =screenshot.captureScreenLightDark("collections_detail_empty") {
         CollectionDetailContent(
             uiState = CollectionDetailUiState(isLoading = false, collection = collections[2]),
             snackbarHostState = SnackbarHostState(),

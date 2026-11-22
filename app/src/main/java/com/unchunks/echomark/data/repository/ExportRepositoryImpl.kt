@@ -42,6 +42,17 @@ class ExportRepositoryImpl @Inject constructor(
             write(uri, format, bookmark.title, null, listOf(bookmark))
         }
 
+    override suspend fun exportBookmarks(bookmarkIds: List<Long>, title: String, format: ExportFormat, uri: String): ExportResult =
+        withContext(dispatcherProvider.io) {
+            val byId = bookmarkIds.distinct().chunked(EXPORT_ID_CHUNK_SIZE)
+                .flatMap { bookmarkDao.getByIdsWithTags(it) }
+                .associate { it.bookmark.id to it.toDomain() }
+            // 選んだ順に並べる(削除されたものは飛ばす)
+            val bookmarks = bookmarkIds.distinct().mapNotNull { byId[it] }
+            if (bookmarks.isEmpty()) throw ExportException("ブックマークが見つかりません。削除された可能性があります")
+            write(uri, format, title, null, bookmarks)
+        }
+
     private suspend fun write(
         uri: String,
         format: ExportFormat,
@@ -65,5 +76,10 @@ class ExportRepositoryImpl @Inject constructor(
         }
         Timber.i("書き出し: format=$format exported=${document.exported} skipped=${document.skipped}")
         return ExportResult(document.exported, document.skipped)
+    }
+
+    private companion object {
+        /** SQLite の変数の上限に収まる、1回の IN に渡す件数 */
+        const val EXPORT_ID_CHUNK_SIZE = 500
     }
 }

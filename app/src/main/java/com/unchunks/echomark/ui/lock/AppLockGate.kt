@@ -1,12 +1,6 @@
 package com.unchunks.echomark.ui.lock
 
-import android.content.Context
-import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
-import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
-import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
-import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,17 +30,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentActivity
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.withResumed
-import com.unchunks.echomark.domain.lock.AppLockState
+import com.unchunks.components.applock.AppLockAuthenticator
+import com.unchunks.components.applock.AppLockManager
+import com.unchunks.components.applock.AppLockState
+import com.unchunks.components.applock.findFragmentActivity
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -180,78 +175,6 @@ fun AppLockContent(
             }
         }
     }
-}
-
-/** 本人を確かめる(androidx.biometric)。指紋・顔、または端末の画面ロック(PIN・パターン・パスワード)。 */
-object AppLockAuthenticator {
-    /**
-     * 使える方法。顔の認証の多くは弱い(WEAK)扱いのため WEAK も許す(暗号の鍵は使わない、画面のロックのため)。
-     * 生体認証が無くても、端末の画面ロックで確かめられる
-     */
-    const val AUTHENTICATORS = BIOMETRIC_WEAK or DEVICE_CREDENTIAL
-
-    enum class Availability { AVAILABLE, NO_DEVICE_LOCK }
-
-    sealed interface Result {
-        data object Succeeded : Result
-
-        /** やめた・失敗した。[message] は画面に出す理由(やめただけなら null) */
-        data class Failed(val message: String?) : Result
-
-        /** 端末に画面ロックも生体認証も無い */
-        data object NoDeviceLock : Result
-    }
-
-    fun availability(context: Context): Availability =
-        when (BiometricManager.from(context).canAuthenticate(AUTHENTICATORS)) {
-            BiometricManager.BIOMETRIC_SUCCESS -> Availability.AVAILABLE
-            // 生体認証の部品が無い・登録が無い・画面ロックも無い。いずれも確かめる方法が無い
-            else -> Availability.NO_DEVICE_LOCK
-        }
-
-    /** 本人を確かめる画面を出し、結果を [onResult] で返す(メインスレッド) */
-    fun authenticate(activity: FragmentActivity, title: String, onResult: (Result) -> Unit) {
-        val prompt = BiometricPrompt(
-            activity,
-            ContextCompat.getMainExecutor(activity),
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    onResult(Result.Succeeded)
-                }
-
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    onResult(resultOfError(errorCode, errString.toString()))
-                }
-                // onAuthenticationFailed(指が合わなかった 1 回)では、画面がそのまま次を待つので何もしない
-            }
-        )
-        prompt.authenticate(
-            BiometricPrompt.PromptInfo.Builder()
-                .setTitle(title)
-                .setAllowedAuthenticators(AUTHENTICATORS)
-                .setConfirmationRequired(false)
-                .build()
-        )
-    }
-
-    internal fun resultOfError(errorCode: Int, errString: String): Result = when (errorCode) {
-        BiometricPrompt.ERROR_USER_CANCELED, BiometricPrompt.ERROR_CANCELED, BiometricPrompt.ERROR_NEGATIVE_BUTTON -> Result.Failed(null)
-        BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL, BiometricPrompt.ERROR_NO_BIOMETRICS, BiometricPrompt.ERROR_HW_NOT_PRESENT ->
-            Result.NoDeviceLock
-        BiometricPrompt.ERROR_LOCKOUT, BiometricPrompt.ERROR_LOCKOUT_PERMANENT ->
-            Result.Failed("試した回数が多すぎます。しばらく待つか、端末の画面ロックで解除してください。")
-        else -> Result.Failed(errString.ifBlank { null })
-    }
-}
-
-/** Activity でない Context(Compose の LocalContext はテーマなどで包まれていることがある)から、Activity を探す */
-internal fun Context.findFragmentActivity(): FragmentActivity? {
-    var current: Context? = this
-    while (current != null) {
-        if (current is FragmentActivity) return current
-        current = (current as? ContextWrapper)?.baseContext
-    }
-    return null
 }
 
 /** Compose から [AppLockManager] を取る(Activity ごとに注入しなくて済むように) */

@@ -101,6 +101,10 @@ import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.websearch.WebSource
+import com.unchunks.echomark.domain.chat.RagSupport
+import com.unchunks.echomark.domain.factcheck.FactCheckTarget
+import com.unchunks.echomark.ui.factcheck.FactCheckSheet
+import com.unchunks.echomark.ui.factcheck.FactCheckViewModel
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.navigation.WideContentMaxWidth
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
@@ -120,9 +124,11 @@ fun ChatScreen(
     onOpenBookmark: (Long) -> Unit = {},
     onOpenAiSettings: () -> Unit = {},
     showBackButton: Boolean = true,
-    viewModel: ChatViewModel = hiltViewModel()
+    viewModel: ChatViewModel = hiltViewModel(),
+    factCheckViewModel: FactCheckViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val factCheck by factCheckViewModel.uiState.collectAsState()
     var input by rememberSaveable { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboard = LocalClipboard.current
@@ -208,7 +214,27 @@ fun ChatScreen(
                     if (action == SnackbarResult.ActionPerformed) onOpenBookmark(result.id)
                 }
             }
+        },
+        onFactCheck = { message ->
+            // 引用番号・Markdown の記号を除いた回答を確かめる(回答は書き換えない)
+            val text = ChatMarkdown.toPlainText(RagSupport.withoutCitations(message).content)
+            factCheckViewModel.open(FactCheckTarget.chatAnswer(message.id), text)
         }
+    )
+
+    FactCheckSheet(
+        state = factCheck,
+        onCheck = factCheckViewModel::check,
+        onOpenUrl = { url ->
+            runCatching { uriHandler.openUri(url) }.onFailure {
+                scope.launch { snackbarHostState.showSnackbar("ページを開けませんでした") }
+            }
+        },
+        onOpenAiSettings = {
+            factCheckViewModel.close()
+            onOpenAiSettings()
+        },
+        onDismiss = factCheckViewModel::close
     )
 
     if (showScope) {
@@ -286,7 +312,8 @@ fun ChatContent(
     onWebSearchChange: (Boolean) -> Unit = {},
     onDismissWebSearchKeyPrompt: () -> Unit = {},
     onOpenWebSource: (String) -> Unit = {},
-    onSaveWebSource: (WebSource) -> Unit = {}
+    onSaveWebSource: (WebSource) -> Unit = {},
+    onFactCheck: (ChatMessage) -> Unit = {}
 ) {
     val title = uiState.title ?: DEFAULT_CHAT_TITLE
     var showRename by rememberSaveable { mutableStateOf(false) }
@@ -421,6 +448,7 @@ fun ChatContent(
                         onToggleSpeaking = onToggleSpeaking,
                         onOpenWebSource = onOpenWebSource,
                         onSaveWebSource = onSaveWebSource,
+                        onFactCheck = onFactCheck,
                         modifier = Modifier.nestedScroll(userScrollConnection)
                     )
                 }
@@ -614,6 +642,7 @@ private fun ChatMessageList(
     onToggleSpeaking: (ChatMessage) -> Unit,
     onOpenWebSource: (String) -> Unit,
     onSaveWebSource: (WebSource) -> Unit,
+    onFactCheck: (ChatMessage) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // 生成中でなければ、最後の質問は編集でき、最後が回答なら作り直せる(失敗の表示中は再試行のボタンを使う)
@@ -650,6 +679,7 @@ private fun ChatMessageList(
                         onRegenerate = if (message.id == regeneratableId) onRegenerate else null,
                         onBranch = if (idle) ({ onBranch(message) }) else null,
                         onSaveNote = if (idle) ({ onSaveNote(message) }) else null,
+                        onFactCheck = if (idle) ({ onFactCheck(message) }) else null,
                         isSpeaking = message.id == uiState.speakingMessageId,
                         onToggleSpeaking = { onToggleSpeaking(message) },
                         savedWebUrls = uiState.webSearch.savedUrls,

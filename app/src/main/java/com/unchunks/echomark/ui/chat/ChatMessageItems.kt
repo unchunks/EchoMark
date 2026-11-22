@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.StopCircle
+import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -199,6 +200,7 @@ internal fun AssistantMessageItem(
     onSaveNote: (() -> Unit)? = null,
     isSpeaking: Boolean = false,
     onToggleSpeaking: (() -> Unit)? = null,
+    onFactCheck: (() -> Unit)? = null,
     savedWebUrls: Set<String> = emptySet(),
     onOpenWebSource: (String) -> Unit = {},
     onSaveWebSource: (WebSource) -> Unit = {}
@@ -263,6 +265,16 @@ internal fun AssistantMessageItem(
                     Icon(
                         Icons.AutoMirrored.Outlined.NoteAdd,
                         contentDescription = "回答をメモに保存",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            if (onFactCheck != null) {
+                IconButton(onClick = onFactCheck) {
+                    Icon(
+                        Icons.Outlined.TravelExplore,
+                        contentDescription = "Web で確かめる",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )

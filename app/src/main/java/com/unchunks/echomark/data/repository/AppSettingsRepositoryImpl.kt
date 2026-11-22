@@ -1,16 +1,19 @@
 package com.unchunks.echomark.data.repository
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.unchunks.components.llm.ApiProvider
+import com.unchunks.components.speechtext.ReadingEntry
+import com.unchunks.echomark.data.backup.BackupCoverage
+import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
@@ -18,25 +21,24 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.ReadingFont
 import com.unchunks.echomark.domain.bookmark.model.ReadingFontSize
 import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
-import com.unchunks.echomark.data.backup.BackupCoverage
-import com.unchunks.echomark.domain.backup.AutoBackupSettings
+import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.lock.AppLockSettings
-import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.model.SummaryFormat
+import com.unchunks.echomark.domain.model.SummaryLanguage
+import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.LlmBackend
-import com.unchunks.echomark.domain.model.SummaryFormat
-import com.unchunks.echomark.domain.model.SummaryLanguage
-import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.domain.repository.defaultApiModel
+import com.unchunks.echomark.domain.video.VideoDownloadSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -141,6 +143,21 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setLinkCheckEnabled(enabled: Boolean) {
         dataStore.edit { it[KEY_LINK_CHECK_ENABLED] = enabled }
+    }
+
+    override val videoDownloadSettings: Flow<VideoDownloadSettings> = data.map { prefs ->
+        VideoDownloadSettings(
+            wifiOnly = prefs[KEY_VIDEO_DOWNLOAD_WIFI_ONLY] ?: true,
+            maxTotalBytes = prefs[KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES]?.takeIf { it > 0 } ?: VideoDownloadSettings.DEFAULT_MAX_TOTAL_BYTES
+        )
+    }.distinctUntilChanged()
+
+    override suspend fun setVideoDownloadWifiOnly(enabled: Boolean) {
+        dataStore.edit { it[KEY_VIDEO_DOWNLOAD_WIFI_ONLY] = enabled }
+    }
+
+    override suspend fun setVideoDownloadMaxTotalBytes(bytes: Long) {
+        dataStore.edit { it[KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES] = bytes }
     }
 
     override val offlineMode: Flow<Boolean> = data.map { it[KEY_OFFLINE_MODE] ?: false }.distinctUntilChanged()
@@ -261,6 +278,17 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { prefs ->
             val current = prefs[KEY_CHAT_TEMPLATES]?.let(ChatTemplateCodec::decode).orEmpty()
             prefs[KEY_CHAT_TEMPLATES] = ChatTemplateCodec.encode(transform(current))
+        }
+    }
+
+    override val readingDictionary: Flow<List<ReadingEntry>> = data.map { prefs ->
+        prefs[KEY_READING_DICTIONARY]?.let(ReadingDictionaryCodec::decode).orEmpty()
+    }.distinctUntilChanged()
+
+    override suspend fun updateReadingDictionary(transform: (List<ReadingEntry>) -> List<ReadingEntry>) {
+        dataStore.edit { prefs ->
+            val current = prefs[KEY_READING_DICTIONARY]?.let(ReadingDictionaryCodec::decode).orEmpty()
+            prefs[KEY_READING_DICTIONARY] = ReadingDictionaryCodec.encode(transform(current))
         }
     }
 
@@ -442,9 +470,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_CHAT_TEMPLATES = stringPreferencesKey("chat_templates")
+        val KEY_READING_DICTIONARY = stringPreferencesKey("reading_dictionary")
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
         val KEY_DUPLICATE_SENSITIVITY = stringPreferencesKey("duplicate_sensitivity")
         val KEY_LINK_CHECK_ENABLED = booleanPreferencesKey("link_check_enabled")
+        val KEY_VIDEO_DOWNLOAD_WIFI_ONLY = booleanPreferencesKey("video_download_wifi_only")
+        val KEY_VIDEO_DOWNLOAD_MAX_TOTAL_BYTES = longPreferencesKey("video_download_max_total_bytes")
         val KEY_PLACES_MAP_BACKGROUND = booleanPreferencesKey("places_map_background")
         val KEY_OFFLINE_MODE = booleanPreferencesKey("offline_mode")
         val KEY_APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")

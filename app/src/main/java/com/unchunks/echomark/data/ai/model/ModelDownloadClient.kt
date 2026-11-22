@@ -5,8 +5,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import androidx.core.content.getSystemService
-import com.unchunks.echomark.data.network.NetworkGate
-import com.unchunks.echomark.data.network.ensureOnline
+import com.unchunks.components.web.NetworkGate
+import com.unchunks.components.web.ensureOnline
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -67,11 +68,12 @@ class ExploreActions(
     val onOpenCollections: () -> Unit = {},
     val onOpenTags: () -> Unit = {},
     val onOpenDuplicates: () -> Unit = {},
-    val onOpenBrokenLinks: () -> Unit = {}
+    val onOpenBrokenLinks: () -> Unit = {},
+    val onOpenPodcasts: () -> Unit = {}
 )
 
 /**
- * 「見つける」タブ。一覧のメニューの奥にあった画面(読む・ふり返る、資料を探す、分析、コレクション、タグ、重複、リンク切れ)を
+ * 「見つける」タブ。一覧のメニューの奥にあった画面(読む・ふり返る、資料を探す、分析、ポッドキャスト、コレクション、タグ、重複、リンク切れ)を
  * ひと目で見渡せるように並べる。状態を持たないので、スクリーンショットテストでそのまま描画できる。
  *
  * 上に、いちばんよく使う「読む・ふり返る」を大きく置き、残りは幅に合わせて 1〜3 列のタイルにする。
@@ -134,6 +136,10 @@ private fun exploreTiles(actions: ExploreActions): List<ExploreTile> = listOf(
     ExploreTile(
         Icons.Outlined.Insights, "ライブラリの分析", "タグ・統計・関心の変化・つながりの図・地図",
         TileTone.INSIGHT, actions.onOpenInsights
+    ),
+    ExploreTile(
+        Icons.Outlined.Podcasts, "ポッドキャスト", "保存したものを、端末の読み上げで聞けるエピソードにします",
+        TileTone.DISCOVER, actions.onOpenPodcasts
     ),
     ExploreTile(
         Icons.Outlined.Folder, "コレクション", "ブックマークを集めて、名前を付けてまとめます",

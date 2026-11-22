@@ -4,6 +4,10 @@
     <files-path
         name="attachments"
         path="attachments/" />
+    <!-- ポッドキャストの音声を、ほかのアプリで再生する・共有するときに渡す -->
+    <files-path
+        name="podcasts"
+        path="podcasts/" />
     <!-- クラッシュログを共有するときにまとめた一時ファイル -->
     <cache-path
         name="shared_logs"

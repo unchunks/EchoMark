@@ -1,7 +1,8 @@
 # オフラインモード(通信の経路の一覧と守り方)
 
 設定の「通信」→「オフラインモード」をオンにすると、アプリは一切ネットワークに接続しない。
-通信してよいかは `data/network/NetworkGate.kt` の1か所で決め、すべての経路がそこを通る。
+通信してよいかは `data/network/NetworkGate.kt`(`SettingsNetworkGate`)の1か所で決め、すべての経路がそこを通る。
+仕組み(`NetworkGate`・`OfflineModeInterceptor`・`ensureOnline`・`OfflineModeException`)は部品の web-content にある。
 
 ## 守り方
 
@@ -20,10 +21,14 @@
 | URL の本文の取得(`UrlContentFetcher`) | 共通の client から作った OkHttp | インターセプターで断る。処理は積まずに処理待ちのまま残す |
 | GitHub の API・raw ファイル(`GitHubRepoFetcher`) | 本文の取得と同じ client | 同上 |
 | YouTube の字幕(部品の `YouTubeTranscriptFetcher`) | 本文の取得と同じ client | 同上 |
+| PeerTube の動画の情報・字幕(`PeerTubeFetcher`。ページと同じサーバーの公開 API) | 本文の取得と同じ client | 同上 |
+| 動画のオフライン保存(`VideoOfflineWorker`。字幕の取り直し・サムネイルの保存。`docs/video-offline.md`) | 本文の取得と同じ client | 画面で理由を出して始めない。途中でオンにされたら、何も書かずに止める |
+| 動画のファイルのダウンロード(`VideoFileDownloader`・`VideoFileDownloadWorker`。直接のリンク・PeerTube) | 共通の client から作った OkHttp(本文の取得と同じ制限) | 画面で理由を出して始めない。途中でオンにされたら止める(途中のファイルは残し、オフにしたら頼み直せば続きから) |
+| 保存した動画の再生(`VideoPlayerActivity`。Media3) | 端末のファイルだけ(`FileDataSource`) | もともと通信しない |
 | フィードの確認・購読の追加(`FeedFetcher`・`FeedDiscovery`) | 共通の client から作った OkHttp | 夜間の確認は積まない・ワーカーも動かない。途中でオンにされたら失敗に数えずにやめる |
 | リンク切れの確認(`LinkProber`) | 共通の client から作った OkHttp | 夜間の確認は積まない。途中でオンにされたら記録せずにやめる(`NetworkStatus` も通信できない扱い) |
 | 資料探し(部品の Web 検索: arXiv・はてなブックマーク・Wikipedia・YouTube) | Hilt で渡す共通の client | 画面で理由を出して検索しない |
-| チャットの Web 検索(`BraveSearchClient`)と結果のページの取得(`WebSourceCollector`) | 共通の client から作った OkHttp | オンにできない。オンのままの会話では検索せず、保存内容だけで答えて理由を出す |
+| チャットの Web 検索(`BraveWebSearchClient`・部品の web-search の `BraveSearchClient`)と結果のページの取得(`WebSourceCollector`) | 共通の client から作った OkHttp | オンにできない。オンのままの会話では検索せず、保存内容だけで答えて理由を出す |
 | リンク先の画像(Coil) | 共通の client(`EchoMarkApplication`) | インターセプターで断る(キャッシュ済みの画像は出る) |
 | オフラインコピーの作成(`PageSnapshotter`) | WebView | 読み込む前と、ページの中の読み込みのたびに確かめる |
 | オフラインコピーの表示(`SnapshotViewer`) | WebView | もともと保存したファイル以外を読み込まない(通信しない) |
@@ -31,6 +36,8 @@
 | クラウド AI(Claude・Gemini・OpenAI。接続テストを含む) | Claude は SDK の自前の OkHttp、ほかは共通の client | `OfflineGuardedApiLlmClient` が呼ぶ前に断る。処理は処理待ちのまま残す(今は `CLOUD_AI_ENABLED = false`) |
 | クラウドの文字起こし(OpenAI・Gemini) | 共通の client | 端末内の文字起こしを使う |
 | 場所の画面の地図の背景(MapLibre + OpenFreeMap) | MapLibre の HTTP を共通の client から作った client に差し替え | 地図を作らず、分布図にして理由を出す |
+| ポッドキャストの読み上げ(`AndroidPodcastSpeechEngine`) | 端末の読み上げのアプリ(`TextToSpeech`。別のアプリ) | 通信しない: 日本語の端末内の声だけを使い、読み上げのたびに通信による合成を断る(オフラインモードに関係なく) |
+| ポッドキャストの再生(`PodcastPlaybackService`) | Media3 の ExoPlayer(`FileDataSource`) | 通信しない: エピソードの置き場所の音声だけを読む |
 
 ### 処理待ちの扱い
 

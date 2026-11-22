@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.mapper
 
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
+import com.unchunks.echomark.data.local.entity.BookmarkListRow
 import com.unchunks.echomark.data.local.entity.BookmarkSourceRow
 import com.unchunks.echomark.data.local.entity.BookmarkWithTags
 import com.unchunks.echomark.data.local.entity.SummaryHistoryEntity
@@ -46,6 +47,9 @@ fun BookmarkWithTags.toDomain(): Bookmark {
         aiTags = tags.filter { it.id in aiTagIds }.map { it.name }.toSet()
     )
 }
+
+/** 一覧に出すブックマーク。本文は null(読む時間の目安は呼び出し側で [Bookmark.estimatedReadingMinutes] に入れる) */
+fun BookmarkListRow.toDomain(): Bookmark = BookmarkWithTags(bookmark, tags, tagRefs).toDomain()
 
 /** 読めない種類(新しい版で増えたもの)は AI の版として読む。 */
 fun SummaryHistoryEntity.toDomain(): SummaryVersion = SummaryVersion(

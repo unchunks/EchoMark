@@ -2,7 +2,7 @@ package com.unchunks.echomark.ui.settings.ai
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.unchunks.echomark.data.network.isOfflineModeBlock
+import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.websearch.WebSearchClient
 import com.unchunks.echomark.domain.websearch.WebSearchException

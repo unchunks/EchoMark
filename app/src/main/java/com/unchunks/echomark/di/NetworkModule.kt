@@ -1,10 +1,10 @@
 package com.unchunks.echomark.di
 
+import com.unchunks.components.web.NetworkGate
+import com.unchunks.components.web.OfflineModeInterceptor
 import com.unchunks.components.websearch.SearchUserAgents
 import com.unchunks.echomark.data.network.DefaultOfflineModeController
-import com.unchunks.echomark.data.network.NetworkGate
 import com.unchunks.echomark.data.network.OfflineModeController
-import com.unchunks.echomark.data.network.OfflineModeInterceptor
 import com.unchunks.echomark.data.network.SettingsNetworkGate
 import dagger.Module
 import dagger.Provides
