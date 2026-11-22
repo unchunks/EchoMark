@@ -6,10 +6,10 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.NetworkType
 import androidx.work.WorkManager
+import com.unchunks.components.connectivity.NetworkStatus
 import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.linkcheck.LinkChecker
 import com.unchunks.echomark.data.linkcheck.LinkProber
-import com.unchunks.echomark.data.linkcheck.NetworkStatus
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.LinkCheckEntity
 import com.unchunks.echomark.data.mapper.toEntity

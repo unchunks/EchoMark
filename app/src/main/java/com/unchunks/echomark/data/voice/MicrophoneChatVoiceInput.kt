@@ -9,9 +9,9 @@ import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.speech.PcmChunk
 import com.unchunks.components.speech.PcmFormat
 import com.unchunks.components.speech.PcmMath
+import com.unchunks.components.speech.SpeechEndDetector
 import com.unchunks.components.speech.Transcriber
 import com.unchunks.echomark.data.extract.transcribe.TranscriptionProviderSelector
-import com.unchunks.echomark.domain.chat.SpeechEndDetector
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.ChatVoiceInput
 import com.unchunks.echomark.domain.repository.VoiceInputResult

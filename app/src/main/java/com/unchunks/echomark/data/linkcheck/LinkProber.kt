@@ -15,11 +15,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.net.ConnectException
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
-import java.io.InterruptedIOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,7 +29,7 @@ import javax.net.ssl.SSLException
  * リンク先が今も開けるかを1件確認する(#94)。ページの中身は読まない(本文を取り込むのは別の処理)。
  *
  * 保存したリンクは利用者以外が書いた入力なので、[com.unchunks.echomark.data.remote.UrlContentFetcher]・
- * [com.unchunks.echomark.data.feed.FeedFetcher] と同じ守りで取得する:
+ * [com.unchunks.components.feed.FeedFetcher] と同じ守りで取得する:
  * - ローカルネットワーク・ループバックのアドレスには接続しない(名前解決の結果と接続先の両方で確かめる)。
  *   その場合は失敗ではなく [LinkProbeResult.NotCheckable] にする(切れたとは言えない)
  * - リダイレクトは自前で追い(最大 [MAX_REDIRECTS] 回)、各段で http / https 以外と https → http の格下げを拒否する

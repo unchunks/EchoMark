@@ -4,18 +4,19 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.feed.FeedFetcher
 import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.data.feed.FeedChecker
-import com.unchunks.echomark.data.feed.FeedFetcher
+import com.unchunks.echomark.data.feed.echoMarkFeedFetcher
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
-import com.unchunks.echomark.domain.subscription.MAX_SUBSCRIPTIONS
-import com.unchunks.echomark.domain.subscription.SubscribeOutcome
-import com.unchunks.echomark.domain.subscription.SubscriptionType
 import com.unchunks.echomark.domain.importer.ImportResult
 import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.subscription.MAX_SUBSCRIPTIONS
+import com.unchunks.echomark.domain.subscription.SubscribeOutcome
+import com.unchunks.echomark.domain.subscription.SubscriptionType
 import com.unchunks.echomark.testing.FakeBookmarkRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -53,7 +54,7 @@ class SubscriptionRepositoryImplTest {
         server = MockWebServer()
         server.start()
         bookmarks = FakeBookmarkRepository()
-        repository = repositoryWith(FeedFetcher(OkHttpClient(), dispatchers) { true })
+        repository = repositoryWith(echoMarkFeedFetcher(OkHttpClient(), dispatchers) { true })
     }
 
     private fun repositoryWith(fetcher: FeedFetcher) =
@@ -174,7 +175,7 @@ class SubscriptionRepositoryImplTest {
     @Test
     fun ローカルネットワークのフィードは購読できない() = runBlocking {
         // 制限を外していない本番の設定
-        val production = repositoryWith(FeedFetcher(OkHttpClient(), dispatchers))
+        val production = repositoryWith(echoMarkFeedFetcher(OkHttpClient(), dispatchers))
         server.enqueue(feedResponse())
 
         val outcome = production.subscribe(server.url("/feed.xml").toString())
@@ -244,7 +245,7 @@ class SubscriptionRepositoryImplTest {
         val background = Executors.newSingleThreadExecutor { Thread(it, BACKGROUND_THREAD) }.asCoroutineDispatcher()
         try {
             val provider = TestDispatcherProvider(background)
-            val fetcher = FeedFetcher(OkHttpClient(), provider) { true }
+            val fetcher = echoMarkFeedFetcher(OkHttpClient(), provider) { true }
             val onBackground = SubscriptionRepositoryImpl(dao, fetcher, FeedChecker(dao, fetcher) { recording }, provider)
 
             // 画面からは viewModelScope(メインスレッド)で呼ばれる。ここでは呼び出し元のテストのスレッドがその代わり

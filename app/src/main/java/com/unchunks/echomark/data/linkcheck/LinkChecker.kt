@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.linkcheck
 
+import com.unchunks.components.connectivity.NetworkStatus
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.dao.LinkCheckDao
 import com.unchunks.echomark.data.local.entity.LinkCheckEntity
