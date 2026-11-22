@@ -30,6 +30,12 @@ android {
         compose = true
     }
 
+    lint {
+        // テストコード(test / androidTest)は Lint の対象にしない。checkTestSources が false の既定でも
+        // lintAnalyzeDebugUnitTest はテスト全体を解析し、CI の Lint が約 9 分のうち 3〜4 分をこれに使っていたため
+        ignoreTestSources = true
+    }
+
     androidResources {
         // MediaPipe はモデル(assets の .task)を AssetFileDescriptor 経由でファイルとして直接読むため、無圧縮で格納する
         noCompress += "task"
