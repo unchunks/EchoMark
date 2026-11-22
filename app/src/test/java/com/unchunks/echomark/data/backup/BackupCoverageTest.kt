@@ -19,6 +19,7 @@ import com.unchunks.echomark.data.local.entity.TagEntity
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.domain.podcast.ReadingEntry
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
 import org.json.JSONArray
@@ -124,6 +125,7 @@ class BackupCoverageTest {
             SummaryHistoryEntity(bookmarkId = 1, summary = "前の要約", source = "AI", generator = "端末内 AI", style = "日本語・文章", createdAt = 120)
         ),
         chatTemplates = listOf(ChatTemplate(id = "t1", title = "要点", text = "要点をまとめて")),
+        readingDictionary = listOf(ReadingEntry("日本橋", "にほんばし")),
         settings = mapOf("theme_mode" to "DARK", "dynamic_color" to true, "processing_nightly_hour" to 3, "llm_backend_summary" to "LOCAL")
     )
 
@@ -222,10 +224,11 @@ class BackupCoverageTest {
 
     @Test
     fun 利用者のデータのキーと設定はバックアップに入り_ロックと端末だけの設定は入らない() {
-        // 利用者のデータは chat_templates だけ。増やしたら、BackupData と BackupJson に足してここにも足す
-        assertEquals(setOf("chat_templates"), BackupCoverage.dataStoreKeys.filterValues { it == BackupCoverage.Key.UserData }.keys)
+        // 利用者のデータは chat_templates と reading_dictionary。増やしたら、BackupData と BackupJson に足してここにも足す
+        assertEquals(setOf("chat_templates", "reading_dictionary"), BackupCoverage.dataStoreKeys.filterValues { it == BackupCoverage.Key.UserData }.keys)
         val root = JSONObject(BackupJson.encode(full))
         assertTrue(root.getJSONArray("chatTemplates") is JSONArray)
+        assertTrue(root.getJSONArray("readingDictionary") is JSONArray)
         assertEquals("DARK", root.getJSONObject("settings").getString("theme_mode"))
         // バックアップを戻して、勝手にロック・オフラインモードを変えない。端末だけの設定も戻さない
         listOf("app_lock_enabled", "app_lock_delay", "app_lock_hide_content", "offline_mode", "local_llm_use_gpu", "local_model_summary", "auto_backup_folder")

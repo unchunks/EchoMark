@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.LabelOff
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.RemoveCircleOutline
 import androidx.compose.material.icons.outlined.Share
@@ -86,7 +87,9 @@ class BulkActionCallbacks(
     /** 形式と、選んだ保存先([android.net.Uri] の文字列) */
     val onExport: (ExportFormat, String) -> Unit = { _, _ -> },
     /** 1件だけ選んでいるときの「共有」 */
-    val onShare: (Bookmark) -> Unit = {}
+    val onShare: (Bookmark) -> Unit = {},
+    /** 選んだものからポッドキャストを作る(渡したときだけ「ポッドキャストにする」を出す) */
+    val onMakePodcast: (() -> Unit)? = null
 )
 
 private const val DIALOG_ADD_TAG = "add_tag"
@@ -201,6 +204,12 @@ fun BulkActionBar(
                     MenuItem("ファイルに書き出す", Icons.Outlined.FileUpload) {
                         menuOpen = false
                         dialog = DIALOG_EXPORT
+                    }
+                    callbacks.onMakePodcast?.let { make ->
+                        MenuItem("ポッドキャストにする", Icons.Outlined.Podcasts) {
+                            menuOpen = false
+                            make()
+                        }
                     }
                 }
             }

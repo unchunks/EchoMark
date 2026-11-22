@@ -86,6 +86,17 @@
                     android:scheme="echomark" />
             </intent-filter>
 
+            <!-- ポッドキャストができた通知 → echomark://podcasts でエピソードの一覧へ -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data
+                    android:host="podcasts"
+                    android:scheme="echomark" />
+            </intent-filter>
+
             <!-- 週1回の通知(今週のふり返り) → echomark://review でふり返りの画面へ -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
