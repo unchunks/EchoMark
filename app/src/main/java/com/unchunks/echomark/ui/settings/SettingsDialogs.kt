@@ -423,10 +423,7 @@ internal fun DataOperationDialog(
 
 @Composable
 private fun ImportSummaryText(summary: BackupImportSummary) {
-    Column(
-        modifier = Modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SummaryRow("追加したブックマーク", "${summary.bookmarksAdded} 件")
         if (summary.bookmarksSkipped > 0) SummaryRow("登録済みでスキップ", "${summary.bookmarksSkipped} 件")
         SummaryRow("追加したタグ", "${summary.tagsAdded} 件")
