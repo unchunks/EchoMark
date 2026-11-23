@@ -68,6 +68,7 @@ import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.ui.theme.designColorScheme
 import com.unchunks.echomark.ui.theme.designShapes
 import com.unchunks.echomark.ui.theme.designTypography
+import com.unchunks.echomark.ui.theme.softRaised
 import java.time.DayOfWeek
 
 /*
@@ -188,7 +189,7 @@ internal fun DesignStyleDialog(
 
 /**
  * デザインの縮図。地色・見出しの書体と、そのデザインらしいカード(クラシックはトーナルな面、
- * エコーは吹き出し形の強調、ペーパーは罫線)を、今の明暗に合わせて描く。読み上げは行の文言に任せる
+ * エコーは吹き出し形の強調、ペーパーは罫線、クリアは白い角丸、ソフトは光と影で浮かせた面)を、今の明暗に合わせて描く。読み上げは行の文言に任せる
  */
 @Composable
 private fun DesignStylePreview(style: DesignStyle) {
@@ -202,6 +203,10 @@ private fun DesignStylePreview(style: DesignStyle) {
             RoundedCornerShape(topStart = 11.dp, topEnd = 11.dp, bottomEnd = 11.dp, bottomStart = 3.dp)
         )
         DesignStyle.PAPER -> Modifier.border(1.dp, colors.outline, RoundedCornerShape(2.dp))
+        DesignStyle.CLEAR -> Modifier.background(colors.surfaceContainerLow, RoundedCornerShape(5.dp))
+        DesignStyle.SOFT -> Modifier
+            .softRaised(RoundedCornerShape(8.dp), dark, depth = 2.dp)
+            .background(colors.surface, RoundedCornerShape(8.dp))
     }
     Column(
         modifier = Modifier

@@ -41,7 +41,7 @@ fun CompactBookmarkCard(
     val source = bookmark.displaySource()
     Card(
         onClick = onClick,
-        modifier = modifier.width(264.dp),
+        modifier = modifier.then(EchoMarkDesign.cardShadow).width(264.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         border = EchoMarkDesign.cardBorder
     ) {

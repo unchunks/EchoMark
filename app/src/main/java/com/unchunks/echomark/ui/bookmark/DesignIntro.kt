@@ -102,7 +102,7 @@ fun DesignIntroBanner(onChoose: () -> Unit, onDismiss: () -> Unit, modifier: Mod
                     )
                     Spacer(Modifier.size(4.dp))
                     Text(
-                        "大きな見出しと丸い形の「エコー」と、明朝体と紙色の「ペーパー」。設定の「表示」からいつでも変えられます。",
+                        "丸みのある「エコー」、明朝体と紙色の「ペーパー」、すっきりした「クリア」、立体感のある「ソフト」。設定の「表示」からいつでも変えられます。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

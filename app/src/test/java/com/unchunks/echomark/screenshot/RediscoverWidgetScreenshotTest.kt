@@ -97,6 +97,16 @@ class RediscoverWidgetScreenshotTest {
         "rediscover_widget_large_paper", DesignStyle.PAPER, DpSize(260.dp, RediscoverWidgetData.LARGE_SIZE.height), processing
     )
 
+    @Test
+    fun largeClear() = captureDesign(
+        "rediscover_widget_large_clear", DesignStyle.CLEAR, DpSize(260.dp, RediscoverWidgetData.LARGE_SIZE.height), processing
+    )
+
+    @Test
+    fun largeSoft() = captureDesign(
+        "rediscover_widget_large_soft", DesignStyle.SOFT, DpSize(260.dp, RediscoverWidgetData.LARGE_SIZE.height), processing
+    )
+
     /** ライト・ダーク(ブランド配色)とダイナミックカラー(ライト)で撮る。 */
     private fun capture(name: String, size: DpSize, items: List<RediscoverWidgetItem>, processing: WidgetProcessing? = null) {
         val base: Context = ApplicationProvider.getApplicationContext()

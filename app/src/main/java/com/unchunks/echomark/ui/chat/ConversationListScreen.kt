@@ -68,6 +68,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.echomark.ui.navigation.bottomBarAwareContentInsets
 import com.unchunks.components.composeui.ChatMarkdown
 import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.components.llm.ChatRole
@@ -157,6 +158,8 @@ fun ConversationListContent(
 
     Scaffold(
         modifier = modifier,
+        // クリアのガラスのボトムバーは中身の上に重なるので、その分を下に空ける(追加ボタン・スナックバーもバーの上に出す)
+        contentWindowInsets = bottomBarAwareContentInsets(),
         topBar = { TopAppBar(title = { Text("チャット", maxLines = 1, overflow = TextOverflow.Ellipsis) }) },
         floatingActionButton = {
             if (!isEmpty && !uiState.isLoading) {

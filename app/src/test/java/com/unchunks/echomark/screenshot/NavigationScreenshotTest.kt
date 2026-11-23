@@ -53,6 +53,18 @@ class NavigationScreenshotTest {
             }
         }
 
+    /** クリアは白いタブバーに区切り線。選んだタブは青いアイコンと文字だけで示す */
+    @Test
+    fun navigationBarClear() = screenshot.captureLightDark("navigation_bar_clear", designStyle = DesignStyle.CLEAR) {
+        EchoMarkNavigationBar(selectedRoute = "bookmarks", onNavigate = {})
+    }
+
+    /** ソフトは地色と同じ色の浮いたバーを光と影で押し出す */
+    @Test
+    fun navigationBarSoft() = screenshot.captureLightDark("navigation_bar_soft", designStyle = DesignStyle.SOFT) {
+        EchoMarkNavigationBar(selectedRoute = "chat", onNavigate = {})
+    }
+
     /** ペーパーは紙面と同じ地色に罫線1本 */
     @Test
     fun navigationBarPaper() = screenshot.captureLightDark("navigation_bar_paper", designStyle = DesignStyle.PAPER) {
