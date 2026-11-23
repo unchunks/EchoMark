@@ -22,6 +22,7 @@ import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import org.junit.rules.TestRule
 import org.junit.runner.Description
@@ -50,6 +51,7 @@ class ScreenshotRule : TestRule {
     fun captureLightDark(
         name: String,
         widthDp: Int = DEFAULT_WIDTH_DP,
+        designStyle: DesignStyle = DesignStyle.CLASSIC,
         content: @Composable () -> Unit
     ) {
         var dark by mutableStateOf(false)
@@ -59,7 +61,7 @@ class ScreenshotRule : TestRule {
                 LocalInspectionMode provides true,
                 LocalAsyncImagePreviewHandler provides FakeImageHandler
             ) {
-                EchoMarkTheme(darkTheme = dark, dynamicColor = false) {
+                EchoMarkTheme(darkTheme = dark, dynamicColor = false, designStyle = designStyle) {
                     Surface(
                         color = MaterialTheme.colorScheme.background,
                         modifier = Modifier.testTag(CAPTURE_TAG)

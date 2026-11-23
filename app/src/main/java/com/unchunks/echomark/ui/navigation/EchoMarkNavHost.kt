@@ -11,15 +11,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Explore
@@ -38,6 +43,7 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -718,6 +725,11 @@ internal fun EchoMarkNavigationBar(
 ) {
     // 狭い画面で長いラベルが折り返しても、各項目のアイコンとラベルの開始位置をそろえる。
     val labelLines = if (LocalConfiguration.current.screenWidthDp < 440 && LocalDensity.current.fontScale >= 1.5f) 2 else 1
+    // エコーは画面の端から離した、角の丸い浮いたバーにする
+    if (EchoMarkDesign.style == DesignStyle.ECHO) {
+        EchoFloatingNavigationBar(selectedRoute, onNavigate, labelLines, modifier)
+        return
+    }
     // ペーパーは帯の色を付けず、紙面と同じ地色に罫線1本で区切る
     val paper = EchoMarkDesign.style == DesignStyle.PAPER
     val outline = MaterialTheme.colorScheme.outlineVariant
@@ -729,21 +741,64 @@ internal fun EchoMarkNavigationBar(
         },
         containerColor = if (paper) MaterialTheme.colorScheme.surface else NavigationBarDefaults.containerColor
     ) {
-        TopLevelDestination.entries.forEach { destination ->
-            val selected = destination.route == selectedRoute
-            NavigationBarItem(
-                selected = selected,
-                onClick = { onNavigate(destination.route) },
-                icon = { TopLevelIcon(destination, selected) },
-                label = {
-                    Text(
-                        text = destination.label,
-                        textAlign = TextAlign.Center,
-                        minLines = labelLines
-                    )
-                }
-            )
+        TopLevelItems(selectedRoute, onNavigate, labelLines)
+    }
+}
+
+/**
+ * エコーのボトムバー。画面の左右と下から離した、角の大きく丸い浮いたバー(Material 3 Expressive の浮いたツールバーの考え方)。
+ * 置き場所は通常のボトムバーと同じ Scaffold の bottomBar なので、中身の余白とシステムバーのインセットの扱いは変わらない
+ * (ジェスチャーナビゲーションの帯の分は、バーの外側の余白として取る)。
+ */
+@Composable
+private fun EchoFloatingNavigationBar(
+    selectedRoute: String?,
+    onNavigate: (String) -> Unit,
+    labelLines: Int,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(NavigationBarDefaults.windowInsets)
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
+    ) {
+        Surface(
+            // 両端を半円(CircleShape)にすると、文字を大きくしてバーが高くなったとき端のラベルが丸みに欠けるので、角丸は固定にする
+            shape = RoundedCornerShape(32.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 3.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            NavigationBar(
+                modifier = Modifier.padding(horizontal = 8.dp),
+                containerColor = Color.Transparent,
+                tonalElevation = 0.dp,
+                windowInsets = WindowInsets(0, 0, 0, 0)
+            ) {
+                TopLevelItems(selectedRoute, onNavigate, labelLines)
+            }
         }
+    }
+}
+
+/** ボトムバーのタブ。狭い画面で長いラベルが折り返しても、各項目のアイコンとラベルの開始位置をそろえる([labelLines]) */
+@Composable
+private fun RowScope.TopLevelItems(selectedRoute: String?, onNavigate: (String) -> Unit, labelLines: Int) {
+    TopLevelDestination.entries.forEach { destination ->
+        val selected = destination.route == selectedRoute
+        NavigationBarItem(
+            selected = selected,
+            onClick = { onNavigate(destination.route) },
+            icon = { TopLevelIcon(destination, selected) },
+            label = {
+                Text(
+                    text = destination.label,
+                    textAlign = TextAlign.Center,
+                    minLines = labelLines
+                )
+            }
+        )
     }
 }
 
