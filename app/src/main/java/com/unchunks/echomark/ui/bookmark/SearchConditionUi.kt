@@ -22,16 +22,12 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -48,6 +44,10 @@ import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.icon
+import com.unchunks.echomark.ui.design.EchoMarkAssistChip
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkInputChip
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /** 保存した日からの期間の表示名 */
 fun CreatedPeriod.label(): String = when (this) {
@@ -82,7 +82,7 @@ internal fun SearchSuggestionRow(
         items(suggestions, key = { suggestionKey(it) }) { suggestion ->
             when (suggestion) {
                 is SearchSuggestion.History -> if (canRemoveHistory) {
-                    InputChip(
+                    EchoMarkInputChip(
                         selected = false,
                         onClick = { onSelect(suggestion) },
                         label = { Text(suggestion.query, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -99,20 +99,20 @@ internal fun SearchSuggestionRow(
                         modifier = Modifier.semantics { contentDescription = "最近の検索「${suggestion.query}」" }
                     )
                 } else {
-                    AssistChip(
+                    EchoMarkAssistChip(
                         onClick = { onSelect(suggestion) },
                         label = { Text(suggestion.query, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = { Icon(Icons.Outlined.History, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
                         modifier = Modifier.semantics { contentDescription = "最近の検索「${suggestion.query}」" }
                     )
                 }
-                is SearchSuggestion.Tag -> AssistChip(
+                is SearchSuggestion.Tag -> EchoMarkAssistChip(
                     onClick = { onSelect(suggestion) },
                     label = { Text("#${suggestion.name}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Label, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
                     modifier = Modifier.semantics { contentDescription = "タグ「${suggestion.name}」で絞り込む" }
                 )
-                is SearchSuggestion.Category -> AssistChip(
+                is SearchSuggestion.Category -> EchoMarkAssistChip(
                     onClick = { onSelect(suggestion) },
                     label = { Text(suggestion.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Outlined.Category, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
@@ -164,7 +164,7 @@ internal fun LazyListScope.conditionChips(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConditionChip(label: String, onRemove: () -> Unit) {
-    InputChip(
+    EchoMarkInputChip(
         selected = true,
         onClick = onRemove,
         label = { Text(label, maxLines = 1) },
@@ -195,7 +195,7 @@ internal fun ConditionSheet(
     onClear: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
@@ -207,7 +207,7 @@ internal fun ConditionSheet(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 BookmarkType.entries.forEach { type ->
                     val selected = type in selectedTypes
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = selected,
                         onClick = { onTypeToggle(type) },
                         label = { Text(type.displayName()) },
@@ -227,7 +227,7 @@ internal fun ConditionSheet(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 CreatedPeriod.entries.forEach { entry ->
                     val selected = entry == period
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = selected,
                         onClick = { onPeriodToggle(entry) },
                         label = { Text(entry.label()) },
@@ -245,7 +245,7 @@ internal fun ConditionSheet(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ReadState.entries.forEach { entry ->
                     val selected = entry == readState
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = selected,
                         onClick = { onReadStateToggle(entry) },
                         label = { Text(entry.label()) },

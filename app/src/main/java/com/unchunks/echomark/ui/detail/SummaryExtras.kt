@@ -16,10 +16,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -37,6 +34,9 @@ import com.unchunks.echomark.domain.bookmark.model.EvidenceReport
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /*
  * 要約の根拠の表示(#18)と、要約の翻訳のシート(#24)。
@@ -122,7 +122,7 @@ fun SummaryTranslateSheet(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -165,7 +165,7 @@ fun SummaryTranslateSheetContent(
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SummaryLanguage.entries.forEach { language ->
-                FilterChip(
+                EchoMarkFilterChip(
                     selected = selected == language,
                     onClick = { onTranslate(language) },
                     label = { Text(language.label) },
@@ -190,7 +190,7 @@ fun SummaryTranslateSheetContent(
                         Text(state.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(16.dp))
                     }
                 }
-                OutlinedButton(onClick = { onCopy(state.text) }) { Text("コピー") }
+                EchoMarkOutlinedButton(onClick = { onCopy(state.text) }) { Text("コピー") }
             }
             is TranslationState.Failed -> Text(
                 state.message,

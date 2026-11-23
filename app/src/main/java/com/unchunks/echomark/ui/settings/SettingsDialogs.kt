@@ -28,7 +28,6 @@ import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -70,6 +69,7 @@ import com.unchunks.echomark.ui.theme.designShapes
 import com.unchunks.echomark.ui.theme.designTypography
 import com.unchunks.echomark.ui.theme.softRaised
 import java.time.DayOfWeek
+import com.unchunks.echomark.ui.design.EchoMarkButton
 
 /*
  * 設定画面([SettingsContent])から開くダイアログ。
@@ -340,7 +340,7 @@ internal fun DeleteFinalDialog(resetSettings: Boolean, onConfirm: () -> Unit, on
             )
         },
         confirmButton = {
-            Button(
+            EchoMarkButton(
                 onClick = onConfirm,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error,

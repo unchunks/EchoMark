@@ -23,13 +23,11 @@ import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.PublicOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +47,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 
 /**
  * 入力欄の、Web 検索のオン・オフのボタン。オンの間は色を付ける(質問の語句が端末の外に出るため、オンだと分かるように)。
@@ -83,7 +83,7 @@ internal fun ChatWebSearchStatus(state: ChatWebSearchState, onTurnOff: () -> Uni
     Surface(
         color = if (state.active) colors.tertiaryContainer else colors.surfaceContainerHigh,
         contentColor = if (state.active) colors.onTertiaryContainer else colors.onSurfaceVariant,
-        shape = RoundedCornerShape(12.dp),
+        shape = EchoMarkDesign.roundedShape(12.dp),
         modifier = Modifier
             .centeredMaxWidth()
             .padding(start = 12.dp, end = 12.dp, top = 4.dp)
@@ -160,13 +160,14 @@ internal fun CitedWebSourceCard(
         if (isHighlighted) bringIntoView.bringIntoView()
     }
     val colors = MaterialTheme.colorScheme
-    OutlinedCard(
+    DesignCard(
         onClick = { onOpen(source.source.url) },
         modifier = Modifier
             .fillMaxWidth()
             .bringIntoViewRequester(bringIntoView),
-        border = BorderStroke(if (isHighlighted) 2.dp else 1.dp, if (isHighlighted) colors.primary else colors.tertiary),
-        colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceContainerLow)
+        classic = colors.surfaceContainerLow,
+        // Web の資料は、どのデザインでもティールの枠で保存した資料と見分ける
+        border = BorderStroke(if (isHighlighted) 2.dp else 1.dp, if (isHighlighted) colors.primary else colors.tertiary)
     ) {
         Column(modifier = Modifier.padding(start = 10.dp, top = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -203,11 +204,11 @@ internal fun UncitedWebSourceCards(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         sources.forEach { source ->
-            OutlinedCard(
+            DesignCard(
                 onClick = { onOpen(source.url) },
                 modifier = Modifier.width(232.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary),
-                colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                classic = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary)
             ) {
                 Row(modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     WebSourceIcon(number = source.number)
@@ -226,7 +227,7 @@ private fun WebSourceIcon(number: Int) {
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(8.dp)),
+                .background(MaterialTheme.colorScheme.tertiaryContainer, EchoMarkDesign.roundedShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             Icon(

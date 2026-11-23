@@ -7,10 +7,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.draw.innerShadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
@@ -25,7 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.unchunks.echomark.domain.repository.DesignStyle
 
 // デザイン([DesignStyle])ごとの配色・文字・角丸。
-// 画面は MaterialTheme のロールだけを参照し、デザインの違いはここと [EchoMarkDesign] に集める。
+// 画面は MaterialTheme のロールだけを参照し、デザインの違いはここ・[EchoMarkDesign]・ui/design の部品に集める。
 
 /** 今のデザイン。トークンだけで表せない部品(カードの枠線など)が参照する。 */
 val LocalDesignStyle = staticCompositionLocalOf { DesignStyle.CLASSIC }
@@ -35,31 +37,76 @@ object EchoMarkDesign {
     val style: DesignStyle
         @Composable @ReadOnlyComposable get() = LocalDesignStyle.current
 
-    /**
-     * ブックマークのカードの地色。ペーパーとソフトはカードを地と同じ色にし、ペーパーは罫線、ソフトは光と影で区切る。
-     * クリアは淡い灰色の地に白いカードを載せる(surfaceContainerLow をライトは白、ダークは一段明るい灰色にしてある)
-     */
-    val cardContainerColor: Color
-        @Composable @ReadOnlyComposable get() = when (style) {
-            DesignStyle.CLASSIC -> MaterialTheme.colorScheme.surfaceContainerLow
-            DesignStyle.ECHO -> MaterialTheme.colorScheme.surfaceContainer
-            DesignStyle.PAPER, DesignStyle.SOFT -> MaterialTheme.colorScheme.surface
-            DesignStyle.CLEAR -> MaterialTheme.colorScheme.surfaceContainerLow
-        }
-
-    /** カードの枠線。ペーパーだけ罫線のような細い線を引く */
-    val cardBorder: BorderStroke?
-        @Composable @ReadOnlyComposable get() =
-            if (style == DesignStyle.PAPER) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null
-
-    /** カードに付ける影。ソフトだけ、左上の光と右下の影で地から浮かせる(カードの形は shapes.medium) */
-    val cardShadow: Modifier
-        @Composable @ReadOnlyComposable get() =
-            if (style == DesignStyle.SOFT) Modifier.softRaised(MaterialTheme.shapes.medium, isDark) else Modifier
-
     /** 今の配色が暗いか(ソフトの光と影の色を選ぶ。明暗の設定ではなく、実際の地色で決める) */
     val isDark: Boolean
         @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    /** タグなどの小さな札の形。クリアは両端の丸いカプセル、ほかはチップの角丸(shapes.small) */
+    val chipShape: Shape
+        @Composable @ReadOnlyComposable get() =
+            if (style == DesignStyle.CLEAR) CapsuleShape else MaterialTheme.shapes.small
+
+    /**
+     * クラシックでの角丸の半径 [classic] を、今のデザインの角丸の段階に読み替える。
+     * 画面に半径を直に書く所(吹き出し・入力欄など)はこれを通し、デザインの角の言葉づかいをそろえる。
+     * クラシックでは [classic] のまま。
+     */
+    @Composable
+    @ReadOnlyComposable
+    fun corner(classic: Dp): Dp = designRadii(style).scale(classic)
+
+    /** [corner] で読み替えた角丸の形 */
+    @Composable
+    @ReadOnlyComposable
+    fun roundedShape(classic: Dp): RoundedCornerShape = RoundedCornerShape(corner(classic))
+}
+
+/**
+ * デザインの角丸の段階(M3 の extraSmall〜extraLarge)。[Shapes] と、任意の半径の読み替え([scale])の元にする。
+ */
+@Immutable
+internal data class DesignRadii(
+    val extraSmall: Dp,
+    val small: Dp,
+    val medium: Dp,
+    val large: Dp,
+    val extraLarge: Dp
+) {
+    fun toShapes(): Shapes = Shapes(
+        extraSmall = RoundedCornerShape(extraSmall),
+        small = RoundedCornerShape(small),
+        medium = RoundedCornerShape(medium),
+        large = RoundedCornerShape(large),
+        extraLarge = RoundedCornerShape(extraLarge)
+    )
+
+    private val points: List<Dp> get() = listOf(0.dp, extraSmall, small, medium, large, extraLarge)
+
+    /**
+     * クラシックの半径 [classic] を、このデザインの段階に読み替える。クラシックの段階の間は直線で補い、
+     * いちばん大きい段階より大きい値は同じ割合で伸ばす。
+     */
+    fun scale(classic: Dp): Dp {
+        val from = ClassicRadii.points
+        val to = points
+        if (classic <= 0.dp) return 0.dp
+        for (i in 1 until from.size) {
+            if (classic <= from[i]) {
+                val t = (classic - from[i - 1]) / (from[i] - from[i - 1])
+                return to[i - 1] + (to[i] - to[i - 1]) * t
+            }
+        }
+        return to.last() * (classic / from.last())
+    }
+}
+
+/** [style] の角丸の段階 */
+internal fun designRadii(style: DesignStyle): DesignRadii = when (style) {
+    DesignStyle.CLASSIC -> ClassicRadii
+    DesignStyle.ECHO -> EchoRadii
+    DesignStyle.PAPER -> PaperRadii
+    DesignStyle.CLEAR -> ClearRadii
+    DesignStyle.SOFT -> SoftRadii
 }
 
 /** [style] の配色。ダイナミックカラーを使わないとき。 */
@@ -86,6 +133,9 @@ internal fun designShapes(style: DesignStyle): Shapes = when (style) {
     DesignStyle.CLEAR -> ClearShapes
     DesignStyle.SOFT -> SoftShapes
 }
+
+/** クリアの選択中のタブや、ガラスの上の強調に使う「全部丸い」形(カプセル)。高さが変わっても両端が半円になる */
+val CapsuleShape: RoundedCornerShape = RoundedCornerShape(percent = 50)
 
 // ---- エコー: Material 3 Expressive の考え方(大きな見出し・丸い形・トーナルな強調)を配色・文字・角丸で表す ----
 // ブランドのインディゴとティールの彩度を一段上げ、地色にわずかにインディゴを混ぜる。
@@ -153,13 +203,8 @@ internal val EchoTypography = Typography.copy(
 )
 
 // カードは 24dp、ダイアログやシートは 32dp 以上。丸みで柔らかく、要素の塊を大きく見せる
-internal val EchoShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(24.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(32.dp)
-)
+internal val EchoRadii = DesignRadii(extraSmall = 8.dp, small = 12.dp, medium = 24.dp, large = 28.dp, extraLarge = 32.dp)
+internal val EchoShapes = EchoRadii.toShapes()
 
 /** 再発見の帯の形。左下だけ角を小さくして、響き返ってくる吹き出しに見せる */
 internal val EchoBubbleShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomEnd = 28.dp, bottomStart = 8.dp)
@@ -271,13 +316,8 @@ internal val PaperTypography = Typography.copy(
 )
 
 // 角はほとんど丸めず、紙面の端正さを出す
-internal val PaperShapes = Shapes(
-    extraSmall = RoundedCornerShape(2.dp),
-    small = RoundedCornerShape(4.dp),
-    medium = RoundedCornerShape(6.dp),
-    large = RoundedCornerShape(8.dp),
-    extraLarge = RoundedCornerShape(12.dp)
-)
+internal val PaperRadii = DesignRadii(extraSmall = 2.dp, small = 4.dp, medium = 6.dp, large = 8.dp, extraLarge = 12.dp)
+internal val PaperShapes = PaperRadii.toShapes()
 
 // ---- クリア: iPhone 風(iOS の標準アプリのような見た目) ----
 // 淡い灰色の地(ライト)・黒の地(ダーク)に、白(ダークは一段明るい灰色)の角丸のカードをまとめて載せる。
@@ -308,7 +348,8 @@ internal val ClearLightColorScheme = LightColorScheme.copy(
     surfaceVariant = Color(0xFFE5E5EA),
     onSurfaceVariant = Color(0xFF5A5A61),
     surfaceTint = Color(0xFF0062CC),
-    outline = Color(0xFF8E8E93),
+    // 入力欄の枠が地色に対して 3:1 以上になるよう、iOS の灰色(#8E8E93)より一段濃くする
+    outline = Color(0xFF86868B),
     outlineVariant = Color(0xFFD1D1D6),
     surfaceBright = Color(0xFFF2F2F7),
     surfaceDim = Color(0xFFDCDCE1),
@@ -322,7 +363,8 @@ internal val ClearLightColorScheme = LightColorScheme.copy(
 internal val ClearDarkColorScheme = DarkColorScheme.copy(
     primary = Color(0xFF5AA9FF),
     onPrimary = Color(0xFF00305F),
-    primaryContainer = Color(0xFF0A4585),
+    // 色付きボタンの青い文字(primary)が 4.5:1 以上になる深さにする
+    primaryContainer = Color(0xFF0A3A70),
     onPrimaryContainer = Color(0xFFD9E9FF),
     inversePrimary = Color(0xFF0062CC),
     secondary = Color(0xFFC2C2C8),
@@ -366,13 +408,8 @@ internal val ClearTypography = Typography.copy(
 )
 
 // 一覧のまとまり(カード)は 12dp、シートやダイアログは 14〜20dp
-internal val ClearShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(14.dp),
-    extraLarge = RoundedCornerShape(20.dp)
-)
+internal val ClearRadii = DesignRadii(extraSmall = 6.dp, small = 8.dp, medium = 12.dp, large = 14.dp, extraLarge = 20.dp)
+internal val ClearShapes = ClearRadii.toShapes()
 
 // ---- ソフト: ニューモフィズム ----
 // 地色とカードを同じ色にし、左上の光(明るい影)と右下の影で面を浮かせる([softRaised])。
@@ -449,13 +486,8 @@ internal val SoftTypography = Typography.copy(
 )
 
 // 押し出した面が柔らかく見えるよう、全体に大きめに丸める
-internal val SoftShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(28.dp)
-)
+internal val SoftRadii = DesignRadii(extraSmall = 10.dp, small = 14.dp, medium = 20.dp, large = 24.dp, extraLarge = 28.dp)
+internal val SoftShapes = SoftRadii.toShapes()
 
 /**
  * ニューモフィズムの押し出した面。[shape] の外側に、左上へ明るい影(光)、右下へ暗い影を落とす。
@@ -467,4 +499,16 @@ internal fun Modifier.softRaised(shape: Shape, dark: Boolean, depth: Dp = 5.dp):
     return this
         .dropShadow(shape, Shadow(radius = depth * 2, color = light, offset = DpOffset(-depth, -depth)))
         .dropShadow(shape, Shadow(radius = depth * 2, color = shade, offset = DpOffset(depth, depth)))
+}
+
+/**
+ * ニューモフィズムのくぼんだ面(押した状態・入力欄・中の区画)。[shape] の内側の左上に影、右下に光を落とす。
+ * 内側の影は中身の上に描くが、縁の近くだけなので、ふつうの余白があれば文字にはかからない。
+ */
+internal fun Modifier.softInset(shape: Shape, dark: Boolean, depth: Dp = 4.dp): Modifier {
+    val light = if (dark) Color(0x593F444D) else Color(0xE6FFFFFF)
+    val shade = if (dark) Color(0xCC121417) else Color(0xB3A3AFC2)
+    return this
+        .innerShadow(shape, Shadow(radius = depth * 2, color = shade, offset = DpOffset(depth, depth)))
+        .innerShadow(shape, Shadow(radius = depth * 2, color = light, offset = DpOffset(-depth, -depth)))
 }

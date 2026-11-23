@@ -15,13 +15,11 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +38,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.ui.common.openUrl
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
 
 /** Brave Search API のキーを取得する管理画面 */
 internal const val BRAVE_SEARCH_DASHBOARD_URL = "https://api-dashboard.search.brave.com/"
@@ -114,7 +114,7 @@ internal fun WebSearchKeySection(
             modifier = Modifier.fillMaxWidth()
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
+            EchoMarkButton(
                 onClick = {
                     onSave(keyInput)
                     keyInput = ""
@@ -122,7 +122,7 @@ internal fun WebSearchKeySection(
                 },
                 enabled = keyInput.isNotBlank()
             ) { Text("保存") }
-            OutlinedButton(
+            EchoMarkOutlinedButton(
                 onClick = { onTest(keyInput) },
                 enabled = state.test != WebSearchKeyTest.Running && (keyInput.isNotBlank() || state.keyConfigured)
             ) { Text("接続テスト") }

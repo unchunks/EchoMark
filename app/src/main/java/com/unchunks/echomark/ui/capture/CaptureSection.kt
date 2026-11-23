@@ -15,12 +15,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,6 +30,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.ui.common.formatDuration
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 
 /**
  * 追加シートの「撮る・録る」の部分の表示内容。
@@ -90,7 +91,7 @@ fun CaptureSection(
 
 @Composable
 private fun CaptureButton(label: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier) {
-    OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+    EchoMarkOutlinedButton(onClick = onClick, modifier = modifier, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
         Text(label, maxLines = 1)
@@ -101,7 +102,7 @@ private fun CaptureButton(label: String, icon: ImageVector, onClick: () -> Unit,
 private fun RecordingPanel(state: VoiceMemoState.Recording, onStop: () -> Unit, onCancel: () -> Unit) {
     val elapsed = formatDuration(state.elapsedMillis)
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = EchoMarkDesign.roundedShape(16.dp),
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         modifier = Modifier.fillMaxWidth()
@@ -126,7 +127,7 @@ private fun RecordingPanel(state: VoiceMemoState.Recording, onStop: () -> Unit, 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onCancel) { Text("破棄") }
                 Spacer(Modifier.size(8.dp))
-                Button(onClick = onStop) { Text("止めて追加") }
+                EchoMarkButton(onClick = onStop) { Text("止めて追加") }
             }
         }
     }

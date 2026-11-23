@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,17 +38,12 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -77,6 +73,13 @@ import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.model.ConversationBranch
 import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.ui.components.BookmarkThumbnail
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkSuggestionChip
+import com.unchunks.echomark.ui.design.AccentCard
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.design.assistantAvatarStyle
+import com.unchunks.echomark.ui.design.userBubbleStyle
 
 /**
  * 長押しでコピーできるようにする(TalkBack ではカスタムアクション「コピー」)。
@@ -136,12 +139,16 @@ internal fun UserMessageItem(
         } else {
             Spacer(Modifier.width(48.dp))
         }
+        // 吹き出しの色・形・影はデザインに従う
+        val bubble = userBubbleStyle()
         Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp),
+            color = bubble.color,
+            contentColor = bubble.contentColor,
+            shape = bubble.shape,
+            border = bubble.border,
             modifier = Modifier
                 .weight(1f, fill = false)
+                .then(bubble.depth)
                 .copyOnLongPress(onCopy)
         ) {
             Text(
@@ -156,16 +163,20 @@ internal fun UserMessageItem(
 /** アシスタントのアイコン。 */
 @Composable
 internal fun AssistantAvatar(modifier: Modifier = Modifier) {
+    // アイコンの丸の色・枠・影はデザインに従う
+    val avatar = assistantAvatarStyle()
     Box(
         modifier = modifier
             .size(32.dp)
-            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+            .then(avatar.depth)
+            .background(avatar.color, avatar.shape)
+            .then(if (avatar.border != null) Modifier.border(avatar.border, avatar.shape) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             Icons.Outlined.AutoAwesome,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            tint = avatar.iconColor,
             modifier = Modifier.size(18.dp)
         )
     }
@@ -365,12 +376,10 @@ internal fun ChatErrorItem(
     modifier: Modifier = Modifier,
     showAiSettingsButton: Boolean = error.needsAiSettings
 ) {
-    Card(
+    AccentCard(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
+        containerColor = MaterialTheme.colorScheme.errorContainer,
             contentColor = MaterialTheme.colorScheme.onErrorContainer
-        )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
@@ -388,18 +397,18 @@ internal fun ChatErrorItem(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
             ) {
                 if (showAiSettingsButton) {
-                    OutlinedButton(onClick = onRetry) {
+                    EchoMarkOutlinedButton(onClick = onRetry) {
                         Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("再試行")
                     }
-                    Button(onClick = onOpenAiSettings) {
+                    EchoMarkButton(onClick = onOpenAiSettings) {
                         Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("AI 設定を開く")
                     }
                 } else {
-                    Button(onClick = onRetry) {
+                    EchoMarkButton(onClick = onRetry) {
                         Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text("再試行")
@@ -461,7 +470,7 @@ internal fun ChatWelcome(
         )
         if (onResumePrevious != null) {
             Spacer(Modifier.height(12.dp))
-            OutlinedButton(onClick = onResumePrevious) { Text("前の会話の続きを開く") }
+            EchoMarkOutlinedButton(onClick = onResumePrevious) { Text("前の会話の続きを開く") }
         }
         if (suggestions.isNotEmpty()) {
             Spacer(Modifier.height(28.dp))
@@ -485,10 +494,11 @@ internal fun ChatWelcome(
 
 @Composable
 private fun SuggestionItem(text: String, onClick: () -> Unit) {
-    OutlinedCard(
+    DesignCard(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
+        classic = MaterialTheme.colorScheme.surface,
+        classicBorder = CardDefaults.outlinedCardBorder()
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -552,7 +562,7 @@ internal fun FollowUpSuggestions(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         suggestions.forEach { suggestion ->
-            SuggestionChip(
+            EchoMarkSuggestionChip(
                 onClick = { onClick(suggestion) },
                 label = { Text(suggestion, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             )
@@ -567,10 +577,10 @@ internal fun AboutBookmarkBar(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    AccentCard(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        containerColor = MaterialTheme.colorScheme.secondaryContainer
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             BookmarkThumbnail(bookmark = bookmark, domain = bookmark.chatThumbnailKey(), size = 40.dp)

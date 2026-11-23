@@ -1,5 +1,7 @@
 package com.unchunks.echomark.ui.bookmark
 
+import com.unchunks.echomark.ui.design.designSegmentColors
+import com.unchunks.echomark.ui.design.designSegmentShape
 import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
@@ -25,16 +27,12 @@ import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -81,6 +79,10 @@ import com.unchunks.echomark.ui.common.findUrlInText
 import com.unchunks.echomark.ui.common.normalizeUrlInput
 import com.unchunks.echomark.ui.common.querySelectedFile
 import com.unchunks.echomark.ui.components.SelectedFileRow
+import com.unchunks.echomark.ui.design.EchoMarkAssistChip
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /** 追加シートで何を保存するか */
 enum class AddMode { LINK, NOTE, FILE }
@@ -193,7 +195,7 @@ fun AddBookmarkSheet(
         onDismiss()
     }
 
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = dismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -333,7 +335,8 @@ fun AddBookmarkSheetContent(
                 SegmentedButton(
                     selected = form.mode == item,
                     onClick = { onModeChange(item) },
-                    shape = SegmentedButtonDefaults.itemShape(index, AddMode.entries.size),
+                    shape = designSegmentShape(index, AddMode.entries.size),
+                    colors = designSegmentColors(),
                     icon = {
                         SegmentedButtonDefaults.Icon(active = form.mode == item) {
                             Icon(
@@ -362,7 +365,7 @@ fun AddBookmarkSheetContent(
 
         // クリップボードにあるものの種類(中身は読んでいない)に合わせて、リンク・メモ・ファイルのどれにも貼り付けられる
         if (showClipboardSuggestion) {
-            AssistChip(
+            EchoMarkAssistChip(
                 onClick = onPasteClipboardContent,
                 label = {
                     Text(
@@ -482,7 +485,7 @@ fun AddBookmarkSheetContent(
             TextButton(onClick = onCancel) { Text("キャンセル") }
             Spacer(Modifier.size(8.dp))
             // 録音中は、録音を止めて音声メモを加えてから保存する
-            Button(onClick = onSave, enabled = form.canSave && !capture.isRecording) {
+            EchoMarkButton(onClick = onSave, enabled = form.canSave && !capture.isRecording) {
                 val count = form.files.count { it.canSave }
                 Text(if (form.mode == AddMode.FILE && count > 1) "${count}件を保存" else "保存")
             }
@@ -512,7 +515,7 @@ private fun FileInputs(
         onStopVoiceMemo = onStopVoiceMemo,
         onCancelVoiceMemo = onCancelVoiceMemo
     )
-    FilledTonalButton(onClick = onPickFiles, modifier = Modifier.fillMaxWidth()) {
+    EchoMarkTonalButton(onClick = onPickFiles, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Outlined.AttachFile, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
         Text(if (form.files.isEmpty()) "ファイルを選ぶ" else "ほかのファイルも選ぶ")

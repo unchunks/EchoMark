@@ -32,13 +32,9 @@ import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TravelExplore
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,11 +42,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -74,6 +68,12 @@ import com.unchunks.echomark.data.discover.DiscoveryStep
 import com.unchunks.echomark.ui.chat.AiSetupBanner
 import com.unchunks.echomark.ui.components.SectionHeader
 import kotlinx.coroutines.flow.map
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkSuggestionChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.design.DesignBottomBar
 
 /**
  * 資料を探す画面。テーマを入れると、Web の記事・動画・百科事典(と論文)を探して AI が役立つものを選び、
@@ -130,7 +130,7 @@ fun DiscoverContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("資料を探す", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -255,7 +255,7 @@ private fun SearchForm(
         Spacer(Modifier.height(8.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ResourceSource.entries.forEach { source ->
-                FilterChip(
+                EchoMarkFilterChip(
                     selected = source in uiState.sources,
                     onClick = { onToggleSource(source) },
                     enabled = !uiState.isBusy,
@@ -305,14 +305,13 @@ private fun ProgressRow(step: DiscoveryStep, onCancel: () -> Unit) {
 
 @Composable
 private fun NoticeCard(message: String, isError: Boolean) {
-    Card(
+    DesignCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
-        )
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
+        accentColor = if (isError) MaterialTheme.colorScheme.errorContainer else null,
+        contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
     ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
             Icon(Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -343,7 +342,7 @@ private fun Introduction(onSearchExample: (String) -> Unit) {
         Text("例", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             EXAMPLE_TOPICS.forEach { topic ->
-                SuggestionChip(onClick = { onSearchExample(topic) }, label = { Text(topic) })
+                EchoMarkSuggestionChip(onClick = { onSearchExample(topic) }, label = { Text(topic) })
             }
         }
     }
@@ -422,7 +421,7 @@ private fun ResourceRow(resource: DiscoveredResource, isSelected: Boolean, onTog
 /** 選んだ資料を追加するボタンの帯。 */
 @Composable
 private fun SaveBar(count: Int, isSaving: Boolean, onSave: () -> Unit) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
+    DesignBottomBar(classic = MaterialTheme.colorScheme.surface, classicShadowElevation = 3.dp) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -430,7 +429,7 @@ private fun SaveBar(count: Int, isSaving: Boolean, onSave: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.End
         ) {
-            Button(onClick = onSave, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) {
+            EchoMarkButton(onClick = onSave, enabled = !isSaving, modifier = Modifier.fillMaxWidth()) {
                 if (isSaving) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))

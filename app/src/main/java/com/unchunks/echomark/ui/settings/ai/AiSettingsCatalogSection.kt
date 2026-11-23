@@ -14,13 +14,12 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +44,8 @@ import com.unchunks.echomark.ui.common.openUrl
 import com.unchunks.echomark.ui.settings.SettingsNotice
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.DesignCard
 
 /*
  * AI 設定画面の「おすすめのモデル」。公開されているモデルの一覧と、ダウンロード。
@@ -154,10 +155,12 @@ private fun ModelCatalogCard(
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
-    OutlinedCard(
+    DesignCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        classic = MaterialTheme.colorScheme.surface,
+        classicBorder = CardDefaults.outlinedCardBorder()
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             recommendation?.let { RecommendationLabel(it) }
@@ -235,7 +238,7 @@ private fun CatalogAction(
                 },
                 style = MaterialTheme.typography.bodySmall
             )
-            OutlinedButton(onClick = onCancel) { Text("ダウンロードを中止") }
+            EchoMarkOutlinedButton(onClick = onCancel) { Text("ダウンロードを中止") }
         }
         state is CatalogDownloadState.Installing && state.entry == entry -> {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -257,7 +260,7 @@ private fun CatalogAction(
                     isError = true
                 )
             }
-            OutlinedButton(
+            EchoMarkOutlinedButton(
                 onClick = onDownload,
                 enabled = state !is CatalogDownloadState.Downloading && state !is CatalogDownloadState.Installing
             ) {

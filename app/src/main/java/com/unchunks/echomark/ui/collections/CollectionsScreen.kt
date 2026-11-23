@@ -1,5 +1,10 @@
 package com.unchunks.echomark.ui.collections
 
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
+import com.unchunks.echomark.ui.design.GroupPosition
+import com.unchunks.echomark.ui.design.GroupedRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,7 +38,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +60,7 @@ import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /**
  * コレクションの一覧(#91)。ViewModel をつなぐだけの薄いラッパー。
@@ -123,7 +128,7 @@ fun CollectionsContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("コレクション", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -158,13 +163,15 @@ fun CollectionsContent(
                 ) {
                     items(uiState.collections.size, key = { uiState.collections[it].id }) { index ->
                         val collection = uiState.collections[index]
-                        CollectionRow(
-                            collection = collection,
-                            onClick = { onOpenCollection(collection.id) },
-                            onEdit = { editId = collection.id },
-                            onDelete = { deleteId = collection.id },
-                            modifier = Modifier.animateItem()
-                        )
+                        // 一覧の行のまとまり(地色・区切り・角丸はデザインに従う)
+                        GroupedRow(GroupPosition.of(index, uiState.collections.size), modifier = Modifier.animateItem()) {
+                            CollectionRow(
+                                collection = collection,
+                                onClick = { onOpenCollection(collection.id) },
+                                onEdit = { editId = collection.id },
+                                onDelete = { deleteId = collection.id }
+                            )
+                        }
                     }
                 }
             }
@@ -219,6 +226,8 @@ private fun CollectionRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     ListItem(
+        // まとまり(GroupedRow)の地色を見せるため、行そのものは塗らない
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
         leadingContent = { Icon(Icons.Outlined.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
         headlineContent = { Text(collection.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },

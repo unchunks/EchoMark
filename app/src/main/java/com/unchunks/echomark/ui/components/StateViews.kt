@@ -19,12 +19,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.animation.core.animateFloatAsState
@@ -51,6 +49,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
 
 /**
  * 空状態。大きめのアイコン(響きを表す同心円つき)・タイトル・説明・次の行動ボタンを中央に並べる。
@@ -80,7 +80,7 @@ fun EmptyState(
         description = description
     ) {
         if (actionLabel != null && onAction != null) {
-            Button(onClick = onAction) {
+            EchoMarkButton(onClick = onAction) {
                 if (actionIcon != null) {
                     Icon(actionIcon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
@@ -163,7 +163,7 @@ fun ErrorState(
         description = message
     ) {
         if (onRetry != null) {
-            OutlinedButton(onClick = onRetry) {
+            EchoMarkOutlinedButton(onClick = onRetry) {
                 Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                 Text(retryLabel)

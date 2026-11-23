@@ -23,8 +23,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -85,6 +83,8 @@ import com.unchunks.echomark.ui.common.icon
 import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import java.io.File
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.design.SurfaceRole
 
 /** カードに表示するタグの最大数。残り(と幅に収まらなかった分)は「+N」で示す */
 private const val MAX_VISIBLE_TAGS = 3
@@ -119,36 +119,37 @@ fun BookmarkCard(
     searchMatch: SearchMatch? = null
 ) {
     val domain = bookmark.displaySource()
-    val colors = CardDefaults.cardColors(
-        containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else EchoMarkDesign.cardContainerColor
-    )
     val selectionModifier = if (selected) Modifier.semantics { this.selected = true } else Modifier
-    // タグのチップと同じ色にならないよう、背景は少し濃くするだけにして枠線で示す。
-    // 選択していないときの枠線はデザインに従う(ペーパーだけ細い罫線)
-    val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else EchoMarkDesign.cardBorder
+    // カードの地色・枠線・影はデザインに従う。選んだカードは、タグのチップと同じ色にならないよう
+    // 地は一段濃くするだけにして、どのデザインでもアクセント色の枠で示す
+    val role = if (selected) SurfaceRole.Selected else SurfaceRole.Card
+    val classic = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow
+    val selectedBorder = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     if (onLongClick == null) {
-        Card(onClick = onClick, modifier = modifier.then(EchoMarkDesign.cardShadow).fillMaxWidth().then(selectionModifier), colors = colors, border = border) {
+        DesignCard(
+            onClick = onClick,
+            modifier = modifier.fillMaxWidth().then(selectionModifier),
+            role = role,
+            classic = classic,
+            border = selectedBorder
+        ) {
             BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis, searchTerms, searchMatch)
         }
     } else {
         val haptics = LocalHapticFeedback.current
-        Card(
-            modifier = modifier
-                // ソフトの光と影はカードの外に描くので、切り抜き(clip)より前に付ける
-                .then(EchoMarkDesign.cardShadow)
-                .fillMaxWidth()
-                .then(selectionModifier)
-                .clip(CardDefaults.shape)
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onLongClick()
-                    },
-                    onLongClickLabel = onLongClickLabel
-                ),
-            colors = colors,
-            border = border
+        DesignCard(
+            modifier = modifier.fillMaxWidth().then(selectionModifier),
+            role = role,
+            classic = classic,
+            border = selectedBorder,
+            clickModifier = Modifier.combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
+                onLongClickLabel = onLongClickLabel
+            )
         ) {
             BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis, searchTerms, searchMatch)
         }

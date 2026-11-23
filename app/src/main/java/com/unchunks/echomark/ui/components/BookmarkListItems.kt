@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,6 +32,8 @@ import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.readingMinutes
 import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.design.SurfaceRole
 
 /**
  * 一覧のコンパクト表示(#62)の1件。小さなサムネイルと、タイトル・出どころ・日時だけの1件1行(タイトルは2行まで)で、
@@ -160,30 +160,25 @@ private fun ListItemCard(
     modifier: Modifier,
     content: @Composable () -> Unit
 ) {
-    val colors = CardDefaults.cardColors(
-        containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else EchoMarkDesign.cardContainerColor
-    )
-    // 一覧のカード([BookmarkCard])と同じく、選んでいないときの地色・枠線・影はデザインに従う
-    val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else EchoMarkDesign.cardBorder
+    // 一覧のカード([BookmarkCard])と同じく、地色・枠線・影はデザインに従い、選んだものはアクセント色の枠で示す
     val haptics = LocalHapticFeedback.current
-    Card(
+    DesignCard(
         modifier = modifier
-            .then(EchoMarkDesign.cardShadow)
             .fillMaxWidth()
-            .then(if (selected) Modifier.semantics { this.selected = true } else Modifier)
-            .clip(CardDefaults.shape)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick?.let { longClick ->
-                    {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        longClick()
-                    }
-                },
-                onLongClickLabel = onLongClickLabel
-            ),
-        colors = colors,
-        border = border
+            .then(if (selected) Modifier.semantics { this.selected = true } else Modifier),
+        role = if (selected) SurfaceRole.Selected else SurfaceRole.Card,
+        classic = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        clickModifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick?.let { longClick ->
+                {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    longClick()
+                }
+            },
+            onLongClickLabel = onLongClickLabel
+        )
     ) {
         content()
     }

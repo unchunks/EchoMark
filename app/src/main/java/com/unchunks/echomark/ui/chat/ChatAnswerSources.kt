@@ -23,7 +23,6 @@ import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.websearch.WebSource
 import com.unchunks.echomark.ui.components.BookmarkThumbnail
+import com.unchunks.echomark.ui.design.DesignCard
 
 /**
  * 回答の下に出す、引用元の一覧と、引用しなかった資料・資料との照らし合わせの結果。
@@ -123,13 +123,15 @@ private fun CitedSourceCard(
         if (isHighlighted) bringIntoView.bringIntoView()
     }
     val colors = MaterialTheme.colorScheme
-    OutlinedCard(
+    DesignCard(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .bringIntoViewRequester(bringIntoView),
-        border = if (isHighlighted) BorderStroke(2.dp, colors.primary) else CardDefaults.outlinedCardBorder(),
-        colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceContainerLow)
+        classic = colors.surfaceContainerLow,
+        classicBorder = CardDefaults.outlinedCardBorder(),
+        // 回答の引用番号から選んだ資料は、どのデザインでも枠で目立たせる
+        border = if (isHighlighted) BorderStroke(2.dp, colors.primary) else null
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -179,10 +181,11 @@ private fun UncitedSources(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             visible.forEach { (number, bookmark) ->
-                OutlinedCard(
+                DesignCard(
                     onClick = { onOpenBookmark(bookmark.id) },
                     modifier = Modifier.width(212.dp),
-                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                    classic = MaterialTheme.colorScheme.surfaceContainerLow,
+                    classicBorder = CardDefaults.outlinedCardBorder()
                 ) {
                     Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         SourceThumbnail(number = number, bookmark = bookmark)

@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -23,12 +21,13 @@ import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
+import com.unchunks.echomark.ui.design.DesignCard
 
 /**
  * 横スクロールの列に並べる小さめのブックマークカード(「今日の再発見」・関連ブックマーク用)。
  * サムネイル・出どころ・タイトル2行と、任意の補足 [caption](「2か月前に開いた」など)を表示する。
  *
- * @param containerColor カードの色。再発見など目立たせたいときに変える
+ * @param containerColor カードの地色を決めて塗るとき(再発見の帯の上など)。null ならデザインのカードの描き方にする
  */
 @Composable
 fun CompactBookmarkCard(
@@ -36,14 +35,14 @@ fun CompactBookmarkCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     caption: String? = null,
-    containerColor: Color = EchoMarkDesign.cardContainerColor
+    containerColor: Color? = null
 ) {
     val source = bookmark.displaySource()
-    Card(
+    DesignCard(
         onClick = onClick,
-        modifier = modifier.then(EchoMarkDesign.cardShadow).width(264.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = EchoMarkDesign.cardBorder
+        modifier = modifier.width(264.dp),
+        classic = MaterialTheme.colorScheme.surfaceContainerLow,
+        accentColor = containerColor
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.Top) {

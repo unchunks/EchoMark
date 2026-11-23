@@ -17,13 +17,11 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +44,8 @@ import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.ui.common.openUrl
 import com.unchunks.echomark.ui.settings.shortName
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
 
 /*
  * AI 設定画面の「クラウド API のキー」。提供元ごとのキーの保存・削除と接続テスト。
@@ -145,7 +145,7 @@ internal fun ApiKeySection(
             modifier = Modifier.fillMaxWidth()
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
+            EchoMarkButton(
                 onClick = {
                     onSaveKey(provider, keyInput)
                     keyInput = ""
@@ -153,7 +153,7 @@ internal fun ApiKeySection(
                 },
                 enabled = keyInput.isNotBlank()
             ) { Text("保存") }
-            OutlinedButton(
+            EchoMarkOutlinedButton(
                 onClick = { onTestConnection(keyInput) },
                 enabled = connectionTest != ConnectionTestState.Running &&
                     (keyInput.isNotBlank() || uiState.isKeyConfigured)

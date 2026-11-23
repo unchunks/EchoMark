@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
 /**
@@ -57,7 +58,7 @@ fun TagChip(
     if (onClick == null) {
         Surface(
             modifier = modifier.then(a11y),
-            shape = MaterialTheme.shapes.small,
+            shape = EchoMarkDesign.chipShape,
             color = colors.secondaryContainer,
             contentColor = colors.onSecondaryContainer
         ) { label() }
@@ -67,7 +68,7 @@ fun TagChip(
             modifier = modifier
                 .minimumInteractiveComponentSize()
                 .then(a11y),
-            shape = MaterialTheme.shapes.small,
+            shape = EchoMarkDesign.chipShape,
             color = colors.secondaryContainer,
             contentColor = colors.onSecondaryContainer
         ) { label() }

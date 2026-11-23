@@ -29,15 +29,12 @@ import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.TravelExplore
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -57,6 +54,9 @@ import com.unchunks.echomark.ui.navigation.bottomBarAwareContentInsets
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.AccentCard
+import com.unchunks.echomark.ui.design.DesignCard
 
 /**
  * 「見つける」タブの行き先。保存したものを読み返す・調べる・整える画面を開く。
@@ -91,7 +91,7 @@ fun ExploreScreen(actions: ExploreActions, modifier: Modifier = Modifier) {
         // クリアのガラスのボトムバーは中身の上に重なるので、その分を下に空ける(追加ボタン・スナックバーもバーの上に出す)
         contentWindowInsets = bottomBarAwareContentInsets(),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("見つける", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 scrollBehavior = scrollBehavior
             )
@@ -165,12 +165,10 @@ private fun exploreTiles(actions: ExploreActions): List<ExploreTile> = listOf(
 /** いちばん上に大きく出すカード(読む・ふり返る)。ブランドの色で塗り、ほかのタイルより目立たせる。 */
 @Composable
 private fun FeaturedCard(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
-    Card(
+    AccentCard(
         onClick = onClick,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-        ),
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         shape = MaterialTheme.shapes.large,
         modifier = Modifier
             .fillMaxWidth()
@@ -250,9 +248,9 @@ private fun TileGrid(tiles: List<ExploreTile>) {
 @Composable
 private fun TileCard(tile: ExploreTile, modifier: Modifier = Modifier) {
     val (badgeContainer, badgeContent) = tile.tone.colors()
-    Card(
+    DesignCard(
         onClick = tile.onClick,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        classic = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier.semantics { role = Role.Button }
     ) {
         Column(Modifier.padding(16.dp)) {

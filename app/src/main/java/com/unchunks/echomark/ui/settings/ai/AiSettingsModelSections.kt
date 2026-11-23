@@ -14,13 +14,11 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.unchunks.echomark.ui.settings.SettingsBlock
 import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.filestorage.formatBytes
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
@@ -50,6 +49,8 @@ import com.unchunks.echomark.ui.settings.japaneseParagraph
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
 
 /*
  * AI 設定画面の「端末内モデル」と「検索用の埋め込みモデル」。モデルファイルの取り込み・入れ替え・削除。
@@ -76,56 +77,61 @@ internal fun LocalModelSection(
     val context = LocalContext.current
     var deleting by remember { mutableStateOf<LocalModelInfo?>(null) }
 
+    // 取り込んだモデルごとに、行とその操作を1つのまとまりにする(デザインのカードの描き方に従う)
     if (models.models.isEmpty()) {
-        SettingsItem(
-            title = "未取り込み",
-            icon = Icons.Outlined.Memory,
-            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-            summary = if (isSelected) "端末内で要約・チャットを行うには、モデルファイルを取り込んでください" else "取り込むと、端末内でも AI を使えます"
-        )
+        SettingsBlock {
+            SettingsItem(
+                title = "未取り込み",
+                icon = Icons.Outlined.Memory,
+                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                summary = if (isSelected) "端末内で要約・チャットを行うには、モデルファイルを取り込んでください" else "取り込むと、端末内でも AI を使えます"
+            )
+        }
     }
     models.models.forEach { model ->
         val isDefault = model == models.default
-        SettingsItem(
-            title = model.displayName,
-            icon = Icons.Outlined.Memory,
-            iconTint = if (isDefault) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            summary = buildString {
-                if (isDefault && models.models.size >= 2) append("既定・")
-                append(formatBytes(model.sizeBytes))
-                append("・取り込み: ")
-                append(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.importedAt)))
-            },
-            trailing = {
-                IconButton(onClick = { deleting = model }) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "「${model.displayName}」を削除")
+        SettingsBlock {
+            SettingsItem(
+                title = model.displayName,
+                icon = Icons.Outlined.Memory,
+                iconTint = if (isDefault) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                summary = buildString {
+                    if (isDefault && models.models.size >= 2) append("既定・")
+                    append(formatBytes(model.sizeBytes))
+                    append("・取り込み: ")
+                    append(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.importedAt)))
+                },
+                trailing = {
+                    IconButton(onClick = { deleting = model }) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "「${model.displayName}」を削除")
+                    }
                 }
-            }
-        )
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val failure = loadFailures[model.id]
-            if (failure != null) {
-                StatusLine(
-                    icon = {
-                        Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    },
-                    text = failure.userMessage,
-                    isError = true
-                )
-            } else if (model.isLegacyTaskFormat) {
-                // 以前の版(MediaPipe の LLM Inference)で取り込んだ .task も、そのまま LiteRT-LM で動かす
-                SettingsNotice(
-                    text = "旧形式(.task)のモデルです。そのまま使えますが、読み込めない・回答が崩れるときは、" +
-                        "同じモデルの .litertlm 版を取り込み直してください。",
-                    icon = Icons.Outlined.Info
-                )
-            }
-            ModelBenchmarkLines(model, benchmarks.filter { it.modelId == model.id }, benchmarkState, onBenchmark)
-            if (!isDefault) {
-                OutlinedButton(onClick = { onSetDefault(model) }) { Text("既定のモデルにする") }
+            )
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val failure = loadFailures[model.id]
+                if (failure != null) {
+                    StatusLine(
+                        icon = {
+                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        },
+                        text = failure.userMessage,
+                        isError = true
+                    )
+                } else if (model.isLegacyTaskFormat) {
+                    // 以前の版(MediaPipe の LLM Inference)で取り込んだ .task も、そのまま LiteRT-LM で動かす
+                    SettingsNotice(
+                        text = "旧形式(.task)のモデルです。そのまま使えますが、読み込めない・回答が崩れるときは、" +
+                            "同じモデルの .litertlm 版を取り込み直してください。",
+                        icon = Icons.Outlined.Info
+                    )
+                }
+                ModelBenchmarkLines(model, benchmarks.filter { it.modelId == model.id }, benchmarkState, onBenchmark)
+                if (!isDefault) {
+                    EchoMarkOutlinedButton(onClick = { onSetDefault(model) }) { Text("既定のモデルにする") }
+                }
             }
         }
     }
@@ -147,7 +153,7 @@ internal fun LocalModelSection(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Text("取り込み中… ${formatBytes(importState.copiedBytes)}", style = MaterialTheme.typography.bodySmall)
                 }
-                OutlinedButton(onClick = onCancelImport) { Text("取り込みを中止") }
+                EchoMarkOutlinedButton(onClick = onCancelImport) { Text("取り込みを中止") }
             }
             else -> {
                 if (importState is ModelImportState.Failed) {
@@ -159,7 +165,7 @@ internal fun LocalModelSection(
                         isError = true
                     )
                 }
-                Button(onClick = onPickModel) {
+                EchoMarkButton(onClick = onPickModel) {
                     ButtonIcon(Icons.Outlined.UploadFile)
                     Text(if (models.models.isEmpty()) "モデルファイルを取り込む" else "別のモデルを追加する")
                 }
@@ -227,7 +233,7 @@ private fun ModelBenchmarkLines(
             isError = true
         )
     }
-    OutlinedButton(onClick = { onBenchmark(model) }, enabled = state !is ModelBenchmarkState.Running) {
+    EchoMarkOutlinedButton(onClick = { onBenchmark(model) }, enabled = state !is ModelBenchmarkState.Running) {
         ButtonIcon(Icons.Outlined.Speed)
         Text(if (results.isEmpty()) "この端末での速さを測る" else "もう一度測る")
     }
@@ -253,14 +259,16 @@ private fun oneDecimal(value: Double): String = String.format(Locale.ROOT, "%.1f
  */
 @Composable
 internal fun LocalLlmGpuSetting(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    SettingsSwitchItem(
-        title = "GPU で動かす(実験的)",
-        icon = Icons.Outlined.Memory,
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        summary = "対応する端末とモデルでは要約・タグ付けが速くなります",
-        modifier = Modifier.padding(top = 8.dp)
-    )
+    // 行を、デザインのカードの描き方のまとまりにする
+    SettingsBlock(modifier = Modifier.padding(top = 8.dp)) {
+        SettingsSwitchItem(
+            title = "GPU で動かす(実験的)",
+            icon = Icons.Outlined.Memory,
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            summary = "対応する端末とモデルでは要約・タグ付けが速くなります"
+        )
+    }
     if (checked) {
         SettingsNotice(
             text = "端末やモデルによっては、GPU で動かすとアプリが終了することがあります。" +
@@ -284,73 +292,76 @@ internal fun EmbeddingModelSection(
 ) {
     var showProfileDialog by remember { mutableStateOf(false) }
 
-    SettingsItem(
-        title = model?.file?.displayName ?: "${EmbeddingModels.BUNDLED.displayName}(同梱)",
-        icon = Icons.Outlined.Memory,
-        iconTint = if (model != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        summary = if (model == null) {
-            "アプリに同梱のモデルを使っています"
-        } else {
-            "種類: ${model.profile.displayName}・${formatBytes(model.file.sizeBytes)}・取り込み: " +
-                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.file.importedAt))
-        }
-    )
-
-    Column(
-        modifier = Modifier.padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        when (importState) {
-            is ModelImportState.Copying -> {
-                val fraction = importState.fraction
-                if (fraction != null) {
-                    LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
-                    Text(
-                        "取り込み中… ${(fraction * 100).toInt()}%(${formatBytes(importState.copiedBytes)} / ${formatBytes(importState.totalBytes)})",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Text("取り込み中… ${formatBytes(importState.copiedBytes)}", style = MaterialTheme.typography.bodySmall)
-                }
-                OutlinedButton(onClick = onCancelImport) { Text("取り込みを中止") }
+    // 使っているモデルの行と、取り込み・戻す操作を1つのまとまりにする(デザインのカードの描き方に従う)
+    SettingsBlock {
+        SettingsItem(
+            title = model?.file?.displayName ?: "${EmbeddingModels.BUNDLED.displayName}(同梱)",
+            icon = Icons.Outlined.Memory,
+            iconTint = if (model != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            summary = if (model == null) {
+                "アプリに同梱のモデルを使っています"
+            } else {
+                "種類: ${model.profile.displayName}・${formatBytes(model.file.sizeBytes)}・取り込み: " +
+                    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.file.importedAt))
             }
-            else -> {
-                if (importState is ModelImportState.Failed) {
-                    StatusLine(
-                        icon = {
-                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                        },
-                        text = "取り込めませんでした: ${importState.error.userMessage}",
-                        isError = true
-                    )
+        )
+
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            when (importState) {
+                is ModelImportState.Copying -> {
+                    val fraction = importState.fraction
+                    if (fraction != null) {
+                        LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "取り込み中… ${(fraction * 100).toInt()}%(${formatBytes(importState.copiedBytes)} / ${formatBytes(importState.totalBytes)})",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text("取り込み中… ${formatBytes(importState.copiedBytes)}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    EchoMarkOutlinedButton(onClick = onCancelImport) { Text("取り込みを中止") }
                 }
-                Button(onClick = { showProfileDialog = true }) {
-                    ButtonIcon(Icons.Outlined.UploadFile)
-                    Text(if (model == null) "埋め込みモデルを取り込む" else "別のモデルに入れ替える")
-                }
-                if (model != null) {
-                    OutlinedButton(onClick = onRevert) {
-                        ButtonIcon(Icons.Outlined.Refresh)
-                        Text("同梱のモデルに戻す")
+                else -> {
+                    if (importState is ModelImportState.Failed) {
+                        StatusLine(
+                            icon = {
+                                Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            },
+                            text = "取り込めませんでした: ${importState.error.userMessage}",
+                            isError = true
+                        )
+                    }
+                    EchoMarkButton(onClick = { showProfileDialog = true }) {
+                        ButtonIcon(Icons.Outlined.UploadFile)
+                        Text(if (model == null) "埋め込みモデルを取り込む" else "別のモデルに入れ替える")
+                    }
+                    if (model != null) {
+                        EchoMarkOutlinedButton(onClick = onRevert) {
+                            ButtonIcon(Icons.Outlined.Refresh)
+                            Text("同梱のモデルに戻す")
+                        }
                     }
                 }
             }
-        }
-        Text(
-            "モデルを変えると、保存済みのブックマークの検索インデックスを新しいモデルで作り直します" +
-                "(その間、まだ作り直していないブックマークは意味での検索・関連ブックマーク・チャットに出ません)。" +
-                "対応形式: .task / .tflite",
-            style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (model?.profile?.experimental == true) {
-            SettingsNotice(
-                text = "実験的なモデルです。端末の MediaPipe が読み込めないと、検索インデックスを作れず意味での検索が使えなくなります。" +
-                    "その場合は「同梱のモデルに戻す」を選んでください。",
-                icon = Icons.Outlined.WarningAmber,
-                isWarning = true
+            Text(
+                "モデルを変えると、保存済みのブックマークの検索インデックスを新しいモデルで作り直します" +
+                    "(その間、まだ作り直していないブックマークは意味での検索・関連ブックマーク・チャットに出ません)。" +
+                    "対応形式: .task / .tflite",
+                style = MaterialTheme.typography.bodySmall.japaneseParagraph(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (model?.profile?.experimental == true) {
+                SettingsNotice(
+                    text = "実験的なモデルです。端末の MediaPipe が読み込めないと、検索インデックスを作れず意味での検索が使えなくなります。" +
+                        "その場合は「同梱のモデルに戻す」を選んでください。",
+                    icon = Icons.Outlined.WarningAmber,
+                    isWarning = true
+                )
+            }
         }
     }
 

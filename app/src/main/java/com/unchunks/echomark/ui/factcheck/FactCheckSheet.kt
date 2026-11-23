@@ -17,16 +17,11 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.ReportProblem
 import androidx.compose.material.icons.outlined.TravelExplore
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -47,6 +42,11 @@ import com.unchunks.echomark.domain.factcheck.FactCheckProgress
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.design.SurfaceRole
 
 /** 「Web で確かめる」のシート。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,7 +59,7 @@ fun FactCheckSheet(
     onDismiss: () -> Unit
 ) {
     if (state.target == null) return
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         FactCheckSheetContent(state, onCheck, onOpenUrl, onOpenAiSettings)
     }
 }
@@ -101,7 +101,7 @@ fun FactCheckSheetContent(
         when {
             !state.availability.keyConfigured -> {
                 Text("Web で確かめるには、AI 設定で Brave Search API のキーを入れてください。", style = paragraph)
-                OutlinedButton(onClick = onOpenAiSettings) { Text("AI 設定を開く") }
+                EchoMarkOutlinedButton(onClick = onOpenAiSettings) { Text("AI 設定を開く") }
             }
             state.availability.offline -> Text("オフラインモードの間は確かめられません。", style = paragraph)
         }
@@ -127,7 +127,7 @@ fun FactCheckSheetContent(
 
         if (state.availability.usable) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(onClick = onCheck, enabled = !state.isRunning) {
+                EchoMarkButton(onClick = onCheck, enabled = !state.isRunning) {
                     Text(if (state.result == null) "確かめる" else "もう一度確かめる")
                 }
                 Text(
@@ -148,9 +148,10 @@ internal const val FACT_CHECK_HINT =
 @Composable
 private fun ClaimCard(claim: CheckedClaim, onOpenUrl: (String) -> Unit) {
     val style = verdictStyle(claim.verdict)
-    OutlinedCard(
+    DesignCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        classic = MaterialTheme.colorScheme.surfaceContainerLow,
+        classicBorder = CardDefaults.outlinedCardBorder()
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -178,8 +179,10 @@ private fun ClaimCard(claim: CheckedClaim, onOpenUrl: (String) -> Unit) {
 
 @Composable
 private fun EvidenceQuote(evidence: FactCheckEvidence, onOpenUrl: (String) -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    // 主張のカードの中の、根拠の引用の区画
+    DesignCard(
+        role = SurfaceRole.Nested,
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

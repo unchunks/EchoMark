@@ -25,17 +25,14 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -65,6 +62,9 @@ import com.unchunks.echomark.domain.bookmark.model.ReadingStyle
 import com.unchunks.echomark.domain.bookmark.model.ReadingTheme
 import com.unchunks.echomark.domain.bookmark.model.ReadingTime
 import com.unchunks.echomark.ui.components.rememberHighlighted
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /** 読書モードの本文の幅の上限。広い画面でも、1行が長くなりすぎない(読みやすい 40 文字前後)ようにする */
 private val READING_MAX_WIDTH = 640.dp
@@ -132,7 +132,7 @@ fun ReadingModeContent(
         contentColor = colors.text,
         topBar = {
             Column {
-                TopAppBar(
+                EchoMarkTopAppBar(
                     title = { Text("読書モード", style = MaterialTheme.typography.titleMedium) },
                     navigationIcon = {
                         IconButton(onClick = onClose) {
@@ -264,7 +264,7 @@ internal fun ReadingStyleSheet(
     onStyleChange: (ReadingStyle) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
@@ -316,7 +316,7 @@ private fun ChipRow(content: @Composable () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(
+    EchoMarkFilterChip(
         selected = selected,
         onClick = onClick,
         label = { Text(label) },

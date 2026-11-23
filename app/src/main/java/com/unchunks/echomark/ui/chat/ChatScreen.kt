@@ -55,10 +55,8 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -66,7 +64,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -109,6 +106,11 @@ import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.navigation.WideContentMaxWidth
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkInputChip
+import com.unchunks.echomark.ui.design.EchoMarkSmallFab
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.designFieldStyle
+import com.unchunks.echomark.ui.design.DesignBottomBar
 
 /**
  * 1つの会話の画面(ViewModel をつなぐ薄いラッパー。見た目は [ChatContent])。
@@ -560,7 +562,7 @@ private fun ScrollToLatestButton(visible: Boolean, onClick: () -> Unit, modifier
         exit = fadeOut() + scaleOut(),
         modifier = modifier
     ) {
-        SmallFloatingActionButton(
+        EchoMarkSmallFab(
             onClick = onClick,
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface
@@ -584,7 +586,7 @@ private fun ChatTopBar(
     modelPicker: @Composable () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    TopAppBar(
+    EchoMarkTopAppBar(
         title = {
             Text(
                 text = title,
@@ -743,7 +745,7 @@ internal fun ChatAttachmentStatus(
             )
         }
         if (name != null) {
-            InputChip(
+            EchoMarkInputChip(
                 selected = true,
                 onClick = onRemove,
                 label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -761,7 +763,7 @@ internal fun ChatAttachmentStatus(
 @Composable
 internal fun ChatScopeStatus(label: String, onClick: () -> Unit) {
     Column(modifier = Modifier.centeredMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp)) {
-        InputChip(
+        EchoMarkInputChip(
             selected = true,
             onClick = onClick,
             label = { Text("範囲: $label", maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -773,7 +775,8 @@ internal fun ChatScopeStatus(label: String, onClick: () -> Unit) {
 /** 音声入力の間、入力欄の代わりに出す。話し終えるボタンと、やめるボタン。文字に起こしている間は待つだけ。 */
 @Composable
 internal fun ChatVoiceBar(state: ChatVoiceState, onFinish: () -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxWidth()) {
+    // 入力のバー。地色・上端の区切りは、ほかの下の操作のバーと同じ
+    DesignBottomBar(modifier = modifier.fillMaxWidth(), classic = MaterialTheme.colorScheme.surface, classicTonalElevation = 0.dp) {
         Row(
             modifier = Modifier
                 .centeredMaxWidth()
@@ -824,7 +827,8 @@ internal fun ChatInputBar(
     onWebSearchChange: ((Boolean) -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxWidth()) {
+    // 入力のバー。地色・上端の区切りは、ほかの下の操作のバーと同じ
+    DesignBottomBar(modifier = modifier.fillMaxWidth(), classic = MaterialTheme.colorScheme.surface, classicTonalElevation = 0.dp) {
         Row(
             // 広い画面では、メッセージと同じ中央の幅にそろえる
             modifier = Modifier
@@ -862,10 +866,12 @@ internal fun ChatInputBar(
                     WebSearchToggleButton(enabled = webSearchEnabled, onChange = onWebSearchChange, isSending = isSending)
                 }
             }
+            // 入力欄の形・地色(ソフトはくぼみ)はデザインに従う
+            val field = designFieldStyle(classicContainer = MaterialTheme.colorScheme.surfaceContainerHigh)
             TextField(
                 value = value,
                 onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).then(field.depth),
                 placeholder = {
                     Text(
                         if (webSearchEnabled) "ブックマークと Web をもとに質問…" else "保存したブックマークについて質問…",
@@ -873,12 +879,12 @@ internal fun ChatInputBar(
                         overflow = TextOverflow.Ellipsis
                     )
                 },
-                shape = RoundedCornerShape(28.dp),
+                shape = field.shape,
                 maxLines = 6,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    focusedContainerColor = field.containerColor,
+                    unfocusedContainerColor = field.containerColor,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent

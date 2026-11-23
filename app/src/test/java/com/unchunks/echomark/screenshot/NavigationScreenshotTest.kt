@@ -79,4 +79,25 @@ class NavigationScreenshotTest {
             EchoMarkNavigationRail(selectedRoute = "settings", onNavigate = {}, modifier = Modifier.height(320.dp))
         }
     }
+
+    /** エコーのレールは、ボトムバーと同じく画面の端から離した角の丸い浮いたレール */
+    @Test
+    fun navigationRailEcho() = captureRail("navigation_rail_echo", DesignStyle.ECHO)
+
+    /** ペーパーのレールは、紙面と同じ地色に右端の罫線1本 */
+    @Test
+    fun navigationRailPaper() = captureRail("navigation_rail_paper", DesignStyle.PAPER)
+
+    /** クリアのレールは、白い帯に右端の細い区切り線。選んだタブは淡い青の丸と青いアイコン */
+    @Test
+    fun navigationRailClear() = captureRail("navigation_rail_clear", DesignStyle.CLEAR)
+
+    /** ソフトのレールは、地色と同じ色の浮いたレールを光と影で押し出す */
+    @Test
+    fun navigationRailSoft() = captureRail("navigation_rail_soft", DesignStyle.SOFT)
+
+    private fun captureRail(name: String, style: DesignStyle) =
+        screenshot.captureLightDark(name, widthDp = 160, designStyle = style) {
+            EchoMarkNavigationRail(selectedRoute = "bookmarks", onNavigate = {}, modifier = Modifier.height(320.dp))
+        }
 }

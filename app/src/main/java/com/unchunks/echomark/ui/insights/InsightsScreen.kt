@@ -1,5 +1,6 @@
 package com.unchunks.echomark.ui.insights
 
+import com.unchunks.echomark.ui.components.sectionHeaderStyle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -19,14 +20,12 @@ import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -71,6 +70,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /** 画面の 4 つの表示 */
 enum class InsightsTab(val label: String) {
@@ -127,7 +128,7 @@ fun InsightsContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("ライブラリの分析", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -177,7 +178,7 @@ private fun TabChips(selected: InsightsTab, onSelect: (InsightsTab) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         InsightsTab.entries.forEach { entry ->
-            FilterChip(selected = selected == entry, onClick = { onSelect(entry) }, label = { Text(entry.label) })
+            EchoMarkFilterChip(selected = selected == entry, onClick = { onSelect(entry) }, label = { Text(entry.label) })
         }
     }
 }
@@ -187,7 +188,8 @@ private fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
-        style = MaterialTheme.typography.titleSmall
+        // 見出しの書体はアプリ共通の見出し(SectionHeader)と同じく、デザインに従う
+        style = sectionHeaderStyle()
     )
 }
 
@@ -341,12 +343,12 @@ private fun LazyListScope.timelineItems(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FilterChip(
+            EchoMarkFilterChip(
                 selected = uiState.timelineBasis == TimelineBasis.SAVED,
                 onClick = { onBasis(TimelineBasis.SAVED) },
                 label = { Text("保存した日") }
             )
-            FilterChip(
+            EchoMarkFilterChip(
                 selected = uiState.timelineBasis == TimelineBasis.LAST_OPENED,
                 onClick = { onBasis(TimelineBasis.LAST_OPENED) },
                 label = { Text("最後に開いた日") }
@@ -399,7 +401,7 @@ private fun InterestsSection(trend: InterestTrend?, months: Int, onMonths: (Int)
         ) {
             Text("期間", style = MaterialTheme.typography.labelLarge)
             INTEREST_PERIOD_CHOICES.forEach { choice ->
-                FilterChip(selected = months == choice, onClick = { onMonths(choice) }, label = { Text("${choice}か月") })
+                EchoMarkFilterChip(selected = months == choice, onClick = { onMonths(choice) }, label = { Text("${choice}か月") })
             }
         }
         if (trend == null || trend.isEmpty) {

@@ -14,20 +14,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Place
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,6 +60,12 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.sqrt
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkSwitch
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.design.SurfaceRole
 
 /**
  * 場所のあるブックマークの分布図と一覧。ViewModel をつなぐだけの薄いラッパー。
@@ -108,7 +108,7 @@ fun PlacesContent(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("場所", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -249,7 +249,7 @@ private fun MapBackgroundSwitch(enabled: Boolean, onChange: (Boolean) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("地図の背景を表示", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            Switch(checked = enabled, onCheckedChange = onChange)
+            EchoMarkSwitch(checked = enabled, onCheckedChange = onChange)
         }
         Text(
             "オンにすると、この画面を開いている間だけ、見ている範囲の地図(OpenFreeMap のタイル)をネットワークから読み込みます。" +
@@ -279,7 +279,7 @@ private fun DetectSection(uiState: PlacesUiState, onDetect: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilledTonalButton(onClick = onDetect, enabled = !uiState.detecting) { Text("場所を探す") }
+            EchoMarkTonalButton(onClick = onDetect, enabled = !uiState.detecting) { Text("場所を探す") }
             if (uiState.detecting) CircularProgressIndicator(modifier = Modifier.height(24.dp))
         }
         uiState.lastDetection?.let { Text(it.summaryText(), style = MaterialTheme.typography.bodyMedium) }
@@ -302,11 +302,10 @@ private fun PlaceGroupCard(
     onOpenBookmark: (Long) -> Unit,
     onOpenInMap: (GeoPoint, String?) -> Unit
 ) {
-    Card(
+    DesignCard(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow
-        ),
+        role = if (selected) SurfaceRole.Selected else SurfaceRole.Card,
+        classic = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
         onClick = onToggle
     ) {
         Column(Modifier.padding(12.dp)) {
@@ -335,7 +334,7 @@ private fun PlaceGroupCard(
                     )
                 }
                 group.center?.let { center ->
-                    OutlinedButton(onClick = { onOpenInMap(center, group.label) }) { Text("地図アプリで開く") }
+                    EchoMarkOutlinedButton(onClick = { onOpenInMap(center, group.label) }) { Text("地図アプリで開く") }
                 }
             }
         }

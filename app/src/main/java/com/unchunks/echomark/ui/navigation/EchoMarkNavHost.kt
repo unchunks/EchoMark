@@ -1,5 +1,11 @@
 package com.unchunks.echomark.ui.navigation
 
+import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.NavigationRailItemColors
+import androidx.compose.material3.NavigationRailDefaults
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +92,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -140,6 +147,7 @@ import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import com.unchunks.echomark.ui.theme.softRaised
 import kotlinx.coroutines.flow.first
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /** ボトムバー・ナビゲーションレールに並ぶトップレベル画面。route は文字列ルート。選択中は塗りのアイコンにする。 */
 private enum class TopLevelDestination(
@@ -640,7 +648,7 @@ fun EchoMarkNavHost(
  * ([NavigationLayout.RAIL])を出す。[showNavigation] が false なら隠す(サブ画面のボトムバー・はじめにの案内)。
  *
  * インセット: 左右と下(ナビゲーションバー・ボトムバー)の分だけ余白を付けて consumeWindowInsets する。
- * 上(ステータスバー)は消費せず、各画面の TopAppBar(既定の windowInsets)が自分の背景色で受け持つ。
+ * 上(ステータスバー)は消費せず、各画面の EchoMarkTopAppBar(既定の windowInsets)が自分の背景色で受け持つ。
  * ここで上まで消費すると、ステータスバーの帯がこの Scaffold の背景のままになり、スクロールで色が変わる
  * TopAppBar とつながらない。各画面の imePadding は、ここで消費した下の分を差し引いた残りだけを足す。
  * レールを出しているときは、左(画面の始まり側)の分はレールが受け持つので、中身の側では余白を付けずに消費だけする
@@ -1117,6 +1125,17 @@ private fun RowScope.TopLevelItems(
 }
 
 /**
+ * レールの中身の側の端(左から右に書く言語では右端)に引く区切り線(ペーパー・クリア)。
+ * レールの地色に隠れないよう、地色と中身を描いた後に重ねる。
+ */
+private fun Modifier.railEndRule(color: Color): Modifier = drawWithContent {
+    drawContent()
+    val half = 0.5.dp.toPx()
+    val x = if (layoutDirection == LayoutDirection.Ltr) size.width - half else half
+    drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+}
+
+/**
  * ナビゲーションレール(広い画面で左に縦に並べるタブ)。並びと見た目はボトムバー([EchoMarkNavigationBar])と同じ。
  * 項目は上から並べる(親指の届く下側ではなく、視線の起点の左上に置く)。
  */
@@ -1126,14 +1145,66 @@ internal fun EchoMarkNavigationRail(
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    NavigationRail(modifier = modifier) {
+    val colors = MaterialTheme.colorScheme
+    val items: @Composable ColumnScope.(NavigationRailItemColors) -> Unit = { itemColors ->
         TopLevelDestination.entries.forEach { destination ->
             val selected = destination.route == selectedRoute
             NavigationRailItem(
                 selected = selected,
                 onClick = { onNavigate(destination.route) },
                 icon = { TopLevelIcon(destination, selected) },
-                label = { Text(destination.label) }
+                label = { Text(destination.label) },
+                colors = itemColors
+            )
+        }
+    }
+    // ボトムバーと同じ描き分けを、縦のレールにも当てる
+    when (EchoMarkDesign.style) {
+        DesignStyle.CLASSIC -> NavigationRail(modifier = modifier) { items(NavigationRailItemDefaults.colors()) }
+        // エコー・ソフトは、画面の端から離した角の丸い浮いたレール(エコーはトーナルな面、ソフトは光と影)
+        DesignStyle.ECHO, DesignStyle.SOFT -> {
+            val soft = EchoMarkDesign.style == DesignStyle.SOFT
+            val shape = RoundedCornerShape(FLOATING_BAR_CORNER)
+            Box(
+                modifier
+                    .windowInsetsPadding(NavigationRailDefaults.windowInsets)
+                    .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp)
+            ) {
+                NavigationRail(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .then(if (soft) Modifier.softRaised(shape, EchoMarkDesign.isDark) else Modifier)
+                        .clip(shape),
+                    containerColor = if (soft) colors.surface else colors.surfaceContainer,
+                    windowInsets = WindowInsets(0, 0, 0, 0)
+                ) {
+                    Spacer(Modifier.height(8.dp))
+                    items(
+                        // ソフトの選んだタブは、押し込んだように一段濃くする
+                        if (soft) NavigationRailItemDefaults.colors(indicatorColor = colors.surfaceContainerHighest)
+                        else NavigationRailItemDefaults.colors()
+                    )
+                }
+            }
+        }
+        // ペーパーは紙面と同じ地色に、右端の罫線1本で区切る
+        DesignStyle.PAPER -> NavigationRail(
+            modifier = modifier.railEndRule(colors.outlineVariant),
+            containerColor = colors.surface
+        ) { items(NavigationRailItemDefaults.colors()) }
+        // クリアは白い(ダークは灰色の)横の帯に右端の細い区切り線。選んだタブは淡い青の丸と青いアイコン(ガラスのバーと同じ合図)
+        DesignStyle.CLEAR -> NavigationRail(
+            modifier = modifier.railEndRule(colors.outlineVariant),
+            containerColor = colors.surfaceContainerLow
+        ) {
+            items(
+                NavigationRailItemDefaults.colors(
+                    selectedIconColor = colors.primary,
+                    selectedTextColor = colors.onSurface,
+                    indicatorColor = colors.primaryContainer,
+                    unselectedIconColor = colors.onSurfaceVariant,
+                    unselectedTextColor = colors.onSurface
+                )
             )
         }
     }

@@ -62,36 +62,30 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.TravelExplore
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.domain.factcheck.FactCheckTarget
 import com.unchunks.echomark.ui.factcheck.FactCheckSheet
 import com.unchunks.echomark.ui.factcheck.FactCheckViewModel
 import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -193,6 +187,13 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkSuggestionChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.AccentCard
+import com.unchunks.echomark.ui.design.DesignCard
 
 /**
  * ブックマークの詳細。ViewModel をつなぐだけの薄いラッパーで、描画は [BookmarkDetailContent] が行う。
@@ -731,7 +732,7 @@ private fun DetailTopBar(
     onExport: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    TopAppBar(
+    EchoMarkTopAppBar(
         title = {},
         navigationIcon = {
             if (showBackButton) {
@@ -742,7 +743,7 @@ private fun DetailTopBar(
         },
         scrollBehavior = scrollBehavior,
         actions = {
-            if (bookmark == null) return@TopAppBar
+            if (bookmark == null) return@EchoMarkTopAppBar
             if (onReadingMode != null) {
                 IconButton(onClick = onReadingMode) {
                     Icon(Icons.AutoMirrored.Outlined.MenuBook, contentDescription = "読書モード")
@@ -1076,19 +1077,19 @@ private fun PrimaryActions(bookmark: Bookmark, hasFile: Boolean, callbacks: Book
     val url = bookmark.contentUri
     AdaptiveButtonRow(modifier = Modifier.fillMaxWidth()) {
         if (url != null) {
-            Button(onClick = { callbacks.onOpenInBrowser(url) }) {
+            EchoMarkButton(onClick = { callbacks.onOpenInBrowser(url) }) {
                 Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text("ブラウザで開く", textAlign = TextAlign.Center)
             }
         } else if (hasFile) {
-            Button(onClick = { callbacks.onOpenFile(bookmark) }) {
+            EchoMarkButton(onClick = { callbacks.onOpenFile(bookmark) }) {
                 Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text("ファイルを開く", textAlign = TextAlign.Center)
             }
         }
-        FilledTonalButton(onClick = { callbacks.onAskAi(bookmark.id) }) {
+        EchoMarkTonalButton(onClick = { callbacks.onAskAi(bookmark.id) }) {
             Icon(Icons.Outlined.QuestionAnswer, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             Text("AIに質問", textAlign = TextAlign.Center)
@@ -1192,19 +1193,19 @@ private fun RetryActions(setupFirst: Boolean, callbacks: BookmarkDetailCallbacks
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (setupFirst) {
-            Button(onClick = callbacks.onOpenAiSettings) {
+            EchoMarkButton(onClick = callbacks.onOpenAiSettings) {
                 Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text("AI設定を開く")
             }
-            OutlinedButton(onClick = callbacks.onReprocess) { Text("再試行") }
+            EchoMarkOutlinedButton(onClick = callbacks.onReprocess) { Text("再試行") }
         } else {
-            Button(onClick = callbacks.onReprocess) {
+            EchoMarkButton(onClick = callbacks.onReprocess) {
                 Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text("再試行")
             }
-            OutlinedButton(onClick = callbacks.onOpenAiSettings) { Text("AI設定を開く") }
+            EchoMarkOutlinedButton(onClick = callbacks.onOpenAiSettings) { Text("AI設定を開く") }
         }
     }
 }
@@ -1229,11 +1230,9 @@ private fun AiSection(
         var showCategory by rememberSaveable { mutableStateOf(false) }
         var showEvidence by rememberSaveable { mutableStateOf(false) }
         var showTranslate by rememberSaveable { mutableStateOf(false) }
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-            ),
+        AccentCard(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(16.dp)) {
@@ -1377,14 +1376,10 @@ private fun AiSection(
     if (bookmark.aiStatus == AiStatus.DONE) return
 
     val isFailed = bookmark.aiStatus == AiStatus.FAILED
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (isFailed) {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            }
-        ),
+    DesignCard(
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
+        // 失敗は、どのデザインでも警告の色で示す
+        accentColor = if (isFailed) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f) else null,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(16.dp)) {
@@ -1499,7 +1494,7 @@ private fun TagSection(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             suggestions.forEach { name ->
-                SuggestionChip(
+                EchoMarkSuggestionChip(
                     onClick = {
                         onAddTag(name)
                         input = ""
@@ -1519,7 +1514,7 @@ private fun TagSection(
 @Composable
 private fun RemovableTagChip(name: String, isAi: Boolean, onRemove: () -> Unit) {
     Surface(
-        shape = MaterialTheme.shapes.small,
+        shape = EchoMarkDesign.chipShape,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {

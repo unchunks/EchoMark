@@ -18,13 +18,10 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -42,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.echomark.ui.settings.SettingsBlock
 import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.components.composeui.readableWidth
 import com.unchunks.components.embedding.EmbeddingModelProfile
@@ -60,6 +58,8 @@ import com.unchunks.echomark.ui.settings.japaneseParagraph
 import com.unchunks.echomark.ui.settings.shortName
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import com.unchunks.echomark.ui.design.EchoMarkLargeTopAppBar
+import com.unchunks.echomark.ui.design.AccentCard
 
 /** AI 設定画面の操作。既定は何もしない(スクリーンショット用)。 */
 class AiSettingsActions(
@@ -196,7 +196,7 @@ fun AiSettingsContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            EchoMarkLargeTopAppBar(
                 title = { Text("AI の設定") },
                 navigationIcon = {
                     IconButton(onClick = actions.onBack) {
@@ -324,12 +324,14 @@ fun AiSettingsContent(
 
             SectionDivider()
             SectionHeader("AI 処理")
-            SettingsItem(
-                title = "失敗・準備待ちを再処理",
-                icon = Icons.Outlined.Refresh,
-                summary = "モデルの取り込みや API キーの設定後に、要約・タグ付けをやり直します",
-                onClick = actions.onReprocess
-            )
+            SettingsBlock {
+                SettingsItem(
+                    title = "失敗・準備待ちを再処理",
+                    icon = Icons.Outlined.Refresh,
+                    summary = "モデルの取り込みや API キーの設定後に、要約・タグ付けをやり直します",
+                    onClick = actions.onReprocess
+                )
+            }
         }
     }
 }
@@ -345,8 +347,9 @@ private fun StatusCard(uiState: AiSettingsUiState) {
     val ready = AiTask.entries.all(uiState::isReady)
     val container = if (ready) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer
     val content = if (ready) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
-    Card(
-        colors = CardDefaults.cardColors(containerColor = container, contentColor = content),
+    AccentCard(
+        containerColor = container,
+        contentColor = content,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)

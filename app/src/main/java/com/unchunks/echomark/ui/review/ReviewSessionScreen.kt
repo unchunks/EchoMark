@@ -12,19 +12,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.TaskAlt
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,6 +37,10 @@ import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.TagChip
 import com.unchunks.echomark.ui.components.displaySource
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignCard
 
 /** 復習の答えのボタンの名前 */
 private fun ReviewGrade.label(): String = when (this) {
@@ -85,7 +84,7 @@ fun ReviewSessionContent(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("復習", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -133,9 +132,9 @@ private fun CardView(
             progress = { if (state.total == 0) 0f else done.toFloat() / state.total },
             modifier = Modifier.fillMaxWidth()
         )
-        Card(
+        DesignCard(
             modifier = Modifier.fillMaxWidth().weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+            classic = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
             Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(bookmark.displaySource(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -160,11 +159,11 @@ private fun CardView(
             }
         }
         if (!state.showAnswer) {
-            Button(onClick = onReveal, modifier = Modifier.fillMaxWidth()) { Text("答えを見る") }
+            EchoMarkButton(onClick = onReveal, modifier = Modifier.fillMaxWidth()) { Text("答えを見る") }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ReviewGrade.entries.forEach { grade ->
-                    OutlinedButton(
+                    EchoMarkOutlinedButton(
                         onClick = { onAnswer(grade) },
                         modifier = Modifier.weight(1f),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)

@@ -21,18 +21,13 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,6 +47,10 @@ import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.BookmarkNote
 import com.unchunks.echomark.domain.bookmark.model.NoteText
 import com.unchunks.components.composeui.formatRelativeTime
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
+import com.unchunks.echomark.ui.design.DesignCard
 
 /** 引用を何行まで見せるか(長い引用は省略して、ノートの文章を読みやすくする) */
 private const val QUOTE_MAX_LINES = 4
@@ -81,7 +80,7 @@ fun NotesSection(
         notes.forEach { note ->
             NoteCard(note = note, nowMillis = nowMillis, onEdit = { onEdit(note) }, onDelete = { onDelete(note) })
         }
-        OutlinedButton(onClick = onAdd) {
+        EchoMarkOutlinedButton(onClick = onAdd) {
             Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             Text("ノートを追加")
@@ -92,9 +91,9 @@ fun NotesSection(
 @Composable
 private fun NoteCard(note: BookmarkNote, nowMillis: Long, onEdit: () -> Unit, onDelete: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
-    Card(
+    DesignCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        classic = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(Modifier.padding(start = 16.dp, top = 12.dp, end = 4.dp, bottom = 4.dp)) {
             note.quote?.let { quote ->
@@ -171,7 +170,7 @@ fun NoteEditorSheet(
 ) {
     var text by rememberSaveable(noteId) { mutableStateOf(initialText) }
     var quote by rememberSaveable(noteId) { mutableStateOf(initialQuote) }
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -242,7 +241,7 @@ fun NoteEditorSheetContent(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onCancel) { Text("キャンセル") }
                 Spacer(Modifier.size(8.dp))
-                Button(onClick = onSave, enabled = text.isNotBlank()) { Text("保存") }
+                EchoMarkButton(onClick = onSave, enabled = text.isNotBlank()) { Text("保存") }
             }
         }
     }

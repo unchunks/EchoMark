@@ -14,7 +14,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +34,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkCollection
 import com.unchunks.echomark.domain.bookmark.model.CollectionNames
 import com.unchunks.echomark.domain.bookmark.model.CollectionResult
 import com.unchunks.echomark.domain.export.ExportFormat
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /** ブックマークをコレクションに入れる・外すシート(#91)。チェックの付け外しがそのまま反映される。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,7 +46,7 @@ fun AddToCollectionSheet(
     onCreate: (name: String, onResult: (CollectionResult) -> Unit) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {

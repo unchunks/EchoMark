@@ -1,5 +1,10 @@
 package com.unchunks.echomark.ui.linkcheck
 
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
+import com.unchunks.echomark.ui.design.GroupPosition
+import com.unchunks.echomark.ui.design.GroupedRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,9 +32,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +61,8 @@ import com.unchunks.echomark.ui.detail.archiveSearchUrl
 import com.unchunks.echomark.ui.detail.linkCheckedText
 import com.unchunks.echomark.ui.snapshot.SnapshotViewerActivity
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkSwitch
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /**
  * リンク切れの一覧(#94)。夜の確認で、続けて開けなかったと判断したブックマークを並べる。
@@ -125,7 +130,7 @@ fun BrokenLinksContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("リンク切れ", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -171,16 +176,18 @@ fun BrokenLinksContent(
                         }
                         items(uiState.links.size, key = { uiState.links[it].bookmark.id }) { index ->
                             val link = uiState.links[index]
-                            DeadLinkRow(
-                                link = link,
-                                checking = link.bookmark.id in uiState.checkingIds,
-                                onClick = { onOpenBookmark(link.bookmark.id) },
-                                onOpenOfflineCopy = { onOpenOfflineCopy(link) },
-                                onSearchArchive = { onSearchArchive(link) },
-                                onRecheck = { onRecheck(link) },
-                                onMute = { onMute(link) },
-                                modifier = Modifier.animateItem()
-                            )
+                            // 一覧の行のまとまり(地色・区切り・角丸はデザインに従う)
+                            GroupedRow(GroupPosition.of(index, uiState.links.size), modifier = Modifier.animateItem()) {
+                                DeadLinkRow(
+                                    link = link,
+                                    checking = link.bookmark.id in uiState.checkingIds,
+                                    onClick = { onOpenBookmark(link.bookmark.id) },
+                                    onOpenOfflineCopy = { onOpenOfflineCopy(link) },
+                                    onSearchArchive = { onSearchArchive(link) },
+                                    onRecheck = { onRecheck(link) },
+                                    onMute = { onMute(link) }
+                                )
+                            }
                         }
                     }
                 }
@@ -197,7 +204,7 @@ private fun CheckSettings(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) 
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("夜にリンク切れを確認する", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Switch(checked = enabled, onCheckedChange = null)
+            EchoMarkSwitch(checked = enabled, onCheckedChange = null)
         }
         Text(
             text = "保存したリンクが開けるかを、夜に少しずつ確認します(1晩に100件まで。同じサイトには間をあけます)。" +
@@ -223,6 +230,8 @@ private fun DeadLinkRow(
     var menuOpen by remember { mutableStateOf(false) }
     val bookmark = link.bookmark
     ListItem(
+        // まとまり(GroupedRow)の地色を見せるため、行そのものは塗らない
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
         leadingContent = { Icon(Icons.Outlined.LinkOff, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
         overlineContent = bookmark.contentUri?.let { url -> { Text(extractDomain(url), maxLines = 1, overflow = TextOverflow.Ellipsis) } },

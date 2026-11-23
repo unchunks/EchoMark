@@ -15,13 +15,11 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.OfflinePin
 import androidx.compose.material.icons.outlined.RemoveCircleOutline
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +42,9 @@ import com.unchunks.echomark.domain.video.hasVideoTranscript
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.DesignSurface
 
 /** 動画のオフライン保存の操作 */
 class VideoOfflineCallbacks(
@@ -77,9 +78,9 @@ fun VideoOfflineSection(
     callbacks: VideoOfflineCallbacks,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    DesignSurface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -150,7 +151,7 @@ private fun TranscriptBlock(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedButton(onClick = callbacks.onSave) {
+                    EchoMarkOutlinedButton(onClick = callbacks.onSave) {
                         Icon(Icons.Outlined.CloudDownload, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Text("オフライン用に保存", modifier = Modifier.padding(start = ButtonDefaults.IconSpacing))
                     }
@@ -205,7 +206,7 @@ private fun VideoFileBlock(state: VideoOfflineUiState, callbacks: VideoOfflineCa
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(onClick = callbacks.onPlayVideo) {
+                    EchoMarkButton(onClick = callbacks.onPlayVideo) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Text("再生", modifier = Modifier.padding(start = ButtonDefaults.IconSpacing))
                     }
@@ -228,7 +229,7 @@ private fun VideoFileBlock(state: VideoOfflineUiState, callbacks: VideoOfflineCa
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                OutlinedButton(onClick = callbacks.onDownloadVideo) {
+                EchoMarkOutlinedButton(onClick = callbacks.onDownloadVideo) {
                     Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                     Text("動画を保存", modifier = Modifier.padding(start = ButtonDefaults.IconSpacing))
                 }

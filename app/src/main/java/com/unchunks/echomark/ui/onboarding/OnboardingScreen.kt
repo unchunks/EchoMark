@@ -45,12 +45,8 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -84,6 +80,9 @@ import com.unchunks.echomark.ui.settings.japaneseParagraph
 import kotlinx.coroutines.launch
 import java.time.format.TextStyle
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.DesignCard
 
 /** オンボーディングのページ数。 */
 const val ONBOARDING_PAGE_COUNT = 4
@@ -206,11 +205,11 @@ fun OnboardingContent(
             ) {
                 PageIndicator(pagerState = pagerState, modifier = Modifier.weight(1f))
                 if (isLastPage) {
-                    Button(onClick = { actions.onFinish(uiState.exit) }) {
+                    EchoMarkButton(onClick = { actions.onFinish(uiState.exit) }) {
                         Text(if (uiState.exit == OnboardingExit.AI_SETTINGS) "AI の設定へ進む" else "はじめる")
                     }
                 } else {
-                    Button(onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } }) {
+                    EchoMarkButton(onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } }) {
                         Text("次へ")
                     }
                 }
@@ -474,18 +473,15 @@ private fun ChoiceCard(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    OutlinedCard(
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(CardDefaults.outlinedShape)
-            .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+    DesignCard(
+        classic = MaterialTheme.colorScheme.surface,
+        classicBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        // 選んだものは、どのデザインでも強調の色とアクセント色の枠で示す
+        accentColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else null,
+        contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = Modifier.fillMaxWidth(),
+        clickModifier = Modifier.selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -524,7 +520,7 @@ private fun RediscoverPage(settings: RediscoverSettings, notificationDenied: Boo
                 Text("通知をオンにしました", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             }
             else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                FilledTonalButton(onClick = onEnable) {
+                EchoMarkTonalButton(onClick = onEnable) {
                     Icon(Icons.Outlined.NotificationsActive, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
                     Text("通知をオンにする")

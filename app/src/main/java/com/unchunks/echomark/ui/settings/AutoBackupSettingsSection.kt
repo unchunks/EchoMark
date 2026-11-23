@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Backup
@@ -24,7 +23,7 @@ import java.time.format.DateTimeFormatter
  * 設定画面の「データ」の中の、自動バックアップの欄。毎晩、利用者が選んだフォルダに書き出す
  * (処理の設定の「充電中だけ」に従う)。保存先を選ぶ前はスイッチだけを出す。
  */
-internal fun LazyListScope.autoBackupItems(
+internal fun SettingsListBuilder.autoBackupItems(
     settings: AutoBackupSettings,
     onToggle: (Boolean) -> Unit,
     onPickFolder: () -> Unit,
@@ -33,7 +32,7 @@ internal fun LazyListScope.autoBackupItems(
     onRunNow: () -> Unit,
     zone: ZoneId = ZoneId.systemDefault()
 ) {
-    item {
+    row {
         SettingsSwitchItem(
             title = "自動バックアップ",
             icon = Icons.Outlined.Backup,
@@ -44,7 +43,7 @@ internal fun LazyListScope.autoBackupItems(
     }
     if (!settings.enabled) return
     settings.lastError?.let { error ->
-        item {
+        standalone {
             SettingsNotice(
                 text = error,
                 icon = Icons.Outlined.WarningAmber,
@@ -53,7 +52,7 @@ internal fun LazyListScope.autoBackupItems(
             )
         }
     }
-    item {
+    row {
         SettingsItem(
             title = "保存先のフォルダ",
             icon = Icons.Outlined.Folder,
@@ -61,7 +60,7 @@ internal fun LazyListScope.autoBackupItems(
             onClick = onPickFolder
         )
     }
-    item {
+    row {
         SettingsItem(
             title = "残すバックアップの数",
             icon = Icons.Outlined.History,
@@ -69,7 +68,7 @@ internal fun LazyListScope.autoBackupItems(
             onClick = onOpenKeepDialog
         )
     }
-    item {
+    row {
         SettingsSwitchItem(
             title = "ファイルも含める",
             icon = Icons.Outlined.AttachFile,
@@ -78,7 +77,7 @@ internal fun LazyListScope.autoBackupItems(
             onCheckedChange = onIncludeFilesChange
         )
     }
-    item {
+    row {
         SettingsItem(
             title = "今すぐバックアップ",
             icon = Icons.Outlined.PlayArrow,

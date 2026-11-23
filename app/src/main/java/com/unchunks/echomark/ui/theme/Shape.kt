@@ -1,14 +1,16 @@
 package com.unchunks.echomark.ui.theme
 
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
-// 角丸は M3 の段階に合わせる。カード(medium)はやや丸めにして柔らかい印象にする
-val Shapes = Shapes(
-    extraSmall = RoundedCornerShape(4.dp), // タグなどの小さな要素
-    small = RoundedCornerShape(8.dp), // チップ・サムネイル
-    medium = RoundedCornerShape(16.dp), // カード
-    large = RoundedCornerShape(20.dp), // ボトムシート・大きめのパネル
-    extraLarge = RoundedCornerShape(28.dp) // ダイアログ
-)
+/**
+ * クラシックの角丸の段階。ほかのデザインの角丸([DesignRadii.scale])は、この段階を基準に読み替える。
+ * - extraSmall 4dp: タグなどの小さな要素・入力欄
+ * - small 8dp: チップ・サムネイル
+ * - medium 16dp: カード(やや丸めにして柔らかい印象にする)
+ * - large 20dp: 大きめのパネル
+ * - extraLarge 28dp: ダイアログ・ボトムシート
+ */
+internal val ClassicRadii = DesignRadii(extraSmall = 4.dp, small = 8.dp, medium = 16.dp, large = 20.dp, extraLarge = 28.dp)
+
+// 角丸は M3 の段階に合わせる
+val Shapes = ClassicRadii.toShapes()

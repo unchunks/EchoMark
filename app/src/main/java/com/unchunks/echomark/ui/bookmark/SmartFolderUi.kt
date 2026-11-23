@@ -20,18 +20,15 @@ import androidx.compose.material.icons.outlined.FolderSpecial
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.SaveAs
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +52,9 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.SmartFolder
 import com.unchunks.echomark.domain.bookmark.model.SmartFolderNames
 import com.unchunks.echomark.domain.bookmark.model.SmartFolderResult
+import com.unchunks.echomark.ui.design.EchoMarkAssistChip
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /**
  * スマートフォルダ(#34)を横に並べる。開いているフォルダは選択中で、右端の「⋮」から名前の変更・削除ができる。
@@ -83,7 +83,7 @@ internal fun SmartFolderRow(
     ) {
         if (folderToUpdate != null) {
             item(key = "update_current") {
-                AssistChip(
+                EchoMarkAssistChip(
                     onClick = { onUpdate(folderToUpdate) },
                     label = { Text("「${folderToUpdate.name}」を更新", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = {
@@ -95,7 +95,7 @@ internal fun SmartFolderRow(
         }
         if (canSave) {
             item(key = "save_current") {
-                AssistChip(
+                EchoMarkAssistChip(
                     onClick = onSave,
                     label = { Text("この条件を保存") },
                     leadingIcon = {
@@ -109,7 +109,7 @@ internal fun SmartFolderRow(
             val selected = folder.id == activeId
             // 開いているフォルダと、条件を変えてもまだ「更新」できるフォルダには、操作の入り口を出す
             val manageable = selected || folder.id == folderToUpdate?.id
-            FilterChip(
+            EchoMarkFilterChip(
                 selected = selected,
                 onClick = { onSelect(folder) },
                 label = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -210,7 +210,7 @@ internal fun SmartFolderActionSheet(
     onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(bottom = 16.dp)) {
             Text(
                 text = folder.name,

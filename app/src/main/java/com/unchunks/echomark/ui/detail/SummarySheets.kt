@@ -10,13 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +33,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
+import com.unchunks.echomark.ui.design.DesignCard
 
 /*
  * 要約を手で直すシートと、要約の履歴を見比べるシート(#19・#20)。
@@ -52,7 +51,7 @@ fun SummaryEditSheet(
     onSave: (String) -> Unit
 ) {
     var text by rememberSaveable { mutableStateOf(initial) }
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -103,7 +102,7 @@ fun SummaryEditSheetContent(
         ) {
             TextButton(onClick = onCancel) { Text("キャンセル") }
             Spacer(Modifier.size(8.dp))
-            Button(onClick = onSave, enabled = text.isNotBlank()) { Text("保存") }
+            EchoMarkButton(onClick = onSave, enabled = text.isNotBlank()) { Text("保存") }
         }
     }
 }
@@ -118,7 +117,7 @@ fun SummaryHistorySheet(
     onRestore: (Long) -> Unit
 ) {
     var compareId by rememberSaveable { mutableStateOf<Long?>(null) }
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -208,14 +207,11 @@ private fun VersionCard(
     onCompare: () -> Unit,
     onRestore: () -> Unit
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (isCurrent) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            }
-        ),
+    DesignCard(
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
+        // 今の要約は、どのデザインでも強調の色で示す
+        accentColor = if (isCurrent) MaterialTheme.colorScheme.secondaryContainer else null,
+        contentColor = if (isCurrent) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -235,10 +231,10 @@ private fun VersionCard(
             Text(version.summary, style = MaterialTheme.typography.bodyMedium)
             if (!isCurrent) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onCompare, enabled = !isCompared) {
+                    EchoMarkOutlinedButton(onClick = onCompare, enabled = !isCompared) {
                         Text(if (isCompared) "見比べ中" else "現在と見比べる")
                     }
-                    Button(onClick = onRestore) { Text("この版に戻す") }
+                    EchoMarkButton(onClick = onRestore) { Text("この版に戻す") }
                 }
             }
         }

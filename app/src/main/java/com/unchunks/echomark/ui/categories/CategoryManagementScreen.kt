@@ -1,5 +1,12 @@
 package com.unchunks.echomark.ui.categories
 
+import com.unchunks.echomark.ui.components.sectionHeaderColor
+import com.unchunks.echomark.ui.components.sectionHeaderStyle
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
+import com.unchunks.echomark.ui.design.GroupPosition
+import com.unchunks.echomark.ui.design.GroupedRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +25,6 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,7 +38,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +62,8 @@ import com.unchunks.echomark.domain.model.CategoryNames
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.AccentCard
 
 /**
  * カテゴリの管理(自分のカテゴリを作る・直す・消す、標準のカテゴリと AI が付けた分類の説明)。ViewModel をつなぐだけの薄いラッパー。
@@ -118,7 +124,7 @@ fun CategoryManagementContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("カテゴリ", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -163,22 +169,28 @@ fun CategoryManagementContent(
                                 }
                             }
                         }
-                        items(userEntries, key = { "user-${it.id}" }) { entry ->
-                            CategoryRow(
-                                entry = entry,
-                                onEdit = { editName = entry.name },
-                                onDelete = { deleteName = entry.name }
-                            )
-                        }
-                        item(key = "builtin-header") { SectionTitle("標準のカテゴリ") }
-                        items(builtInEntries, key = { "builtin-${it.name}" }) { entry -> CategoryRow(entry = entry) }
-                        if (otherEntries.isNotEmpty()) {
-                            item(key = "other-header") { SectionTitle("AI が付けたその他の分類") }
-                            items(otherEntries, key = { "other-${it.name}" }) { entry ->
+                        itemsIndexed(userEntries, key = { _, entry -> "user-${entry.id}" }) { index, entry ->
+                            GroupedRow(GroupPosition.of(index, userEntries.size), dividerStart = 16.dp) {
                                 CategoryRow(
                                     entry = entry,
-                                    onMakeMine = { addName = entry.name; addOpen = true }
+                                    onEdit = { editName = entry.name },
+                                    onDelete = { deleteName = entry.name }
                                 )
+                            }
+                        }
+                        item(key = "builtin-header") { SectionTitle("標準のカテゴリ") }
+                        itemsIndexed(builtInEntries, key = { _, entry -> "builtin-${entry.name}" }) { index, entry ->
+                            GroupedRow(GroupPosition.of(index, builtInEntries.size), dividerStart = 16.dp) { CategoryRow(entry = entry) }
+                        }
+                        if (otherEntries.isNotEmpty()) {
+                            item(key = "other-header") { SectionTitle("AI が付けたその他の分類") }
+                            itemsIndexed(otherEntries, key = { _, entry -> "other-${entry.name}" }) { index, entry ->
+                                GroupedRow(GroupPosition.of(index, otherEntries.size), dividerStart = 16.dp) {
+                                    CategoryRow(
+                                        entry = entry,
+                                        onMakeMine = { addName = entry.name; addOpen = true }
+                                    )
+                                }
                             }
                         }
                     }
@@ -246,8 +258,8 @@ fun CategoryManagementContent(
 /** 「カテゴリとは」の説明(カテゴリと、AI の分類の意味・仕組み)。 */
 @Composable
 private fun AboutCategoryCard() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    AccentCard(
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -270,8 +282,9 @@ private fun AboutCategoryCard() {
 private fun SectionTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
+        // 見出しの書体・色はアプリ共通の見出し(SectionHeader)と同じく、デザインに従う
+        style = sectionHeaderStyle(),
+        color = sectionHeaderColor(),
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
             .semantics { heading() }
@@ -288,6 +301,8 @@ private fun CategoryRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     ListItem(
+        // まとまり(GroupedRow)の地色を見せるため、行そのものは塗らない
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         headlineContent = { Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
             val count = if (entry.bookmarkCount > 0) "${entry.bookmarkCount}件" else "ブックマークなし"
