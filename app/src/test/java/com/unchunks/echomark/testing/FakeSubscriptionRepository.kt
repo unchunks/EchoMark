@@ -2,7 +2,8 @@ package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
-import com.unchunks.echomark.domain.subscription.PaperSource
+import com.unchunks.echomark.domain.subscription.QueryKind
+import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
@@ -17,7 +18,7 @@ class FakeSubscriptionRepository : SubscriptionRepository {
     var subscribeOutcome: SubscribeOutcome? = null
     var checkSummary = FeedCheckSummary()
     val subscribed = mutableListOf<String>()
-    val subscribedPapers = mutableListOf<Pair<PaperSource, String>>()
+    val subscribedSearches = mutableListOf<Triple<SearchSource, QueryKind, String>>()
     val checked = mutableListOf<Long?>()
     private var nextId = 1L
 
@@ -33,15 +34,15 @@ class FakeSubscriptionRepository : SubscriptionRepository {
         return SubscribeOutcome.Added(id, "購読 $id", SubscriptionType.RSS)
     }
 
-    override suspend fun subscribePapers(source: PaperSource, keywords: String): SubscribeOutcome {
-        subscribedPapers += source to keywords
+    override suspend fun subscribeSearch(source: SearchSource, kind: QueryKind, query: String): SubscribeOutcome {
+        subscribedSearches += Triple(source, kind, query)
         subscribeOutcome?.let { return it }
         val id = nextId++
         subscriptions.value = subscriptions.value + Subscription(
-            id, SubscriptionType.PAPER, "https://example.com/papers/$id", keywords, null,
+            id, source.subscriptionType, "https://example.com/search/$id", query, null,
             createdAt = id, enabled = true, lastCheckedAt = null, failureCount = 0, lastError = null
         )
-        return SubscribeOutcome.Added(id, "${source.label}: $keywords", SubscriptionType.PAPER)
+        return SubscribeOutcome.Added(id, "${source.label}: $query", source.subscriptionType)
     }
 
     override suspend fun setEnabled(id: Long, enabled: Boolean) {

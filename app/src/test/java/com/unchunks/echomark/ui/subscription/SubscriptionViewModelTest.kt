@@ -3,7 +3,8 @@ package com.unchunks.echomark.ui.subscription
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
-import com.unchunks.echomark.domain.subscription.PaperSource
+import com.unchunks.echomark.domain.subscription.QueryKind
+import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
@@ -93,18 +94,18 @@ class SubscriptionViewModelTest {
     }
 
     @Test
-    fun 論文のキーワードを購読するとすぐ最新の論文を確認する() = runWith { viewModel ->
+    fun 検索を購読するとすぐ最新のものを確認する() = runWith { viewModel ->
         repository.checkSummary = FeedCheckSummary(checked = 1, added = 0)
         var added = false
 
-        viewModel.addPapers(PaperSource.ARXIV, "diffusion robot") { added = true }
+        viewModel.addSearch(SearchSource.ARXIV, QueryKind.KEYWORDS, "diffusion robot") { added = true }
         runCurrent()
 
         assertTrue(added)
-        assertEquals(listOf(PaperSource.ARXIV to "diffusion robot"), repository.subscribedPapers)
+        assertEquals(listOf(Triple(SearchSource.ARXIV, QueryKind.KEYWORDS, "diffusion robot")), repository.subscribedSearches)
         assertEquals(listOf<Long?>(1L), repository.checked)
         val message = viewModel.uiState.value.message!!
-        assertTrue(message, message.contains("arXiv: diffusion robot") && message.contains("当てはまる論文はありませんでした"))
+        assertTrue(message, message.contains("arXiv: diffusion robot") && message.contains("当てはまるものはありませんでした"))
         assertEquals(SubscriptionOperation.Idle, viewModel.uiState.value.operation)
     }
 
@@ -168,4 +169,12 @@ class SubscriptionViewModelTest {
         id, SubscriptionType.RSS, "https://example.com/$id", "購読 $id", null, createdAt = id, enabled = true,
         lastCheckedAt = null, failureCount = 0, lastError = null
     )
+
+    @Test
+    fun 検索の購読の説明はサイトと探し方で変わる() {
+        assertEquals("arXiv の新着論文", searchSubtitle(SearchSource.ARXIV, QueryKind.KEYWORDS))
+        assertEquals("arXiv の新着論文(著者)", searchSubtitle(SearchSource.ARXIV, QueryKind.AUTHOR))
+        assertEquals("Qiita の新着記事(タグ)", searchSubtitle(SearchSource.QIITA, QueryKind.TAG))
+        assertEquals("GitHub の新しいリリース", searchSubtitle(SearchSource.GITHUB_RELEASES, QueryKind.REPOSITORY))
+    }
 }

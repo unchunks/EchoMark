@@ -15,7 +15,8 @@ import com.unchunks.echomark.domain.importer.ImportResult
 import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.subscription.MAX_SUBSCRIPTIONS
-import com.unchunks.echomark.domain.subscription.PaperSource
+import com.unchunks.echomark.domain.subscription.QueryKind
+import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.SubscriptionType
 import com.unchunks.echomark.testing.FakeBookmarkRepository
@@ -260,7 +261,7 @@ class SubscriptionRepositoryImplTest {
 
     @Test
     fun 論文のキーワードを購読すると通信せずに検索のURLで追加する() = runBlocking {
-        val outcome = repository.subscribePapers(PaperSource.ARXIV, " \"Diffusion Model\"  robot ")
+        val outcome = repository.subscribeSearch(SearchSource.ARXIV, QueryKind.KEYWORDS, " \"Diffusion Model\"  robot ")
 
         assertTrue(outcome is SubscribeOutcome.Added)
         assertEquals("arXiv: \"Diffusion Model\" robot", (outcome as SubscribeOutcome.Added).title)
@@ -269,24 +270,47 @@ class SubscriptionRepositoryImplTest {
         val saved = repository.observeAll().first().single()
         assertEquals(SubscriptionType.PAPER, saved.type)
         assertEquals("\"Diffusion Model\" robot", saved.title)
-        assertEquals(PaperSource.ARXIV, saved.paperSource)
-        assertTrue(saved.feedUrl.startsWith(PaperSource.ARXIV_API_URL))
+        assertEquals(SearchSource.ARXIV, saved.searchSource)
+        assertEquals(QueryKind.KEYWORDS, saved.queryKind)
+        assertTrue(saved.feedUrl.startsWith(SearchSource.ARXIV_API_URL))
         assertTrue(saved.siteUrl!!.startsWith("https://arxiv.org/search/"))
     }
 
     @Test
-    fun 同じサイトの同じキーワードは二重に購読しない_サイトが違えば別() = runBlocking {
-        repository.subscribePapers(PaperSource.PREPRINTS, "CRISPR")
+    fun 論文以外の検索はSEARCHの種類で追加する() = runBlocking {
+        val outcome = repository.subscribeSearch(SearchSource.GITHUB_RELEASES, QueryKind.REPOSITORY, "JetBrains/kotlin")
 
-        assertTrue(repository.subscribePapers(PaperSource.PREPRINTS, "crispr") is SubscribeOutcome.Duplicate)
-        assertTrue(repository.subscribePapers(PaperSource.PUBMED, "CRISPR") is SubscribeOutcome.Added)
-        val sources = repository.observeAll().first().map { it.paperSource }
-        assertEquals(listOf(PaperSource.PREPRINTS, PaperSource.PUBMED), sources)
+        assertEquals(SubscriptionType.SEARCH, (outcome as SubscribeOutcome.Added).type)
+        val saved = repository.observeAll().first().single()
+        assertEquals(SubscriptionType.SEARCH, saved.type)
+        assertEquals("JetBrains/kotlin", saved.title)
+        assertEquals(SearchSource.GITHUB_RELEASES, saved.searchSource)
+        assertEquals(QueryKind.REPOSITORY, saved.queryKind)
     }
 
     @Test
-    fun キーワードが空なら論文の購読を追加しない() = runBlocking {
-        assertTrue(repository.subscribePapers(PaperSource.ARXIV, "  \"\" ") is SubscribeOutcome.Failed)
+    fun 同じサイトの同じ検索は二重に購読しない_サイトが違えば別() = runBlocking {
+        repository.subscribeSearch(SearchSource.PREPRINTS, QueryKind.KEYWORDS, "CRISPR")
+
+        assertTrue(repository.subscribeSearch(SearchSource.PREPRINTS, QueryKind.KEYWORDS, "crispr") is SubscribeOutcome.Duplicate)
+        assertTrue(repository.subscribeSearch(SearchSource.PUBMED, QueryKind.KEYWORDS, "CRISPR") is SubscribeOutcome.Added)
+        assertTrue(repository.subscribeSearch(SearchSource.PUBMED, QueryKind.AUTHOR, "CRISPR") is SubscribeOutcome.Added)
+        val saved = repository.observeAll().first().map { it.searchSource to it.queryKind }
+        assertEquals(
+            listOf(
+                SearchSource.PREPRINTS to QueryKind.KEYWORDS,
+                SearchSource.PUBMED to QueryKind.KEYWORDS,
+                SearchSource.PUBMED to QueryKind.AUTHOR
+            ),
+            saved
+        )
+    }
+
+    @Test
+    fun 使えない入力なら理由を返して追加しない() = runBlocking {
+        assertTrue(repository.subscribeSearch(SearchSource.ARXIV, QueryKind.KEYWORDS, "  \"\" ") is SubscribeOutcome.Failed)
+        val failed = repository.subscribeSearch(SearchSource.GITHUB_RELEASES, QueryKind.REPOSITORY, "kotlin")
+        assertTrue((failed as SubscribeOutcome.Failed).message.startsWith("owner/repo"))
         assertEquals(0, dao.count())
     }
 

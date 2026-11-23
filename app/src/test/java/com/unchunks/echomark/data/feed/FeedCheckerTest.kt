@@ -476,14 +476,14 @@ class FeedCheckerTest {
     }
 
     @Test
-    fun 論文の検索の結果として読めなければ失敗を記録する() = runBlocking {
+    fun 検索の結果として読めなければ失敗を記録する() = runBlocking {
         val id = subscribePaper()
         server.enqueue(MockResponse.Builder().addHeader("Content-Type", "text/html").body("<html><body>maintenance</body></html>").build())
 
         val summary = checker.checkAll(now = base + day)
 
         assertEquals(1, summary.failed)
-        assertEquals("論文の検索の結果として読めませんでした", dao.getById(id)!!.lastError)
+        assertEquals("検索の結果として読めませんでした", dao.getById(id)!!.lastError)
     }
 
     @Test
@@ -494,5 +494,29 @@ class FeedCheckerTest {
         checker.checkAll(now = base + day)
 
         assertEquals("サイトが混み合っていて断られました。あとでもう一度確認します", dao.getById(id)!!.lastError)
+    }
+
+    @Test
+    fun キーワード検索の購読もタイトルを書き換えずキーワードのタグを付ける() = runBlocking {
+        val id = dao.insertIgnore(
+            SubscriptionEntity(
+                type = SubscriptionType.SEARCH.name, feedUrl = server.url("/q/x").toString(), title = "生成AI", createdAt = base
+            )
+        )
+        val hatena = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" " +
+            "xmlns=\"http://purl.org/rss/1.0/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><channel><title>検索結果</title>" +
+            "<link>https://b.hatena.ne.jp/q/x</link></channel>" +
+            "<item rdf:about=\"https://blog.example.jp/entry/1\"><title>記事</title><link>https://blog.example.jp/entry/1</link>" +
+            "<dc:date>2026-11-23T02:12:25Z</dc:date></item></rdf:RDF>"
+        enqueueFeed(hatena)
+
+        val summary = checker.checkAll(now = base + day)
+
+        assertEquals(1, summary.added)
+        assertEquals(listOf("https://blog.example.jp/entry/1"), savedUrls())
+        assertEquals(listOf("生成AI"), repository.importedLinks.single().tags)
+        val row = dao.getById(id)!!
+        assertEquals("生成AI", row.title)
+        assertNull(row.siteUrl)
     }
 }

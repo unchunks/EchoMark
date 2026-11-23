@@ -241,9 +241,9 @@ internal fun LazyListScope.managementItems(
     }
     item {
         SettingsItem(
-            title = "購読(RSS・YouTube・論文)",
+            title = "購読(RSS・論文・ニュースなど)",
             icon = Icons.Outlined.RssFeed,
-            summary = "ブログやチャンネルの新着、キーワードに当てはまる新しい論文(arXiv など)を、毎晩確認して自動で保存します",
+            summary = "ブログやチャンネルの新着、キーワード・タグに当てはまる論文・ニュース・技術記事、GitHub のリリースを、毎晩確認して自動で保存します",
             onClick = actions.onOpenSubscriptions
         )
     }
