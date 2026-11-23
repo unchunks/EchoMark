@@ -32,6 +32,7 @@ import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.readingMinutes
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
 /**
@@ -160,12 +161,14 @@ private fun ListItemCard(
     content: @Composable () -> Unit
 ) {
     val colors = CardDefaults.cardColors(
-        containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow
+        containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else EchoMarkDesign.cardContainerColor
     )
-    val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+    // 一覧のカード([BookmarkCard])と同じく、選んでいないときの地色・枠線・影はデザインに従う
+    val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else EchoMarkDesign.cardBorder
     val haptics = LocalHapticFeedback.current
     Card(
         modifier = modifier
+            .then(EchoMarkDesign.cardShadow)
             .fillMaxWidth()
             .then(if (selected) Modifier.semantics { this.selected = true } else Modifier)
             .clip(CardDefaults.shape)

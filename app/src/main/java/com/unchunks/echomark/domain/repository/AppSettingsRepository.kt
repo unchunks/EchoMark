@@ -77,8 +77,11 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
  * - CLASSIC: これまでの Material 3 の標準的な見た目
  * - ECHO: Material 3 Expressive。大きな見出しと角丸で、再発見と AI 要約を目立たせる
  * - PAPER: 読書アプリ風。明朝体の見出しと紙色の背景で、色数を絞る
+ * - CLEAR: iPhone 風(iOS の標準アプリのような見た目)。淡い灰色の地に白い角丸のカード、青のアクセント、太い見出しと、
+ *   中身の上に浮かぶガラスのタブバー(リキッドグラス)
+ * - SOFT: ニューモフィズム。地色と同じ面を光と影で浮かせ、やわらかな立体感を出す
  */
-enum class DesignStyle { CLASSIC, ECHO, PAPER }
+enum class DesignStyle { CLASSIC, ECHO, PAPER, CLEAR, SOFT }
 
 /** 再発見ダイジェスト通知の設定。 */
 data class RediscoverSettings(

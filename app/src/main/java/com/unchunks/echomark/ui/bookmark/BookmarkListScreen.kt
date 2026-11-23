@@ -1,5 +1,9 @@
 package com.unchunks.echomark.ui.bookmark
 
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.platform.LocalLayoutDirection
+import com.unchunks.echomark.ui.navigation.LocalBottomBarOverlap
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -122,6 +126,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.echomark.ui.navigation.bottomBarAwareContentInsets
 import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
@@ -585,6 +590,8 @@ fun BookmarkListContent(
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        // クリアのガラスのボトムバーは中身の上に重なるので、その分を下に空ける(追加ボタン・スナックバーもバーの上に出す)
+        contentWindowInsets = bottomBarAwareContentInsets(),
         topBar = {
             if (uiState.isSelecting) {
                 // 複数選択の間は、検索中でも通常のバーでもなく、選んだ件数のバーにする
@@ -666,7 +673,8 @@ fun BookmarkListContent(
     ) { innerPadding ->
         Column(
             Modifier
-                .padding(innerPadding)
+                // ガラスのボトムバーに覆われる分は、ここでは空けずに一覧の contentPadding で空ける(中身がバーの裏を通るように)
+                .padding(innerPadding.withoutBottom(LocalBottomBarOverlap.current))
                 .fillMaxSize()
         ) {
             if (!uiState.isSearchActive) {
@@ -762,7 +770,8 @@ private fun BookmarkList(
         contentPadding = PaddingValues(
             start = LIST_SIDE_PADDING,
             end = LIST_SIDE_PADDING,
-            bottom = if (uiState.isSearchActive) 96.dp else 152.dp
+            // クリアのガラスのボトムバーに覆われる分も足す(一覧はバーの裏まで続け、最後のカードは上までスクロールできる)
+            bottom = (if (uiState.isSearchActive) 96.dp else 152.dp) + LocalBottomBarOverlap.current
         ),
         verticalItemSpacing = 8.dp,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1512,7 +1521,11 @@ private fun RediscoverSection(items: List<Bookmark>, nowMillis: Long, onOpen: (L
             }
         }
         LazyRow(
-            contentPadding = PaddingValues(horizontal = if (emphasized) 8.dp else 16.dp),
+            // ソフトのカードは外に光と影を描くので、横並びの切り抜きで欠けないよう上下にも余白を取る
+            contentPadding = PaddingValues(
+                horizontal = if (emphasized) 8.dp else 16.dp,
+                vertical = if (EchoMarkDesign.style == DesignStyle.SOFT) 12.dp else 0.dp
+            ),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(items, key = { it.id }) { bookmark ->
@@ -1520,8 +1533,12 @@ private fun RediscoverSection(items: List<Bookmark>, nowMillis: Long, onOpen: (L
                     bookmark = bookmark,
                     onClick = { onOpen(bookmark.id) },
                     caption = rediscoverCaption(bookmark, nowMillis),
-                    // クラシックは一覧のカードより一段濃く、エコーとペーパーは地色(帯・紙面)から浮かせる
-                    containerColor = if (EchoMarkDesign.style == DesignStyle.CLASSIC) colors.surfaceContainer else colors.surface
+                    // クラシックは一覧のカードより一段濃く、クリアは一覧と同じ白いカード、ほかは地色(帯・紙面)から浮かせる
+                    containerColor = when (EchoMarkDesign.style) {
+                        DesignStyle.CLASSIC -> colors.surfaceContainer
+                        DesignStyle.CLEAR -> EchoMarkDesign.cardContainerColor
+                        else -> colors.surface
+                    }
                 )
             }
         }
@@ -1663,4 +1680,16 @@ private fun BookmarkFilter.icon(selected: Boolean): ImageVector? = when (this) {
     BookmarkFilter.ACTIVE -> null
     BookmarkFilter.FAVORITES -> if (selected) Icons.Filled.Star else Icons.Outlined.StarOutline
     BookmarkFilter.ARCHIVED -> Icons.Outlined.Archive
+}
+
+/** [PaddingValues] の下から [amount] を引く(0 未満にはしない) */
+@Composable
+private fun PaddingValues.withoutBottom(amount: Dp): PaddingValues {
+    val direction = LocalLayoutDirection.current
+    return PaddingValues(
+        start = calculateStartPadding(direction),
+        top = calculateTopPadding(),
+        end = calculateEndPadding(direction),
+        bottom = (calculateBottomPadding() - amount).coerceAtLeast(0.dp)
+    )
 }

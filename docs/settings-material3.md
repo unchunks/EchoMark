@@ -60,14 +60,16 @@ AI のカードは `shapes.extraLarge`（28 dp）とトーナルなコンテナ�
 | クラシック | ブランドのインディゴとティール | 共通の `Typography` | 8 / 16 / 28 dp | なし |
 | エコー | 彩度を上げたインディゴとティール。地色とコンテナの段差を広げる | 見出しとタイトルを SemiBold、headline を拡大 | 12 / 24 / 32 dp | 一覧の「今日の再発見」を `primaryContainer` の吹き出し形の帯に載せる。カードの AI 要約を `surfaceContainerLowest` の面とティールの印で強調する。ボトムバーは画面の端から離した角丸 32dp の浮いたバー（置き場所は通常の bottomBar のままなので、インセットと中身の余白の扱いは変わらない） |
 | ペーパー | 紙色の地、墨色の文字、黄土色のアクセント | display・headline・titleLarge・titleMedium を端末の明朝体 | 4 / 6 / 12 dp | カードは地色に `outlineVariant` の罫線。ナビゲーションバーは地色と上端の罫線 |
+| クリア（iPhone 風） | 淡い灰色の地（ダークは黒）に白い（ダークは灰色の）カード、青のアクセント。iOS 標準の青は白地で 4.5:1 に届かないため一段濃くする | display・headline・titleLarge を Bold、titleMedium・titleSmall を SemiBold（フォントは同梱しない） | 8 / 12 / 20 dp | カードは `surfaceContainerLow`（ライトは白）。ボトムバーはリキッドグラス風のガラスのバー（`GlassNavigationBar`）。中身の上に重ね、アプリの枠が記録した中身（`GraphicsLayer`）をバーの位置でぼかして映し、白（ダークは黒）を 72%（62%）重ねて上側の映り込みと縁の反射を描く。一覧はバーの裏まで続き（覆う高さは `LocalBottomBarOverlap` で伝え、一覧は contentPadding、ほかの画面は `bottomBarAwareContentInsets` で空ける）、選んだタブは小さなガラスの丸と青いアイコンで示す。ぼかしは Android 12 以上だけ効く |
+| ソフト（ニューモフィズム） | 青みのある灰色の地。カードは地と同じ色 | titleLarge・titleMedium を Medium | 14 / 20 / 28 dp | カードとボトムバーを左上の光と右下の影（`softRaised`、`Modifier.dropShadow`）で押し出す。チップなどのコンテナは一段濃い色を残し、影が無くても形が分かるようにする。ボトムバーはエコーと同じ浮いたバー |
 
-どのデザインも同じ `MaterialTheme` の呼び出しで値だけを替えるため、切り替えても画面の状態（ナビゲーションの履歴、スクロール位置）は保たれる（`EchoMarkThemeTest`）。Expressive の動き（`MotionScheme`、`MaterialExpressiveTheme`）は material3 1.4 では公開されていないため、公開後にエコーへ加える。ペーパーの明朝体は端末の serif（日本語は Noto Serif CJK）を使い、フォントを同梱しない。描画例は `DesignStyleScreenshotTest`（`design_echo_*`、`design_paper_*`、`design_intro_library_*`、`settings_dialog_design_*`）。
+どのデザインも同じ `MaterialTheme` の呼び出しで値だけを替えるため、切り替えても画面の状態（ナビゲーションの履歴、スクロール位置）は保たれる（`EchoMarkThemeTest`）。Expressive の動き（`MotionScheme`、`MaterialExpressiveTheme`）は material3 1.4 では公開されていないため、公開後にエコーへ加える。ペーパーの明朝体は端末の serif（日本語は Noto Serif CJK）を使い、フォントを同梱しない。描画例は `DesignStyleScreenshotTest`（`design_echo_*`、`design_paper_*`、`design_clear_*`、`design_soft_*`、`design_intro_library_*`、`settings_dialog_design_*`）。
 
 各デザインの配色は、文字を載せる組み合わせ（地色と本文・補足・見出し、各コンテナと対応する文字色）がライト・ダークとも 4.5:1 以上であることを `DesignStyleContrastTest` で確かめる。
 
 クラシックのままの人には、一覧の先頭に一度だけ「新しいデザインを選べます」を出す。「デザインを選ぶ」でこのダイアログを開き、選ぶか「閉じる」で以後は出さない（`DesignIntroViewModel`）。設定からデザインを選んだ人にも以後は出さない。検索中・絞り込み中・複数選択中と、一覧が空のときは出さない。
 
-ホーム画面の「再発見」ウィジェットも選んだデザインに合わせる（`RediscoverWidgetTheme`）。エコーはウィジェット全体を一覧の「今日の再発見」と同じ primaryContainer の帯にして大きな角丸の行を載せ、ペーパーは紙色の地に角の小さい行を並べてタイトルを明朝体にする。デザインを変えるとウィジェットも描き直す（`RediscoverWidgetUpdater`）。描画例は `RediscoverWidgetScreenshotTest`（`rediscover_widget_large_echo_*`、`rediscover_widget_large_paper_*`）。
+ホーム画面の「再発見」ウィジェットも選んだデザインに合わせる（`RediscoverWidgetTheme`）。エコーはウィジェット全体を一覧の「今日の再発見」と同じ primaryContainer の帯にして大きな角丸の行を載せ、ペーパーは紙色の地に角の小さい行を並べてタイトルを明朝体にする。クリアは淡い灰色の地に白い行、ソフトは地色に一段濃い丸い行を並べる（ウィジェットでは影を描けないため、色の段差で区切る）。デザインを変えるとウィジェットも描き直す（`RediscoverWidgetUpdater`）。描画例は `RediscoverWidgetScreenshotTest`（`rediscover_widget_large_echo_*`、`rediscover_widget_large_paper_*`）。
 
 ## コンポーネントと状態
 

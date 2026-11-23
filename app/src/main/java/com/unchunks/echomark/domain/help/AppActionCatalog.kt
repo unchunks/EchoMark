@@ -87,6 +87,8 @@ object AppActionCatalog {
         simple("design_classic", AppAction.SetDesign(DesignStyle.CLASSIC), "デザインをクラシックにする", "クラシック"),
         simple("design_echo", AppAction.SetDesign(DesignStyle.ECHO), "デザインをエコーにする", "エコー"),
         simple("design_paper", AppAction.SetDesign(DesignStyle.PAPER), "デザインをペーパーにする", "ペーパー"),
+        simple("design_clear", AppAction.SetDesign(DesignStyle.CLEAR), "デザインをクリアにする", "クリア", "iPhone", "アイフォン"),
+        simple("design_soft", AppAction.SetDesign(DesignStyle.SOFT), "デザインをソフトにする", "ソフト", "ニューモフィズム"),
         simple("offline_on", AppAction.SetOfflineMode(true), "オフラインモードをオンにする", "オフラインにして", "通信しない"),
         simple("offline_off", AppAction.SetOfflineMode(false), "オフラインモードをオフにする", "オフラインをやめ", "オフラインを解除"),
         simple(

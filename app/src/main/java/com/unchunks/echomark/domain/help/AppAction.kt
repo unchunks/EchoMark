@@ -48,6 +48,8 @@ sealed interface AppAction {
                 DesignStyle.CLASSIC -> "クラシック"
                 DesignStyle.ECHO -> "エコー"
                 DesignStyle.PAPER -> "ペーパー"
+                DesignStyle.CLEAR -> "クリア"
+                DesignStyle.SOFT -> "ソフト"
             } + "」にする"
     }
 

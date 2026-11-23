@@ -9,10 +9,17 @@ import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.unchunks.echomark.domain.repository.DesignStyle
@@ -28,18 +35,31 @@ object EchoMarkDesign {
     val style: DesignStyle
         @Composable @ReadOnlyComposable get() = LocalDesignStyle.current
 
-    /** ブックマークのカードの地色。ペーパーはカードを地に溶かし、枠線で区切る */
+    /**
+     * ブックマークのカードの地色。ペーパーとソフトはカードを地と同じ色にし、ペーパーは罫線、ソフトは光と影で区切る。
+     * クリアは淡い灰色の地に白いカードを載せる(surfaceContainerLow をライトは白、ダークは一段明るい灰色にしてある)
+     */
     val cardContainerColor: Color
         @Composable @ReadOnlyComposable get() = when (style) {
             DesignStyle.CLASSIC -> MaterialTheme.colorScheme.surfaceContainerLow
             DesignStyle.ECHO -> MaterialTheme.colorScheme.surfaceContainer
-            DesignStyle.PAPER -> MaterialTheme.colorScheme.surface
+            DesignStyle.PAPER, DesignStyle.SOFT -> MaterialTheme.colorScheme.surface
+            DesignStyle.CLEAR -> MaterialTheme.colorScheme.surfaceContainerLow
         }
 
     /** カードの枠線。ペーパーだけ罫線のような細い線を引く */
     val cardBorder: BorderStroke?
         @Composable @ReadOnlyComposable get() =
             if (style == DesignStyle.PAPER) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null
+
+    /** カードに付ける影。ソフトだけ、左上の光と右下の影で地から浮かせる(カードの形は shapes.medium) */
+    val cardShadow: Modifier
+        @Composable @ReadOnlyComposable get() =
+            if (style == DesignStyle.SOFT) Modifier.softRaised(MaterialTheme.shapes.medium, isDark) else Modifier
+
+    /** 今の配色が暗いか(ソフトの光と影の色を選ぶ。明暗の設定ではなく、実際の地色で決める) */
+    val isDark: Boolean
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 }
 
 /** [style] の配色。ダイナミックカラーを使わないとき。 */
@@ -47,18 +67,24 @@ internal fun designColorScheme(style: DesignStyle, dark: Boolean): ColorScheme =
     DesignStyle.CLASSIC -> if (dark) DarkColorScheme else LightColorScheme
     DesignStyle.ECHO -> if (dark) EchoDarkColorScheme else EchoLightColorScheme
     DesignStyle.PAPER -> if (dark) PaperDarkColorScheme else PaperLightColorScheme
+    DesignStyle.CLEAR -> if (dark) ClearDarkColorScheme else ClearLightColorScheme
+    DesignStyle.SOFT -> if (dark) SoftDarkColorScheme else SoftLightColorScheme
 }
 
 internal fun designTypography(style: DesignStyle): Typography = when (style) {
     DesignStyle.CLASSIC -> Typography
     DesignStyle.ECHO -> EchoTypography
     DesignStyle.PAPER -> PaperTypography
+    DesignStyle.CLEAR -> ClearTypography
+    DesignStyle.SOFT -> SoftTypography
 }
 
 internal fun designShapes(style: DesignStyle): Shapes = when (style) {
     DesignStyle.CLASSIC -> Shapes
     DesignStyle.ECHO -> EchoShapes
     DesignStyle.PAPER -> PaperShapes
+    DesignStyle.CLEAR -> ClearShapes
+    DesignStyle.SOFT -> SoftShapes
 }
 
 // ---- エコー: Material 3 Expressive の考え方(大きな見出し・丸い形・トーナルな強調)を配色・文字・角丸で表す ----
@@ -252,3 +278,193 @@ internal val PaperShapes = Shapes(
     large = RoundedCornerShape(8.dp),
     extraLarge = RoundedCornerShape(12.dp)
 )
+
+// ---- クリア: iPhone 風(iOS の標準アプリのような見た目) ----
+// 淡い灰色の地(ライト)・黒の地(ダーク)に、白(ダークは一段明るい灰色)の角丸のカードをまとめて載せる。
+// アクセントは青1色。iOS の標準の青(#007AFF)は白地で 4.0:1 と本文の目安に届かないため、一段濃くして 4.5:1 以上にする。
+// 書体は端末のもの(フォントは同梱しない)で、見出しを太くして大きな見出しの印象に寄せる。
+
+internal val ClearLightColorScheme = LightColorScheme.copy(
+    primary = Color(0xFF0062CC),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD9E9FF),
+    onPrimaryContainer = Color(0xFF00305F),
+    inversePrimary = Color(0xFF5AA9FF),
+    secondary = Color(0xFF5B5F66),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE5E5EA),
+    onSecondaryContainer = Color(0xFF1C1C1E),
+    tertiary = Color(0xFF1B7A3A),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFD2F2DA),
+    onTertiaryContainer = Color(0xFF0B3B1A),
+    error = Color(0xFFC4001A),
+    errorContainer = Color(0xFFFFDAD8),
+    onErrorContainer = Color(0xFF410006),
+    background = Color(0xFFF2F2F7),
+    onBackground = Color(0xFF1C1C1E),
+    surface = Color(0xFFF2F2F7),
+    onSurface = Color(0xFF1C1C1E),
+    surfaceVariant = Color(0xFFE5E5EA),
+    onSurfaceVariant = Color(0xFF5A5A61),
+    surfaceTint = Color(0xFF0062CC),
+    outline = Color(0xFF8E8E93),
+    outlineVariant = Color(0xFFD1D1D6),
+    surfaceBright = Color(0xFFF2F2F7),
+    surfaceDim = Color(0xFFDCDCE1),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFFFFFF),
+    surfaceContainer = Color(0xFFEBEBF0),
+    surfaceContainerHigh = Color(0xFFE5E5EA),
+    surfaceContainerHighest = Color(0xFFDCDCE1)
+)
+
+internal val ClearDarkColorScheme = DarkColorScheme.copy(
+    primary = Color(0xFF5AA9FF),
+    onPrimary = Color(0xFF00305F),
+    primaryContainer = Color(0xFF0A4585),
+    onPrimaryContainer = Color(0xFFD9E9FF),
+    inversePrimary = Color(0xFF0062CC),
+    secondary = Color(0xFFC2C2C8),
+    onSecondary = Color(0xFF2C2C2E),
+    secondaryContainer = Color(0xFF2C2C2E),
+    onSecondaryContainer = Color(0xFFE5E5EA),
+    tertiary = Color(0xFF63D987),
+    onTertiary = Color(0xFF003916),
+    tertiaryContainer = Color(0xFF0F4D24),
+    onTertiaryContainer = Color(0xFFC9F5D4),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFF2F2F7),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFF2F2F7),
+    surfaceVariant = Color(0xFF2C2C2E),
+    onSurfaceVariant = Color(0xFFAEAEB2),
+    surfaceTint = Color(0xFF5AA9FF),
+    outline = Color(0xFF8E8E93),
+    outlineVariant = Color(0xFF38383A),
+    surfaceBright = Color(0xFF2C2C2E),
+    surfaceDim = Color(0xFF000000),
+    surfaceContainerLowest = Color(0xFF000000),
+    surfaceContainerLow = Color(0xFF1C1C1E),
+    surfaceContainer = Color(0xFF242426),
+    surfaceContainerHigh = Color(0xFF2C2C2E),
+    surfaceContainerHighest = Color(0xFF3A3A3C)
+)
+
+private fun TextStyle.weighted(weight: FontWeight): TextStyle = copy(fontWeight = weight)
+
+internal val ClearTypography = Typography.copy(
+    displayLarge = Typography.displayLarge.weighted(FontWeight.Bold),
+    displayMedium = Typography.displayMedium.weighted(FontWeight.Bold),
+    displaySmall = Typography.displaySmall.weighted(FontWeight.Bold),
+    headlineLarge = Typography.headlineLarge.weighted(FontWeight.Bold),
+    headlineMedium = Typography.headlineMedium.weighted(FontWeight.Bold),
+    headlineSmall = Typography.headlineSmall.weighted(FontWeight.Bold),
+    titleLarge = Typography.titleLarge.weighted(FontWeight.Bold),
+    titleMedium = Typography.titleMedium.weighted(FontWeight.SemiBold),
+    titleSmall = Typography.titleSmall.weighted(FontWeight.SemiBold)
+)
+
+// 一覧のまとまり(カード)は 12dp、シートやダイアログは 14〜20dp
+internal val ClearShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(20.dp)
+)
+
+// ---- ソフト: ニューモフィズム ----
+// 地色とカードを同じ色にし、左上の光(明るい影)と右下の影で面を浮かせる([softRaised])。
+// ニューモフィズムは境目と文字が薄くなりやすいため、文字色は地色に対して 4.5:1 以上を守り、
+// チップや入力欄などのコンテナには一段濃い色を残して、影が無くても形が分かるようにする。
+
+internal val SoftLightColorScheme = LightColorScheme.copy(
+    primary = Color(0xFF4651A3),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD6DAF3),
+    onPrimaryContainer = Color(0xFF1E2664),
+    inversePrimary = Color(0xFFB4BBFF),
+    secondary = Color(0xFF59606D),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD7DCE4),
+    onSecondaryContainer = Color(0xFF2B313C),
+    tertiary = Color(0xFF2B7166),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFCBE6E0),
+    onTertiaryContainer = Color(0xFF0D3A33),
+    background = Color(0xFFE4E8EE),
+    onBackground = Color(0xFF2B313C),
+    surface = Color(0xFFE4E8EE),
+    onSurface = Color(0xFF2B313C),
+    surfaceVariant = Color(0xFFD7DCE4),
+    onSurfaceVariant = Color(0xFF4E5664),
+    surfaceTint = Color(0xFF4651A3),
+    outline = Color(0xFF7A8392),
+    outlineVariant = Color(0xFFC6CCD6),
+    surfaceBright = Color(0xFFECEFF3),
+    surfaceDim = Color(0xFFD2D7DF),
+    surfaceContainerLowest = Color(0xFFEEF1F5),
+    surfaceContainerLow = Color(0xFFE8EBF1),
+    surfaceContainer = Color(0xFFDFE3EA),
+    surfaceContainerHigh = Color(0xFFD9DEE5),
+    surfaceContainerHighest = Color(0xFFD2D7DF)
+)
+
+internal val SoftDarkColorScheme = DarkColorScheme.copy(
+    primary = Color(0xFFB4BBFF),
+    onPrimary = Color(0xFF1B226A),
+    primaryContainer = Color(0xFF3A4387),
+    onPrimaryContainer = Color(0xFFDDE0FF),
+    inversePrimary = Color(0xFF4651A3),
+    secondary = Color(0xFFBEC5D1),
+    onSecondary = Color(0xFF29303A),
+    secondaryContainer = Color(0xFF393E47),
+    onSecondaryContainer = Color(0xFFE2E5EB),
+    tertiary = Color(0xFF8DD3C6),
+    onTertiary = Color(0xFF00382F),
+    tertiaryContainer = Color(0xFF1E5048),
+    onTertiaryContainer = Color(0xFFC8F0E7),
+    background = Color(0xFF2A2E35),
+    onBackground = Color(0xFFE2E5EB),
+    surface = Color(0xFF2A2E35),
+    onSurface = Color(0xFFE2E5EB),
+    surfaceVariant = Color(0xFF3A3F48),
+    onSurfaceVariant = Color(0xFFB2B9C4),
+    surfaceTint = Color(0xFFB4BBFF),
+    outline = Color(0xFF8A919C),
+    outlineVariant = Color(0xFF454A54),
+    surfaceBright = Color(0xFF3A3F48),
+    surfaceDim = Color(0xFF23272D),
+    surfaceContainerLowest = Color(0xFF23272D),
+    surfaceContainerLow = Color(0xFF2A2E35),
+    surfaceContainer = Color(0xFF30343C),
+    surfaceContainerHigh = Color(0xFF363A42),
+    surfaceContainerHighest = Color(0xFF3D424B)
+)
+
+internal val SoftTypography = Typography.copy(
+    titleLarge = Typography.titleLarge.weighted(FontWeight.Medium),
+    titleMedium = Typography.titleMedium.weighted(FontWeight.Medium)
+)
+
+// 押し出した面が柔らかく見えるよう、全体に大きめに丸める
+internal val SoftShapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(14.dp),
+    medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(28.dp)
+)
+
+/**
+ * ニューモフィズムの押し出した面。[shape] の外側に、左上へ明るい影(光)、右下へ暗い影を落とす。
+ * 地色とこの面の色は同じにして使う。影は要素の外に描くので、親が切り抜く(clip)と欠ける。
+ */
+internal fun Modifier.softRaised(shape: Shape, dark: Boolean, depth: Dp = 5.dp): Modifier {
+    val light = if (dark) Color(0x593F444D) else Color(0xE6FFFFFF)
+    val shade = if (dark) Color(0x99121417) else Color(0x80A3AFC2)
+    return this
+        .dropShadow(shape, Shadow(radius = depth * 2, color = light, offset = DpOffset(-depth, -depth)))
+        .dropShadow(shape, Shadow(radius = depth * 2, color = shade, offset = DpOffset(depth, depth)))
+}

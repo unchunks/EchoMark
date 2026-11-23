@@ -127,13 +127,15 @@ fun BookmarkCard(
     // 選択していないときの枠線はデザインに従う(ペーパーだけ細い罫線)
     val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else EchoMarkDesign.cardBorder
     if (onLongClick == null) {
-        Card(onClick = onClick, modifier = modifier.fillMaxWidth().then(selectionModifier), colors = colors, border = border) {
+        Card(onClick = onClick, modifier = modifier.then(EchoMarkDesign.cardShadow).fillMaxWidth().then(selectionModifier), colors = colors, border = border) {
             BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis, searchTerms, searchMatch)
         }
     } else {
         val haptics = LocalHapticFeedback.current
         Card(
             modifier = modifier
+                // ソフトの光と影はカードの外に描くので、切り抜き(clip)より前に付ける
+                .then(EchoMarkDesign.cardShadow)
                 .fillMaxWidth()
                 .then(selectionModifier)
                 .clip(CardDefaults.shape)

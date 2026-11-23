@@ -126,7 +126,27 @@ class DesignStyleScreenshotTest {
     ) { SettingsFrame(DesignStyle.PAPER) }
 
     @Test
-    fun designDialog() = screenshot.captureDialogLightDark("settings_dialog_design") {
+    fun libraryClear() = screenshot.captureScreenLightDark(
+        "design_clear_library", heightDp = 860, designStyle = DesignStyle.CLEAR
+    ) { LibraryFrame() }
+
+    @Test
+    fun librarySoft() = screenshot.captureScreenLightDark(
+        "design_soft_library", heightDp = 860, designStyle = DesignStyle.SOFT
+    ) { LibraryFrame() }
+
+    @Test
+    fun settingsClear() = screenshot.captureScreenLightDark(
+        "design_clear_settings", heightDp = 860, designStyle = DesignStyle.CLEAR
+    ) { SettingsFrame(DesignStyle.CLEAR) }
+
+    @Test
+    fun settingsSoft() = screenshot.captureScreenLightDark(
+        "design_soft_settings", heightDp = 860, designStyle = DesignStyle.SOFT
+    ) { SettingsFrame(DesignStyle.SOFT) }
+
+    @Test
+    fun designDialog() =screenshot.captureDialogLightDark("settings_dialog_design") {
         DesignStyleDialog(selected = DesignStyle.ECHO, dynamicColor = false, onSelect = {}, onDismiss = {})
     }
 

@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,6 +29,7 @@ import androidx.glance.appwidget.components.TitleBar
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
+import androidx.glance.color.ColorProvider
 import androidx.glance.color.DynamicThemeColorProviders
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -179,22 +181,36 @@ private val PaperColors by lazy {
     ColorProviders(light = designColorScheme(DesignStyle.PAPER, dark = false), dark = designColorScheme(DesignStyle.PAPER, dark = true))
 }
 
+private val ClearColors by lazy {
+    ColorProviders(light = designColorScheme(DesignStyle.CLEAR, dark = false), dark = designColorScheme(DesignStyle.CLEAR, dark = true))
+}
+private val SoftColors by lazy {
+    ColorProviders(light = designColorScheme(DesignStyle.SOFT, dark = false), dark = designColorScheme(DesignStyle.SOFT, dark = true))
+}
+
 private fun designColorProviders(style: DesignStyle) = when (style) {
     DesignStyle.CLASSIC -> BrandColors
     DesignStyle.ECHO -> EchoColors
     DesignStyle.PAPER -> PaperColors
+    DesignStyle.CLEAR -> ClearColors
+    DesignStyle.SOFT -> SoftColors
 }
+
+/** クリアの行。アプリのカードと同じく、ライトは白、ダークは一段明るい灰色(Glance の配色には surfaceContainer の段が無いため直に持つ) */
+private val ClearRowColor = ColorProvider(day = Color(0xFFFFFFFF), night = Color(0xFF1C1C1E))
 
 /**
  * デザインごとのウィジェットの見た目。アプリの一覧の「今日の再発見」にそろえる。
  * - エコー: ウィジェット全体を primaryContainer の帯にし、その上に大きな角丸の行を浮かせる
  * - ペーパー: 紙色の地に角の小さい行を並べ、タイトルを明朝体にする
+ * - クリア: 淡い灰色(ダークは黒)の地に白い角丸の行
+ * - ソフト: 地色の上に一段濃い色の丸い行(ウィジェットでは影を描けないため、色の段差で区切る)
  */
 private object WidgetDesign {
     val background: ColorProvider
         @Composable get() = when (LocalDesignStyle.current) {
             DesignStyle.ECHO -> GlanceTheme.colors.primaryContainer
-            DesignStyle.PAPER -> GlanceTheme.colors.surface
+            DesignStyle.PAPER, DesignStyle.CLEAR, DesignStyle.SOFT -> GlanceTheme.colors.surface
             DesignStyle.CLASSIC -> GlanceTheme.colors.widgetBackground
         }
 
@@ -213,14 +229,18 @@ private object WidgetDesign {
 
     /** ブックマークの行の地色。ペーパーは紙の地と同じ色だと区切れないので、一段濃い紙色にする */
     val row: ColorProvider
-        @Composable get() =
-            if (LocalDesignStyle.current == DesignStyle.PAPER) GlanceTheme.colors.surfaceVariant else GlanceTheme.colors.surface
+        @Composable get() = when (LocalDesignStyle.current) {
+            DesignStyle.PAPER, DesignStyle.SOFT -> GlanceTheme.colors.surfaceVariant
+            DesignStyle.CLEAR -> ClearRowColor
+            DesignStyle.CLASSIC, DesignStyle.ECHO -> GlanceTheme.colors.surface
+        }
 
     val corner: Dp
         @Composable get() = when (LocalDesignStyle.current) {
             DesignStyle.ECHO -> 20.dp
             DesignStyle.PAPER -> 4.dp
-            DesignStyle.CLASSIC -> 12.dp
+            DesignStyle.CLASSIC, DesignStyle.CLEAR -> 12.dp
+            DesignStyle.SOFT -> 16.dp
         }
 
     val titleFont: FontFamily?

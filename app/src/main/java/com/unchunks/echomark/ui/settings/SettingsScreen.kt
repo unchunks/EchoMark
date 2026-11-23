@@ -46,6 +46,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.echomark.ui.navigation.bottomBarAwareContentInsets
 import com.unchunks.echomark.ui.importer.LinkImportDialog
 import com.unchunks.echomark.ui.importer.LinkImportViewModel
 import com.unchunks.echomark.ui.subscription.SubscriptionsSheet
@@ -331,6 +332,8 @@ internal fun SettingsContent(
 
     Scaffold(
         modifier = if (useLargeBar) modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else modifier,
+        // クリアのガラスのボトムバーは中身の上に重なるので、その分を下に空ける(追加ボタン・スナックバーもバーの上に出す)
+        contentWindowInsets = bottomBarAwareContentInsets(),
         topBar = {
             val title: @Composable () -> Unit = { Text("設定", Modifier.semantics { heading() }) }
             if (useLargeBar) {
@@ -511,6 +514,8 @@ internal val DesignStyle.label: String
         DesignStyle.CLASSIC -> "クラシック"
         DesignStyle.ECHO -> "エコー"
         DesignStyle.PAPER -> "ペーパー"
+        DesignStyle.CLEAR -> "クリア"
+        DesignStyle.SOFT -> "ソフト"
     }
 
 internal val DesignStyle.description: String
@@ -518,6 +523,8 @@ internal val DesignStyle.description: String
         DesignStyle.CLASSIC -> "これまでの標準的な見た目"
         DesignStyle.ECHO -> "大きな見出しと丸みのある形で、再発見を目立たせます"
         DesignStyle.PAPER -> "明朝体の見出しと紙色の背景で、読むことに集中できます"
+        DesignStyle.CLEAR -> "白いカードと、中身が透けて見えるガラスのタブバー。iPhone のようにすっきり見せます"
+        DesignStyle.SOFT -> "背景と同じ色の面を光と影で浮かせる、やわらかな立体感(ニューモフィズム)"
     }
 
 internal val DayOfWeek.fullLabel: String get() = getDisplayName(TextStyle.FULL, Locale.JAPANESE)

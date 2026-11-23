@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.unchunks.echomark.ui.navigation.bottomBarAwareContentInsets
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
@@ -87,6 +88,8 @@ fun ExploreScreen(actions: ExploreActions, modifier: Modifier = Modifier) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        // クリアのガラスのボトムバーは中身の上に重なるので、その分を下に空ける(追加ボタン・スナックバーもバーの上に出す)
+        contentWindowInsets = bottomBarAwareContentInsets(),
         topBar = {
             TopAppBar(
                 title = { Text("見つける", maxLines = 1, overflow = TextOverflow.Ellipsis) },
