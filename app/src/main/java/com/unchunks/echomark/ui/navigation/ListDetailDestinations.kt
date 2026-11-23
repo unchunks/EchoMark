@@ -154,7 +154,9 @@ internal fun BookmarkListDetailDestination(
                 onBookmarkRemoved = { id -> if (id == selectedId) select(null) },
                 // 長押しのメニューの「あとで読む」用。右側の詳細(同じストアに既定のキーで作る)とは別のものにして、
                 // 結果の知らせを取り合わないようにする
-                readLaterViewModel = hiltViewModel(key = "list_read_later")
+                readLaterViewModel = hiltViewModel(key = "list_read_later"),
+                // 一覧の先頭に一度だけ出す、新しいデザインの案内
+                designIntroViewModel = hiltViewModel()
             )
         },
         detail = {

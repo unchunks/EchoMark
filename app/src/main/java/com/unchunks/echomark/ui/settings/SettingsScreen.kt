@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.window.core.layout.WindowSizeClass
 import com.unchunks.components.composeui.MessageSnackbarEffect
 import com.unchunks.echomark.domain.model.SummaryStyle
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.StorageUsage
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -79,7 +80,7 @@ import java.util.Locale
 
 /** 設定画面で開くダイアログ。スクリーンショットテストでは最初から開いた状態を渡せる。 */
 enum class SettingsDialog {
-    THEME, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG,
+    THEME, DESIGN, DAY_OF_WEEK, TIME, DELETE_CONFIRM, DELETE_FINAL, PRIVACY, LICENSES, CRASH_LOG,
     NIGHTLY_HOUR, CONCURRENCY, API_RATE, SUMMARY_LANGUAGE, SUMMARY_FORMAT, APP_LOCK_DELAY, AUTO_BACKUP_KEEP
 }
 
@@ -88,6 +89,7 @@ class SettingsActions(
     val onOpenAiSettings: () -> Unit = {},
     val onThemeModeChange: (ThemeMode) -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
+    val onDesignStyleChange: (DesignStyle) -> Unit = {},
     /** オフラインモードのスイッチ */
     val onOfflineModeChange: (Boolean) -> Unit = {},
     /** アプリのロックのスイッチ。オンにするときの本人の確認は呼び出し側で行う */
@@ -227,6 +229,7 @@ internal fun SettingsScreen(
             onOpenAiSettings = onOpenAiSettings,
             onThemeModeChange = viewModel::setThemeMode,
             onDynamicColorChange = viewModel::setDynamicColor,
+            onDesignStyleChange = viewModel::setDesignStyle,
             onOfflineModeChange = viewModel::setOfflineMode,
             onAppLockChange = { enabled -> if (enabled) confirmAppLock() else viewModel.setAppLockEnabled(false) },
             onAppLockDelayChange = viewModel::setAppLockDelay,
@@ -387,6 +390,15 @@ internal fun SettingsContent(
             },
             onDismiss = { dialog = null }
         )
+        SettingsDialog.DESIGN -> DesignStyleDialog(
+            selected = uiState.designStyle,
+            dynamicColor = uiState.dynamicColor,
+            onSelect = {
+                actions.onDesignStyleChange(it)
+                dialog = null
+            },
+            onDismiss = { dialog = null }
+        )
         SettingsDialog.DAY_OF_WEEK -> DayOfWeekDialog(
             selected = uiState.rediscover.dayOfWeek,
             onSelect = {
@@ -488,6 +500,20 @@ internal val ThemeMode.label: String
         ThemeMode.SYSTEM -> "端末の設定に合わせる"
         ThemeMode.LIGHT -> "ライト"
         ThemeMode.DARK -> "ダーク"
+    }
+
+internal val DesignStyle.label: String
+    get() = when (this) {
+        DesignStyle.CLASSIC -> "クラシック"
+        DesignStyle.ECHO -> "エコー"
+        DesignStyle.PAPER -> "ペーパー"
+    }
+
+internal val DesignStyle.description: String
+    get() = when (this) {
+        DesignStyle.CLASSIC -> "これまでの標準的な見た目"
+        DesignStyle.ECHO -> "大きな見出しと丸みのある形で、再発見を目立たせます"
+        DesignStyle.PAPER -> "明朝体の見出しと紙色の背景で、読むことに集中できます"
     }
 
 internal val DayOfWeek.fullLabel: String get() = getDisplayName(TextStyle.FULL, Locale.JAPANESE)

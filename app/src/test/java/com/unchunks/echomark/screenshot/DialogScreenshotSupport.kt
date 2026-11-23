@@ -9,18 +9,23 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.isDialog
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
 /**
  * ダイアログ(別ウィンドウに描かれる)をライト/ダークで撮る。[ScreenshotRule.captureLightDark] のダイアログ版。
  * 保存名は `<name>_light.png` / `<name>_dark.png`。1テストにつき1回だけ呼べる。
  */
-fun ScreenshotRule.captureDialogLightDark(name: String, content: @Composable () -> Unit) {
+fun ScreenshotRule.captureDialogLightDark(
+    name: String,
+    designStyle: DesignStyle = DesignStyle.CLASSIC,
+    content: @Composable () -> Unit
+) {
     var dark by mutableStateOf(false)
     composeRule.mainClock.autoAdvance = false
     composeRule.setContent {
         CompositionLocalProvider(LocalInspectionMode provides true) {
-            EchoMarkTheme(darkTheme = dark, dynamicColor = false) {
+            EchoMarkTheme(darkTheme = dark, dynamicColor = false, designStyle = designStyle) {
                 content()
             }
         }

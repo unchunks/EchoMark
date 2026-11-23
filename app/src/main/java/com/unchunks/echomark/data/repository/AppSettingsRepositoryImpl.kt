@@ -33,6 +33,7 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
@@ -99,6 +100,12 @@ class AppSettingsRepositoryImpl @Inject constructor(
     }
 
     override val dynamicColor: Flow<Boolean> = data.map { it[KEY_DYNAMIC_COLOR] ?: false }
+
+    // 名前の変わった・無くなったデザインが保存されていたら既定に戻す
+    override val designStyle: Flow<DesignStyle> = data.map { prefs ->
+        prefs[KEY_DESIGN_STYLE]?.let { name -> DesignStyle.entries.firstOrNull { it.name == name } }
+            ?: DesignStyle.CLASSIC
+    }.distinctUntilChanged()
 
     override val onboardingCompleted: Flow<Boolean> = data.map { it[KEY_ONBOARDING_COMPLETED] ?: false }
 
@@ -340,6 +347,16 @@ class AppSettingsRepositoryImpl @Inject constructor(
         dataStore.edit { it[KEY_DYNAMIC_COLOR] = enabled }
     }
 
+    override val designIntroSeen: Flow<Boolean> = data.map { it[KEY_DESIGN_INTRO_SEEN] ?: false }.distinctUntilChanged()
+
+    override suspend fun setDesignIntroSeen() {
+        dataStore.edit { it[KEY_DESIGN_INTRO_SEEN] = true }
+    }
+
+    override suspend fun setDesignStyle(style: DesignStyle) {
+        dataStore.edit { it[KEY_DESIGN_STYLE] = style.name }
+    }
+
     override suspend fun setOnboardingCompleted(completed: Boolean) {
         dataStore.edit { it[KEY_ONBOARDING_COMPLETED] = completed }
     }
@@ -466,6 +483,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_REDISCOVER_NOTIFIED = stringSetPreferencesKey("rediscover_notified")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val KEY_DESIGN_STYLE = stringPreferencesKey("design_style")
+        val KEY_DESIGN_INTRO_SEEN = booleanPreferencesKey("design_intro_seen")
         val KEY_SEND_FILES_TO_CLOUD = booleanPreferencesKey("send_files_to_cloud")
         val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")

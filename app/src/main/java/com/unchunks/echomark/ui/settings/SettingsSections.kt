@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.VideoLibrary
@@ -68,6 +69,14 @@ internal fun LazyListScope.preferenceItems(
             icon = Icons.Outlined.BrightnessMedium,
             summary = uiState.themeMode.label,
             onClick = { openDialog(SettingsDialog.THEME) }
+        )
+    }
+    item("design") {
+        SettingsItem(
+            title = "デザイン",
+            icon = Icons.Outlined.Style,
+            summary = uiState.designStyle.label,
+            onClick = { openDialog(SettingsDialog.DESIGN) }
         )
     }
     if (dynamicColorAvailable) {

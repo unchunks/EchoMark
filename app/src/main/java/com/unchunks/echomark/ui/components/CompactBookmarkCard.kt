@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
 /**
@@ -35,13 +36,14 @@ fun CompactBookmarkCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     caption: String? = null,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow
+    containerColor: Color = EchoMarkDesign.cardContainerColor
 ) {
     val source = bookmark.displaySource()
     Card(
         onClick = onClick,
         modifier = modifier.width(264.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = EchoMarkDesign.cardBorder
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.Top) {

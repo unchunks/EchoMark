@@ -51,7 +51,7 @@ class MainActivity : FragmentActivity() {
                 onDispose {}
             }
 
-            EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor) {
+            EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor, designStyle = ready.designStyle) {
                 // アプリのロック中は中身を出さない(ショートカット・ウィジェット・通知・ディープリンクから開いたときも)
                 AppLockGate {
                     if (ready.onboardingCompleted) {

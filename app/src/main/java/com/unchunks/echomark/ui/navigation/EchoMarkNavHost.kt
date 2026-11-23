@@ -30,7 +30,9 @@ import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
@@ -41,11 +43,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.dropUnlessResumed
@@ -60,6 +65,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.bookmark.ListLaunchAction
 import com.unchunks.echomark.ui.discover.ResourceFinderScreen
 import com.unchunks.echomark.ui.categories.CategoryManagementScreen
@@ -91,6 +97,7 @@ import com.unchunks.echomark.ui.podcast.ReadingDictionaryScreen
 import com.unchunks.echomark.ui.settings.SettingsScreen
 import com.unchunks.echomark.ui.settings.ai.AiSettingsScreen
 import com.unchunks.echomark.ui.settings.queue.ProcessingQueueScreen
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import kotlinx.coroutines.flow.first
 
@@ -711,7 +718,17 @@ internal fun EchoMarkNavigationBar(
 ) {
     // 狭い画面で長いラベルが折り返しても、各項目のアイコンとラベルの開始位置をそろえる。
     val labelLines = if (LocalConfiguration.current.screenWidthDp < 440 && LocalDensity.current.fontScale >= 1.5f) 2 else 1
-    NavigationBar(modifier = modifier) {
+    // ペーパーは帯の色を付けず、紙面と同じ地色に罫線1本で区切る
+    val paper = EchoMarkDesign.style == DesignStyle.PAPER
+    val outline = MaterialTheme.colorScheme.outlineVariant
+    NavigationBar(
+        modifier = if (paper) {
+            modifier.drawBehind { drawLine(outline, Offset.Zero, Offset(size.width, 0f), strokeWidth = 1.dp.toPx()) }
+        } else {
+            modifier
+        },
+        containerColor = if (paper) MaterialTheme.colorScheme.surface else NavigationBarDefaults.containerColor
+    ) {
         TopLevelDestination.entries.forEach { destination ->
             val selected = destination.route == selectedRoute
             NavigationBarItem(

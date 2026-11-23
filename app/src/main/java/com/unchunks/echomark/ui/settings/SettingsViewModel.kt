@@ -23,6 +23,7 @@ import com.unchunks.echomark.domain.lock.AppLockSettings
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.DataManagementRepository
 import com.unchunks.echomark.domain.repository.DataOperationException
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
@@ -121,11 +122,20 @@ data class CrashLogSummary(
     val latestText: String? = null
 )
 
+/** 「表示」の設定と、オフラインモード。設定画面の状態にまとめる前の組。 */
+private data class DisplaySettings(
+    val themeMode: ThemeMode,
+    val dynamicColor: Boolean,
+    val designStyle: DesignStyle,
+    val offlineMode: Boolean
+)
+
 data class SettingsUiState(
     val isLoaded: Boolean = false,
     val ai: AiSummary = AiSummary(),
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = false,
+    val designStyle: DesignStyle = DesignStyle.CLASSIC,
     val rediscover: RediscoverSettings = RediscoverSettings(),
     val processing: ProcessingSettings = ProcessingSettings(),
     /** 要約の言語と書き方(#12・#16) */
@@ -200,7 +210,13 @@ class SettingsViewModel @Inject constructor(
         )
     }
 
-    private val display = combine(appSettings.themeMode, appSettings.dynamicColor, appSettings.offlineMode, ::Triple)
+    private val display = combine(
+        appSettings.themeMode,
+        appSettings.dynamicColor,
+        appSettings.designStyle,
+        appSettings.offlineMode,
+        ::DisplaySettings
+    )
 
     private val privacy = combine(appSettings.appLock, appSettings.autoBackup, databaseEncryption.state, ::Triple)
 
@@ -212,12 +228,13 @@ class SettingsViewModel @Inject constructor(
         appSettings.rediscoverSettings,
         behavior,
         transient
-    ) { ai, (themeMode, dynamicColor, offlineMode), rediscover, (processing, summaryStyle, privacySettings), transient ->
+    ) { ai, (themeMode, dynamicColor, designStyle, offlineMode), rediscover, (processing, summaryStyle, privacySettings), transient ->
         SettingsUiState(
             isLoaded = true,
             ai = ai,
             themeMode = themeMode,
             dynamicColor = dynamicColor,
+            designStyle = designStyle,
             rediscover = rediscover,
             processing = processing,
             summaryStyle = summaryStyle,
@@ -268,6 +285,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicColor(enabled: Boolean) {
         viewModelScope.launch { appSettings.setDynamicColor(enabled) }
+    }
+
+    fun setDesignStyle(style: DesignStyle) {
+        viewModelScope.launch { appSettings.setDesignStyle(style) }
     }
 
     /** アプリのロックをオン・オフする(オンにする前に、画面で本人を確かめてから呼ぶ) */

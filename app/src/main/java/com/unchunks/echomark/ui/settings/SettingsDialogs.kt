@@ -1,13 +1,20 @@
 package com.unchunks.echomark.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -44,15 +51,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.window.core.layout.WindowSizeClass
 import com.unchunks.echomark.domain.repository.BackupImportSummary
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ThemeMode
+import com.unchunks.echomark.ui.theme.designColorScheme
+import com.unchunks.echomark.ui.theme.designShapes
+import com.unchunks.echomark.ui.theme.designTypography
 import java.time.DayOfWeek
 
 /*
@@ -108,6 +123,118 @@ internal fun ThemeModeDialog(selected: ThemeMode, onSelect: (ThemeMode) -> Unit,
         onSelect = onSelect,
         onDismiss = onDismiss
     )
+}
+
+/**
+ * デザインを選ぶダイアログ。各選択肢に、そのデザインの地色・見出し・角丸の縮図を添える。
+ * 選んだ行を押すと適用して閉じる(テーマと同じ)。
+ * @param dynamicColor ダイナミックカラーがオンなら、配色は壁紙に合わせることを先に伝える
+ */
+@Composable
+internal fun DesignStyleDialog(
+    selected: DesignStyle,
+    dynamicColor: Boolean,
+    onSelect: (DesignStyle) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("デザイン") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (dynamicColor) {
+                    Text(
+                        "ダイナミックカラーがオンの間は、配色は壁紙に合わせます。文字と形はデザインのものを使います。",
+                        style = MaterialTheme.typography.bodyMedium.japaneseParagraph(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.size(12.dp))
+                }
+                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DesignStyle.entries.forEach { style ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 72.dp)
+                                .selectable(
+                                    selected = style == selected,
+                                    onClick = { onSelect(style) },
+                                    role = Role.RadioButton
+                                )
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = style == selected, onClick = null)
+                            Spacer(Modifier.size(16.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(style.label, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    style.description,
+                                    style = MaterialTheme.typography.bodyMedium.japaneseParagraph(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(Modifier.size(12.dp))
+                            DesignStylePreview(style)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
+}
+
+/**
+ * デザインの縮図。地色・見出しの書体と、そのデザインらしいカード(クラシックはトーナルな面、
+ * エコーは吹き出し形の強調、ペーパーは罫線)を、今の明暗に合わせて描く。読み上げは行の文言に任せる
+ */
+@Composable
+private fun DesignStylePreview(style: DesignStyle) {
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val colors = designColorScheme(style, dark)
+    val frameShape = designShapes(style).small
+    val card = when (style) {
+        DesignStyle.CLASSIC -> Modifier.background(colors.surfaceContainerHigh, RoundedCornerShape(6.dp))
+        DesignStyle.ECHO -> Modifier.background(
+            colors.primaryContainer,
+            RoundedCornerShape(topStart = 11.dp, topEnd = 11.dp, bottomEnd = 11.dp, bottomStart = 3.dp)
+        )
+        DesignStyle.PAPER -> Modifier.border(1.dp, colors.outline, RoundedCornerShape(2.dp))
+    }
+    Column(
+        modifier = Modifier
+            .size(width = 72.dp, height = 64.dp)
+            .clip(frameShape)
+            .background(colors.surface)
+            .border(1.dp, colors.outlineVariant, frameShape)
+            .padding(8.dp)
+            .clearAndSetSemantics {},
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            "Aa",
+            style = designTypography(style).titleLarge.copy(fontSize = 18.sp, lineHeight = 22.sp),
+            color = colors.onSurface,
+            maxLines = 1
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(22.dp)
+                .then(card)
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            // カードの中の「見出し」に当たる短い線。アクセント色の違いを見せる
+            Box(
+                Modifier
+                    .size(width = 24.dp, height = 4.dp)
+                    .background(if (style == DesignStyle.ECHO) colors.onPrimaryContainer else colors.primary, CircleShape)
+            )
+        }
+    }
 }
 
 @Composable

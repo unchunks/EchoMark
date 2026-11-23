@@ -1,6 +1,7 @@
 package com.unchunks.echomark.ui.bookmark
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -137,6 +138,7 @@ import com.unchunks.echomark.domain.bookmark.model.SmartFolder
 import com.unchunks.echomark.domain.bookmark.model.SmartFolderResult
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.shareBookmark
 import com.unchunks.echomark.ui.selection.BulkActionBar
@@ -144,6 +146,7 @@ import com.unchunks.echomark.ui.selection.BulkActionCallbacks
 import com.unchunks.echomark.ui.selection.SelectionMark
 import com.unchunks.echomark.ui.selection.SelectionTopBar
 import com.unchunks.echomark.ui.selection.showBulkMessage
+import com.unchunks.echomark.ui.settings.DesignStyleDialog
 import com.unchunks.echomark.ui.common.shortTitle
 import com.unchunks.echomark.ui.components.BookmarkCard
 import com.unchunks.echomark.ui.components.BookmarkGridTile
@@ -152,6 +155,8 @@ import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
+import com.unchunks.echomark.ui.theme.EchoBubbleShape
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.review.ReadLaterViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
@@ -164,6 +169,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
  * @param onBookmarkRemoved 一覧での操作(削除・アーカイブ/戻す)でブックマークが今の一覧から外れたとき。
  *   2 画面表示で、右側に出しているものなら右側を空にするために使う
  * @param readLaterViewModel 1件だけ選んだときの「その他」の「あとで読む」に使う。null なら項目を出さない(Hilt を使わないテスト用)
+ * @param designIntroViewModel 新しいデザインの案内(一度だけ出す)。null なら案内を出さない(Hilt を使わないテスト用)
  */
 @Composable
 fun BookmarkListScreen(
@@ -180,9 +186,12 @@ fun BookmarkListScreen(
     onOpenPodcasts: () -> Unit = {},
     onMakePodcast: (List<Long>) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel(),
-    readLaterViewModel: ReadLaterViewModel? = null
+    readLaterViewModel: ReadLaterViewModel? = null,
+    designIntroViewModel: DesignIntroViewModel? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val designIntro = designIntroViewModel?.state?.collectAsState()?.value ?: DesignIntroState()
+    var showDesignDialog by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
@@ -353,8 +362,26 @@ fun BookmarkListScreen(
             onOpenPodcasts = onOpenPodcasts,
             onRetry = viewModel::retry
         ),
-        selectedBookmarkId = selectedBookmarkId
+        selectedBookmarkId = selectedBookmarkId,
+        topNotice = if (designIntro.show) {
+            { DesignIntroBanner(onChoose = { showDesignDialog = true }, onDismiss = { designIntroViewModel?.dismiss() }) }
+        } else {
+            null
+        }
     )
+
+    // 案内から開いたデザインの選択。選んだらすぐ適用し、案内は見終えたことにする
+    if (showDesignDialog) {
+        DesignStyleDialog(
+            selected = DesignStyle.CLASSIC,
+            dynamicColor = designIntro.dynamicColor,
+            onSelect = {
+                designIntroViewModel?.choose(it)
+                showDesignDialog = false
+            },
+            onDismiss = { showDesignDialog = false }
+        )
+    }
 
     if (showAddSheet) {
         AddBookmarkSheet(
@@ -461,7 +488,9 @@ fun BookmarkListContent(
     callbacks: BookmarkListCallbacks,
     modifier: Modifier = Modifier,
     nowMillis: Long = System.currentTimeMillis(),
-    selectedBookmarkId: Long? = null
+    selectedBookmarkId: Long? = null,
+    /** 一覧の先頭(再発見などの上)に出すお知らせ。null なら出さない。検索中や絞り込み中は出さない */
+    topNotice: (@Composable () -> Unit)? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val listState = rememberLazyStaggeredGridState()
@@ -706,7 +735,7 @@ fun BookmarkListContent(
                 uiState.isLoading -> LoadingState(message = "読み込み中…")
                 uiState.errorMessage != null -> ErrorState(message = uiState.errorMessage, onRetry = callbacks.onRetry)
                 uiState.emptyKind != ListEmptyKind.NONE -> ListEmptyState(uiState, callbacks)
-                else -> BookmarkList(uiState, callbacks, listState, nowMillis, selectedBookmarkId)
+                else -> BookmarkList(uiState, callbacks, listState, nowMillis, selectedBookmarkId, topNotice)
             }
         }
     }
@@ -722,7 +751,8 @@ private fun BookmarkList(
     callbacks: BookmarkListCallbacks,
     listState: LazyStaggeredGridState,
     nowMillis: Long,
-    selectedBookmarkId: Long?
+    selectedBookmarkId: Long?,
+    topNotice: (@Composable () -> Unit)?
 ) {
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Adaptive(if (uiState.display == BookmarkListDisplay.GRID) BOOKMARK_TILE_MIN_WIDTH else BOOKMARK_CARD_MIN_WIDTH),
@@ -748,6 +778,13 @@ private fun BookmarkList(
                 }
             }
         } else {
+            if (topNotice != null && !uiState.isSearchActive && !uiState.isSelecting && uiState.filter == BookmarkFilter.ACTIVE &&
+                !uiState.isNarrowed && uiState.bookmarks.isNotEmpty()
+            ) {
+                item(key = "top_notice", contentType = "notice", span = StaggeredGridItemSpan.FullLine) {
+                    Box(Modifier.ignoreListSidePadding()) { topNotice() }
+                }
+            }
             if (uiState.showRecommendations) {
                 item(key = "recommendations", contentType = "recommendations", span = StaggeredGridItemSpan.FullLine) {
                     Box(Modifier.ignoreListSidePadding()) {
@@ -1430,37 +1467,52 @@ internal fun RecommendationReason.caption(): String = when (this) {
     RecommendationReason.Recent -> "最近保存しました"
 }
 
-/** 「今日の再発見」: しばらく開いていないブックマークを横に並べる */
+/**
+ * 「今日の再発見」: しばらく開いていないブックマークを横に並べる。
+ * エコーのデザインでは、吹き出し形のトーナルな帯に載せて一覧の主役にする。
+ */
 @Composable
 private fun RediscoverSection(items: List<Bookmark>, nowMillis: Long, onOpen: (Long) -> Unit) {
-    Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
+    val colors = MaterialTheme.colorScheme
+    val emphasized = EchoMarkDesign.style == DesignStyle.ECHO
+    val accent = if (emphasized) colors.onPrimaryContainer else colors.primary
+    val supporting = if (emphasized) colors.onPrimaryContainer else colors.onSurfaceVariant
+    val sectionModifier = if (emphasized) {
+        Modifier
+            .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp)
+            .background(colors.primaryContainer, EchoBubbleShape)
+            .padding(bottom = 16.dp)
+    } else {
+        Modifier.padding(top = 4.dp, bottom = 8.dp)
+    }
+    Column(sectionModifier) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = if (emphasized) 12.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Outlined.History,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = accent,
                 modifier = Modifier.size(20.dp)
             )
             Spacer(Modifier.width(8.dp))
             Column {
                 Text(
                     "今日の再発見",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                    color = accent,
                     modifier = Modifier.semantics { heading() }
                 )
                 Text(
                     "しばらく開いていないブックマーク",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = supporting
                 )
             }
         }
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
+            contentPadding = PaddingValues(horizontal = if (emphasized) 8.dp else 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(items, key = { it.id }) { bookmark ->
@@ -1468,7 +1520,8 @@ private fun RediscoverSection(items: List<Bookmark>, nowMillis: Long, onOpen: (L
                     bookmark = bookmark,
                     onClick = { onOpen(bookmark.id) },
                     caption = rediscoverCaption(bookmark, nowMillis),
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    // クラシックは一覧のカードより一段濃く、エコーとペーパーは地色(帯・紙面)から浮かせる
+                    containerColor = if (EchoMarkDesign.style == DesignStyle.CLASSIC) colors.surfaceContainer else colors.surface
                 )
             }
         }
