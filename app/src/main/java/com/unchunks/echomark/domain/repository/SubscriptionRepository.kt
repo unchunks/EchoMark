@@ -1,6 +1,7 @@
 package com.unchunks.echomark.domain.repository
 
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.PaperSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.Subscription
 import kotlinx.coroutines.flow.Flow
@@ -15,6 +16,12 @@ interface SubscriptionRepository {
      * サイトの URL なら、ページからフィードを探す。通信が要る。最初の確認は [checkNow] で行う。
      */
     suspend fun subscribe(input: String): SubscribeOutcome
+
+    /**
+     * 論文サイト [source] で [keywords] に当てはまる新着論文の購読を追加する(空白で区切った語をすべて含むもの。`"..."` は語句のまま)。
+     * 通信しない。最初の確認は [checkNow] で行う。
+     */
+    suspend fun subscribePapers(source: PaperSource, keywords: String): SubscribeOutcome
 
     suspend fun setEnabled(id: Long, enabled: Boolean)
 

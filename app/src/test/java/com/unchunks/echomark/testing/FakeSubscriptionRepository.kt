@@ -2,6 +2,7 @@ package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.PaperSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
@@ -16,6 +17,7 @@ class FakeSubscriptionRepository : SubscriptionRepository {
     var subscribeOutcome: SubscribeOutcome? = null
     var checkSummary = FeedCheckSummary()
     val subscribed = mutableListOf<String>()
+    val subscribedPapers = mutableListOf<Pair<PaperSource, String>>()
     val checked = mutableListOf<Long?>()
     private var nextId = 1L
 
@@ -29,6 +31,17 @@ class FakeSubscriptionRepository : SubscriptionRepository {
             id, SubscriptionType.RSS, input, "購読 $id", null, createdAt = id, enabled = true, lastCheckedAt = null, failureCount = 0, lastError = null
         )
         return SubscribeOutcome.Added(id, "購読 $id", SubscriptionType.RSS)
+    }
+
+    override suspend fun subscribePapers(source: PaperSource, keywords: String): SubscribeOutcome {
+        subscribedPapers += source to keywords
+        subscribeOutcome?.let { return it }
+        val id = nextId++
+        subscriptions.value = subscriptions.value + Subscription(
+            id, SubscriptionType.PAPER, "https://example.com/papers/$id", keywords, null,
+            createdAt = id, enabled = true, lastCheckedAt = null, failureCount = 0, lastError = null
+        )
+        return SubscribeOutcome.Added(id, "${source.label}: $keywords", SubscriptionType.PAPER)
     }
 
     override suspend fun setEnabled(id: Long, enabled: Boolean) {

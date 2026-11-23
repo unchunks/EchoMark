@@ -386,4 +386,113 @@ class FeedCheckerTest {
         assertEquals("fresh", keys.last())
         assertFalse("old1" in keys)
     }
+
+    // ---- 論文のキーワード検索 ----
+
+    private suspend fun subscribePaper(path: String = "/api/query", keywords: String = "diffusion robot"): Long =
+        dao.insertIgnore(
+            SubscriptionEntity(
+                type = SubscriptionType.PAPER.name, feedUrl = server.url(path).toString(), title = keywords,
+                siteUrl = "https://arxiv.org/search/?query=diffusion+robot", createdAt = base
+            )
+        )
+
+    /** arXiv の API の形の Atom。[papers] は (arXiv の番号と版, 投稿日時)。新しいものが先 */
+    private fun arxivAtom(papers: List<Pair<String, Long>>): String {
+        val entries = papers.joinToString("") { (id, time) ->
+            val date = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(time))
+            "<entry><id>http://arxiv.org/abs/$id</id><title>Paper\n  $id</title><updated>$date</updated>" +
+                "<link href=\"https://arxiv.org/abs/$id\" rel=\"alternate\" type=\"text/html\"/>" +
+                "<link href=\"https://arxiv.org/pdf/$id\" rel=\"related\" type=\"application/pdf\" title=\"pdf\"/>" +
+                "<published>$date</published></entry>"
+        }
+        return "<?xml version='1.0' encoding='UTF-8'?><feed xmlns=\"http://www.w3.org/2005/Atom\">" +
+            "<title>arXiv Query: search_query=all:diffusion</title>" +
+            "<link href=\"https://arxiv.org/api/query?search_query=all:diffusion\" type=\"application/atom+xml\"/>$entries</feed>"
+    }
+
+    @Test
+    fun 論文の検索はキーワードをタイトルとタグのまま持ち_版を除いたURLで保存する() = runBlocking {
+        val id = subscribePaper()
+        enqueueFeed(arxivAtom((1..5).map { "2611.0000${it}v1" to base + it * hour }))
+
+        val summary = checker.checkAll(now = base + day)
+
+        assertEquals(INITIAL_ITEMS_PER_FEED, summary.added)
+        assertEquals(listOf(5, 4, 3).map { "https://arxiv.org/abs/2611.0000$it" }, savedUrls())
+        assertEquals("Paper 2611.00005v1", repository.importedLinks.first().title)
+        assertEquals(listOf("diffusion robot"), repository.importedLinks.first().tags)
+        val row = dao.getById(id)!!
+        assertEquals("diffusion robot", row.title)
+        assertEquals("https://arxiv.org/search/?query=diffusion+robot", row.siteUrl)
+        assertNull(row.lastError)
+    }
+
+    @Test
+    fun 論文の新しい版は新着として保存しない() = runBlocking {
+        subscribePaper()
+        enqueueFeed(arxivAtom(listOf("2611.00001v1" to base + hour)))
+        checker.checkAll(now = base + day)
+        repository.importedLinks.clear()
+
+        // 同じ論文の v2 と、新しい論文
+        enqueueFeed(arxivAtom(listOf("2611.00002v1" to base + day + hour, "2611.00001v2" to base + hour)))
+        val summary = checker.checkAll(now = base + 2 * day)
+
+        assertEquals(1, summary.added)
+        assertEquals(listOf("https://arxiv.org/abs/2611.00002"), savedUrls())
+    }
+
+    @Test
+    fun 論文は検索に遅れて出てきても数日前の投稿なら保存する() = runBlocking {
+        subscribePaper()
+        enqueueFeed(arxivAtom(listOf("2611.00001v1" to base + hour)))
+        checker.checkAll(now = base + 10 * day)
+        repository.importedLinks.clear()
+
+        // 前回の確認(10日目)より5日前に投稿され、いま検索に出てきた論文。ふつうのフィードなら古いものとして見送る
+        enqueueFeed(arxivAtom(listOf("2611.00009v1" to base + 5 * day, "2611.00001v1" to base + hour)))
+        val summary = checker.checkAll(now = base + 11 * day)
+
+        assertEquals(1, summary.added)
+        assertEquals(listOf("https://arxiv.org/abs/2611.00009"), savedUrls())
+    }
+
+    @Test
+    fun EuropePMCの検索の結果から論文を保存する() = runBlocking {
+        val id = subscribePaper(path = "/europepmc/webservices/rest/search", keywords = "CRISPR")
+        val json = """{"resultList":{"result":[
+            {"id":"PPR2","source":"PPR","doi":"10.1101/2026.11.20.000002","title":"新しいプレプリント","firstPublicationDate":"2026-11-20"},
+            {"id":"PPR1","source":"PPR","doi":"10.1101/2026.11.19.000001","title":"前のプレプリント","firstPublicationDate":"2026-11-19"}
+        ]}}"""
+        server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/json").body(json).build())
+
+        val summary = checker.checkAll(now = base + day)
+
+        assertEquals(2, summary.added)
+        assertEquals(listOf("https://doi.org/10.1101/2026.11.20.000002", "https://doi.org/10.1101/2026.11.19.000001"), savedUrls())
+        assertEquals(listOf("CRISPR"), repository.importedLinks.first().tags)
+        assertEquals("CRISPR", dao.getById(id)!!.title)
+    }
+
+    @Test
+    fun 論文の検索の結果として読めなければ失敗を記録する() = runBlocking {
+        val id = subscribePaper()
+        server.enqueue(MockResponse.Builder().addHeader("Content-Type", "text/html").body("<html><body>maintenance</body></html>").build())
+
+        val summary = checker.checkAll(now = base + day)
+
+        assertEquals(1, summary.failed)
+        assertEquals("論文の検索の結果として読めませんでした", dao.getById(id)!!.lastError)
+    }
+
+    @Test
+    fun 混み合って断られたときはそう伝える() = runBlocking {
+        val id = subscribePaper()
+        enqueueFeed("", code = 429)
+
+        checker.checkAll(now = base + day)
+
+        assertEquals("サイトが混み合っていて断られました。あとでもう一度確認します", dao.getById(id)!!.lastError)
+    }
 }

@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.PaperSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.Subscription
+import com.unchunks.echomark.domain.subscription.SubscriptionType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,7 +39,7 @@ data class SubscriptionsUiState(
     val isBusy: Boolean get() = operation != SubscriptionOperation.Idle
 }
 
-/** 購読するフィード(RSS・Atom・YouTube)の追加・オン/オフ・削除・いま確認する、の操作。 */
+/** 購読するフィード(RSS・Atom・YouTube・論文のキーワード検索)の追加・オン/オフ・削除・いま確認する、の操作。 */
 @HiltViewModel
 class SubscriptionViewModel @Inject constructor(
     private val repository: SubscriptionRepository
@@ -55,18 +57,27 @@ class SubscriptionViewModel @Inject constructor(
      * [input](サイト・フィード・YouTube のチャンネルの URL)の購読を追加し、すぐに最新の記事を確認する。
      * 追加できたら [onAdded] を呼ぶ(入力欄を空にするため)。
      */
-    fun add(input: String, onAdded: () -> Unit = {}) {
+    fun add(input: String, onAdded: () -> Unit = {}) = runAdd(onAdded) { repository.subscribe(input) }
+
+    /**
+     * 論文サイト [source] で [keywords] の新着論文の購読を追加し、すぐに最新の論文を確認する。
+     * 追加できたら [onAdded] を呼ぶ(入力欄を空にするため)。
+     */
+    fun addPapers(source: PaperSource, keywords: String, onAdded: () -> Unit = {}) =
+        runAdd(onAdded) { repository.subscribePapers(source, keywords) }
+
+    private fun runAdd(onAdded: () -> Unit, subscribe: suspend () -> SubscribeOutcome) {
         if (operation.value != SubscriptionOperation.Idle) return
         operation.value = SubscriptionOperation.Adding
         message.value = null
         viewModelScope.launch {
             try {
-                when (val outcome = repository.subscribe(input)) {
+                when (val outcome = subscribe()) {
                     is SubscribeOutcome.Added -> {
                         onAdded()
                         operation.value = SubscriptionOperation.Checking
                         val summary = repository.checkNow(outcome.id)
-                        message.value = addedMessage(outcome.title, summary)
+                        message.value = addedMessage(outcome.title, summary, isPaper = outcome.type == SubscriptionType.PAPER)
                     }
                     is SubscribeOutcome.Duplicate -> message.value = "「${outcome.title}」はすでに購読しています"
                     is SubscribeOutcome.Failed -> message.value = outcome.message
@@ -115,9 +126,10 @@ class SubscriptionViewModel @Inject constructor(
     }
 
     internal companion object {
-        fun addedMessage(title: String, summary: FeedCheckSummary): String = when {
-            summary.failed > 0 -> "「$title」を購読しました。最新の記事は、あとで確認します"
+        fun addedMessage(title: String, summary: FeedCheckSummary, isPaper: Boolean = false): String = when {
+            summary.failed > 0 -> "「$title」を購読しました。最新の${if (isPaper) "論文" else "記事"}は、あとで確認します"
             summary.added > 0 -> "「$title」を購読しました。最新の ${summary.added} 件を保存しました。これからの新着は毎晩確認します"
+            isPaper -> "「$title」を購読しました。いま当てはまる論文はありませんでした。これからの新着は毎晩確認します"
             else -> "「$title」を購読しました。これからの新着は毎晩確認します"
         }
 

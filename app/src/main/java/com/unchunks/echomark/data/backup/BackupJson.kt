@@ -168,7 +168,7 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ],
  *   "categories": [ {name, description, createdAt} ],
  *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ],
- *   "subscriptions": [ {type("RSS" / "YOUTUBE"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ],
+ *   "subscriptions": [ {type("RSS" / "YOUTUBE" / "PAPER"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ],
  *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ],
  *   "collections": [ {name, description は無ければ省略, createdAt, items: [ {bookmarkId, addedAt} ]} ],
  *   "linkCheckMuted": [ リンク切れの確認で「確認しない」を選んだブックマークの ID ],
@@ -715,7 +715,7 @@ object BackupJson {
         val feedUrl = stringOrNull("feedUrl")?.trim()?.takeIf { it.isNotEmpty() && isWebUrl(it) } ?: return null
         return SubscriptionEntity(
             // 読めない種類(将来の版で増えたもの)は RSS として読む
-            type = stringOrNull("type")?.takeIf { it == "YOUTUBE" } ?: "RSS",
+            type = stringOrNull("type")?.takeIf { it == "YOUTUBE" || it == "PAPER" } ?: "RSS",
             feedUrl = feedUrl,
             title = stringOrNull("title")?.trim()?.takeIf { it.isNotEmpty() } ?: feedUrl,
             siteUrl = stringOrNull("siteUrl")?.trim()?.takeIf { it.isNotEmpty() && isWebUrl(it) },

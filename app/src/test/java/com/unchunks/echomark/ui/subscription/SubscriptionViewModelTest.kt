@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.subscription
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.PaperSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
@@ -89,6 +90,22 @@ class SubscriptionViewModelTest {
 
         assertEquals(SubscriptionOperation.Idle, failingViewModel.uiState.value.operation)
         assertTrue(failingViewModel.uiState.value.message!!.contains("追加できませんでした"))
+    }
+
+    @Test
+    fun 論文のキーワードを購読するとすぐ最新の論文を確認する() = runWith { viewModel ->
+        repository.checkSummary = FeedCheckSummary(checked = 1, added = 0)
+        var added = false
+
+        viewModel.addPapers(PaperSource.ARXIV, "diffusion robot") { added = true }
+        runCurrent()
+
+        assertTrue(added)
+        assertEquals(listOf(PaperSource.ARXIV to "diffusion robot"), repository.subscribedPapers)
+        assertEquals(listOf<Long?>(1L), repository.checked)
+        val message = viewModel.uiState.value.message!!
+        assertTrue(message, message.contains("arXiv: diffusion robot") && message.contains("当てはまる論文はありませんでした"))
+        assertEquals(SubscriptionOperation.Idle, viewModel.uiState.value.operation)
     }
 
     @Test

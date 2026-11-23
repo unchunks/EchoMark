@@ -4,8 +4,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.echomark.domain.subscription.PaperSource
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
+import com.unchunks.echomark.ui.subscription.SubscribeMode
 import com.unchunks.echomark.ui.subscription.SubscriptionOperation
 import com.unchunks.echomark.ui.subscription.SubscriptionsContent
 import com.unchunks.echomark.ui.subscription.SubscriptionsUiState
@@ -14,7 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
 
-/** 購読(RSS・YouTube)の管理シートの見た目。 */
+/** 購読(RSS・YouTube・論文)の管理シートの見た目。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SubscriptionsScreenshotTest {
@@ -41,8 +43,18 @@ class SubscriptionsScreenshotTest {
         Subscription(
             4, SubscriptionType.RSS, "https://old.example.net/atom.xml", "止めているフィード", null, createdAt = 4,
             enabled = false, lastCheckedAt = now - 100 * hour, failureCount = 0, lastError = null
+        ),
+        Subscription(
+            5, SubscriptionType.PAPER, "${PaperSource.ARXIV_API_URL}?search_query=all%3Adiffusion", "\"diffusion model\" robot",
+            "https://arxiv.org/search/?query=diffusion", createdAt = 5, enabled = true, lastCheckedAt = now - 2 * hour,
+            failureCount = 0, lastError = null
         )
     )
+
+    @Test
+    fun papers() = screenshot.captureLightDark("subscriptions_papers") {
+        Content(SubscriptionsUiState(subscriptions = subscriptions.takeLast(1)), mode = SubscribeMode.Papers)
+    }
 
     @Test
     fun empty() = screenshot.captureLightDark("subscriptions_empty") {
@@ -65,7 +77,7 @@ class SubscriptionsScreenshotTest {
     }
 
     @Composable
-    private fun Content(state: SubscriptionsUiState) {
+    private fun Content(state: SubscriptionsUiState, mode: SubscribeMode = SubscribeMode.Site) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
             SubscriptionsContent(
                 state = state,
@@ -74,7 +86,8 @@ class SubscriptionsScreenshotTest {
                 onSetEnabled = { _, _ -> },
                 onRemove = {},
                 onDismissMessage = {},
-                nowMillis = now
+                nowMillis = now,
+                initialMode = mode
             )
         }
     }

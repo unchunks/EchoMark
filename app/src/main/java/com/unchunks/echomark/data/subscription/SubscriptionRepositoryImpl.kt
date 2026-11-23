@@ -11,9 +11,11 @@ import com.unchunks.components.feed.ParsedFeed
 import com.unchunks.echomark.data.feed.FeedChecker
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
+import com.unchunks.echomark.data.paper.PaperSearch
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
 import com.unchunks.echomark.domain.subscription.MAX_SUBSCRIPTIONS
+import com.unchunks.echomark.domain.subscription.PaperSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
@@ -66,6 +68,26 @@ class SubscriptionRepositoryImpl @Inject constructor(
             )
         )
         if (id == -1L) SubscribeOutcome.Duplicate(feed.title) else SubscribeOutcome.Added(id, feed.title, type)
+    }
+
+    override suspend fun subscribePapers(source: PaperSource, keywords: String): SubscribeOutcome = withContext(dispatcherProvider.io) {
+        if (dao.count() >= MAX_SUBSCRIPTIONS) {
+            return@withContext SubscribeOutcome.Failed("購読できるのは${MAX_SUBSCRIPTIONS}件までです")
+        }
+        val parsed = PaperSearch.parseKeywords(keywords)
+            ?: return@withContext SubscribeOutcome.Failed("キーワードを入れてください(英語の語のほうが多く見つかります)")
+        val title = "${source.label}: ${parsed.display}"
+        // 同じサイト・同じキーワード(大文字小文字・順番の違いを除く)は同じ URL になり、二重に購読しない
+        val id = dao.insertIgnore(
+            SubscriptionEntity(
+                type = SubscriptionType.PAPER.name,
+                feedUrl = PaperSearch.feedUrl(source, parsed),
+                title = parsed.display,
+                siteUrl = PaperSearch.searchPageUrl(source, parsed),
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        if (id == -1L) SubscribeOutcome.Duplicate(title) else SubscribeOutcome.Added(id, title, SubscriptionType.PAPER)
     }
 
     /**
