@@ -15,6 +15,7 @@ import com.unchunks.echomark.domain.importer.ImportResult
 import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.subscription.MAX_SUBSCRIPTIONS
+import com.unchunks.echomark.domain.subscription.PaperSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
 import com.unchunks.echomark.domain.subscription.SubscriptionType
 import com.unchunks.echomark.testing.FakeBookmarkRepository
@@ -255,6 +256,38 @@ class SubscriptionRepositoryImplTest {
         }
 
         assertEquals(BACKGROUND_THREAD, importThread)
+    }
+
+    @Test
+    fun 論文のキーワードを購読すると通信せずに検索のURLで追加する() = runBlocking {
+        val outcome = repository.subscribePapers(PaperSource.ARXIV, " \"Diffusion Model\"  robot ")
+
+        assertTrue(outcome is SubscribeOutcome.Added)
+        assertEquals("arXiv: \"Diffusion Model\" robot", (outcome as SubscribeOutcome.Added).title)
+        assertEquals(SubscriptionType.PAPER, outcome.type)
+        assertEquals(0, server.requestCount)
+        val saved = repository.observeAll().first().single()
+        assertEquals(SubscriptionType.PAPER, saved.type)
+        assertEquals("\"Diffusion Model\" robot", saved.title)
+        assertEquals(PaperSource.ARXIV, saved.paperSource)
+        assertTrue(saved.feedUrl.startsWith(PaperSource.ARXIV_API_URL))
+        assertTrue(saved.siteUrl!!.startsWith("https://arxiv.org/search/"))
+    }
+
+    @Test
+    fun 同じサイトの同じキーワードは二重に購読しない_サイトが違えば別() = runBlocking {
+        repository.subscribePapers(PaperSource.PREPRINTS, "CRISPR")
+
+        assertTrue(repository.subscribePapers(PaperSource.PREPRINTS, "crispr") is SubscribeOutcome.Duplicate)
+        assertTrue(repository.subscribePapers(PaperSource.PUBMED, "CRISPR") is SubscribeOutcome.Added)
+        val sources = repository.observeAll().first().map { it.paperSource }
+        assertEquals(listOf(PaperSource.PREPRINTS, PaperSource.PUBMED), sources)
+    }
+
+    @Test
+    fun キーワードが空なら論文の購読を追加しない() = runBlocking {
+        assertTrue(repository.subscribePapers(PaperSource.ARXIV, "  \"\" ") is SubscribeOutcome.Failed)
+        assertEquals(0, dao.count())
     }
 
     private companion object {

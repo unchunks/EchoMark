@@ -6,7 +6,46 @@ enum class SubscriptionType(val label: String) {
     RSS("RSS・Atom"),
 
     /** YouTube のチャンネル・再生リストのフィード */
-    YOUTUBE("YouTube")
+    YOUTUBE("YouTube"),
+
+    /**
+     * 論文サイトのキーワード検索(arXiv・Europe PMC)。検索の URL を [Subscription.feedUrl] に、キーワードを [Subscription.title] に持つ。
+     * どのサイトかは [PaperSource.ofFeedUrl] で URL から決める(DB に列を足さない)。
+     */
+    PAPER("論文")
+}
+
+/**
+ * キーワードで新着論文を購読できるサイト。
+ * @property label 画面に出す名前
+ * @property tag 保存した論文に付けるタグ(キーワードのタグと一緒に付ける)
+ * @property description 何が見つかるか(画面に出す説明)
+ */
+enum class PaperSource(val label: String, val tag: String, val description: String) {
+    /** arXiv の API(Atom を返す)。物理・数学・情報科学・統計など */
+    ARXIV("arXiv", "arXiv", "物理・数学・情報科学・統計などのプレプリント"),
+
+    /** Europe PMC のプレプリント(bioRxiv・medRxiv・Research Square など)。JSON を返す */
+    PREPRINTS("bioRxiv・medRxiv など", "プレプリント", "生命科学・医学のプレプリント(bioRxiv・medRxiv など。Europe PMC で検索)"),
+
+    /** Europe PMC の PubMed の論文。JSON を返す */
+    PUBMED("PubMed", "PubMed", "生命科学・医学の論文(PubMed。Europe PMC で検索)");
+
+    companion object {
+        /** 検索の URL からサイトを決める。論文の検索の URL でなければ null */
+        fun ofFeedUrl(feedUrl: String): PaperSource? = when {
+            feedUrl.startsWith(ARXIV_API_URL) -> ARXIV
+            feedUrl.startsWith(EUROPE_PMC_API_URL) && feedUrl.contains("SRC%3AMED") -> PUBMED
+            feedUrl.startsWith(EUROPE_PMC_API_URL) -> PREPRINTS
+            else -> null
+        }
+
+        /** arXiv の検索の API */
+        const val ARXIV_API_URL = "https://export.arxiv.org/api/query"
+
+        /** Europe PMC の検索の API */
+        const val EUROPE_PMC_API_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    }
 }
 
 /**
@@ -26,7 +65,11 @@ data class Subscription(
     val lastCheckedAt: Long?,
     val failureCount: Int,
     val lastError: String?
-)
+) {
+    /** 論文の購読なら、検索するサイト。それ以外は null */
+    val paperSource: PaperSource?
+        get() = if (type == SubscriptionType.PAPER) PaperSource.ofFeedUrl(feedUrl) else null
+}
 
 /** 購読を追加した結果 */
 sealed interface SubscribeOutcome {

@@ -115,7 +115,7 @@ class SettingsActions(
     val onImportBackup: () -> Unit = {},
     /** 他のサービス(Pocket・Raindrop.io・ブラウザなど)の書き出しファイルを取り込む(ファイルを選ぶ) */
     val onImportFromServices: () -> Unit = {},
-    /** 購読するフィード(RSS・YouTube のチャンネル)の管理を開く */
+    /** 購読するフィード(RSS・YouTube のチャンネル・論文のキーワード検索)の管理を開く */
     val onOpenSubscriptions: () -> Unit = {},
     val onDeleteAllData: (resetSettings: Boolean) -> Unit = {},
     val onDataResultDismissed: () -> Unit = {},

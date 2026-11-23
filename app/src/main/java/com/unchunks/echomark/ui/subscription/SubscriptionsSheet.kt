@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.subscription
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,11 +16,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.RssFeed
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,6 +30,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +55,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_RUN
+import com.unchunks.echomark.domain.subscription.PaperSource
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
 import com.unchunks.echomark.ui.common.extractDomain
@@ -66,6 +73,7 @@ fun SubscriptionsSheet(onDismiss: () -> Unit, viewModel: SubscriptionViewModel =
         SubscriptionsContent(
             state = state,
             onAdd = viewModel::add,
+            onAddPapers = viewModel::addPapers,
             onCheckNow = viewModel::checkNow,
             onSetEnabled = viewModel::setEnabled,
             onRemove = viewModel::remove,
@@ -84,9 +92,14 @@ fun SubscriptionsContent(
     onRemove: (id: Long) -> Unit,
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier,
-    nowMillis: Long = System.currentTimeMillis()
+    onAddPapers: (source: PaperSource, keywords: String, onAdded: () -> Unit) -> Unit = { _, _, _ -> },
+    nowMillis: Long = System.currentTimeMillis(),
+    initialMode: SubscribeMode = SubscribeMode.Site
 ) {
+    var mode by rememberSaveable { mutableStateOf(initialMode) }
     var input by rememberSaveable { mutableStateOf("") }
+    var paperSource by rememberSaveable { mutableStateOf(PaperSource.ARXIV) }
+    var keywords by rememberSaveable { mutableStateOf("") }
     var removeTarget by rememberSaveable { mutableStateOf<Long?>(null) }
 
     Column(
@@ -97,12 +110,12 @@ fun SubscriptionsContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            "購読(RSS・YouTube)",
+            "購読(RSS・YouTube・論文)",
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.semantics { heading() }
         )
         Text(
-            text = "ブログやニュースサイト、YouTube のチャンネルの新着を、ブックマークとして自動で保存します。" +
+            text = "ブログやニュースサイト、YouTube のチャンネルの新着や、キーワードに当てはまる新しい論文を、ブックマークとして自動で保存します。" +
                 "新着は毎晩(設定の夜間の時刻に)確認し、「充電中だけ」「Wi-Fi など従量課金でない接続のときだけ」の設定を守ります。" +
                 "1回に保存するのは全体で最大 $MAX_NEW_ITEMS_PER_RUN 件(1つのフィードから $MAX_NEW_ITEMS_PER_FEED 件まで)で、" +
                 "保存したものは1件ずつ順番にページを取得して要約します。",
@@ -110,21 +123,50 @@ fun SubscriptionsContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        OutlinedTextField(
-            value = input,
-            onValueChange = { input = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("サイト・フィード・YouTube のチャンネルの URL") },
-            placeholder = { Text("https://") },
-            supportingText = { Text("サイトの URL を入れると、フィードを自動で探します") },
-            singleLine = true,
-            enabled = !state.isBusy,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done)
-        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            SubscribeMode.entries.forEachIndexed { index, item ->
+                SegmentedButton(
+                    selected = mode == item,
+                    onClick = { mode = item },
+                    shape = SegmentedButtonDefaults.itemShape(index, SubscribeMode.entries.size),
+                    enabled = !state.isBusy
+                ) { Text(item.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+
+        when (mode) {
+            SubscribeMode.Site -> OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("サイト・フィード・YouTube のチャンネルの URL") },
+                placeholder = { Text("https://") },
+                supportingText = { Text("サイトの URL を入れると、フィードを自動で探します") },
+                singleLine = true,
+                enabled = !state.isBusy,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done)
+            )
+            SubscribeMode.Papers -> PaperSearchInput(
+                source = paperSource,
+                onSourceChange = { paperSource = it },
+                keywords = keywords,
+                onKeywordsChange = { keywords = it },
+                enabled = !state.isBusy
+            )
+        }
+        val canAdd = when (mode) {
+            SubscribeMode.Site -> input.isNotBlank()
+            SubscribeMode.Papers -> keywords.isNotBlank()
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(
-                onClick = { onAdd(input) { input = "" } },
-                enabled = input.isNotBlank() && !state.isBusy
+                onClick = {
+                    when (mode) {
+                        SubscribeMode.Site -> onAdd(input) { input = "" }
+                        SubscribeMode.Papers -> onAddPapers(paperSource, keywords) { keywords = "" }
+                    }
+                },
+                enabled = canAdd && !state.isBusy
             ) { Text("購読する") }
             OutlinedButton(onClick = onCheckNow, enabled = state.subscriptions.any { it.enabled } && !state.isBusy) {
                 Text("いま確認する")
@@ -135,7 +177,11 @@ fun SubscriptionsContent(
         }
         if (state.isBusy) {
             Text(
-                if (state.operation == SubscriptionOperation.Adding) "フィードを探しています…" else "新着を確認しています…",
+                when {
+                    state.operation != SubscriptionOperation.Adding -> "新着を確認しています…"
+                    mode == SubscribeMode.Papers -> "購読を追加しています…"
+                    else -> "フィードを探しています…"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -198,7 +244,11 @@ private fun SubscriptionRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            if (subscription.type == SubscriptionType.YOUTUBE) Icons.Outlined.PlayCircle else Icons.Outlined.RssFeed,
+            when (subscription.type) {
+                SubscriptionType.YOUTUBE -> Icons.Outlined.PlayCircle
+                SubscriptionType.PAPER -> Icons.Outlined.Science
+                SubscriptionType.RSS -> Icons.Outlined.RssFeed
+            },
             contentDescription = subscription.type.label,
             tint = MaterialTheme.colorScheme.primary
         )
@@ -206,7 +256,8 @@ private fun SubscriptionRow(
         Column(Modifier.weight(1f)) {
             Text(subscription.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                text = extractDomain(subscription.siteUrl ?: subscription.feedUrl),
+                text = subscription.paperSource?.let { "${it.label} の新着論文" }
+                    ?: extractDomain(subscription.siteUrl ?: subscription.feedUrl),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -226,6 +277,57 @@ private fun SubscriptionRow(
         IconButton(onClick = onRemove) {
             Icon(Icons.Outlined.Delete, contentDescription = "「${subscription.title}」の購読をやめる")
         }
+    }
+}
+
+/** 購読を追加する入力の種類 */
+enum class SubscribeMode(val label: String) {
+    /** サイト・フィード・YouTube のチャンネルの URL */
+    Site("サイト・YouTube"),
+
+    /** 論文サイトのキーワード検索 */
+    Papers("論文のキーワード")
+}
+
+/** 論文の購読の入力(検索するサイトとキーワード) */
+@Composable
+private fun PaperSearchInput(
+    source: PaperSource,
+    onSourceChange: (PaperSource) -> Unit,
+    keywords: String,
+    onKeywordsChange: (String) -> Unit,
+    enabled: Boolean
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("検索するサイト", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PaperSource.entries.forEach { item ->
+                FilterChip(
+                    selected = source == item,
+                    onClick = { onSourceChange(item) },
+                    label = { Text(item.label) },
+                    enabled = enabled
+                )
+            }
+        }
+        Text(
+            source.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = keywords,
+            onValueChange = { onKeywordsChange(it) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("キーワード") },
+            placeholder = { Text("例: \"large language model\" agent") },
+            supportingText = {
+                Text("空白で区切った語をすべて含む論文を探します。\"…\" で囲むと語句のまま探します。英語の語のほうが多く見つかります")
+            },
+            singleLine = true,
+            enabled = enabled,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+        )
     }
 }
 
