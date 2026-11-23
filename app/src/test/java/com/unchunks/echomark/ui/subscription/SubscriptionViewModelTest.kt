@@ -3,6 +3,7 @@ package com.unchunks.echomark.ui.subscription
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.FeedFilter
 import com.unchunks.echomark.domain.subscription.QueryKind
 import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
@@ -176,5 +177,18 @@ class SubscriptionViewModelTest {
         assertEquals("arXiv の新着論文(著者)", searchSubtitle(SearchSource.ARXIV, QueryKind.AUTHOR))
         assertEquals("Qiita の新着記事(タグ)", searchSubtitle(SearchSource.QIITA, QueryKind.TAG))
         assertEquals("GitHub の新しいリリース", searchSubtitle(SearchSource.GITHUB_RELEASES, QueryKind.REPOSITORY))
+    }
+
+    @Test
+    fun 絞り込みを変えると一覧に出る() = runWith { viewModel ->
+        repository.subscriptions.value = listOf(subscription(1))
+
+        viewModel.setFilter(1, "AI LLM", "広告")
+        runCurrent()
+
+        val filter = viewModel.uiState.value.subscriptions.single().filter
+        assertEquals(listOf("AI", "LLM"), filter.include)
+        assertEquals("含む: AI・LLM / 除く: 広告", filterLabel(filter))
+        assertNull(filterLabel(FeedFilter()))
     }
 }

@@ -112,6 +112,11 @@ class SubscriptionViewModel @Inject constructor(
         }
     }
 
+    /** 新着の絞り込みを変える(入力のまま。空にすると絞り込まない) */
+    fun setFilter(id: Long, include: String, exclude: String) {
+        viewModelScope.launch { repository.setFilter(id, include, exclude) }
+    }
+
     fun setEnabled(id: Long, enabled: Boolean) {
         viewModelScope.launch { repository.setEnabled(id, enabled) }
     }

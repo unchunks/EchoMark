@@ -1,6 +1,7 @@
 package com.unchunks.echomark.ui.subscription
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -16,6 +17,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Newspaper
 import androidx.compose.material.icons.outlined.PlayCircle
@@ -25,6 +28,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -44,6 +49,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.unchunks.echomark.domain.subscription.FeedFilter
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_RUN
 import com.unchunks.echomark.domain.subscription.QueryKind
@@ -83,6 +90,7 @@ fun SubscriptionsSheet(onDismiss: () -> Unit, viewModel: SubscriptionViewModel =
             onCheckNow = viewModel::checkNow,
             onSetEnabled = viewModel::setEnabled,
             onRemove = viewModel::remove,
+            onSetFilter = viewModel::setFilter,
             onDismissMessage = viewModel::dismissMessage
         )
     }
@@ -101,8 +109,10 @@ fun SubscriptionsContent(
     onAddSearch: (source: SearchSource, kind: QueryKind, query: String, onAdded: () -> Unit) -> Unit = { _, _, _, _ -> },
     nowMillis: Long = System.currentTimeMillis(),
     initialMode: SubscribeMode = SubscribeMode.Site,
-    initialSource: SearchSource = SearchSource.ARXIV
+    initialSource: SearchSource = SearchSource.ARXIV,
+    onSetFilter: (id: Long, include: String, exclude: String) -> Unit = { _, _, _ -> }
 ) {
+    var filterTarget by rememberSaveable { mutableStateOf<Long?>(null) }
     var mode by rememberSaveable { mutableStateOf(initialMode) }
     var input by rememberSaveable { mutableStateOf("") }
     var searchSource by rememberSaveable { mutableStateOf(initialSource) }
@@ -220,9 +230,23 @@ fun SubscriptionsContent(
                     subscription = subscription,
                     nowMillis = nowMillis,
                     onSetEnabled = { onSetEnabled(subscription.id, it) },
+                    onEditFilter = { filterTarget = subscription.id },
                     onRemove = { removeTarget = subscription.id }
                 )
             }
+        }
+    }
+
+    filterTarget?.let { id ->
+        state.subscriptions.firstOrNull { it.id == id }?.let { target ->
+            FilterDialog(
+                subscription = target,
+                onSave = { include, exclude ->
+                    filterTarget = null
+                    onSetFilter(id, include, exclude)
+                },
+                onDismiss = { filterTarget = null }
+            )
         }
     }
 
@@ -251,6 +275,7 @@ private fun SubscriptionRow(
     subscription: Subscription,
     nowMillis: Long,
     onSetEnabled: (Boolean) -> Unit,
+    onEditFilter: () -> Unit,
     onRemove: () -> Unit
 ) {
     Row(
@@ -281,6 +306,15 @@ private fun SubscriptionRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            filterLabel(subscription.filter)?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Text(
                 text = statusLabel(subscription, nowMillis),
                 style = MaterialTheme.typography.labelSmall,
@@ -292,10 +326,82 @@ private fun SubscriptionRow(
             onCheckedChange = onSetEnabled,
             modifier = Modifier.semantics { contentDescription = "「${subscription.title}」を確認する" }
         )
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Outlined.Delete, contentDescription = "「${subscription.title}」の購読をやめる")
+        Box {
+            var menuOpen by remember { mutableStateOf(false) }
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(Icons.Outlined.MoreVert, contentDescription = "「${subscription.title}」のその他の操作")
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("絞り込み") },
+                    leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        onEditFilter()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("購読をやめる") },
+                    leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                    onClick = {
+                        menuOpen = false
+                        onRemove()
+                    }
+                )
+            }
         }
     }
+}
+
+/** 絞り込みの一行(「含む: AI・LLM / 除く: 広告」)。絞り込んでいなければ null */
+internal fun filterLabel(filter: FeedFilter): String? {
+    if (filter.isEmpty) return null
+    val parts = buildList {
+        if (filter.include.isNotEmpty()) add("含む: " + filter.include.joinToString("・"))
+        if (filter.exclude.isNotEmpty()) add("除く: " + filter.exclude.joinToString("・"))
+    }
+    return parts.joinToString(" / ")
+}
+
+/** 新着の絞り込みを変えるダイアログ */
+@Composable
+private fun FilterDialog(subscription: Subscription, onSave: (include: String, exclude: String) -> Unit, onDismiss: () -> Unit) {
+    var include by rememberSaveable { mutableStateOf(FeedFilter.format(subscription.filter.include)) }
+    var exclude by rememberSaveable { mutableStateOf(FeedFilter.format(subscription.filter.exclude)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("「${subscription.title}」の絞り込み") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "タイトルで新着を絞り込みます。空白・読点で区切って複数入れられ、\"…\" で囲むと語句のまま探します。" +
+                        "全角・半角・大文字・小文字の違いは見ません。絞り込みで外れたものは、あとで条件を変えても保存しません。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = include,
+                    onValueChange = { include = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("含む語") },
+                    placeholder = { Text("例: AI LLM") },
+                    supportingText = { Text("どれかを含むものだけ保存します。空ならすべて") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = exclude,
+                    onValueChange = { exclude = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("除く語") },
+                    placeholder = { Text("例: PR 広告") },
+                    supportingText = { Text("どれかを含むものは保存しません") },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(include, exclude) }) { Text("保存") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+    )
 }
 
 /** 購読を追加する入力の種類 */

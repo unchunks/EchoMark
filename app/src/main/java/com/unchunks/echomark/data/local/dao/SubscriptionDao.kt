@@ -33,6 +33,10 @@ interface SubscriptionDao {
     @Query("SELECT id FROM subscriptions WHERE feedUrl = :feedUrl LIMIT 1")
     suspend fun findIdByFeedUrl(feedUrl: String): Long?
 
+    /** 絞り込みの語を変える(改行で区切ったもの) */
+    @Query("UPDATE subscriptions SET includeWords = :includeWords, excludeWords = :excludeWords WHERE id = :id")
+    suspend fun setFilter(id: Long, includeWords: String, excludeWords: String)
+
     @Query("UPDATE subscriptions SET enabled = :enabled WHERE id = :id")
     suspend fun setEnabled(id: Long, enabled: Boolean)
 

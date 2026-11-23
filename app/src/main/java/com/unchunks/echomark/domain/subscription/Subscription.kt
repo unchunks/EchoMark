@@ -37,7 +37,9 @@ data class Subscription(
     val enabled: Boolean,
     val lastCheckedAt: Long?,
     val failureCount: Int,
-    val lastError: String?
+    val lastError: String?,
+    /** 新着の絞り込み(含む語・除く語) */
+    val filter: FeedFilter = FeedFilter()
 ) {
     /** 検索の購読なら、検索するサイト。それ以外は null */
     val searchSource: SearchSource?
