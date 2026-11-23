@@ -125,7 +125,12 @@ try {
 
     if ($RememberPassword) {
         New-Item -ItemType Directory -Force (Split-Path $PasswordFile) | Out-Null
-        ConvertTo-SecureString $env:ECHOMARK_KEYSTORE_PASSWORD -AsPlainText -Force | Export-Clixml $PasswordFile
+        # ConvertTo-SecureString は使わない(PowerShell 7 から呼ばれた Windows PowerShell では、
+        # 7 用の Microsoft.PowerShell.Security を読もうとして失敗することがある)
+        $toSave = New-Object Security.SecureString
+        foreach ($c in $env:ECHOMARK_KEYSTORE_PASSWORD.ToCharArray()) { $toSave.AppendChar($c) }
+        $toSave.MakeReadOnly()
+        $toSave | Export-Clixml $PasswordFile
         Write-Host "パスワードを保存しました(この Windows ユーザーだけが復号できます): $PasswordFile"
     }
 
