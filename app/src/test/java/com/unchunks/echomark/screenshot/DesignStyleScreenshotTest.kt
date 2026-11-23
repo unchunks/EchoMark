@@ -14,6 +14,7 @@ import com.unchunks.echomark.testing.aiTasks
 import com.unchunks.echomark.ui.bookmark.BookmarkListCallbacks
 import com.unchunks.echomark.ui.bookmark.BookmarkListContent
 import com.unchunks.echomark.ui.bookmark.BookmarkListUiState
+import com.unchunks.echomark.ui.bookmark.DesignIntroBanner
 import com.unchunks.echomark.ui.components.PreviewSamples
 import com.unchunks.echomark.ui.navigation.EchoMarkAppScaffold
 import com.unchunks.echomark.ui.navigation.currentAdaptiveLayout
@@ -71,7 +72,7 @@ class DesignStyleScreenshotTest {
     )
 
     @Composable
-    private fun LibraryFrame() {
+    private fun LibraryFrame(topNotice: (@Composable () -> Unit)? = null) {
         val layout = currentAdaptiveLayout()
         EchoMarkAppScaffold(
             showNavigation = true,
@@ -84,7 +85,8 @@ class DesignStyleScreenshotTest {
                 snackbarHostState = SnackbarHostState(),
                 callbacks = BookmarkListCallbacks(),
                 nowMillis = now,
-                modifier = modifier
+                modifier = modifier,
+                topNotice = topNotice
             )
         }
     }
@@ -95,6 +97,12 @@ class DesignStyleScreenshotTest {
             uiState = settingsState.copy(designStyle = style),
             actions = SettingsActions(onOpenOnboarding = {})
         )
+    }
+
+    /** クラシックのまま一覧を開いた人に、一度だけ新しいデザインを案内する */
+    @Test
+    fun libraryDesignIntro() = screenshot.captureScreenLightDark("design_intro_library", heightDp = 860) {
+        LibraryFrame(topNotice = { DesignIntroBanner(onChoose = {}, onDismiss = {}) })
     }
 
     @Test

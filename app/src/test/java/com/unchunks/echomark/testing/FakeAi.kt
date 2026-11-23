@@ -61,6 +61,7 @@ class FakeAppSettingsRepository(
     val themeModeFlow = MutableStateFlow(ThemeMode.SYSTEM)
     val dynamicColorFlow = MutableStateFlow(false)
     val designStyleFlow = MutableStateFlow(DesignStyle.CLASSIC)
+    val designIntroSeenFlow = MutableStateFlow(false)
     val onboardingCompletedFlow = MutableStateFlow(false)
     val sendFilesToCloudFlow = MutableStateFlow(true)
     val localLlmUseGpuFlow = MutableStateFlow(false)
@@ -99,6 +100,7 @@ class FakeAppSettingsRepository(
     override val themeMode: Flow<ThemeMode> = themeModeFlow
     override val dynamicColor: Flow<Boolean> = dynamicColorFlow
     override val designStyle: Flow<DesignStyle> = designStyleFlow
+    override val designIntroSeen: Flow<Boolean> = designIntroSeenFlow
     override val onboardingCompleted: Flow<Boolean> = onboardingCompletedFlow
     override val sendFilesToCloud: Flow<Boolean> = sendFilesToCloudFlow
     override val localLlmUseGpu: Flow<Boolean> = localLlmUseGpuFlow
@@ -120,6 +122,7 @@ class FakeAppSettingsRepository(
     override suspend fun setThemeMode(mode: ThemeMode) { themeModeFlow.value = mode }
     override suspend fun setDynamicColor(enabled: Boolean) { dynamicColorFlow.value = enabled }
     override suspend fun setDesignStyle(style: DesignStyle) { designStyleFlow.value = style }
+    override suspend fun setDesignIntroSeen() { designIntroSeenFlow.value = true }
     override suspend fun setOnboardingCompleted(completed: Boolean) { onboardingCompletedFlow.value = completed }
     override suspend fun setSendFilesToCloud(enabled: Boolean) { sendFilesToCloudFlow.value = enabled }
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) { localLlmUseGpuFlow.value = enabled }
@@ -179,6 +182,7 @@ class FakeAppSettingsRepository(
         themeModeFlow.value = ThemeMode.SYSTEM
         dynamicColorFlow.value = false
         designStyleFlow.value = DesignStyle.CLASSIC
+        designIntroSeenFlow.value = false
         sendFilesToCloudFlow.value = true
         localLlmUseGpuFlow.value = false
         bookmarkSortOrderFlow.value = BookmarkSortOrder.NEWEST

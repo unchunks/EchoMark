@@ -146,6 +146,7 @@ import com.unchunks.echomark.ui.selection.BulkActionCallbacks
 import com.unchunks.echomark.ui.selection.SelectionMark
 import com.unchunks.echomark.ui.selection.SelectionTopBar
 import com.unchunks.echomark.ui.selection.showBulkMessage
+import com.unchunks.echomark.ui.settings.DesignStyleDialog
 import com.unchunks.echomark.ui.common.shortTitle
 import com.unchunks.echomark.ui.components.BookmarkCard
 import com.unchunks.echomark.ui.components.BookmarkGridTile
@@ -184,9 +185,12 @@ fun BookmarkListScreen(
     onOpenPodcasts: () -> Unit = {},
     onMakePodcast: (List<Long>) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel(),
-    readLaterViewModel: ReadLaterViewModel? = null
+    readLaterViewModel: ReadLaterViewModel? = null,
+    designIntroViewModel: DesignIntroViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val designIntro by designIntroViewModel.state.collectAsState()
+    var showDesignDialog by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
@@ -357,8 +361,26 @@ fun BookmarkListScreen(
             onOpenPodcasts = onOpenPodcasts,
             onRetry = viewModel::retry
         ),
-        selectedBookmarkId = selectedBookmarkId
+        selectedBookmarkId = selectedBookmarkId,
+        topNotice = if (designIntro.show) {
+            { DesignIntroBanner(onChoose = { showDesignDialog = true }, onDismiss = designIntroViewModel::dismiss) }
+        } else {
+            null
+        }
     )
+
+    // 案内から開いたデザインの選択。選んだらすぐ適用し、案内は見終えたことにする
+    if (showDesignDialog) {
+        DesignStyleDialog(
+            selected = DesignStyle.CLASSIC,
+            dynamicColor = designIntro.dynamicColor,
+            onSelect = {
+                designIntroViewModel.choose(it)
+                showDesignDialog = false
+            },
+            onDismiss = { showDesignDialog = false }
+        )
+    }
 
     if (showAddSheet) {
         AddBookmarkSheet(
@@ -465,7 +487,9 @@ fun BookmarkListContent(
     callbacks: BookmarkListCallbacks,
     modifier: Modifier = Modifier,
     nowMillis: Long = System.currentTimeMillis(),
-    selectedBookmarkId: Long? = null
+    selectedBookmarkId: Long? = null,
+    /** 一覧の先頭(再発見などの上)に出すお知らせ。null なら出さない。検索中や絞り込み中は出さない */
+    topNotice: (@Composable () -> Unit)? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val listState = rememberLazyStaggeredGridState()
@@ -710,7 +734,7 @@ fun BookmarkListContent(
                 uiState.isLoading -> LoadingState(message = "読み込み中…")
                 uiState.errorMessage != null -> ErrorState(message = uiState.errorMessage, onRetry = callbacks.onRetry)
                 uiState.emptyKind != ListEmptyKind.NONE -> ListEmptyState(uiState, callbacks)
-                else -> BookmarkList(uiState, callbacks, listState, nowMillis, selectedBookmarkId)
+                else -> BookmarkList(uiState, callbacks, listState, nowMillis, selectedBookmarkId, topNotice)
             }
         }
     }
@@ -726,7 +750,8 @@ private fun BookmarkList(
     callbacks: BookmarkListCallbacks,
     listState: LazyStaggeredGridState,
     nowMillis: Long,
-    selectedBookmarkId: Long?
+    selectedBookmarkId: Long?,
+    topNotice: (@Composable () -> Unit)?
 ) {
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Adaptive(if (uiState.display == BookmarkListDisplay.GRID) BOOKMARK_TILE_MIN_WIDTH else BOOKMARK_CARD_MIN_WIDTH),
@@ -752,6 +777,13 @@ private fun BookmarkList(
                 }
             }
         } else {
+            if (topNotice != null && !uiState.isSearchActive && !uiState.isSelecting && uiState.filter == BookmarkFilter.ACTIVE &&
+                !uiState.isNarrowed && uiState.bookmarks.isNotEmpty()
+            ) {
+                item(key = "top_notice", contentType = "notice", span = StaggeredGridItemSpan.FullLine) {
+                    Box(Modifier.ignoreListSidePadding()) { topNotice() }
+                }
+            }
             if (uiState.showRecommendations) {
                 item(key = "recommendations", contentType = "recommendations", span = StaggeredGridItemSpan.FullLine) {
                     Box(Modifier.ignoreListSidePadding()) {

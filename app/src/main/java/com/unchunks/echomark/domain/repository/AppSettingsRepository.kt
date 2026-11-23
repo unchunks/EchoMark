@@ -142,6 +142,9 @@ interface AppSettingsRepository {
     /** アプリ全体のデザイン。既定はこれまでの見た目(CLASSIC)。 */
     val designStyle: Flow<DesignStyle>
 
+    /** 一覧の「新しいデザインを試す」のお知らせを、選ぶか閉じるかして見終えたか。 */
+    val designIntroSeen: Flow<Boolean>
+
     /** 初回オンボーディングを終えた(スキップを含む)か。 */
     val onboardingCompleted: Flow<Boolean>
 
@@ -243,6 +246,7 @@ interface AppSettingsRepository {
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setDynamicColor(enabled: Boolean)
     suspend fun setDesignStyle(style: DesignStyle)
+    suspend fun setDesignIntroSeen()
     suspend fun setOnboardingCompleted(completed: Boolean)
     suspend fun setSendFilesToCloud(enabled: Boolean)
     suspend fun setLocalLlmUseGpu(enabled: Boolean)

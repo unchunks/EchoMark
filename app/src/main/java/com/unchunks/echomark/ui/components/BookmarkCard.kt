@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Card
@@ -54,6 +55,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -69,6 +71,7 @@ import com.unchunks.echomark.domain.bookmark.model.ReadingTime
 import com.unchunks.echomark.domain.bookmark.model.SearchMatch
 import com.unchunks.echomark.domain.bookmark.model.readingMinutes
 import com.unchunks.echomark.domain.bookmark.model.bookmarkTypeOfMimeType
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.attachment.rememberAttachmentFile
 import com.unchunks.echomark.ui.attachment.rememberMediaDuration
 import com.unchunks.echomark.ui.attachment.rememberPdfPage
@@ -150,6 +153,36 @@ fun BookmarkCard(
     }
 }
 
+/**
+ * エコーのデザインでの AI 要約。カードより一段明るい(ダークでは暗い)面に載せ、
+ * 響き(ティール)の印を添えて、保存したものが「返ってきた」部分として目立たせる。印は飾りなので読み上げない
+ */
+@Composable
+private fun EchoSummary(text: AnnotatedString, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest, MaterialTheme.shapes.small)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            Icons.Outlined.AutoAwesome,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.padding(top = 3.dp).size(16.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 @Composable
 private fun BookmarkCardBody(
     bookmark: Bookmark,
@@ -192,14 +225,19 @@ private fun BookmarkCardBody(
         val summary = bookmark.summary
         if (!summary.isNullOrBlank()) {
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = rememberHighlighted(summary, searchTerms),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(end = 8.dp)
-            )
+            val summaryText = rememberHighlighted(summary, searchTerms)
+            if (EchoMarkDesign.style == DesignStyle.ECHO) {
+                EchoSummary(summaryText, Modifier.padding(end = 8.dp))
+            } else {
+                Text(
+                    text = summaryText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
         }
 
         if (searchMatch != null && !searchMatch.isSemanticOnly) {

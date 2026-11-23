@@ -125,6 +125,17 @@ class AppSettingsRepositoryImplTest {
     }
 
     @Test
+    fun 新しいデザインの案内は見終えたことを覚えておく() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertFalse(repository.designIntroSeen.first())
+
+        repository.setDesignIntroSeen()
+        assertTrue(repository.designIntroSeen.first())
+        assertTrue(createRepository(dataStore).designIntroSeen.first())
+    }
+
+    @Test
     fun 一覧の見せ方は既定がカードで保存したものを読み出せる() = runTest {
         val dataStore = InMemorySettingsDataStore()
         val repository = createRepository(dataStore)

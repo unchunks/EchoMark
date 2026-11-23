@@ -58,10 +58,14 @@ AI のカードは `shapes.extraLarge`（28 dp）とトーナルなコンテナ�
 | デザイン | 配色 | 書体 | 形状（small / medium / extraLarge） | 部品の違い |
 | --- | --- | --- | --- | --- |
 | クラシック | ブランドのインディゴとティール | 共通の `Typography` | 8 / 16 / 28 dp | なし |
-| エコー | 彩度を上げたインディゴとティール。地色とコンテナの段差を広げる | 見出しとタイトルを SemiBold、headline を拡大 | 12 / 24 / 32 dp | 一覧の「今日の再発見」を `primaryContainer` の吹き出し形の帯に載せる |
+| エコー | 彩度を上げたインディゴとティール。地色とコンテナの段差を広げる | 見出しとタイトルを SemiBold、headline を拡大 | 12 / 24 / 32 dp | 一覧の「今日の再発見」を `primaryContainer` の吹き出し形の帯に載せる。カードの AI 要約を `surfaceContainerLowest` の面とティールの印で強調する |
 | ペーパー | 紙色の地、墨色の文字、黄土色のアクセント | display・headline・titleLarge・titleMedium を端末の明朝体 | 4 / 6 / 12 dp | カードは地色に `outlineVariant` の罫線。ナビゲーションバーは地色と上端の罫線 |
 
-どのデザインも同じ `MaterialTheme` の呼び出しで値だけを替えるため、切り替えても画面の状態（ナビゲーションの履歴、スクロール位置）は保たれる（`EchoMarkThemeTest`）。Expressive の動き（`MotionScheme`、`MaterialExpressiveTheme`）は material3 1.4 では公開されていないため、公開後にエコーへ加える。ペーパーの明朝体は端末の serif（日本語は Noto Serif CJK）を使い、フォントを同梱しない。描画例は `DesignStyleScreenshotTest`（`design_echo_*`、`design_paper_*`、`settings_dialog_design_*`）。
+どのデザインも同じ `MaterialTheme` の呼び出しで値だけを替えるため、切り替えても画面の状態（ナビゲーションの履歴、スクロール位置）は保たれる（`EchoMarkThemeTest`）。Expressive の動き（`MotionScheme`、`MaterialExpressiveTheme`）は material3 1.4 では公開されていないため、公開後にエコーへ加える。ペーパーの明朝体は端末の serif（日本語は Noto Serif CJK）を使い、フォントを同梱しない。描画例は `DesignStyleScreenshotTest`（`design_echo_*`、`design_paper_*`、`design_intro_library_*`、`settings_dialog_design_*`）。
+
+各デザインの配色は、文字を載せる組み合わせ（地色と本文・補足・見出し、各コンテナと対応する文字色）がライト・ダークとも 4.5:1 以上であることを `DesignStyleContrastTest` で確かめる。
+
+クラシックのままの人には、一覧の先頭に一度だけ「新しいデザインを選べます」を出す。「デザインを選ぶ」でこのダイアログを開き、選ぶか「閉じる」で以後は出さない（`DesignIntroViewModel`）。検索中・絞り込み中・複数選択中と、一覧が空のときは出さない。
 
 ## コンポーネントと状態
 

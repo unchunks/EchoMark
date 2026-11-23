@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -57,6 +59,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.window.core.layout.WindowSizeClass
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.domain.repository.DesignStyle
@@ -183,34 +186,54 @@ internal fun DesignStyleDialog(
     )
 }
 
-/** デザインの縮図。地色・枠線・見出しの書体・コンテナの角丸を、今の明暗に合わせて描く。読み上げは行の文言に任せる */
+/**
+ * デザインの縮図。地色・見出しの書体と、そのデザインらしいカード(クラシックはトーナルな面、
+ * エコーは吹き出し形の強調、ペーパーは罫線)を、今の明暗に合わせて描く。読み上げは行の文言に任せる
+ */
 @Composable
 private fun DesignStylePreview(style: DesignStyle) {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val colors = designColorScheme(style, dark)
-    val shapes = designShapes(style)
+    val frameShape = designShapes(style).small
+    val card = when (style) {
+        DesignStyle.CLASSIC -> Modifier.background(colors.surfaceContainerHigh, RoundedCornerShape(6.dp))
+        DesignStyle.ECHO -> Modifier.background(
+            colors.primaryContainer,
+            RoundedCornerShape(topStart = 11.dp, topEnd = 11.dp, bottomEnd = 11.dp, bottomStart = 3.dp)
+        )
+        DesignStyle.PAPER -> Modifier.border(1.dp, colors.outline, RoundedCornerShape(2.dp))
+    }
     Column(
         modifier = Modifier
-            .size(width = 64.dp, height = 56.dp)
-            .clip(shapes.small)
+            .size(width = 72.dp, height = 64.dp)
+            .clip(frameShape)
             .background(colors.surface)
-            .border(1.dp, colors.outlineVariant, shapes.small)
+            .border(1.dp, colors.outlineVariant, frameShape)
             .padding(8.dp)
             .clearAndSetSemantics {},
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             "Aa",
-            style = designTypography(style).titleMedium,
-            color = colors.primary,
+            style = designTypography(style).titleLarge.copy(fontSize = 18.sp, lineHeight = 22.sp),
+            color = colors.onSurface,
             maxLines = 1
         )
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(14.dp)
-                .background(colors.primaryContainer, shapes.medium)
-        )
+                .height(22.dp)
+                .then(card)
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            // カードの中の「見出し」に当たる短い線。アクセント色の違いを見せる
+            Box(
+                Modifier
+                    .size(width = 24.dp, height = 4.dp)
+                    .background(if (style == DesignStyle.ECHO) colors.onPrimaryContainer else colors.primary, CircleShape)
+            )
+        }
     }
 }
 
