@@ -84,6 +84,9 @@ object Routes {
     /** まとめての処理の通知から処理の状況を開くディープリンク。MainActivity の intent-filter と一致させること */
     const val PROCESSING_QUEUE_DEEP_LINK = "echomark://processing-queue"
 
+    /** 使い方を端末内 AI に聞く(設定の「このアプリについて」の欄から開く)。"settings/..." なので設定タブが選択状態になる */
+    const val APP_HELP = "settings/help"
+
     /** 設定の「はじめにの案内をもう一度見る」から開くオンボーディング(初回起動時は NavHost の外で表示する)。 */
     const val ONBOARDING = "settings/onboarding"
 

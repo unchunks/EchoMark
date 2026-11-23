@@ -592,6 +592,26 @@ object AiPrompts {
         }
     }.joinToString("\n").trimEnd()
 
+    /**
+     * アプリの使い方の質問に答えさせる指示(端末内 AI 向けの短いもの)。
+     * guide は呼び出し側で "[n] 題名: 本文" に整形済みの使い方の案内(質問に近い順)。
+     * 小型のモデルはアプリのことを知らず、無い画面やメニューを作りがちなため、案内に無いことは書かせない。
+     */
+    fun appHelpInstructions(guide: List<String>): String = buildList {
+        add("あなたは EchoMark(保存した記事やメモを AI が整理する Android アプリ)の使い方を案内するアシスタントです。日本語の短い文章で答えます。")
+        add("- 下の「使い方の案内」に書かれていることだけを使い、画面やメニューの名前は案内のとおりに書く。")
+        add("- 操作は、どの画面のどこを押すかを順番に書く。手順が3つ以上なら番号付きの箇条書きにする。")
+        add("- 案内に答えが無ければ、分からないと伝え、近い機能があればそれを案内する。案内に無い画面やメニューを作らない。")
+        add("- あいさつには短く答える。アプリと関係の無い質問には、アプリの使い方だけ答えられると伝える。")
+        add("")
+        if (guide.isEmpty()) {
+            add("使い方の案内: (該当するものはありません)")
+        } else {
+            add("使い方の案内:")
+            guide.forEach { add(it); add("") }
+        }
+    }.joinToString("\n").trimEnd()
+
     /** 会話の記憶([memory]: 古い発言の要約)をチャットの指示に足す部分。 */
     fun chatMemorySection(memory: String): String = "$CHAT_MEMORY_HEADER\n${memory.trim()}"
 

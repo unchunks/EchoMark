@@ -58,13 +58,16 @@ internal object LocalChatPrompt {
      * @param context 呼び出し側で "[n] タイトル: 要約" に整形済みの文脈(番号は呼び出し側の付番をそのまま使う)
      * @param history 直近の会話履歴(古い順)
      * @param memory 会話の記憶([history] より前の発言の要約)。無ければ null
+     * @param instructions 入れる文脈から指示文を作る。既定はブックマークのチャットの指示。
+     *   使い方の質問([AiPrompts.appHelpInstructions])など、別の指示で同じ予算の割り振りを使うときに替える
      */
     fun input(
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>,
         maxChars: Int = MAX_PROMPT_CHARS,
-        memory: String? = null
+        memory: String? = null,
+        instructions: (List<String>) -> String = ::chatInstructions
     ): LocalChatInput {
         val message = truncate(userMessage.trim(), MAX_USER_MESSAGE_CHARS)
         val question = QUESTION_PREFIX + message
@@ -76,11 +79,11 @@ internal object LocalChatPrompt {
             ?.let { AiPrompts.chatMemorySection(truncate(it, minOf(MAX_MEMORY_CHARS, budget / MEMORY_BUDGET_DIVISOR))) }
         val restBudget = budget - (memorySection?.let { it.length + 2 } ?: 0)
 
-        val instructions = buildInstructions(context.take(MAX_CONTEXT_ITEMS), restBudget)
-        val systemInstruction = listOfNotNull(instructions, memorySection).joinToString("\n\n")
+        val instructionText = buildInstructions(context.take(MAX_CONTEXT_ITEMS), restBudget, instructions)
+        val systemInstruction = listOfNotNull(instructionText, memorySection).joinToString("\n\n")
 
         // 履歴は新しいものから、入る分だけ残す
-        var historyBudget = restBudget - instructions.length - (2 + HISTORY_HEADER.length)
+        var historyBudget = restBudget - instructionText.length - (2 + HISTORY_HEADER.length)
         val kept = ArrayDeque<ChatMessage>()
         val historyLines = ArrayDeque<String>()
         for (entry in history.takeLast(MAX_HISTORY_ITEMS).asReversed()) {
@@ -122,20 +125,27 @@ internal object LocalChatPrompt {
     }
 
     /** 文脈を先頭から [budget] に収まるだけ入れた指示文。入りきらない1件は、ある程度入るなら途中で切って入れる。 */
-    private fun buildInstructions(context: List<String>, budget: Int): String {
+    private fun buildInstructions(
+        context: List<String>,
+        budget: Int,
+        instructions: (List<String>) -> String
+    ): String {
         val selected = mutableListOf<String>()
         for (item in context) {
-            if (AiPrompts.chatInstructions(selected + item, compact = true).length <= budget) {
+            if (instructions(selected + item).length <= budget) {
                 selected += item
                 continue
             }
-            val overflow = AiPrompts.chatInstructions(selected + item, compact = true).length - budget
+            val overflow = instructions(selected + item).length - budget
             val keep = item.length - overflow - ELLIPSIS.length
             if (keep >= MIN_CONTEXT_CHARS) selected += item.take(keep) + ELLIPSIS
             break
         }
-        return AiPrompts.chatInstructions(selected, compact = true)
+        return instructions(selected)
     }
+
+    /** ブックマークのチャットの指示(端末内 AI 向けの短いもの)。[input] の既定 */
+    private fun chatInstructions(context: List<String>): String = AiPrompts.chatInstructions(context, compact = true)
 
     private fun truncate(text: String, maxChars: Int): String =
         if (text.length <= maxChars) text else text.take(maxChars - ELLIPSIS.length) + ELLIPSIS

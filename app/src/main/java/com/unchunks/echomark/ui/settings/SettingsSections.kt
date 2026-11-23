@@ -1,6 +1,7 @@
 package com.unchunks.echomark.ui.settings
 
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BrightnessMedium
@@ -274,6 +275,17 @@ internal fun LazyListScope.managementItems(
     }
 
     item("about-heading") { SectionHeader("このアプリについて") }
+    actions.onOpenAppHelp?.let { onOpenAppHelp ->
+        item("app-help") {
+            SettingsItem(
+                title = "使い方を AI に聞く",
+                icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                summary = "分からない操作を、端末内の AI に質問できます",
+                onClick = onOpenAppHelp,
+                trailing = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) }
+            )
+        }
+    }
     actions.onOpenOnboarding?.let { onOpenOnboarding ->
         item("guide") {
             SettingsItem(

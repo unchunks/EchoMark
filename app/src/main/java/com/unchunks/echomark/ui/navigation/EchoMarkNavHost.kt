@@ -91,6 +91,7 @@ import com.unchunks.echomark.ui.linkcheck.BrokenLinksScreen
 import com.unchunks.echomark.ui.video.OfflineVideosScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.graph.GraphScreen
+import com.unchunks.echomark.ui.help.AppHelpScreen
 import com.unchunks.echomark.ui.insights.InsightsScreen
 import com.unchunks.echomark.ui.places.PlacesScreen
 import com.unchunks.echomark.ui.review.ReviewHubScreen
@@ -513,10 +514,22 @@ fun EchoMarkNavHost(
                 SettingsScreen(
                     onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                     onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) },
+                    onOpenAppHelp = { navController.navigate(Routes.APP_HELP) },
                     onOpenProcessingQueue = { navController.navigate(Routes.PROCESSING_QUEUE) },
                     onOpenCategories = { navController.navigate(Routes.CATEGORIES) },
                     onOpenOfflineVideos = { navController.navigate(Routes.OFFLINE_VIDEOS) },
                     layout = layout
+                )
+            }
+            // 使い方を AI に聞く(設定の「このアプリについて」の欄から開く)
+            composable(
+                route = Routes.APP_HELP,
+                enterTransition = subScreenEnter,
+                popExitTransition = subScreenPopExit
+            ) {
+                AppHelpScreen(
+                    onBack = navController.popBackAction(),
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
                 )
             }
             // オフラインの動画(設定の「データ」の欄から開く)

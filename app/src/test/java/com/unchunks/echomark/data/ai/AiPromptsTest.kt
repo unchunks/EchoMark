@@ -549,4 +549,19 @@ class AiPromptsTest {
             ).map { it.name }
         )
     }
+
+    @Test
+    fun 使い方の質問は案内に無い画面を作らせず_案内を番号付きで入れる() {
+        val prompt = AiPrompts.appHelpInstructions(listOf("[1] 保存: 共有メニューから保存します"))
+
+        assertTrue(prompt, prompt.contains("案内に無い画面やメニューを作らない"))
+        assertTrue(prompt, prompt.endsWith("[1] 保存: 共有メニューから保存します"))
+    }
+
+    @Test
+    fun 使い方の案内が無くても指示を作る() {
+        val prompt = AiPrompts.appHelpInstructions(emptyList())
+
+        assertTrue(prompt, prompt.contains("該当するものはありません"))
+    }
 }

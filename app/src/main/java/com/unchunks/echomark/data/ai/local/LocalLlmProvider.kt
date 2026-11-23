@@ -122,6 +122,9 @@ class LocalLlmProvider @Inject constructor(
             onContextUsage: (ChatContextUsage) -> Unit
         ) = this@LocalLlmProvider.chatStream(modelId, userMessage, context, history, memory, onContextUsage)
 
+        override fun appHelpStream(question: String, guide: List<String>, history: List<ChatMessage>) =
+            this@LocalLlmProvider.chatStream(modelId, question, guide, history, instructions = AiPrompts::appHelpInstructions)
+
         override suspend fun summarizeConversation(previousSummary: String?, messages: List<ChatMessage>) =
             this@LocalLlmProvider.summarizeConversation(modelId, previousSummary, messages)
 
@@ -730,14 +733,22 @@ class LocalLlmProvider @Inject constructor(
         onContextUsage: (ChatContextUsage) -> Unit
     ): Flow<String> = chatStream(null, userMessage, context, history, memory, onContextUsage)
 
-    /** [modelId] のモデルでの [chatStream]。 */
+    /** 使い方の質問。チャットと同じ生成の仕組み(やり直し・出力の見張り)を、使い方の案内の指示で使う */
+    override fun appHelpStream(question: String, guide: List<String>, history: List<ChatMessage>): Flow<String> =
+        chatStream(null, question, guide, history, instructions = AiPrompts::appHelpInstructions)
+
+    /**
+     * [modelId] のモデルでの [chatStream]。
+     * @param instructions 文脈から指示文を作る。null ならブックマークのチャットの指示([LocalChatPrompt.input] の既定)
+     */
     private fun chatStream(
         modelId: String?,
         userMessage: String,
         context: List<String>,
         history: List<ChatMessage>,
         memory: String? = null,
-        onContextUsage: (ChatContextUsage) -> Unit = {}
+        onContextUsage: (ChatContextUsage) -> Unit = {},
+        instructions: ((List<String>) -> String)? = null
     ): Flow<String> = flow {
         asInteractive {
             var maxChars = LocalChatPrompt.MAX_PROMPT_CHARS
@@ -747,7 +758,12 @@ class LocalLlmProvider @Inject constructor(
                 fun usage() = ChatContextUsage(usedTokens.get(), MAX_TOKENS, maxChars < LocalChatPrompt.MAX_PROMPT_CHARS)
                 try {
                     val guard = ChatOutputGuard()
-                    streamOnce(modelId, LocalChatPrompt.input(userMessage, context, history, maxChars, memory), usedTokens::set)
+                    val input = if (instructions == null) {
+                        LocalChatPrompt.input(userMessage, context, history, maxChars, memory)
+                    } else {
+                        LocalChatPrompt.input(userMessage, context, history, maxChars, memory, instructions)
+                    }
+                    streamOnce(modelId, input, usedTokens::set)
                         .transformWhile { chunk ->
                             emit(guard.accept(chunk))
                             !guard.stopped

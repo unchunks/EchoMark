@@ -57,6 +57,17 @@ interface LlmProvider {
         onContextUsage: (ChatContextUsage) -> Unit
     ): Flow<String> = chatStream(userMessage, context, history)
 
+    /**
+     * アプリの使い方の質問([question])に、使い方の案内([guide])を根拠に答える。生成されたテキストを増分で流す。
+     * ブックマークのチャット([chatStream])とは指示が違う(保存内容ではなく、アプリの画面やメニューを案内する)。
+     * @param guide "[n] 題名: 本文" 形式に整形済みの使い方の案内(質問に近い順)
+     * @param history 直近の会話履歴(古い順。今回の [question] は含まない)
+     * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
+     * @throws UnsupportedOperationException 対応していない実装(クラウド API)
+     */
+    fun appHelpStream(question: String, guide: List<String>, history: List<ChatMessage>): Flow<String> =
+        flow { throw UnsupportedOperationException("appHelpStream は未対応") }
+
     /** チャットの1回の質問に、会話履歴と資料をどれだけ入れられるか。既定は文脈の短い端末内 AI の量。 */
     suspend fun chatContextLimits(): ChatContextLimits = ChatContextLimits.COMPACT
 

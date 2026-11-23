@@ -14,6 +14,8 @@ import com.unchunks.echomark.data.ai.model.DeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.DownloadedModelInstaller
 import com.unchunks.echomark.data.ai.model.ModelDownloadClient
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.data.help.LocalAppHelpAssistant
+import com.unchunks.echomark.domain.help.AppHelpAssistant
 import com.unchunks.echomark.domain.provider.SummaryTranslator
 import dagger.Binds
 import dagger.Module
@@ -49,6 +51,10 @@ abstract class AiProviderModule {
 
     @Binds
     abstract fun bindAttachmentLoader(impl: AndroidAttachmentLoader): AttachmentLoader
+
+    /** アプリの使い方の質問に端末内 AI で答える */
+    @Binds
+    abstract fun bindAppHelpAssistant(impl: LocalAppHelpAssistant): AppHelpAssistant
 
     /** 要約の翻訳(#24) */
     @Binds
