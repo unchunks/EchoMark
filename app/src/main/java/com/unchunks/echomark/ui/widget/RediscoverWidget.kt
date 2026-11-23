@@ -3,8 +3,10 @@ package com.unchunks.echomark.ui.widget
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
@@ -38,6 +40,8 @@ import androidx.glance.layout.padding
 import androidx.glance.material3.ColorProviders
 import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
+import androidx.glance.unit.ColorProvider
+import androidx.glance.text.FontFamily
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
@@ -46,10 +50,13 @@ import com.unchunks.echomark.MainActivity
 import com.unchunks.echomark.R
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.navigation.LaunchTarget
 import com.unchunks.echomark.ui.navigation.Routes
 import com.unchunks.echomark.ui.theme.DarkColorScheme
 import com.unchunks.echomark.ui.theme.LightColorScheme
+import com.unchunks.echomark.ui.theme.LocalDesignStyle
+import com.unchunks.echomark.ui.theme.designColorScheme
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -74,6 +81,7 @@ class RediscoverWidget : GlanceAppWidget() {
         val entryPoint = EntryPointAccessors.fromApplication(context, RediscoverWidgetEntryPoint::class.java)
         val itemsFlow = rediscoverItems(entryPoint.bookmarkRepository())
         val dynamicColorFlow = entryPoint.appSettingsRepository().dynamicColor.catch { emit(false) }
+        val designStyleFlow = entryPoint.appSettingsRepository().designStyle.catch { emit(DesignStyle.CLASSIC) }
         // AI 処理の進み具合(処理中・処理待ちが無ければ null)。読めなければ出さない
         val processingFlow = entryPoint.widgetProcessingSource().observe().catch { e ->
             if (e is CancellationException) throw e
@@ -83,6 +91,7 @@ class RediscoverWidget : GlanceAppWidget() {
         // 表示中(セッションが生きている間)は DB の変化に追従する。最初の値は描画前に読んでおき、空の表示を挟まない
         val initialItems = itemsFlow.first()
         val initialDynamicColor = dynamicColorFlow.first()
+        val initialDesignStyle = designStyleFlow.first()
         val initialProcessing = processingFlow.first()
         // アプリのロック中は、ホーム画面に内容(ブックマークのタイトル・処理の件数)を出さない。読めなければ隠す方に倒す
         val hiddenFlow = entryPoint.appSettingsRepository().appLock.map { it.enabled }.catch { emit(true) }
@@ -90,9 +99,10 @@ class RediscoverWidget : GlanceAppWidget() {
         provideContent {
             val items by itemsFlow.collectAsState(initialItems)
             val dynamicColor by dynamicColorFlow.collectAsState(initialDynamicColor)
+            val designStyle by designStyleFlow.collectAsState(initialDesignStyle)
             val processing by processingFlow.collectAsState(initialProcessing)
             val hidden by hiddenFlow.collectAsState(initialHidden)
-            RediscoverWidgetTheme(dynamicColor) {
+            RediscoverWidgetTheme(dynamicColor, designStyle) {
                 RediscoverWidgetContent(
                     items = items,
                     layout = RediscoverWidgetData.layoutFor(LocalSize.current, hasProcessing = processing != null && !hidden),
@@ -145,13 +155,77 @@ interface RediscoverWidgetEntryPoint {
     fun rediscoverWidgetUpdater(): RediscoverWidgetUpdater
 }
 
-/** アプリと同じく、ブランド配色(既定)か壁紙に合わせたダイナミックカラー。ライト/ダークは端末に合わせる。 */
+/**
+ * アプリと同じく、選んだデザイン([designStyle])の配色(既定はブランド配色)か、壁紙に合わせたダイナミックカラー。
+ * ライト/ダークは端末に合わせる。デザインは [LocalDesignStyle] で中身に伝え、角丸・地色・見出しの書体を変える。
+ */
 @Composable
-internal fun RediscoverWidgetTheme(dynamicColor: Boolean, content: @Composable () -> Unit) {
-    GlanceTheme(colors = if (dynamicColor) DynamicThemeColorProviders else BrandColors, content = content)
+internal fun RediscoverWidgetTheme(
+    dynamicColor: Boolean,
+    designStyle: DesignStyle = DesignStyle.CLASSIC,
+    content: @Composable () -> Unit
+) {
+    val colors = if (dynamicColor) DynamicThemeColorProviders else designColorProviders(designStyle)
+    CompositionLocalProvider(LocalDesignStyle provides designStyle) {
+        GlanceTheme(colors = colors, content = content)
+    }
 }
 
-private val BrandColors = ColorProviders(light = LightColorScheme, dark = DarkColorScheme)
+private val BrandColors by lazy { ColorProviders(light = LightColorScheme, dark = DarkColorScheme) }
+private val EchoColors by lazy {
+    ColorProviders(light = designColorScheme(DesignStyle.ECHO, dark = false), dark = designColorScheme(DesignStyle.ECHO, dark = true))
+}
+private val PaperColors by lazy {
+    ColorProviders(light = designColorScheme(DesignStyle.PAPER, dark = false), dark = designColorScheme(DesignStyle.PAPER, dark = true))
+}
+
+private fun designColorProviders(style: DesignStyle) = when (style) {
+    DesignStyle.CLASSIC -> BrandColors
+    DesignStyle.ECHO -> EchoColors
+    DesignStyle.PAPER -> PaperColors
+}
+
+/**
+ * デザインごとのウィジェットの見た目。アプリの一覧の「今日の再発見」にそろえる。
+ * - エコー: ウィジェット全体を primaryContainer の帯にし、その上に大きな角丸の行を浮かせる
+ * - ペーパー: 紙色の地に角の小さい行を並べ、タイトルを明朝体にする
+ */
+private object WidgetDesign {
+    val background: ColorProvider
+        @Composable get() = when (LocalDesignStyle.current) {
+            DesignStyle.ECHO -> GlanceTheme.colors.primaryContainer
+            DesignStyle.PAPER -> GlanceTheme.colors.surface
+            DesignStyle.CLASSIC -> GlanceTheme.colors.widgetBackground
+        }
+
+    /** 地([background])に直接載せる文字・アイコンの色 */
+    val onBackground: ColorProvider
+        @Composable get() =
+            if (LocalDesignStyle.current == DesignStyle.ECHO) GlanceTheme.colors.onPrimaryContainer else GlanceTheme.colors.onSurface
+
+    val onBackgroundVariant: ColorProvider
+        @Composable get() =
+            if (LocalDesignStyle.current == DesignStyle.ECHO) GlanceTheme.colors.onPrimaryContainer else GlanceTheme.colors.onSurfaceVariant
+
+    val accent: ColorProvider
+        @Composable get() =
+            if (LocalDesignStyle.current == DesignStyle.ECHO) GlanceTheme.colors.onPrimaryContainer else GlanceTheme.colors.primary
+
+    /** ブックマークの行の地色。ペーパーは紙の地と同じ色だと区切れないので、一段濃い紙色にする */
+    val row: ColorProvider
+        @Composable get() =
+            if (LocalDesignStyle.current == DesignStyle.PAPER) GlanceTheme.colors.surfaceVariant else GlanceTheme.colors.surface
+
+    val corner: Dp
+        @Composable get() = when (LocalDesignStyle.current) {
+            DesignStyle.ECHO -> 20.dp
+            DesignStyle.PAPER -> 4.dp
+            DesignStyle.CLASSIC -> 12.dp
+        }
+
+    val titleFont: FontFamily?
+        @Composable get() = if (LocalDesignStyle.current == DesignStyle.PAPER) FontFamily.Serif else null
+}
 
 /**
  * ウィジェットの中身。ヘッダー(「＋」で URL を追加、検索、チャット)と、AI 処理の進み具合([processing]。出すかどうかは [layout] で決まる)、
@@ -172,15 +246,15 @@ internal fun RediscoverWidgetContent(
             TitleBar(
                 startIcon = ImageProvider(R.drawable.ic_notification),
                 title = if (layout.showTitle) context.getString(R.string.widget_rediscover_title) else "",
-                iconColor = GlanceTheme.colors.primary,
-                textColor = GlanceTheme.colors.onSurface,
+                iconColor = WidgetDesign.accent,
+                textColor = WidgetDesign.onBackground,
                 actions = {
                     CircleIconButton(
                         imageProvider = ImageProvider(R.drawable.ic_widget_add),
                         contentDescription = ADD_LABEL,
                         onClick = actionStartActivity(launchTargetIntent(context, LaunchTarget.ADD_BOOKMARK)),
                         backgroundColor = null,
-                        contentColor = GlanceTheme.colors.onSurface
+                        contentColor = WidgetDesign.onBackground
                     )
                     if (layout.showSearch) {
                         CircleIconButton(
@@ -188,7 +262,7 @@ internal fun RediscoverWidgetContent(
                             contentDescription = SEARCH_LABEL,
                             onClick = actionStartActivity(launchTargetIntent(context, LaunchTarget.SEARCH)),
                             backgroundColor = null,
-                            contentColor = GlanceTheme.colors.onSurface
+                            contentColor = WidgetDesign.onBackground
                         )
                     }
                     CircleIconButton(
@@ -196,12 +270,13 @@ internal fun RediscoverWidgetContent(
                         contentDescription = CHAT_LABEL,
                         onClick = actionStartActivity(launchTargetIntent(context, LaunchTarget.NEW_CHAT)),
                         backgroundColor = null,
-                        contentColor = GlanceTheme.colors.onSurface
+                        contentColor = WidgetDesign.onBackground
                     )
                 }
             )
         },
-        modifier = GlanceModifier.padding(bottom = 12.dp)
+        modifier = GlanceModifier.padding(bottom = 12.dp),
+        backgroundColor = WidgetDesign.background
     ) {
         Column(modifier = GlanceModifier.fillMaxSize()) {
             if (hidden) {
@@ -213,7 +288,7 @@ internal fun RediscoverWidgetContent(
                     Text(
                         text = HIDDEN_MESSAGE,
                         style = TextStyle(
-                            color = GlanceTheme.colors.onSurfaceVariant,
+                            color = WidgetDesign.onBackgroundVariant,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center
                         )
@@ -230,7 +305,7 @@ internal fun RediscoverWidgetContent(
                     Text(
                         text = EMPTY_MESSAGE,
                         style = TextStyle(
-                            color = GlanceTheme.colors.onSurfaceVariant,
+                            color = WidgetDesign.onBackgroundVariant,
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center
                         )
@@ -256,7 +331,7 @@ private fun WidgetProcessingStrip(processing: WidgetProcessing) {
     Column(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .cornerRadius(12.dp)
+            .cornerRadius(WidgetDesign.corner)
             .background(GlanceTheme.colors.secondaryContainer)
             .padding(horizontal = 12.dp, vertical = 6.dp)
             .semantics { contentDescription = processing.description() }
@@ -296,8 +371,8 @@ private fun RediscoverWidgetRow(item: RediscoverWidgetItem, showSource: Boolean)
     Column(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .cornerRadius(12.dp)
-            .background(GlanceTheme.colors.surface)
+            .cornerRadius(WidgetDesign.corner)
+            .background(WidgetDesign.row)
             .padding(horizontal = 12.dp, vertical = 6.dp)
             .clickable(actionStartActivity(bookmarkDetailIntent(context, item.bookmarkId)))
     ) {
@@ -307,7 +382,8 @@ private fun RediscoverWidgetRow(item: RediscoverWidgetItem, showSource: Boolean)
             style = TextStyle(
                 color = GlanceTheme.colors.onSurface,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                fontFamily = WidgetDesign.titleFont
             )
         )
         if (showSource) {

@@ -287,8 +287,12 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { appSettings.setDynamicColor(enabled) }
     }
 
+    /** デザインを選ぶ。設定から選んだ人は新しいデザインを知っているので、一覧の案内はもう出さない */
     fun setDesignStyle(style: DesignStyle) {
-        viewModelScope.launch { appSettings.setDesignStyle(style) }
+        viewModelScope.launch {
+            appSettings.setDesignStyle(style)
+            appSettings.setDesignIntroSeen()
+        }
     }
 
     /** アプリのロックをオン・オフする(オンにする前に、画面で本人を確かめてから呼ぶ) */

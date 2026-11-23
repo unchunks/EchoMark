@@ -7,6 +7,7 @@ import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.DesignStyle
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -32,7 +33,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * ブックマークの保存・削除・閲覧(最終アクセスの更新)や配色の設定が変わり、ウィジェットに出す内容が変わったら
+ * ブックマークの保存・削除・閲覧(最終アクセスの更新)や配色・デザインの設定が変わり、ウィジェットに出す内容が変わったら
  * 「EchoMark 再発見」ウィジェットを描き直す。アプリのプロセスが動いていて、ウィジェットを置いている間だけ働く
  * (ブックマークの変更はすべてアプリのプロセス内で起きるため、これで足りる。日替わりは updatePeriodMillis で更新する)。
  */
@@ -62,6 +63,7 @@ class RediscoverWidgetUpdater @Inject constructor(
                 widgetContentChanges(
                     bookmarks = bookmarkRepository.get().observeLeastRecentlyAccessed(RediscoverWidgetData.CANDIDATE_LIMIT),
                     dynamicColor = appSettingsRepository.get().dynamicColor,
+                    designStyle = appSettingsRepository.get().designStyle,
                     processing = processingSource.observe(),
                     clock = System::currentTimeMillis
                 )
@@ -124,11 +126,12 @@ class RediscoverWidgetUpdater @Inject constructor(
         internal data class WidgetSnapshot(
             val items: List<RediscoverWidgetItem>,
             val dynamicColor: Boolean,
+            val designStyle: DesignStyle,
             val processing: WidgetProcessing?
         )
 
         /**
-         * ウィジェットの表示内容(出すブックマーク・配色・AI 処理の進み具合)が変わったときだけ流す。
+         * ウィジェットの表示内容(出すブックマーク・配色・デザイン・AI 処理の進み具合)が変わったときだけ流す。
          * AI の要約が付いたなど、表示に関係ない変更では流さない([WidgetProcessing] は画面に出す粒度にそろえてあるので、
          * 進み具合が数%動いただけでも流さない)。
          */
@@ -137,11 +140,12 @@ class RediscoverWidgetUpdater @Inject constructor(
             bookmarks: Flow<List<Bookmark>>,
             dynamicColor: Flow<Boolean>,
             processing: Flow<WidgetProcessing?> = flowOf(null),
+            designStyle: Flow<DesignStyle> = flowOf(DesignStyle.CLASSIC),
             clock: () -> Long,
             debounceMs: Long = DEBOUNCE_MS
         ): Flow<WidgetSnapshot> =
-            combine(bookmarks, dynamicColor, processing) { list, dynamic, progress ->
-                WidgetSnapshot(RediscoverWidgetData.toItems(RediscoverWidgetData.select(list, clock())), dynamic, progress)
+            combine(bookmarks, dynamicColor, processing, designStyle) { list, dynamic, progress, style ->
+                WidgetSnapshot(RediscoverWidgetData.toItems(RediscoverWidgetData.select(list, clock())), dynamic, style, progress)
             }
                 .debounce(debounceMs)
                 .distinctUntilChanged()

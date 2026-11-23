@@ -14,6 +14,7 @@ import androidx.glance.appwidget.GlanceRemoteViews
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.widget.RediscoverWidgetContent
 import com.unchunks.echomark.ui.widget.RediscoverWidgetData
 import com.unchunks.echomark.ui.widget.RediscoverWidgetItem
@@ -84,6 +85,18 @@ class RediscoverWidgetScreenshotTest {
         "rediscover_widget_empty_processing", DpSize(260.dp, RediscoverWidgetData.MEDIUM_SIZE.height), emptyList(), processing
     )
 
+    // ---- 設定の「デザイン」(エコー・ペーパー)。アプリの「今日の再発見」と同じ見た目にそろえる ----
+
+    @Test
+    fun largeEcho() = captureDesign(
+        "rediscover_widget_large_echo", DesignStyle.ECHO, DpSize(260.dp, RediscoverWidgetData.LARGE_SIZE.height), processing
+    )
+
+    @Test
+    fun largePaper() = captureDesign(
+        "rediscover_widget_large_paper", DesignStyle.PAPER, DpSize(260.dp, RediscoverWidgetData.LARGE_SIZE.height), processing
+    )
+
     /** ライト・ダーク(ブランド配色)とダイナミックカラー(ライト)で撮る。 */
     private fun capture(name: String, size: DpSize, items: List<RediscoverWidgetItem>, processing: WidgetProcessing? = null) {
         val base: Context = ApplicationProvider.getApplicationContext()
@@ -92,13 +105,21 @@ class RediscoverWidgetScreenshotTest {
         render(base, night = false, dynamicColor = true, size, items, processing).captureRoboImage("${name}_dynamic.png")
     }
 
+    /** デザインの配色のライト・ダークで撮る(ダイナミックカラーでは配色は壁紙に合わせ、角丸と書体だけが変わる) */
+    private fun captureDesign(name: String, style: DesignStyle, size: DpSize, processing: WidgetProcessing?) {
+        val base: Context = ApplicationProvider.getApplicationContext()
+        render(base, night = false, dynamicColor = false, size, items, processing, style).captureRoboImage("${name}_light.png")
+        render(base, night = true, dynamicColor = false, size, items, processing, style).captureRoboImage("${name}_dark.png")
+    }
+
     private fun render(
         base: Context,
         night: Boolean,
         dynamicColor: Boolean,
         size: DpSize,
         items: List<RediscoverWidgetItem>,
-        processing: WidgetProcessing? = null
+        processing: WidgetProcessing? = null,
+        designStyle: DesignStyle = DesignStyle.CLASSIC
     ): Bitmap {
         val config = Configuration(base.resources.configuration).apply {
             uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
@@ -107,7 +128,7 @@ class RediscoverWidgetScreenshotTest {
         val context = base.createConfigurationContext(config)
         val remoteViews = runBlocking {
             GlanceRemoteViews().compose(context, size) {
-                RediscoverWidgetTheme(dynamicColor) {
+                RediscoverWidgetTheme(dynamicColor, designStyle) {
                     RediscoverWidgetContent(items, RediscoverWidgetData.layoutFor(size, hasProcessing = processing != null), processing)
                 }
             }.remoteViews
