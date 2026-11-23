@@ -1,6 +1,7 @@
 package com.unchunks.echomark.ui.bookmark
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -137,6 +138,7 @@ import com.unchunks.echomark.domain.bookmark.model.SmartFolder
 import com.unchunks.echomark.domain.bookmark.model.SmartFolderResult
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.Tag
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.shareBookmark
 import com.unchunks.echomark.ui.selection.BulkActionBar
@@ -152,6 +154,8 @@ import com.unchunks.echomark.ui.components.CompactBookmarkCard
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
+import com.unchunks.echomark.ui.theme.EchoBubbleShape
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.review.ReadLaterViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
@@ -1430,37 +1434,52 @@ internal fun RecommendationReason.caption(): String = when (this) {
     RecommendationReason.Recent -> "最近保存しました"
 }
 
-/** 「今日の再発見」: しばらく開いていないブックマークを横に並べる */
+/**
+ * 「今日の再発見」: しばらく開いていないブックマークを横に並べる。
+ * エコーのデザインでは、吹き出し形のトーナルな帯に載せて一覧の主役にする。
+ */
 @Composable
 private fun RediscoverSection(items: List<Bookmark>, nowMillis: Long, onOpen: (Long) -> Unit) {
-    Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
+    val colors = MaterialTheme.colorScheme
+    val emphasized = EchoMarkDesign.style == DesignStyle.ECHO
+    val accent = if (emphasized) colors.onPrimaryContainer else colors.primary
+    val supporting = if (emphasized) colors.onPrimaryContainer else colors.onSurfaceVariant
+    val sectionModifier = if (emphasized) {
+        Modifier
+            .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp)
+            .background(colors.primaryContainer, EchoBubbleShape)
+            .padding(bottom = 16.dp)
+    } else {
+        Modifier.padding(top = 4.dp, bottom = 8.dp)
+    }
+    Column(sectionModifier) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = if (emphasized) 12.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Outlined.History,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = accent,
                 modifier = Modifier.size(20.dp)
             )
             Spacer(Modifier.width(8.dp))
             Column {
                 Text(
                     "今日の再発見",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                    color = accent,
                     modifier = Modifier.semantics { heading() }
                 )
                 Text(
                     "しばらく開いていないブックマーク",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = supporting
                 )
             }
         }
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
+            contentPadding = PaddingValues(horizontal = if (emphasized) 8.dp else 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(items, key = { it.id }) { bookmark ->
@@ -1468,7 +1487,8 @@ private fun RediscoverSection(items: List<Bookmark>, nowMillis: Long, onOpen: (L
                     bookmark = bookmark,
                     onClick = { onOpen(bookmark.id) },
                     caption = rediscoverCaption(bookmark, nowMillis),
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    // クラシックは一覧のカードより一段濃く、エコーとペーパーは地色(帯・紙面)から浮かせる
+                    containerColor = if (EchoMarkDesign.style == DesignStyle.CLASSIC) colors.surfaceContainer else colors.surface
                 )
             }
         }

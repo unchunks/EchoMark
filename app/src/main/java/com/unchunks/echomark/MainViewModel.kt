@@ -3,6 +3,7 @@ package com.unchunks.echomark
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.domain.repository.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,6 +19,7 @@ sealed interface MainUiState {
     data class Ready(
         val themeMode: ThemeMode,
         val dynamicColor: Boolean,
+        val designStyle: DesignStyle,
         val onboardingCompleted: Boolean
     ) : MainUiState
 }
@@ -31,9 +33,10 @@ class MainViewModel @Inject constructor(
     val uiState: StateFlow<MainUiState> = combine(
         appSettings.themeMode,
         appSettings.dynamicColor,
+        appSettings.designStyle,
         appSettings.onboardingCompleted
-    ) { themeMode, dynamicColor, onboardingCompleted ->
-        MainUiState.Ready(themeMode, dynamicColor, onboardingCompleted)
+    ) { themeMode, dynamicColor, designStyle, onboardingCompleted ->
+        MainUiState.Ready(themeMode, dynamicColor, designStyle, onboardingCompleted)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, MainUiState.Loading)
 }
 

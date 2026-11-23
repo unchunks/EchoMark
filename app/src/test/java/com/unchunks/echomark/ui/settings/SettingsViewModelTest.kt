@@ -18,6 +18,7 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.usage.ApiUsagePeriods
 import com.unchunks.echomark.domain.usage.ApiUsageRecord
 import com.unchunks.echomark.domain.repository.DataOperationException
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ThemeMode
 import com.unchunks.echomark.testing.FakeApiKeyRepository
@@ -272,6 +273,16 @@ class SettingsViewModelTest {
                 "チャット: 未設定(OpenAI の API キーが未入力)",
             ai.label
         )
+    }
+
+    @Test
+    fun デザインを保存して画面の状態に反映する() = runTest {
+        val viewModel = createViewModel()
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        viewModel.setDesignStyle(DesignStyle.ECHO)
+        advanceUntilIdle()
+        assertEquals(DesignStyle.ECHO, settings.designStyleFlow.value)
+        assertEquals(DesignStyle.ECHO, viewModel.uiState.value.designStyle)
     }
 
     @Test

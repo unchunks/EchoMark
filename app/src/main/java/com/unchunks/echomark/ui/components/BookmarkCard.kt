@@ -79,6 +79,7 @@ import com.unchunks.echomark.ui.common.fileKindName
 import com.unchunks.echomark.ui.common.formatDuration
 import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.common.icon
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 import java.io.File
 
@@ -116,11 +117,12 @@ fun BookmarkCard(
 ) {
     val domain = bookmark.displaySource()
     val colors = CardDefaults.cardColors(
-        containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow
+        containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else EchoMarkDesign.cardContainerColor
     )
     val selectionModifier = if (selected) Modifier.semantics { this.selected = true } else Modifier
-    // タグのチップと同じ色にならないよう、背景は少し濃くするだけにして枠線で示す
-    val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+    // タグのチップと同じ色にならないよう、背景は少し濃くするだけにして枠線で示す。
+    // 選択していないときの枠線はデザインに従う(ペーパーだけ細い罫線)
+    val border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else EchoMarkDesign.cardBorder
     if (onLongClick == null) {
         Card(onClick = onClick, modifier = modifier.fillMaxWidth().then(selectionModifier), colors = colors, border = border) {
             BookmarkCardBody(bookmark, domain, onToggleFavorite, nowMillis, searchTerms, searchMatch)

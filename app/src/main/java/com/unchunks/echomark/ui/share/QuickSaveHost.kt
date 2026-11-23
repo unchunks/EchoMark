@@ -40,7 +40,7 @@ internal fun ComponentActivity.setQuickSaveContent(
             )
             onDispose {}
         }
-        EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor) {
+        EchoMarkTheme(darkTheme = darkTheme, dynamicColor = ready.dynamicColor, designStyle = ready.designStyle) {
             // アプリのロック中は、共有・引用・タイルから開いても中身(既存のタグの候補など)を出さない
             AppLockGate {
                 val status by viewModel.status.collectAsState()

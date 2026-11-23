@@ -51,6 +51,18 @@
 
 AI のカードは `shapes.extraLarge`（28 dp）とトーナルなコンテナ色を使う。補足・警告は `shapes.medium`（16 dp）の `Surface`。リスト行は背景面に連続して置く。表現の強い配色と形状は、最初に確認する AI の状態へ集約する。 [Material 3 Expressive](https://m3.material.io/blog/building-with-m3-expressive)
 
+### デザインの切り替え
+
+「表示」の「デザイン」で、アプリ全体の配色・書体・形状を切り替える。テーマ（明暗）とダイナミックカラーとは独立した設定で、既定はクラシック。ダイナミックカラーがオンの間は配色だけを壁紙に合わせ、書体と形状は選んだデザインのものを使う。トークンは `ui/theme/DesignStyles.kt`、トークンで表せない部品の違いは `EchoMarkDesign` にまとめる。
+
+| デザイン | 配色 | 書体 | 形状（small / medium / extraLarge） | 部品の違い |
+| --- | --- | --- | --- | --- |
+| クラシック | ブランドのインディゴとティール | 共通の `Typography` | 8 / 16 / 28 dp | なし |
+| エコー | 彩度を上げたインディゴとティール。地色とコンテナの段差を広げる | 見出しとタイトルを SemiBold、headline を拡大 | 12 / 24 / 32 dp | 一覧の「今日の再発見」を `primaryContainer` の吹き出し形の帯に載せる |
+| ペーパー | 紙色の地、墨色の文字、黄土色のアクセント | display・headline・titleLarge・titleMedium を端末の明朝体 | 4 / 6 / 12 dp | カードは地色に `outlineVariant` の罫線。ナビゲーションバーは地色と上端の罫線 |
+
+どのデザインも同じ `MaterialTheme` の呼び出しで値だけを替えるため、切り替えても画面の状態（ナビゲーションの履歴、スクロール位置）は保たれる（`EchoMarkThemeTest`）。Expressive の動き（`MotionScheme`、`MaterialExpressiveTheme`）は material3 1.4 では公開されていないため、公開後にエコーへ加える。ペーパーの明朝体は端末の serif（日本語は Noto Serif CJK）を使い、フォントを同梱しない。描画例は `DesignStyleScreenshotTest`（`design_echo_*`、`design_paper_*`、`settings_dialog_design_*`）。
+
 ## コンポーネントと状態
 
 | 操作 | Compose Material 3 のバリエーションと挙動 |
@@ -59,6 +71,7 @@ AI のカードは `shapes.extraLarge`（28 dp）とトーナルなコンテナ�
 | 遷移やモーダルを開く設定行 | 1〜複数行の `ListItem`。行全体を操作対象として `Role.Button` を付ける。ストレージとバージョンは読み取り専用の `ListItem`。 |
 | ダイナミックカラー・再発見通知 | 行全体に `toggleable` と `Role.Switch`。末尾の `Switch` は同じ状態を描画する。変更は即時。通知の有効化に権限が必要なら OS の許可結果を待つ。 |
 | テーマ・曜日 | `AlertDialog` と単一選択の `RadioButton`。選択行を押すと適用して閉じる。キャンセルは `TextButton`。 |
+| デザイン | テーマと同じ単一選択の `AlertDialog`。各行に名前・説明と、そのデザインの地色・見出し・角丸の縮図（読み上げなし）を添える。ダイナミックカラーがオンなら、配色は壁紙に合わせることを先に表示する。 |
 | 時刻 | `TimePickerDialog`、24時間制の `TimePicker` / `TimeInput`、入力方式を切り替える名前付き `IconButton`、保存・キャンセルの `TextButton`。高さ480 dp 未満または文字倍率1.5倍以上は `TimeInput` を使う。入力欄の標準ラベルは端末の言語に従う。保存時に反映する。 [Compose 時刻選択](https://developer.android.com/develop/ui/compose/components/time-pickers) |
 | 通知権限の回復 | 警告の `Surface` と `TextButton`。拒否や端末設定によるブロック時に表示し、OS のアプリ別通知設定を開く。通知の曜日と時刻はアプリ側の通知設定がオンのときに表示する。 |
 | バックアップの進行・結果 | 既存の Android ファイル選択。処理中は `CircularProgressIndicator` 付きダイアログで重複操作を防ぐ。インポート結果とエラーは `AlertDialog` で表示し、復元できる設定がある場合は「設定も戻す」を表示する。書き出しと削除の完了は `Snackbar`。 |

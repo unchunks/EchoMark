@@ -46,7 +46,7 @@ internal class SnapshotViewerActivity : FragmentActivity() {
             // アプリのテーマ設定に合わせる。読み込み前(ほんの一瞬)は何も描かない
             val appState by appViewModel.uiState.collectAsState()
             val ready = appState as? MainUiState.Ready ?: return@setContent
-            EchoMarkTheme(darkTheme = ready.themeMode.isDark(isSystemInDarkTheme()), dynamicColor = ready.dynamicColor) {
+            EchoMarkTheme(darkTheme = ready.themeMode.isDark(isSystemInDarkTheme()), dynamicColor = ready.dynamicColor, designStyle = ready.designStyle) {
                 // 一覧から開くほか、プロセスが終わったあとに、この画面から作り直されることもある
                 AppLockGate {
                     val state by viewModel.state.collectAsState()

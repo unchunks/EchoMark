@@ -7,6 +7,8 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import com.unchunks.echomark.domain.repository.DesignStyle
 import androidx.compose.ui.platform.LocalContext
 
 internal val LightColorScheme = lightColorScheme(
@@ -113,13 +115,15 @@ internal val DarkColorScheme = darkColorScheme(
 
 /**
  * アプリ共通のテーマ。
- * テーマモード・ダイナミックカラーは設定画面から切り替えられるよう、呼び出し側から引数で渡す。
+ * テーマモード・ダイナミックカラー・デザインは設定画面から切り替えられるよう、呼び出し側から引数で渡す。
+ * ダイナミックカラーがオンのときは配色だけを壁紙に合わせ、文字と角丸は [designStyle] のものを使う。
  */
 @Composable
 fun EchoMarkTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Android 12以降の壁紙に合わせた動的カラーリング設定(minSdk 31 のため常に利用可能)
     dynamicColor: Boolean = false,
+    designStyle: DesignStyle = DesignStyle.CLASSIC,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -127,14 +131,17 @@ fun EchoMarkTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        else -> designColorScheme(designStyle, darkTheme)
     }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography, // Type.kt で定義している文字スタイル
-        shapes = Shapes, // Shape.kt で定義している角丸
-        content = content
-    )
+    // どのデザインでも同じ MaterialTheme の呼び出しで値だけを替え、設定からデザインを切り替えても
+    // 画面の状態(ナビゲーションの履歴・スクロール位置)を保つ。
+    // Expressive の動き(MotionScheme・MaterialExpressiveTheme)は material3 1.4 ではまだ公開されていないため使わない
+    CompositionLocalProvider(LocalDesignStyle provides designStyle) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            shapes = designShapes(designStyle),
+            typography = designTypography(designStyle),
+            content = content
+        )
+    }
 }

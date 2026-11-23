@@ -22,6 +22,7 @@ import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.ui.theme.EchoMarkTheme
 
 /**
@@ -30,6 +31,7 @@ import com.unchunks.echomark.ui.theme.EchoMarkTheme
  * 1テストにつき1回だけ呼べる。
  *
  * @param fontScale 端末の文字サイズ設定(アクセシビリティの確認用。2.0 = 最大級)
+ * @param designStyle 描画するデザイン(設定の「デザイン」)
  */
 @OptIn(ExperimentalCoilApi::class)
 fun ScreenshotRule.captureScreenLightDark(
@@ -37,6 +39,7 @@ fun ScreenshotRule.captureScreenLightDark(
     widthDp: Int = DEFAULT_WIDTH_DP,
     heightDp: Int = SCREEN_HEIGHT_DP,
     fontScale: Float = 1f,
+    designStyle: DesignStyle = DesignStyle.CLASSIC,
     content: @Composable () -> Unit
 ) {
     var dark by mutableStateOf(false)
@@ -47,7 +50,7 @@ fun ScreenshotRule.captureScreenLightDark(
             LocalAsyncImagePreviewHandler provides ScreenFakeImageHandler,
             LocalDensity provides Density(LocalDensity.current.density, fontScale)
         ) {
-            EchoMarkTheme(darkTheme = dark, dynamicColor = false) {
+            EchoMarkTheme(darkTheme = dark, dynamicColor = false, designStyle = designStyle) {
                 Surface(
                     color = MaterialTheme.colorScheme.background,
                     modifier = Modifier.testTag(SCREEN_TAG)

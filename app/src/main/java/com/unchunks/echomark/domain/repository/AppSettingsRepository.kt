@@ -72,6 +72,14 @@ data class AiTaskSetting(
 /** 画面の明暗。SYSTEM は端末の設定に合わせる。 */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/**
+ * アプリ全体の見た目(配色・文字・角丸)。明暗([ThemeMode])やダイナミックカラーとは独立して選べる。
+ * - CLASSIC: これまでの Material 3 の標準的な見た目
+ * - ECHO: Material 3 Expressive。大きな見出しと角丸で、再発見と AI 要約を目立たせる
+ * - PAPER: 読書アプリ風。明朝体の見出しと紙色の背景で、色数を絞る
+ */
+enum class DesignStyle { CLASSIC, ECHO, PAPER }
+
 /** 再発見ダイジェスト通知の設定。 */
 data class RediscoverSettings(
     val enabled: Boolean = false,
@@ -130,6 +138,9 @@ interface AppSettingsRepository {
 
     /** 壁紙の色を使うダイナミックカラー(Android 12+)。既定はブランド配色(false)。 */
     val dynamicColor: Flow<Boolean>
+
+    /** アプリ全体のデザイン。既定はこれまでの見た目(CLASSIC)。 */
+    val designStyle: Flow<DesignStyle>
 
     /** 初回オンボーディングを終えた(スキップを含む)か。 */
     val onboardingCompleted: Flow<Boolean>
@@ -231,6 +242,7 @@ interface AppSettingsRepository {
     suspend fun setLocalModel(task: AiTask, modelId: String?)
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setDynamicColor(enabled: Boolean)
+    suspend fun setDesignStyle(style: DesignStyle)
     suspend fun setOnboardingCompleted(completed: Boolean)
     suspend fun setSendFilesToCloud(enabled: Boolean)
     suspend fun setLocalLlmUseGpu(enabled: Boolean)

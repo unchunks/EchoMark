@@ -24,6 +24,7 @@ import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
@@ -101,6 +102,26 @@ class AppSettingsRepositoryImplTest {
         // 知らない並び順(古い版・新しい版で名前が変わったもの)は新しい順として扱う
         dataStore.edit { it[stringPreferencesKey("bookmark_sort_order")] = "UNKNOWN" }
         assertEquals(BookmarkSortOrder.NEWEST, repository.bookmarkSortOrder.first())
+    }
+
+    @Test
+    fun デザインは既定がクラシックで保存したものを読み出せる() = runTest {
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertEquals(DesignStyle.CLASSIC, repository.designStyle.first())
+
+        repository.setDesignStyle(DesignStyle.PAPER)
+        assertEquals(DesignStyle.PAPER, repository.designStyle.first())
+        assertEquals(DesignStyle.PAPER, createRepository(dataStore).designStyle.first())
+
+        // 知らないデザイン(古い版・新しい版で名前が変わったもの)はクラシックとして扱う
+        dataStore.edit { it[stringPreferencesKey("design_style")] = "UNKNOWN" }
+        assertEquals(DesignStyle.CLASSIC, repository.designStyle.first())
+
+        // 設定の初期化でクラシックに戻る
+        repository.setDesignStyle(DesignStyle.ECHO)
+        repository.resetToDefaults()
+        assertEquals(DesignStyle.CLASSIC, repository.designStyle.first())
     }
 
     @Test
