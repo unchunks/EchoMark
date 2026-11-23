@@ -307,6 +307,21 @@ class SubscriptionRepositoryImplTest {
     }
 
     @Test
+    fun 絞り込みは入力を語に分けて保存し_空にすると外れる() = runBlocking {
+        val id = repository.subscribeSearch(SearchSource.QIITA, QueryKind.TAG, "kotlin").let { (it as SubscribeOutcome.Added).id }
+
+        repository.setFilter(id, " Compose、\"large  language model\" ", "PR,広告")
+
+        val filter = repository.observeAll().first().single().filter
+        assertEquals(listOf("Compose", "large language model"), filter.include)
+        assertEquals(listOf("PR", "広告"), filter.exclude)
+        assertEquals("Compose\nlarge language model", dao.getById(id)!!.includeWords)
+
+        repository.setFilter(id, "  ", "")
+        assertTrue(repository.observeAll().first().single().filter.isEmpty)
+    }
+
+    @Test
     fun 使えない入力なら理由を返して追加しない() = runBlocking {
         assertTrue(repository.subscribeSearch(SearchSource.ARXIV, QueryKind.KEYWORDS, "  \"\" ") is SubscribeOutcome.Failed)
         val failed = repository.subscribeSearch(SearchSource.GITHUB_RELEASES, QueryKind.REPOSITORY, "kotlin")

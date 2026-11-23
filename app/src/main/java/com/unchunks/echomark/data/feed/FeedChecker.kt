@@ -15,6 +15,7 @@ import com.unchunks.echomark.data.search.SearchFeeds
 import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.FeedFilter
 import com.unchunks.echomark.domain.subscription.INITIAL_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_RUN
@@ -41,6 +42,7 @@ import javax.inject.Inject
  * - 続けて失敗しているフィードは、[BACKOFF_FAILURES] 回を超えたら [BACKOFF_MILLIS] ごとにしか確認しない(手動の確認は除く)
  * - サイトの検索の購読([SubscriptionType.PAPER]・[SubscriptionType.SEARCH])は、タイトル(キーワードなど)を取得した内容で書き換えない。
  *   タグはキーワードなどとサイトの名前。検索に出てくるのが遅れるので、新着とみなす日付の余裕を [SEARCH_GRACE_MILLIS] に広げる
+ * - 絞り込み([SubscriptionEntity.includeWords]・[SubscriptionEntity.excludeWords])で外れた記事は保存せず「見た」ことにする
  * - arXiv・GDELT は短い間に続けて問い合わせると断られるので、同じサイトへの問い合わせは [SearchSource.requestSpacingMillis] ずつ空ける
  */
 class FeedChecker @Inject constructor(
@@ -240,21 +242,23 @@ class FeedChecker @Inject constructor(
                 .sortedWith(compareBy({ it.value.publishedAt == null }, { -(it.value.publishedAt ?: 0L) }, { it.index }))
                 .map { it.value }
 
+            val filter = FeedFilter(FeedFilter.decode(subscription.includeWords), FeedFilter.decode(subscription.excludeWords))
             val firstCheck = subscription.lastSuccessAt == null
             val toSave: List<FeedItem>
             val skipped: List<FeedItem>
             if (firstCheck) {
-                toSave = sorted.take(minOf(INITIAL_ITEMS_PER_FEED, limit))
+                toSave = sorted.filter { filter.accepts(it.title) }.take(minOf(INITIAL_ITEMS_PER_FEED, limit))
                 // 初めての確認では、保存しなかった分も含め、いま載っているものは全部「見た」ことにする
-                skipped = sorted.drop(toSave.size)
+                skipped = sorted - toSave.toSet()
             } else {
                 val grace = if (subscription.isSearch) SEARCH_GRACE_MILLIS else GRACE_MILLIS
                 val watermark = maxOf(subscription.createdAt, subscription.lastSuccessAt ?: 0L) - grace
                 val unseen = sorted.filter { it.key !in seenSet }
-                val fresh = unseen.filter { item -> item.publishedAt.let { it == null || it >= watermark } }
+                val (accepted, rejected) = unseen.partition { filter.accepts(it.title) }
+                val fresh = accepted.filter { item -> item.publishedAt.let { it == null || it >= watermark } }
                 toSave = fresh.take(limit)
-                // 古い日付の記事は保存せず「見た」ことにする。上限で保存しなかった新着は、次の確認に回すので「見た」にしない
-                skipped = unseen.filter { item -> item.publishedAt.let { it != null && it < watermark } }
+                // 古い日付の記事・絞り込みで外れた記事は保存せず「見た」ことにする。上限で保存しなかった新着は、次の確認に回すので「見た」にしない
+                skipped = rejected + accepted.filter { item -> item.publishedAt.let { it != null && it < watermark } }
             }
             val newSeen = (seen + toSave.map { it.key } + skipped.map { it.key }).distinct().takeLast(MAX_SEEN_KEYS)
             return Plan(toSave, newSeen.joinToString("\n"))

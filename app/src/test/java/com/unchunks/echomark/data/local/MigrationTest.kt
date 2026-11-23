@@ -1028,4 +1028,33 @@ class MigrationTest {
         assertTrue(twice.isFailure)
         connection.close()
     }
+
+    @Test
+    fun migrate32To33_addsEmptySubscriptionFilters() {
+        helper.createDatabase(32).apply {
+            execSQL(
+                "INSERT INTO subscriptions (id, type, feedUrl, title, createdAt, enabled, failureCount, seenKeys) " +
+                    "VALUES (1, 'RSS', 'https://example.com/feed', 'ブログ', 5, 1, 0, 'a\nb')"
+            )
+            close()
+        }
+
+        val connection = helper.runMigrationsAndValidate(33, listOf(MIGRATION_32_33))
+
+        // 既存の購読は絞り込まない(空)。ほかの列はそのまま
+        connection.prepare("SELECT title, seenKeys, includeWords, excludeWords FROM subscriptions WHERE id = 1").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("ブログ", stmt.getText(0))
+            assertEquals("a\nb", stmt.getText(1))
+            assertEquals("", stmt.getText(2))
+            assertEquals("", stmt.getText(3))
+        }
+        connection.execSQL("UPDATE subscriptions SET includeWords = 'AI', excludeWords = '広告' WHERE id = 1")
+        connection.prepare("SELECT includeWords, excludeWords FROM subscriptions WHERE id = 1").use { stmt ->
+            assertTrue(stmt.step())
+            assertEquals("AI", stmt.getText(0))
+            assertEquals("広告", stmt.getText(1))
+        }
+        connection.close()
+    }
 }

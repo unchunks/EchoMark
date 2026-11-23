@@ -110,7 +110,10 @@ class BackupCoverageTest {
             )
         ),
         subscriptions = listOf(
-            SubscriptionEntity(type = "RSS", feedUrl = "https://example.com/feed", title = "ブログ", siteUrl = "https://example.com/", createdAt = 70)
+            SubscriptionEntity(
+                type = "RSS", feedUrl = "https://example.com/feed", title = "ブログ", siteUrl = "https://example.com/", createdAt = 70,
+                includeWords = "AI", excludeWords = "広告"
+            )
         ),
         notes = listOf(BookmarkNoteEntity(bookmarkId = 1, text = "ノート", quote = "引用", createdAt = 80, updatedAt = 90)),
         collections = listOf(CollectionBackup(name = "あとで", description = "説明", createdAt = 30, items = listOf(CollectionItemBackup(1, 31)))),

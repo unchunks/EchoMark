@@ -9,7 +9,7 @@ import androidx.room.PrimaryKey
  * 購読しているフィード(RSS・Atom・YouTube のチャンネル。#78)。夜間に新しい記事・動画を確かめて、ブックマークとして保存する。
  *
  * [feedUrl] は1つだけ(同じフィードを2回購読しない)。
- * バックアップに入れるのは [type]・[feedUrl]・[title]・[siteUrl]・[createdAt]・[enabled] だけで、
+ * バックアップに入れるのは [type]・[feedUrl]・[title]・[siteUrl]・[createdAt]・[enabled]・[includeWords]・[excludeWords] だけで、
  * 確認の状態([lastCheckedAt] 以降の列)は端末の中のものなので含めない(読み込んだ端末では、最初の確認から始める)。
  */
 @Entity(
@@ -61,5 +61,15 @@ data class SubscriptionEntity(
 
     /** すでに見た記事の目印(記事の ID または URL を改行で区切ったもの。新しいものが後ろ。古いものは切り捨てる) */
     @ColumnInfo(defaultValue = "''")
-    val seenKeys: String = ""
+    val seenKeys: String = "",
+
+    // ---- 絞り込み(利用者が決めるもの。バックアップに含める) ----
+
+    /** どれかをタイトルに含む記事だけ保存する語(改行で区切る)。空なら絞り込まない */
+    @ColumnInfo(defaultValue = "''")
+    val includeWords: String = "",
+
+    /** どれかをタイトルに含む記事は保存しない語(改行で区切る) */
+    @ColumnInfo(defaultValue = "''")
+    val excludeWords: String = ""
 )

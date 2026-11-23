@@ -633,6 +633,44 @@ class BackupJsonTest {
     }
 
     @Test
+    fun 購読の絞り込みと検索の種類は書き出して読み戻せ_古い版では絞り込まない() {
+        val subscription = SubscriptionEntity(
+            type = "SEARCH", feedUrl = "https://qiita.com/tags/kotlin/feed", title = "kotlin", createdAt = 1L,
+            includeWords = "Compose\nlarge language model", excludeWords = "PR"
+        )
+
+        val text = BackupJson.encode(sample.copy(subscriptions = listOf(subscription)))
+        val decoded = BackupJson.decode(text).data.subscriptions.single()
+
+        assertEquals("SEARCH", decoded.type)
+        assertEquals("Compose\nlarge language model", decoded.includeWords)
+        assertEquals("PR", decoded.excludeWords)
+        // 絞り込みの無い購読は書き出さない
+        val plain = BackupJson.encode(sample.copy(subscriptions = listOf(subscription.copy(includeWords = "", excludeWords = ""))))
+        assertFalse(plain.contains("includeWords"))
+
+        val old = BackupJson.decode(
+            """{"format":"echomark-backup","version":23,"exportedAt":1,"subscriptions":[
+              {"type":"PAPER","feedUrl":"https://export.arxiv.org/api/query?search_query=all%3Ax","title":"x","createdAt":5}]}"""
+        ).data.subscriptions.single()
+        assertEquals("PAPER", old.type)
+        assertEquals("", old.includeWords)
+        assertEquals("", old.excludeWords)
+    }
+
+    @Test
+    fun 購読の絞り込みの語は改行や長すぎる語を整えて読む() {
+        val decoded = BackupJson.decode(
+            """{"format":"echomark-backup","version":24,"exportedAt":1,"subscriptions":[
+              {"type":"RSS","feedUrl":"https://example.com/feed","title":"t","createdAt":5,
+               "includeWords":["a\nb", "  ", "${"x".repeat(80)}", 3],"excludeWords":"文字列は読まない"}]}"""
+        ).data.subscriptions.single()
+
+        assertEquals(listOf("a b", "x".repeat(50), "3"), decoded.includeWords.split('\n'))
+        assertEquals("", decoded.excludeWords)
+    }
+
+    @Test
     fun 購読の無い古い版は空として読み_http以外のURLや壊れたものは読み飛ばす() {
         val old = BackupJson.decode("""{"format":"echomark-backup","version":13,"exportedAt":1}""")
         assertEquals(emptyList<SubscriptionEntity>(), old.data.subscriptions)

@@ -29,6 +29,7 @@ import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
 import com.unchunks.echomark.domain.bookmark.model.NoteText
 import com.unchunks.echomark.domain.bookmark.model.ReadState
 import com.unchunks.echomark.domain.bookmark.model.SmartFolderNames
+import com.unchunks.echomark.domain.subscription.FeedFilter
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.TagNames
@@ -168,7 +169,7 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   "tagAliases": [ {alias, tagId} ], "removedTags": [ {bookmarkId, tagKey, tagName, removedAt} ],
  *   "categories": [ {name, description, createdAt} ],
  *   "smartFolders": [ {name, filter, tagNames, tagMatch, categories, types, period と readState と sortOrder は無ければ省略, createdAt} ],
- *   "subscriptions": [ {type("RSS" / "YOUTUBE" / "PAPER" / "SEARCH"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled} ],
+ *   "subscriptions": [ {type("RSS" / "YOUTUBE" / "PAPER" / "SEARCH"), feedUrl, title, siteUrl は無ければ省略, createdAt, enabled, includeWords・excludeWords は空なら省略} ],
  *   "notes": [ {bookmarkId, text, quote は無ければ省略, createdAt, updatedAt} ],
  *   "collections": [ {name, description は無ければ省略, createdAt, items: [ {bookmarkId, addedAt} ]} ],
  *   "linkCheckMuted": [ リンク切れの確認で「確認しない」を選んだブックマークの ID ],
@@ -232,10 +233,12 @@ class BackupFormatException(message: String, cause: Throwable? = null) : Excepti
  *   会話の webSearchEnabled(Web 検索のオン・オフ)は質問の語句を端末の外に送る設定なので入れず、読み込んだ会話ではオフにする
  * - 23: ポッドキャストの読みの辞書(readingDictionary。DataStore の reading_dictionary)を追加。22 以前は辞書が無いものとして読む。
  *   読み込むときは今の辞書に足し、同じ表記(全角・半角・大文字・小文字の違いを含む)は今の読みを残す。ポッドキャストの音声とエピソードは入れない
+ * - 24: 購読に新着の絞り込み(includeWords・excludeWords。語の配列。DB v33)を追加。23 以前は絞り込まないものとして読む。
+ *   購読の type に "PAPER"・"SEARCH"(サイトの検索。DB の列は増えていない)も入る
  */
 object BackupJson {
     const val FORMAT = "echomark-backup"
-    const val CURRENT_VERSION = 23
+    const val CURRENT_VERSION = 24
 
     /** 要約の履歴の1版の長さの上限(文字)。壊れた・書き換えられたファイルで巨大な文字列を入れない */
     private const val MAX_SUMMARY_LENGTH = 100_000
@@ -709,6 +712,17 @@ object BackupJson {
         .apply { siteUrl?.let { put("siteUrl", it) } }
         .put("createdAt", createdAt)
         .put("enabled", enabled)
+        .apply {
+            FeedFilter.decode(includeWords).takeIf { it.isNotEmpty() }?.let { put("includeWords", JSONArray(it)) }
+            FeedFilter.decode(excludeWords).takeIf { it.isNotEmpty() }?.let { put("excludeWords", JSONArray(it)) }
+        }
+
+    /** 絞り込みの語の配列を、DB の形(改行で区切る)にする。語は入力と同じく整え(長さ・数の上限)、改行は含めない */
+    private fun JSONObject.filterWords(name: String): String {
+        val array = optJSONArray(name) ?: return ""
+        val words = (0 until array.length()).mapNotNull { index -> array.optString(index, "").takeIf { it.isNotBlank() } }
+        return FeedFilter.encode(FeedFilter.parse(FeedFilter.format(words.map { it.replace(Regex("[\\s\"]+"), " ").trim() })))
+    }
 
     private fun JSONObject.toSubscription(): SubscriptionEntity? {
         // フィードの URL は http / https だけ(バックアップを書き換えて、別の種類の URL を入れられても取り込まない)
@@ -720,7 +734,9 @@ object BackupJson {
             title = stringOrNull("title")?.trim()?.takeIf { it.isNotEmpty() } ?: feedUrl,
             siteUrl = stringOrNull("siteUrl")?.trim()?.takeIf { it.isNotEmpty() && isWebUrl(it) },
             createdAt = longOrNull("createdAt") ?: 0L,
-            enabled = if (has("enabled")) optBoolean("enabled", true) else true
+            enabled = if (has("enabled")) optBoolean("enabled", true) else true,
+            includeWords = filterWords("includeWords"),
+            excludeWords = filterWords("excludeWords")
         )
     }
 

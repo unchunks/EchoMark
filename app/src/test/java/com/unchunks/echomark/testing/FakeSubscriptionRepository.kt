@@ -2,6 +2,7 @@ package com.unchunks.echomark.testing
 
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.FeedFilter
 import com.unchunks.echomark.domain.subscription.QueryKind
 import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.SubscribeOutcome
@@ -47,6 +48,11 @@ class FakeSubscriptionRepository : SubscriptionRepository {
 
     override suspend fun setEnabled(id: Long, enabled: Boolean) {
         subscriptions.value = subscriptions.value.map { if (it.id == id) it.copy(enabled = enabled) else it }
+    }
+
+    override suspend fun setFilter(id: Long, include: String, exclude: String) {
+        val filter = FeedFilter(FeedFilter.parse(include), FeedFilter.parse(exclude))
+        subscriptions.value = subscriptions.value.map { if (it.id == id) it.copy(filter = filter) else it }
     }
 
     override suspend fun remove(id: Long) {

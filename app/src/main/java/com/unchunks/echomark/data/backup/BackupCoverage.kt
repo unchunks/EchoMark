@@ -96,7 +96,7 @@ object BackupCoverage {
         ),
         "subscriptions" to Table.Included(
             "subscriptions",
-            included("type", "feedUrl", "title", "siteUrl", "createdAt", "enabled") +
+            included("type", "feedUrl", "title", "siteUrl", "createdAt", "enabled", "includeWords", "excludeWords") +
                 excluded(ID_RENUMBERED, "id") +
                 excluded(FEED_CHECK_STATE, "lastCheckedAt", "lastSuccessAt", "etag", "lastModified", "failureCount", "lastError", "seenKeys")
         ),

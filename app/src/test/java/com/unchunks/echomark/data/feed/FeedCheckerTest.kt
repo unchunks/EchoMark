@@ -519,4 +519,63 @@ class FeedCheckerTest {
         assertEquals("生成AI", row.title)
         assertNull(row.siteUrl)
     }
+
+    // ---- 絞り込み ----
+
+    private suspend fun subscribeFiltered(include: List<String> = emptyList(), exclude: List<String> = emptyList()): Long =
+        dao.insertIgnore(
+            SubscriptionEntity(
+                type = SubscriptionType.RSS.name, feedUrl = server.url("/feed.xml").toString(), title = "開発ブログ", createdAt = base,
+                includeWords = include.joinToString("\n"), excludeWords = exclude.joinToString("\n")
+            )
+        )
+
+    /** [items] は (記事の ID, タイトル)。新しいものが先(1時間ずつ古くなる) */
+    private fun rssWithTitles(items: List<Pair<String, String>>, newest: Long): String {
+        val body = items.withIndex().joinToString("") { (index, item) ->
+            val date = DateTimeFormatter.RFC_1123_DATE_TIME.format(Instant.ofEpochMilli(newest - index * hour).atOffset(ZoneOffset.UTC))
+            "<item><title>${item.second}</title><link>https://example.com/posts/${item.first}</link>" +
+                "<guid isPermaLink=\"false\">${item.first}</guid><pubDate>$date</pubDate></item>"
+        }
+        return "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>開発ブログ</title>$body</channel></rss>"
+    }
+
+    @Test
+    fun 初めての確認でも絞り込みに当てはまるものだけ保存し_ほかは見たことにする() = runBlocking {
+        val id = subscribeFiltered(include = listOf("Kotlin"), exclude = listOf("PR"))
+        enqueueFeed(
+            rssWithTitles(
+                listOf("a" to "天気", "b" to "kotlin 2.5", "c" to "【PR】Kotlin 講座", "d" to "Kotlin と Compose", "e" to "料理"),
+                newest = base + 10 * hour
+            )
+        )
+
+        val summary = checker.checkAll(now = base + day)
+
+        assertEquals(2, summary.added)
+        assertEquals(listOf("b", "d").map { "https://example.com/posts/$it" }, savedUrls())
+        assertEquals(5, dao.getById(id)!!.seenKeys.split('\n').size)
+    }
+
+    @Test
+    fun 二回目からも絞り込みで外れた新着は保存せず次の確認でも出さない() = runBlocking {
+        val id = subscribeFiltered(exclude = listOf("広告"))
+        enqueueFeed(rssWithTitles(listOf("a" to "記事"), newest = base + hour))
+        checker.checkAll(now = base + day)
+        repository.importedLinks.clear()
+
+        val second = rssWithTitles(listOf("c" to "広告のお知らせ", "b" to "新しい記事", "a" to "記事"), newest = base + day + 2 * hour)
+        enqueueFeed(second)
+        val summary = checker.checkAll(now = base + 2 * day)
+
+        assertEquals(1, summary.added)
+        assertEquals(listOf("https://example.com/posts/b"), savedUrls())
+        assertTrue("c" in dao.getById(id)!!.seenKeys.split('\n'))
+
+        // 絞り込みを外しても、外れたものはさかのぼって保存しない
+        dao.setFilter(id, "", "")
+        repository.importedLinks.clear()
+        enqueueFeed(second)
+        assertEquals(0, checker.checkAll(now = base + 3 * day).added)
+    }
 }

@@ -14,6 +14,7 @@ import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.search.SearchFeeds
 import com.unchunks.echomark.domain.repository.SubscriptionRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.FeedFilter
 import com.unchunks.echomark.domain.subscription.MAX_SUBSCRIPTIONS
 import com.unchunks.echomark.domain.subscription.QueryKind
 import com.unchunks.echomark.domain.subscription.SearchSource
@@ -132,6 +133,10 @@ class SubscriptionRepositoryImpl @Inject constructor(
         dao.setEnabled(id, enabled)
     }
 
+    override suspend fun setFilter(id: Long, include: String, exclude: String) = withContext(dispatcherProvider.io) {
+        dao.setFilter(id, FeedFilter.encode(FeedFilter.parse(include)), FeedFilter.encode(FeedFilter.parse(exclude)))
+    }
+
     override suspend fun remove(id: Long) = withContext(dispatcherProvider.io) {
         dao.delete(id)
     }
@@ -156,5 +161,6 @@ internal fun SubscriptionEntity.toDomain(): Subscription = Subscription(
     enabled = enabled,
     lastCheckedAt = lastCheckedAt,
     failureCount = failureCount,
-    lastError = lastError
+    lastError = lastError,
+    filter = FeedFilter(FeedFilter.decode(includeWords), FeedFilter.decode(excludeWords))
 )

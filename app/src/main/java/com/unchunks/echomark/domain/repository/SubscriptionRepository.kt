@@ -26,6 +26,12 @@ interface SubscriptionRepository {
 
     suspend fun setEnabled(id: Long, enabled: Boolean)
 
+    /**
+     * 新着の絞り込みを変える。[include]・[exclude] は入力のまま(空白・読点・カンマで区切る。`"..."` は語句のまま)。
+     * 空にすると絞り込まない。これまでに見送った記事は、さかのぼって保存しない
+     */
+    suspend fun setFilter(id: Long, include: String, exclude: String)
+
     /** 購読をやめる。保存済みのブックマークは残る */
     suspend fun remove(id: Long)
 

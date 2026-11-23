@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.echomark.domain.subscription.FeedFilter
 import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
@@ -88,6 +89,14 @@ class SubscriptionsScreenshotTest {
     }
 
     @Test
+    fun filter() = screenshot.captureLightDark("subscriptions_filter") {
+        val filtered = subscriptions.take(2).mapIndexed { index, it ->
+            if (index == 0) it.copy(filter = FeedFilter(include = listOf("Kotlin", "Compose"), exclude = listOf("PR"))) else it
+        }
+        Content(SubscriptionsUiState(subscriptions = filtered))
+    }
+
+    @Test
     fun list() = screenshot.captureLightDark("subscriptions_list") {
         Content(SubscriptionsUiState(subscriptions = subscriptions, message = "「開発ブログ」を購読しました。最新の 3 件を保存しました。これからの新着は毎晩確認します"))
     }
@@ -103,7 +112,11 @@ class SubscriptionsScreenshotTest {
     }
 
     @Composable
-    private fun Content(state: SubscriptionsUiState, mode: SubscribeMode = SubscribeMode.Site, source: SearchSource = SearchSource.ARXIV) {
+    private fun Content(
+        state: SubscriptionsUiState,
+        mode: SubscribeMode = SubscribeMode.Site,
+        source: SearchSource = SearchSource.ARXIV
+    ) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
             SubscriptionsContent(
                 state = state,
