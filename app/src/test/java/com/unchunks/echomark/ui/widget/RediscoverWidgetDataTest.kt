@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.rediscover.RediscoverSelector
+import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.testing.testBookmark
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,9 +99,10 @@ class RediscoverWidgetDataTest {
     fun 表示が変わるときだけ更新を流す() = runTest {
         val bookmarks = MutableStateFlow(listOf(testBookmark(1, lastAccessedAt = now - 30 * day)))
         val dynamicColor = MutableStateFlow(false)
+        val designStyle = MutableStateFlow(DesignStyle.CLASSIC)
         val changes = mutableListOf<RediscoverWidgetUpdater.Companion.WidgetSnapshot>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            RediscoverWidgetUpdater.widgetContentChanges(bookmarks, dynamicColor, clock = { now }, debounceMs = 100)
+            RediscoverWidgetUpdater.widgetContentChanges(bookmarks, dynamicColor, designStyle = designStyle, clock = { now }, debounceMs = 100)
                 .toList(changes)
         }
         advanceTimeBy(200); runCurrent()
@@ -122,11 +124,17 @@ class RediscoverWidgetDataTest {
         advanceTimeBy(200); runCurrent()
         assertEquals(3, changes.size)
 
+        // デザインを変えたら描き直す
+        designStyle.value = DesignStyle.PAPER
+        advanceTimeBy(200); runCurrent()
+        assertEquals(4, changes.size)
+        assertEquals(DesignStyle.PAPER, changes.last().designStyle)
+
         // 短い間の連続した変更は1回にまとめる
         bookmarks.value = listOf(testBookmark(5, lastAccessedAt = now - 30 * day))
         bookmarks.value = listOf(testBookmark(6, lastAccessedAt = now - 30 * day))
         advanceTimeBy(200); runCurrent()
-        assertEquals(4, changes.size)
+        assertEquals(5, changes.size)
         assertEquals(listOf(6L), changes.last().items.map { it.bookmarkId })
     }
 

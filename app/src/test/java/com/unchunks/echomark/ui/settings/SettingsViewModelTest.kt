@@ -283,6 +283,8 @@ class SettingsViewModelTest {
         advanceUntilIdle()
         assertEquals(DesignStyle.ECHO, settings.designStyleFlow.value)
         assertEquals(DesignStyle.ECHO, viewModel.uiState.value.designStyle)
+        // 設定から選んだら、一覧の「新しいデザインを選べます」の案内はもう出さない
+        assertTrue(settings.designIntroSeenFlow.value)
     }
 
     @Test
