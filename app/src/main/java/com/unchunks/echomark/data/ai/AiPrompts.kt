@@ -592,6 +592,35 @@ object AiPrompts {
         }
     }.joinToString("\n").trimEnd()
 
+    /**
+     * アプリの使い方の質問に答えさせる指示(端末内 AI 向けの短いもの)。
+     * guide は呼び出し側で "[n] 題名: 本文" に整形済みの使い方の案内(質問に近い順)。
+     * 小型のモデルはアプリのことを知らず、無い画面やメニューを作りがちなため、案内に無いことは書かせない。
+     * @param actions AI が提案できる操作(1つ1行。"- id: 説明" / "- id 値: 説明")。空なら操作の指示を入れない。
+     *   AI は回答の最後に「操作: id」と書く。アプリがその行を隠してボタンにし、利用者が押すと実行する
+     */
+    fun appHelpInstructions(guide: List<String>, actions: List<String> = emptyList()): String = buildList {
+        add("あなたは EchoMark(保存した記事やメモを AI が整理する Android アプリ)の使い方を案内するアシスタントです。日本語の短い文章で答えます。")
+        add("- 下の「使い方の案内」に書かれていることだけを使い、画面やメニューの名前は案内のとおりに書く。")
+        add("- 操作は、どの画面のどこを押すかを順番に書く。手順が3つ以上なら番号付きの箇条書きにする。")
+        add("- 案内に答えが無ければ、分からないと伝え、近い機能があればそれを案内する。案内に無い画面やメニューを作らない。")
+        add("- あいさつには短く答える。アプリと関係の無い質問には、アプリの使い方だけ答えられると伝える。")
+        if (actions.isNotEmpty()) {
+            add("- 利用者が操作を頼んだら、下の「頼める操作」から合うものを選び、回答の最後に「操作: 名前」(値が要るものは「操作: 名前 値」)と1行で書く。")
+            add("  実行は利用者がボタンで決めるので、「〜します」とだけ短く書く。合う操作が無ければ書かない。")
+            add("")
+            add("頼める操作:")
+            addAll(actions)
+        }
+        add("")
+        if (guide.isEmpty()) {
+            add("使い方の案内: (該当するものはありません)")
+        } else {
+            add("使い方の案内:")
+            guide.forEach { add(it); add("") }
+        }
+    }.joinToString("\n").trimEnd()
+
     /** 会話の記憶([memory]: 古い発言の要約)をチャットの指示に足す部分。 */
     fun chatMemorySection(memory: String): String = "$CHAT_MEMORY_HEADER\n${memory.trim()}"
 

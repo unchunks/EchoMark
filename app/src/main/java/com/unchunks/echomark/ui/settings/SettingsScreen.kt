@@ -135,7 +135,9 @@ class SettingsActions(
     val onShareCrashLog: () -> Unit = {},
     val onClearCrashLog: () -> Unit = {},
     /** null なら「はじめにの案内」の行を出さない */
-    val onOpenOnboarding: (() -> Unit)? = null
+    val onOpenOnboarding: (() -> Unit)? = null,
+    /** null なら「使い方を AI に聞く」の行を出さない */
+    val onOpenAppHelp: (() -> Unit)? = null
 )
 
 /** 設定タブ。状態は [SettingsViewModel]、表示は [SettingsContent]。 */
@@ -143,6 +145,7 @@ class SettingsActions(
 internal fun SettingsScreen(
     onOpenAiSettings: () -> Unit,
     onOpenOnboarding: (() -> Unit)? = null,
+    onOpenAppHelp: (() -> Unit)? = null,
     onOpenProcessingQueue: () -> Unit = {},
     onOpenCategories: () -> Unit = {},
     onOpenOfflineVideos: () -> Unit = {},
@@ -293,7 +296,8 @@ internal fun SettingsScreen(
                 }
             },
             onClearCrashLog = viewModel::clearCrashLog,
-            onOpenOnboarding = onOpenOnboarding
+            onOpenOnboarding = onOpenOnboarding,
+            onOpenAppHelp = onOpenAppHelp
         )
     )
 }

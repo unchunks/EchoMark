@@ -136,4 +136,17 @@ class LocalChatPromptTest {
 
         assertEquals(listOf(LocalChatTurn(true, "質問1"), LocalChatTurn(false, "回答1")), input.history)
     }
+
+    @Test
+    fun 指示を替えると同じ予算の割り振りで別の指示を使う() {
+        val input = LocalChatPrompt.input(
+            userMessage = "保存するには?",
+            context = listOf("[1] 保存: 共有メニューから"),
+            history = emptyList(),
+            instructions = AiPrompts::appHelpInstructions
+        )
+
+        assertEquals(AiPrompts.appHelpInstructions(listOf("[1] 保存: 共有メニューから")), input.systemInstruction)
+        assertTrue(input.plainPrompt.length <= LocalChatPrompt.MAX_PROMPT_CHARS)
+    }
 }
