@@ -29,6 +29,9 @@ internal object BookmarkListRequests {
 
     /** 起動直後の操作([ListLaunchAction] の name) */
     const val KEY_LAUNCH_ACTION = "launchAction"
+
+    /** 検索語を入れて検索モードにする(使い方の AI から) */
+    const val KEY_SEARCH_QUERY = "searchQuery"
 }
 
 /** 一覧のルート(開始画面) */
@@ -48,6 +51,13 @@ internal fun NavController.openBookmarkListWith(action: ListLaunchAction) {
     entry.savedStateHandle[BookmarkListRequests.KEY_LAUNCH_ACTION] = action.name
 }
 
+/** 一覧まで戻り、[query] で検索する(使い方の AI から) */
+internal fun NavController.openBookmarkListWithSearch(query: String) {
+    popBackStack(BOOKMARKS_ROUTE, inclusive = false)
+    val entry = runCatching { getBackStackEntry(BOOKMARKS_ROUTE) }.getOrNull() ?: return
+    entry.savedStateHandle[BookmarkListRequests.KEY_SEARCH_QUERY] = query
+}
+
 /**
  * [handle](一覧のエントリの SavedStateHandle)に届いた依頼を1回ずつ取り出して渡す。
  * 取り出したら消すので、画面に戻ったときや作り直したときに同じ依頼を繰り返さない。
@@ -56,10 +66,12 @@ internal fun NavController.openBookmarkListWith(action: ListLaunchAction) {
 internal fun BookmarkListRequestsEffect(
     handle: SavedStateHandle,
     onSelectTag: (Long) -> Unit,
-    onLaunchAction: (ListLaunchAction) -> Unit
+    onLaunchAction: (ListLaunchAction) -> Unit,
+    onSearch: (String) -> Unit
 ) {
     val currentOnSelectTag by rememberUpdatedState(onSelectTag)
     val currentOnLaunchAction by rememberUpdatedState(onLaunchAction)
+    val currentOnSearch by rememberUpdatedState(onSearch)
     LaunchedEffect(handle) {
         launch {
             handle.getStateFlow<Long?>(BookmarkListRequests.KEY_SELECT_TAG_ID, null).filterNotNull().collect { tagId ->
@@ -71,6 +83,12 @@ internal fun BookmarkListRequestsEffect(
             handle.getStateFlow<String?>(BookmarkListRequests.KEY_LAUNCH_ACTION, null).filterNotNull().collect { name ->
                 handle[BookmarkListRequests.KEY_LAUNCH_ACTION] = null
                 ListLaunchAction.entries.firstOrNull { it.name == name }?.let { currentOnLaunchAction(it) }
+            }
+        }
+        launch {
+            handle.getStateFlow<String?>(BookmarkListRequests.KEY_SEARCH_QUERY, null).filterNotNull().collect { query ->
+                handle[BookmarkListRequests.KEY_SEARCH_QUERY] = null
+                currentOnSearch(query)
             }
         }
     }
@@ -102,7 +120,8 @@ internal fun BookmarkListDestination(
     BookmarkListRequestsEffect(
         handle = entry.savedStateHandle,
         onSelectTag = viewModel::showTag,
-        onLaunchAction = viewModel::handleLaunchAction
+        onLaunchAction = viewModel::handleLaunchAction,
+        onSearch = viewModel::onSearchQueryChange
     )
     BookmarkListScreen(
         onOpenBookmark = onOpenBookmark,

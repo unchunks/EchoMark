@@ -122,8 +122,10 @@ class LocalLlmProvider @Inject constructor(
             onContextUsage: (ChatContextUsage) -> Unit
         ) = this@LocalLlmProvider.chatStream(modelId, userMessage, context, history, memory, onContextUsage)
 
-        override fun appHelpStream(question: String, guide: List<String>, history: List<ChatMessage>) =
-            this@LocalLlmProvider.chatStream(modelId, question, guide, history, instructions = AiPrompts::appHelpInstructions)
+        override fun appHelpStream(question: String, guide: List<String>, actions: List<String>, history: List<ChatMessage>) =
+            this@LocalLlmProvider.chatStream(
+                modelId, question, guide, history, instructions = { AiPrompts.appHelpInstructions(it, actions) }
+            )
 
         override suspend fun summarizeConversation(previousSummary: String?, messages: List<ChatMessage>) =
             this@LocalLlmProvider.summarizeConversation(modelId, previousSummary, messages)
@@ -734,8 +736,12 @@ class LocalLlmProvider @Inject constructor(
     ): Flow<String> = chatStream(null, userMessage, context, history, memory, onContextUsage)
 
     /** 使い方の質問。チャットと同じ生成の仕組み(やり直し・出力の見張り)を、使い方の案内の指示で使う */
-    override fun appHelpStream(question: String, guide: List<String>, history: List<ChatMessage>): Flow<String> =
-        chatStream(null, question, guide, history, instructions = AiPrompts::appHelpInstructions)
+    override fun appHelpStream(
+        question: String,
+        guide: List<String>,
+        actions: List<String>,
+        history: List<ChatMessage>
+    ): Flow<String> = chatStream(null, question, guide, history, instructions = { AiPrompts.appHelpInstructions(it, actions) })
 
     /**
      * [modelId] のモデルでの [chatStream]。

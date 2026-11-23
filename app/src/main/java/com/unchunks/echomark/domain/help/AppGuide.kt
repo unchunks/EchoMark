@@ -3,12 +3,14 @@ package com.unchunks.echomark.domain.help
 /**
  * アプリの使い方の1つの節。端末内 AI に「使い方の質問」へ答えさせるときの資料になる。
  * @property keywords 本文に無い言い方(言い換え・略語)でも見つけられるようにする語
+ * @property actions この節から行える操作([AppActionCatalog] の id)。AI に示し、AI が書かなければ最初のものをボタンに出す
  */
 data class GuideSection(
     val id: String,
     val title: String,
     val body: String,
-    val keywords: List<String> = emptyList()
+    val keywords: List<String> = emptyList(),
+    val actions: List<String> = emptyList()
 )
 
 /**
@@ -24,14 +26,16 @@ object AppGuide {
             body = "保存した記事・動画・メモ・ファイルを AI が要約し、タグとカテゴリを付けて整理します。" +
                 "あとから意味で検索したり、チャットで保存内容について質問したりできます。" +
                 "画面の下(タブレットでは左)に「ブックマーク」「チャット」「見つける」「設定」のタブがあります。",
-            keywords = listOf("概要", "使い方", "何ができる", "タブ", "はじめて")
+            keywords = listOf("概要", "使い方", "何ができる", "タブ", "はじめて"),
+            actions = listOf("open_bookmarks", "open_chat", "open_explore", "open_settings")
         ),
         GuideSection(
             id = "save-share",
             title = "ブラウザなどから保存する",
             body = "ブラウザや動画アプリで共有メニューを開き、EchoMark を選ぶと保存できます。" +
                 "保存すると、本文の取得と AI の要約・タグ付けが自動で始まります。",
-            keywords = listOf("共有", "シェア", "保存", "追加", "登録", "ブラウザ", "URL", "リンク")
+            keywords = listOf("共有", "シェア", "保存", "追加", "登録", "ブラウザ", "URL", "リンク"),
+            actions = listOf("open_add")
         ),
         GuideSection(
             id = "save-manual",
@@ -40,14 +44,16 @@ object AppGuide {
                 "上の切り替えで「リンク」「メモ」「ファイル」を選びます。" +
                 "リンクは URL を入れ、タイトルは空欄ならページのタイトルを自動で取得します。" +
                 "メモは本文を書き、タイトルが空欄なら1行目をタイトルにします。ファイルは端末のファイルを選びます。",
-            keywords = listOf("追加", "メモ", "ファイル", "手動", "URL", "書く", "プラス")
+            keywords = listOf("追加", "メモ", "ファイル", "手動", "URL", "書く", "プラス"),
+            actions = listOf("open_add")
         ),
         GuideSection(
             id = "search",
             title = "検索と絞り込み",
             body = "「ブックマーク」タブの上の虫めがねのボタンで検索します。キーワードだけでなく、内容の意味が近いものも見つかります。" +
                 "タグ・カテゴリ・種類・期間・読んだかどうかで絞り込めます。並べ替えと表示の切り替えのボタンも上にあります。",
-            keywords = listOf("検索", "探す", "見つからない", "絞り込み", "フィルター", "並べ替え", "表示")
+            keywords = listOf("検索", "探す", "見つからない", "絞り込み", "フィルター", "並べ替え", "表示"),
+            actions = listOf("open_bookmarks", "open_unread")
         ),
         GuideSection(
             id = "detail",
@@ -56,14 +62,16 @@ object AppGuide {
                 "「ブラウザで開く」で元のページを開き、「AIに質問」でそのブックマークについてチャットできます。" +
                 "右上のメニューから「編集」「AIで処理し直す」「コレクションに追加」「ポッドキャストにする」「ホーム画面に追加」「削除」ができます。" +
                 "詳細の中の「要約を直す」「翻訳」「Web で確かめる」も使えます。",
-            keywords = listOf("詳細", "編集", "削除", "消す", "要約", "タグ", "処理し直す", "翻訳")
+            keywords = listOf("詳細", "編集", "削除", "消す", "要約", "タグ", "処理し直す", "翻訳"),
+            actions = listOf("open_bookmarks")
         ),
         GuideSection(
             id = "chat",
             title = "チャット(保存内容に質問する)",
             body = "「チャット」タブで新しい会話を始め、保存したものについて質問できます。" +
                 "AI は質問に近いブックマークを探して答え、使ったものに [1] のような番号を付けます。番号から、どのブックマークを使ったかを確かめられます。",
-            keywords = listOf("チャット", "質問", "会話", "聞く", "AI", "回答")
+            keywords = listOf("チャット", "質問", "会話", "聞く", "AI", "回答"),
+            actions = listOf("open_chat")
         ),
         GuideSection(
             id = "explore",
@@ -73,7 +81,8 @@ object AppGuide {
                 "「ライブラリの分析」(タグ・統計・関心の変化・つながりの図・地図)、「ポッドキャスト」(保存したものを読み上げで聞く)、" +
                 "「コレクション」(ブックマークを集めて名前を付ける)、「タグの管理」(名前の変更・統合・表記ゆれの整理)、" +
                 "「重複と関連」(同じものや似たものをまとめる)、「リンク切れ」(開けなくなったリンクを確かめる)。",
-            keywords = listOf("見つける", "ふり返り", "復習", "あとで読む", "コレクション", "タグ", "重複", "リンク切れ", "分析", "ポッドキャスト", "資料")
+            keywords = listOf("見つける", "ふり返り", "復習", "あとで読む", "コレクション", "タグ", "重複", "リンク切れ", "分析", "ポッドキャスト", "資料"),
+            actions = listOf("open_review", "open_discover", "open_insights", "open_podcasts", "open_collections", "open_tags", "open_duplicates")
         ),
         GuideSection(
             id = "ai-setup",
@@ -82,7 +91,8 @@ object AppGuide {
                 "「おすすめのモデル」から端末に合うモデルをダウンロードしてください。モデルが無いと要約・タグ付け・チャットが動きません。" +
                 "「用途ごとの AI」で、タグ付け・要約・チャットに使うモデルを分けられます。" +
                 "動作が遅いときは小さいモデルを選ぶと速くなります。「GPU で動かす(実験的)」をオンにすると速くなる端末もあります。",
-            keywords = listOf("AI", "モデル", "ダウンロード", "取り込み", "端末内", "ローカル", "遅い", "GPU", "準備", "動かない")
+            keywords = listOf("AI", "モデル", "ダウンロード", "取り込み", "端末内", "ローカル", "遅い", "GPU", "準備", "動かない"),
+            actions = listOf("open_ai_settings")
         ),
         GuideSection(
             id = "ai-failed",
@@ -90,21 +100,59 @@ object AppGuide {
             body = "AI のモデルを取り込んでいるかを「設定」>「AI」の AI の設定で確かめてください。" +
                 "失敗したものは、AI の設定の「失敗・準備待ちを再処理」でまとめてやり直せます。1件だけなら詳細のメニューの「AIで処理し直す」を使います。" +
                 "処理の進み具合は「設定」の「処理の状況」で見られます。「充電中だけ処理する」「Wi-Fi のときだけ通信する」がオンだと、条件を満たすまで待ちます。",
-            keywords = listOf("失敗", "エラー", "要約されない", "進まない", "待ち", "再処理", "やり直す", "処理の状況", "止まる")
+            keywords = listOf("失敗", "エラー", "要約されない", "進まない", "待ち", "再処理", "やり直す", "処理の状況", "止まる"),
+            actions = listOf("reprocess_failed", "open_queue", "open_ai_settings")
+        ),
+        GuideSection(
+            id = "processing",
+            title = "処理の設定(充電中・Wi-Fi・夜間)",
+            body = "「設定」の「処理」の欄で、「充電中だけ処理する」「Wi-Fi のときだけ通信する」「夜間にまとめて処理する」を切り替えられます。" +
+                "電池や通信量を抑えたいときにオンにします。オンの間は条件を満たすまで処理を待ちます。",
+            keywords = listOf("充電", "電池", "バッテリー", "wifi", "通信量", "夜間", "夜", "処理の設定"),
+            actions = listOf(
+                "charging_only_on", "charging_only_off", "wifi_only_on", "wifi_only_off", "nightly_on", "nightly_off", "open_queue"
+            )
+        ),
+        GuideSection(
+            id = "insights",
+            title = "ライブラリの分析・グラフ・地図",
+            body = "「見つける」タブの「ライブラリの分析」で、タグ・統計・関心の変化を見られます。" +
+                "そこからブックマークのつながりを表す「ナレッジグラフ」と、場所のあるブックマークの地図も開けます。",
+            keywords = listOf("分析", "統計", "グラフ", "つながり", "地図", "場所", "関心"),
+            actions = listOf("open_insights", "open_graph", "open_places")
+        ),
+        GuideSection(
+            id = "podcast",
+            title = "ポッドキャスト",
+            body = "保存したものを、端末の読み上げで聞けるエピソードにします。詳細のメニューの「ポッドキャストにする」で作り、" +
+                "「見つける」タブの「ポッドキャスト」で聞けます。読み間違える言葉は「読みの辞書」で読み方を登録できます。",
+            keywords = listOf("ポッドキャスト", "読み上げ", "聞く", "音声", "読み方", "辞書"),
+            actions = listOf("open_podcasts", "open_reading_dictionary")
+        ),
+        GuideSection(
+            id = "assistant",
+            title = "この画面で頼める操作",
+            body = "この「使い方を AI に聞く」画面では、画面を開く・リンクやメモの保存・ブックマークの検索・テーマやデザインの切り替え・" +
+                "オフラインモードや処理の設定の切り替え・要約の言語の変更・失敗した処理のやり直しを頼めます。" +
+                "AI が操作のボタンを出すので、押すと実行します。ファイルの選択・ロック・バックアップなど画面での操作が要るものは、その画面を開きます。",
+            keywords = listOf("頼める", "頼む", "代わりに", "何をしてくれる"),
+            actions = listOf("open_add", "open_settings")
         ),
         GuideSection(
             id = "summary-style",
             title = "要約の言語と書き方",
             body = "「設定」の「要約の言語」「要約の書き方」で、要約を作る言語と長さ・形を変えられます。" +
                 "AI が付けるカテゴリは「設定」の「カテゴリ」で作ったり説明を見たりできます。",
-            keywords = listOf("要約", "言語", "英語", "日本語", "長さ", "書き方", "カテゴリ", "分類")
+            keywords = listOf("要約", "言語", "英語", "日本語", "長さ", "書き方", "カテゴリ", "分類"),
+            actions = listOf("summary_ja", "summary_en", "summary_zh", "summary_ko", "open_categories")
         ),
         GuideSection(
             id = "notification",
             title = "再発見通知",
             body = "30日以上開いていないブックマークを週に1回お知らせします。" +
                 "「設定」の「通知」の欄の「再発見通知」でオン・オフと、曜日・時刻を変えられます。",
-            keywords = listOf("通知", "お知らせ", "再発見", "曜日", "時刻", "届かない")
+            keywords = listOf("通知", "お知らせ", "再発見", "曜日", "時刻", "届かない"),
+            actions = listOf("open_settings")
         ),
         GuideSection(
             id = "backup",
@@ -112,14 +160,16 @@ object AppGuide {
             body = "「設定」の「データ管理」の欄で「バックアップを書き出す」「バックアップを読み込む」ができます。" +
                 "ファイルも含めたいときは「ファイルも含めて書き出す」を使います。「自動バックアップ」で定期的に保存先のフォルダへ書き出せます。" +
                 "機種変更のときは、書き出したファイルを新しい端末で読み込んでください。",
-            keywords = listOf("バックアップ", "復元", "機種変更", "引き継ぎ", "移行", "書き出す", "エクスポート", "読み込む")
+            keywords = listOf("バックアップ", "復元", "機種変更", "引き継ぎ", "移行", "書き出す", "エクスポート", "読み込む"),
+            actions = listOf("open_settings")
         ),
         GuideSection(
             id = "import",
             title = "他のサービスからの取り込みと購読",
             body = "「設定」の「データ管理」の「他のサービスから取り込む」で、Pocket・Raindrop.io・ブラウザなどの書き出しファイルを取り込めます。" +
                 "「購読(RSS・論文・ニュースなど)」で、フィードの新しい記事を自動で取り込めます。",
-            keywords = listOf("取り込む", "インポート", "Pocket", "Raindrop", "ブラウザ", "ブックマーク", "RSS", "購読", "フィード")
+            keywords = listOf("取り込む", "インポート", "Pocket", "Raindrop", "ブラウザ", "ブックマーク", "RSS", "購読", "フィード"),
+            actions = listOf("open_settings")
         ),
         GuideSection(
             id = "privacy",
@@ -127,13 +177,15 @@ object AppGuide {
             body = "「設定」の「ロック」の欄の「アプリのロック」で、開くときに本人の確認を求められます。" +
                 "「最近使ったアプリで内容を隠す」もあります。「通信」の欄の「オフラインモード」をオンにすると、アプリは通信しません。" +
                 "端末内 AI を使う限り、保存内容は端末の外に送られません。",
-            keywords = listOf("ロック", "パスワード", "指紋", "生体認証", "オフライン", "プライバシー", "通信", "安全", "隠す")
+            keywords = listOf("ロック", "パスワード", "指紋", "生体認証", "オフライン", "プライバシー", "通信", "安全", "隠す"),
+            actions = listOf("offline_on", "offline_off", "open_settings")
         ),
         GuideSection(
             id = "appearance",
             title = "表示(テーマ・デザイン)",
             body = "「設定」の「表示」の欄で、テーマ(ライト・ダーク)・デザイン・ダイナミックカラーを変えられます。",
-            keywords = listOf("テーマ", "ダーク", "ライト", "色", "デザイン", "見た目", "表示")
+            keywords = listOf("テーマ", "ダーク", "ライト", "色", "デザイン", "見た目", "表示"),
+            actions = listOf("theme_dark", "theme_light", "theme_system", "design_classic", "design_echo", "design_paper")
         ),
         GuideSection(
             id = "storage",
@@ -141,13 +193,15 @@ object AppGuide {
             body = "「設定」の「ストレージ使用量」で使っている容量を確かめられます。「オフラインの動画」で保存した動画を消せます。" +
                 "「データの削除」の欄の「すべてのデータを削除」で、保存したものを全部消せます(元に戻せません)。" +
                 "ブックマークを1件消したときは、一覧に戻ったあとしばらくは元に戻せます。",
-            keywords = listOf("容量", "ストレージ", "削除", "消す", "全部", "初期化", "動画", "元に戻す")
+            keywords = listOf("容量", "ストレージ", "削除", "消す", "全部", "初期化", "動画", "元に戻す"),
+            actions = listOf("open_offline_videos", "open_settings")
         ),
         GuideSection(
             id = "onboarding",
             title = "はじめにの案内",
             body = "「設定」の「このアプリについて」の欄の「はじめにの案内をもう一度見る」で、保存の仕方や AI の準備の案内を見直せます。",
-            keywords = listOf("案内", "はじめに", "チュートリアル", "オンボーディング")
+            keywords = listOf("案内", "はじめに", "チュートリアル", "オンボーディング"),
+            actions = listOf("open_onboarding")
         )
     )
 }

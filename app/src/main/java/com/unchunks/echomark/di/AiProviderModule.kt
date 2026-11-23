@@ -14,7 +14,9 @@ import com.unchunks.echomark.data.ai.model.DeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.DownloadedModelInstaller
 import com.unchunks.echomark.data.ai.model.ModelDownloadClient
 import com.unchunks.echomark.data.ai.model.ModelManager
+import com.unchunks.echomark.data.help.AppActionRunnerImpl
 import com.unchunks.echomark.data.help.LocalAppHelpAssistant
+import com.unchunks.echomark.domain.help.AppActionRunner
 import com.unchunks.echomark.domain.help.AppHelpAssistant
 import com.unchunks.echomark.domain.provider.SummaryTranslator
 import dagger.Binds
@@ -55,6 +57,10 @@ abstract class AiProviderModule {
     /** アプリの使い方の質問に端末内 AI で答える */
     @Binds
     abstract fun bindAppHelpAssistant(impl: LocalAppHelpAssistant): AppHelpAssistant
+
+    /** 使い方の AI から頼まれた操作(保存・設定の切り替えなど)を実行する */
+    @Binds
+    abstract fun bindAppActionRunner(impl: AppActionRunnerImpl): AppActionRunner
 
     /** 要約の翻訳(#24) */
     @Binds

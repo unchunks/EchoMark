@@ -91,6 +91,8 @@ import com.unchunks.echomark.ui.linkcheck.BrokenLinksScreen
 import com.unchunks.echomark.ui.video.OfflineVideosScreen
 import com.unchunks.echomark.ui.duplicates.DuplicatesScreen
 import com.unchunks.echomark.ui.graph.GraphScreen
+import com.unchunks.echomark.domain.help.AppAction
+import com.unchunks.echomark.domain.help.AppScreen
 import com.unchunks.echomark.ui.help.AppHelpScreen
 import com.unchunks.echomark.ui.insights.InsightsScreen
 import com.unchunks.echomark.ui.places.PlacesScreen
@@ -529,7 +531,8 @@ fun EchoMarkNavHost(
             ) {
                 AppHelpScreen(
                     onBack = navController.popBackAction(),
-                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) }
+                    onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
+                    onNavigate = { action -> navController.openFromAppHelp(action) }
                 )
             }
             // オフラインの動画(設定の「データ」の欄から開く)
@@ -723,6 +726,45 @@ internal fun NavController.openLaunchTarget(target: LaunchTarget) {
             navigate(TopLevelDestination.SETTINGS.route)
             navigate(Routes.AI_SETTINGS)
         }
+    }
+}
+
+/**
+ * 使い方の AI から頼まれた画面を開く。タブ(一覧・チャット・見つける・設定)はそのタブへ切り替え、
+ * それ以外の画面は使い方の画面の上に積む(戻ると、続けて質問できるよう使い方の画面に戻る)。
+ * 画面を開く操作([AppAction.Open]・[AppAction.Search])以外は何もしない。
+ */
+internal fun NavController.openFromAppHelp(action: AppAction) {
+    when (action) {
+        is AppAction.Search -> openBookmarkListWithSearch(action.query)
+        is AppAction.Open -> when (action.screen) {
+            AppScreen.BOOKMARKS -> navigateToTopLevel(BOOKMARKS_ROUTE)
+            AppScreen.ADD_BOOKMARK -> openBookmarkListWith(ListLaunchAction.ADD_BOOKMARK)
+            AppScreen.UNREAD -> openBookmarkListWith(ListLaunchAction.UNREAD)
+            AppScreen.NEW_CHAT -> {
+                navigateToTopLevel(CHAT_ROUTE)
+                navigate(CHAT_NEW_ROUTE)
+            }
+            AppScreen.EXPLORE -> navigateToTopLevel(EXPLORE_ROUTE)
+            AppScreen.SETTINGS -> navigateToTopLevel(TopLevelDestination.SETTINGS.route)
+            AppScreen.AI_SETTINGS -> navigate(Routes.AI_SETTINGS)
+            AppScreen.CATEGORIES -> navigate(Routes.CATEGORIES)
+            AppScreen.PROCESSING_QUEUE -> navigate(Routes.PROCESSING_QUEUE)
+            AppScreen.OFFLINE_VIDEOS -> navigate(Routes.OFFLINE_VIDEOS)
+            AppScreen.ONBOARDING -> navigate(Routes.ONBOARDING)
+            AppScreen.REVIEW -> navigate(Routes.REVIEW)
+            AppScreen.DISCOVER -> navigate(Routes.DISCOVER)
+            AppScreen.INSIGHTS -> navigate(Routes.INSIGHTS)
+            AppScreen.GRAPH -> navigate(Routes.GRAPH)
+            AppScreen.PLACES -> navigate(Routes.PLACES)
+            AppScreen.COLLECTIONS -> navigate(Routes.COLLECTIONS)
+            AppScreen.TAGS -> navigate(Routes.TAGS)
+            AppScreen.DUPLICATES -> navigate(Routes.DUPLICATES)
+            AppScreen.BROKEN_LINKS -> navigate(Routes.BROKEN_LINKS)
+            AppScreen.PODCASTS -> navigate(Routes.PODCASTS)
+            AppScreen.READING_DICTIONARY -> navigate(Routes.READING_DICTIONARY)
+        }
+        else -> Unit
     }
 }
 

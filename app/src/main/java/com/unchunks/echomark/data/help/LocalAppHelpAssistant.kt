@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.help
 
 import com.unchunks.echomark.data.ai.LocalLlmProviders
+import com.unchunks.echomark.domain.help.AppActionSpec
 import com.unchunks.echomark.domain.help.AppGuideRetriever
 import com.unchunks.echomark.domain.help.AppHelpAssistant
 import com.unchunks.echomark.domain.help.GuideSection
@@ -24,8 +25,16 @@ class LocalAppHelpAssistant @Inject constructor(
     private val appSettings: AppSettingsRepository
 ) : AppHelpAssistant {
 
-    override fun answer(question: String, guide: List<GuideSection>, history: List<ChatMessage>): Flow<String> = flow {
+    override fun answer(
+        question: String,
+        guide: List<GuideSection>,
+        actions: List<AppActionSpec>,
+        history: List<ChatMessage>
+    ): Flow<String> = flow {
         val modelId = appSettings.aiTaskSetting(AiTask.CHAT).first().localModelId
-        emitAll(localProviders.forModel(modelId).appHelpStream(question, AppGuideRetriever.format(guide), history))
+        emitAll(
+            localProviders.forModel(modelId)
+                .appHelpStream(question, AppGuideRetriever.format(guide), actions.map { it.promptLine }, history)
+        )
     }
 }

@@ -26,7 +26,7 @@ class AppGuideRetrieverTest {
 
     @Test
     fun 英字は大文字小文字と記号の違いを無視する() {
-        assertTrue("ai-failed" in idsFor("wifi じゃないと処理されない?"))
+        assertTrue("processing" in idsFor("WIFI じゃないと処理されない?"))
     }
 
     @Test

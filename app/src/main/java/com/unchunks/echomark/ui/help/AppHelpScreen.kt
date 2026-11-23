@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,16 +26,22 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
@@ -47,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -54,18 +62,25 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.MarkdownText
+import com.unchunks.echomark.domain.help.AppAction
 
 /** 使い方を AI に聞く画面。状態は [AppHelpViewModel]、表示は [AppHelpContent]。 */
 @Composable
 fun AppHelpScreen(
     onBack: () -> Unit,
     onOpenAiSettings: () -> Unit,
+    onNavigate: (AppAction) -> Unit,
     viewModel: AppHelpViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val currentOnNavigate by rememberUpdatedState(onNavigate)
+    LaunchedEffect(viewModel) {
+        viewModel.navigation.collect { currentOnNavigate(it) }
+    }
     AppHelpContent(
         uiState = uiState,
         actions = AppHelpActions(
@@ -75,7 +90,8 @@ fun AppHelpScreen(
             onStop = viewModel::stop,
             onSuggestion = viewModel::askSuggestion,
             onOpenAiSettings = onOpenAiSettings,
-            onDismissError = viewModel::dismissError
+            onDismissError = viewModel::dismissError,
+            onRunAction = viewModel::runAction
         )
     )
 }
@@ -88,7 +104,9 @@ data class AppHelpActions(
     val onStop: () -> Unit = {},
     val onSuggestion: (String) -> Unit = {},
     val onOpenAiSettings: () -> Unit = {},
-    val onDismissError: () -> Unit = {}
+    val onDismissError: () -> Unit = {},
+    /** 回答(id)に出した操作のボタンを押した */
+    val onRunAction: (Long, AppAction) -> Unit = { _, _ -> }
 )
 
 /** 使い方を AI に聞く画面の本体(状態を受け取って描くだけ) */
@@ -101,8 +119,8 @@ fun AppHelpContent(
 ) {
     val listState = rememberLazyListState()
     // 新しい質問・回答の続きが来たら、最後までスクロールする
-    val lastText = uiState.messages.lastOrNull()?.text
-    LaunchedEffect(uiState.messages.size, lastText?.length) {
+    val last = uiState.messages.lastOrNull()
+    LaunchedEffect(uiState.messages.size, last?.text?.length, last?.actions?.size) {
         if (uiState.messages.isNotEmpty()) listState.animateScrollToItem(uiState.messages.lastIndex)
     }
 
@@ -149,7 +167,16 @@ fun AppHelpContent(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(uiState.messages, key = { it.id }) { message ->
-                if (message.fromUser) QuestionBubble(message.text) else AnswerItem(message, uiState.answering)
+                when {
+                    message.fromUser -> QuestionBubble(message.text)
+                    message.isResult -> ResultNotice(message.text)
+                    else -> AnswerItem(
+                        message = message,
+                        answering = uiState.answering,
+                        actionsEnabled = !uiState.runningAction,
+                        onRunAction = { action -> actions.onRunAction(message.id, action) }
+                    )
+                }
             }
             uiState.error?.let { error ->
                 item("error") { HelpErrorCard(error, actions.onOpenAiSettings, actions.onDismissError) }
@@ -175,7 +202,7 @@ private fun HelpIntro(suggestions: List<String>, onSuggestion: (String) -> Unit,
         )
         Text("アプリの使い方を質問できます", style = MaterialTheme.typography.titleMedium)
         Text(
-            "端末内の AI が、アプリの案内をもとに答えます。質問も回答も端末の外には送りません。",
+            "端末内の AI が、アプリの案内をもとに答えます。「ダークモードにして」のように操作を頼むと、実行のボタンを出します。質問も回答も端末の外には送りません。",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -208,9 +235,15 @@ private fun QuestionBubble(text: String) {
     }
 }
 
-/** 回答。作っている途中で、まだ何も出ていなければ読み込み中を出す */
+/** 回答。作っている途中で、まだ何も出ていなければ読み込み中を出す。下に操作のボタンを並べる */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AnswerItem(message: AppHelpMessage, answering: Boolean) {
+private fun AnswerItem(
+    message: AppHelpMessage,
+    answering: Boolean,
+    actionsEnabled: Boolean,
+    onRunAction: (AppAction) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -227,13 +260,20 @@ private fun AnswerItem(message: AppHelpMessage, answering: Boolean) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        } else {
+        } else if (message.text.isNotBlank()) {
             MarkdownText(
                 markdown = message.text,
                 isCitationAvailable = { false },
                 onCitationClick = {},
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+        if (message.actions.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                message.actions.forEach { action ->
+                    ActionButton(action = action, enabled = actionsEnabled, onClick = { onRunAction(action) })
+                }
+            }
         }
         if (message.sourceTitles.isNotEmpty()) {
             Text(
@@ -242,6 +282,45 @@ private fun AnswerItem(message: AppHelpMessage, answering: Boolean) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+/**
+ * 操作のボタン。画面を開くものは控えめに、保存・切り替えは塗りのボタンにする(押すと実際に変わることが分かるように)。
+ */
+@Composable
+private fun ActionButton(action: AppAction, enabled: Boolean, onClick: () -> Unit) {
+    val opensScreen = action is AppAction.Open || action is AppAction.Search
+    val icon = if (opensScreen) Icons.AutoMirrored.Outlined.OpenInNew else Icons.Outlined.Bolt
+    val content: @Composable RowScope.() -> Unit = {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+        Text(action.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    if (opensScreen) {
+        OutlinedButton(onClick = onClick, enabled = enabled, content = content)
+    } else {
+        FilledTonalButton(onClick = onClick, enabled = enabled, content = content)
+    }
+}
+
+/** 操作を実行した結果の知らせ */
+@Composable
+private fun ResultNotice(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Outlined.CheckCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
