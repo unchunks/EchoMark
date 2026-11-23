@@ -46,10 +46,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxDefaults
-import androidx.compose.material3.SwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -227,11 +223,11 @@ fun ConversationListContent(
                         }
                     }
                     items(uiState.conversations, key = { it.conversation.id }) { preview ->
-                        SwipeToDeleteConversation(
+                        ConversationCard(
                             preview = preview,
                             selected = preview.conversation.id == selectedConversationId,
                             nowMillis = nowMillis,
-                            excerpt = uiState.matchedExcerpts[preview.conversation.id],
+                            matchedExcerpt =uiState.matchedExcerpts[preview.conversation.id],
                             onOpen = { onOpenConversation(preview.conversation.id) },
                             onRename = { renameTargetId = preview.conversation.id },
                             onDelete = { onDelete(preview) },
@@ -280,70 +276,6 @@ private fun ConversationSearchField(query: String, onQueryChange: (String) -> Un
     )
 }
 
-/**
- * 左右どちらへスワイプしても削除する(削除後は Snackbar で元に戻せる)。
- * @param excerpt 検索語を含む発言の抜粋。最後のメッセージの代わりに出す
- */
-@Composable
-private fun SwipeToDeleteConversation(
-    preview: ConversationPreview,
-    selected: Boolean,
-    nowMillis: Long,
-    excerpt: String?,
-    onOpen: () -> Unit,
-    onRename: () -> Unit,
-    onDelete: () -> Unit,
-    onTogglePinned: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val threshold = SwipeToDismissBoxDefaults.positionalThreshold
-    // rememberSwipeToDismissBoxState は状態を保存するため、削除を取り消して同じ key の行が戻ると
-    // スワイプ済み(画面外)のまま表示される。保存しない state にして、戻った行は元の位置から始める
-    val dismissState = remember(preview.conversation.id) {
-        SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, threshold)
-    }
-    SwipeToDismissBox(
-        state = dismissState,
-        modifier = modifier,
-        onDismiss = { onDelete() },
-        backgroundContent = {
-            val direction = dismissState.dismissDirection
-            // 静止中は描かない(角丸の縁から背景の色がにじんで見えるのを防ぐ)
-            if (direction != SwipeToDismissBoxValue.Settled) DeleteSwipeBackground(
-                alignEnd = direction == SwipeToDismissBoxValue.EndToStart
-            )
-        }
-    ) {
-        ConversationCard(
-            preview = preview,
-            selected = selected,
-            nowMillis = nowMillis,
-            matchedExcerpt = excerpt,
-            onOpen = onOpen,
-            onRename = onRename,
-            onDelete = onDelete,
-            onTogglePinned = onTogglePinned
-        )
-    }
-}
-
-@Composable
-private fun DeleteSwipeBackground(alignEnd: Boolean) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.errorContainer, MaterialTheme.shapes.medium)
-            .padding(horizontal = 24.dp),
-        contentAlignment = if (alignEnd) Alignment.CenterEnd else Alignment.CenterStart
-    ) {
-        Icon(
-            Icons.Outlined.Delete,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onErrorContainer
-        )
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationCard(
@@ -354,7 +286,8 @@ private fun ConversationCard(
     onOpen: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
-    onTogglePinned: () -> Unit
+    onTogglePinned: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val conversation = preview.conversation
@@ -366,7 +299,7 @@ private fun ConversationCard(
         color = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow,
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         shape = MaterialTheme.shapes.medium,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onOpen,

@@ -3,9 +3,12 @@ package com.unchunks.echomark.ui.chat
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.Conversation
@@ -16,9 +19,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** 会話一覧のスワイプ削除を「元に戻す」で取り消したとき、行がスワイプ済み(画面外)のまま戻らないこと。 */
+/** 会話一覧の削除はメニューからだけ行い、横にスワイプしても消えないこと。 */
 @RunWith(AndroidJUnit4::class)
-class ConversationListSwipeTest {
+class ConversationListDeleteTest {
 
     @get:Rule
     val composeRule = createComposeRule()
@@ -29,13 +32,13 @@ class ConversationListSwipeTest {
         lastMessageRole = ChatRole.ASSISTANT
     )
 
-    // 一覧が空になると LazyColumn ごと破棄されて保存状態も消えるため、ほかの会話も並べておく(実際の利用に近い状態)
+    // 一覧が空になると LazyColumn ごと破棄されるため、ほかの会話も並べておく(実際の利用に近い状態)
     private val other = target.copy(conversation = target.conversation.copy(id = 2, title = "残る会話"))
 
-    @Test
-    fun スワイプで削除して元に戻すと行が元の位置に表示される() {
-        val conversations = mutableStateOf(listOf(target, other))
-        val deleted = mutableListOf<ConversationPreview>()
+    private val conversations = mutableStateOf(listOf(target, other))
+    private val deleted = mutableListOf<ConversationPreview>()
+
+    private fun setContent() {
         composeRule.setContent {
             EchoMarkTheme {
                 ConversationListContent(
@@ -52,8 +55,26 @@ class ConversationListSwipeTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun 横にスワイプしても削除されない() {
+        setContent()
 
         composeRule.onNodeWithText(target.conversation.title).performTouchInput { swipeLeft() }
+        composeRule.onNodeWithText(target.conversation.title).performTouchInput { swipeRight() }
+        composeRule.waitForIdle()
+
+        assertEquals(emptyList<ConversationPreview>(), deleted)
+        composeRule.onNodeWithText(target.conversation.title).assertIsDisplayed()
+    }
+
+    @Test
+    fun メニューから削除して元に戻すと行が表示される() {
+        setContent()
+
+        composeRule.onNodeWithContentDescription("「${target.conversation.title}」の操作").performClick()
+        composeRule.onNodeWithText("削除").performClick()
         composeRule.waitForIdle()
         assertEquals(listOf(target), deleted)
         composeRule.onNodeWithText(target.conversation.title).assertDoesNotExist()
