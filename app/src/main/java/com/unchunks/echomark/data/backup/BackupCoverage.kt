@@ -175,6 +175,7 @@ object BackupCoverage {
         // 端末の設定(戻すかは利用者が決める)
         "theme_mode" to STRING,
         "dynamic_color" to BOOLEAN,
+        "design_style" to STRING,
         "bookmark_sort_order" to STRING,
         "bookmark_list_display" to STRING,
         "duplicate_sensitivity" to STRING,
@@ -209,6 +210,7 @@ object BackupCoverage {
         "dismissed_duplicates" to Key.Excluded("書き出し元のブックマークの ID を覚えているだけで、読み込んだ端末では ID が変わる"),
         "rediscover_notified" to Key.Excluded("どのブックマークを通知したかは、この端末の通知の記録"),
         "onboarding_completed" to Key.Excluded("はじめにの案内を見たかは、この端末のこと"),
+        "design_intro_seen" to Key.Excluded("新しいデザインの案内を見たかは、この端末のこと"),
         "offline_mode" to Key.Excluded("オフラインモードは端末の設定(バックアップを戻して勝手に通信を始めない・止めない)"),
         "video_download_wifi_only" to Key.Excluded(VIDEO_DOWNLOAD),
         "video_download_max_total_bytes" to Key.Excluded(VIDEO_DOWNLOAD),

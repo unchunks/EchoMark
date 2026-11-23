@@ -169,6 +169,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
  * @param onBookmarkRemoved 一覧での操作(削除・アーカイブ/戻す)でブックマークが今の一覧から外れたとき。
  *   2 画面表示で、右側に出しているものなら右側を空にするために使う
  * @param readLaterViewModel 1件だけ選んだときの「その他」の「あとで読む」に使う。null なら項目を出さない(Hilt を使わないテスト用)
+ * @param designIntroViewModel 新しいデザインの案内(一度だけ出す)。null なら案内を出さない(Hilt を使わないテスト用)
  */
 @Composable
 fun BookmarkListScreen(
@@ -186,10 +187,10 @@ fun BookmarkListScreen(
     onMakePodcast: (List<Long>) -> Unit = {},
     viewModel: BookmarkViewModel = hiltViewModel(),
     readLaterViewModel: ReadLaterViewModel? = null,
-    designIntroViewModel: DesignIntroViewModel = hiltViewModel()
+    designIntroViewModel: DesignIntroViewModel? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val designIntro by designIntroViewModel.state.collectAsState()
+    val designIntro = designIntroViewModel?.state?.collectAsState()?.value ?: DesignIntroState()
     var showDesignDialog by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -363,7 +364,7 @@ fun BookmarkListScreen(
         ),
         selectedBookmarkId = selectedBookmarkId,
         topNotice = if (designIntro.show) {
-            { DesignIntroBanner(onChoose = { showDesignDialog = true }, onDismiss = designIntroViewModel::dismiss) }
+            { DesignIntroBanner(onChoose = { showDesignDialog = true }, onDismiss = { designIntroViewModel?.dismiss() }) }
         } else {
             null
         }
@@ -375,7 +376,7 @@ fun BookmarkListScreen(
             selected = DesignStyle.CLASSIC,
             dynamicColor = designIntro.dynamicColor,
             onSelect = {
-                designIntroViewModel.choose(it)
+                designIntroViewModel?.choose(it)
                 showDesignDialog = false
             },
             onDismiss = { showDesignDialog = false }
