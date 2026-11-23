@@ -4,12 +4,60 @@
   <component name="GradleSettings">
     <option name="linkedExternalProjectsSettings">
       <GradleProjectSettings>
+        <compositeConfiguration>
+          <compositeBuild compositeDefinitionSource="SCRIPT">
+            <builds>
+              <build path="$PROJECT_DIR$/../../components/android" name="unchunks-components">
+                <projects>
+                  <project path="$PROJECT_DIR$/../../components/android" />
+                  <project path="$PROJECT_DIR$/../../components/android/compose-ui" />
+                  <project path="$PROJECT_DIR$/../../components/android/core" />
+                  <project path="$PROJECT_DIR$/../../components/android/document-text" />
+                  <project path="$PROJECT_DIR$/../../components/android/embedding" />
+                  <project path="$PROJECT_DIR$/../../components/android/file-storage" />
+                  <project path="$PROJECT_DIR$/../../components/android/llm-cloud" />
+                  <project path="$PROJECT_DIR$/../../components/android/llm-core" />
+                  <project path="$PROJECT_DIR$/../../components/android/llm-ondevice" />
+                  <project path="$PROJECT_DIR$/../../components/android/search" />
+                  <project path="$PROJECT_DIR$/../../components/android/secure-storage" />
+                  <project path="$PROJECT_DIR$/../../components/android/speech" />
+                  <project path="$PROJECT_DIR$/../../components/android/testing" />
+                  <project path="$PROJECT_DIR$/../../components/android/web-content" />
+                  <project path="$PROJECT_DIR$/../../components/android/web-search" />
+                </projects>
+              </build>
+              <build path="$PROJECT_DIR$/../../components/android/build-logic" name="build-logic">
+                <projects>
+                  <project path="$PROJECT_DIR$/../../components/android/build-logic" />
+                  <project path="$PROJECT_DIR$/../../components/android/build-logic/convention" />
+                </projects>
+              </build>
+            </builds>
+          </compositeBuild>
+        </compositeConfiguration>
         <option name="testRunner" value="CHOOSE_PER_TEST" />
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/app" />
+            <option value="$PROJECT_DIR$/../../components/android" />
+            <option value="$PROJECT_DIR$/../../components/android/build-logic" />
+            <option value="$PROJECT_DIR$/../../components/android/build-logic/convention" />
+            <option value="$PROJECT_DIR$/../../components/android/compose-ui" />
+            <option value="$PROJECT_DIR$/../../components/android/core" />
+            <option value="$PROJECT_DIR$/../../components/android/document-text" />
+            <option value="$PROJECT_DIR$/../../components/android/embedding" />
+            <option value="$PROJECT_DIR$/../../components/android/file-storage" />
+            <option value="$PROJECT_DIR$/../../components/android/llm-cloud" />
+            <option value="$PROJECT_DIR$/../../components/android/llm-core" />
+            <option value="$PROJECT_DIR$/../../components/android/llm-ondevice" />
+            <option value="$PROJECT_DIR$/../../components/android/search" />
+            <option value="$PROJECT_DIR$/../../components/android/secure-storage" />
+            <option value="$PROJECT_DIR$/../../components/android/speech" />
+            <option value="$PROJECT_DIR$/../../components/android/testing" />
+            <option value="$PROJECT_DIR$/../../components/android/web-content" />
+            <option value="$PROJECT_DIR$/../../components/android/web-search" />
           </set>
         </option>
       </GradleProjectSettings>
