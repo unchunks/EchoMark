@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.subscription
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,7 +14,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.NewReleases
+import androidx.compose.material.icons.outlined.Newspaper
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.Science
@@ -55,7 +59,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_RUN
-import com.unchunks.echomark.domain.subscription.PaperSource
+import com.unchunks.echomark.domain.subscription.QueryKind
+import com.unchunks.echomark.domain.subscription.SearchGroup
+import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
 import com.unchunks.echomark.ui.common.extractDomain
@@ -73,7 +79,7 @@ fun SubscriptionsSheet(onDismiss: () -> Unit, viewModel: SubscriptionViewModel =
         SubscriptionsContent(
             state = state,
             onAdd = viewModel::add,
-            onAddPapers = viewModel::addPapers,
+            onAddSearch = viewModel::addSearch,
             onCheckNow = viewModel::checkNow,
             onSetEnabled = viewModel::setEnabled,
             onRemove = viewModel::remove,
@@ -92,14 +98,16 @@ fun SubscriptionsContent(
     onRemove: (id: Long) -> Unit,
     onDismissMessage: () -> Unit,
     modifier: Modifier = Modifier,
-    onAddPapers: (source: PaperSource, keywords: String, onAdded: () -> Unit) -> Unit = { _, _, _ -> },
+    onAddSearch: (source: SearchSource, kind: QueryKind, query: String, onAdded: () -> Unit) -> Unit = { _, _, _, _ -> },
     nowMillis: Long = System.currentTimeMillis(),
-    initialMode: SubscribeMode = SubscribeMode.Site
+    initialMode: SubscribeMode = SubscribeMode.Site,
+    initialSource: SearchSource = SearchSource.ARXIV
 ) {
     var mode by rememberSaveable { mutableStateOf(initialMode) }
     var input by rememberSaveable { mutableStateOf("") }
-    var paperSource by rememberSaveable { mutableStateOf(PaperSource.ARXIV) }
-    var keywords by rememberSaveable { mutableStateOf("") }
+    var searchSource by rememberSaveable { mutableStateOf(initialSource) }
+    var queryKind by rememberSaveable { mutableStateOf(initialSource.kinds.first()) }
+    var query by rememberSaveable { mutableStateOf("") }
     var removeTarget by rememberSaveable { mutableStateOf<Long?>(null) }
 
     Column(
@@ -110,12 +118,13 @@ fun SubscriptionsContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            "購読(RSS・YouTube・論文)",
+            "購読",
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.semantics { heading() }
         )
         Text(
-            text = "ブログやニュースサイト、YouTube のチャンネルの新着や、キーワードに当てはまる新しい論文を、ブックマークとして自動で保存します。" +
+            text = "ブログや YouTube のチャンネルの新着、キーワード・タグに当てはまる新しい論文・ニュース・技術記事、" +
+                "GitHub のリリースを、ブックマークとして自動で保存します。" +
                 "新着は毎晩(設定の夜間の時刻に)確認し、「充電中だけ」「Wi-Fi など従量課金でない接続のときだけ」の設定を守ります。" +
                 "1回に保存するのは全体で最大 $MAX_NEW_ITEMS_PER_RUN 件(1つのフィードから $MAX_NEW_ITEMS_PER_FEED 件まで)で、" +
                 "保存したものは1件ずつ順番にページを取得して要約します。",
@@ -146,24 +155,29 @@ fun SubscriptionsContent(
                 enabled = !state.isBusy,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done)
             )
-            SubscribeMode.Papers -> PaperSearchInput(
-                source = paperSource,
-                onSourceChange = { paperSource = it },
-                keywords = keywords,
-                onKeywordsChange = { keywords = it },
+            SubscribeMode.Search -> SearchInput(
+                source = searchSource,
+                onSourceChange = {
+                    searchSource = it
+                    if (queryKind !in it.kinds) queryKind = it.kinds.first()
+                },
+                kind = queryKind,
+                onKindChange = { queryKind = it },
+                query = query,
+                onQueryChange = { query = it },
                 enabled = !state.isBusy
             )
         }
         val canAdd = when (mode) {
             SubscribeMode.Site -> input.isNotBlank()
-            SubscribeMode.Papers -> keywords.isNotBlank()
+            SubscribeMode.Search -> query.isNotBlank()
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(
                 onClick = {
                     when (mode) {
                         SubscribeMode.Site -> onAdd(input) { input = "" }
-                        SubscribeMode.Papers -> onAddPapers(paperSource, keywords) { keywords = "" }
+                        SubscribeMode.Search -> onAddSearch(searchSource, queryKind, query) { query = "" }
                     }
                 },
                 enabled = canAdd && !state.isBusy
@@ -179,7 +193,7 @@ fun SubscriptionsContent(
             Text(
                 when {
                     state.operation != SubscriptionOperation.Adding -> "新着を確認しています…"
-                    mode == SubscribeMode.Papers -> "購読を追加しています…"
+                    mode == SubscribeMode.Search -> "購読を追加しています…"
                     else -> "フィードを探しています…"
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -243,20 +257,24 @@ private fun SubscriptionRow(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        val source = subscription.searchSource
         Icon(
-            when (subscription.type) {
-                SubscriptionType.YOUTUBE -> Icons.Outlined.PlayCircle
-                SubscriptionType.PAPER -> Icons.Outlined.Science
-                SubscriptionType.RSS -> Icons.Outlined.RssFeed
+            when {
+                subscription.type == SubscriptionType.YOUTUBE -> Icons.Outlined.PlayCircle
+                source == null -> Icons.Outlined.RssFeed
+                source == SearchSource.GITHUB_RELEASES -> Icons.Outlined.NewReleases
+                source.group == SearchGroup.PAPER -> Icons.Outlined.Science
+                source.group == SearchGroup.NEWS -> Icons.Outlined.Newspaper
+                else -> Icons.Outlined.Code
             },
-            contentDescription = subscription.type.label,
+            contentDescription = source?.label ?: subscription.type.label,
             tint = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(subscription.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                text = subscription.paperSource?.let { "${it.label} の新着論文" }
+                text = source?.let { searchSubtitle(it, subscription.queryKind ?: it.kinds.first()) }
                     ?: extractDomain(subscription.siteUrl ?: subscription.feedUrl),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -285,29 +303,42 @@ enum class SubscribeMode(val label: String) {
     /** サイト・フィード・YouTube のチャンネルの URL */
     Site("サイト・YouTube"),
 
-    /** 論文サイトのキーワード検索 */
-    Papers("論文のキーワード")
+    /** サイトのキーワード・タグなどの検索(論文・ニュース・技術記事・GitHub のリリース) */
+    Search("キーワード・タグ")
 }
 
-/** 論文の購読の入力(検索するサイトとキーワード) */
+/** 検索の購読の一覧での説明の一行(「arXiv の新着論文(著者)」など) */
+internal fun searchSubtitle(source: SearchSource, kind: QueryKind): String {
+    if (source == SearchSource.GITHUB_RELEASES) return "GitHub の新しいリリース"
+    val noun = if (source.group == SearchGroup.PAPER) "論文" else "記事"
+    val by = if (kind == QueryKind.KEYWORDS) "" else "(${kind.label})"
+    return "${source.label} の新着$noun$by"
+}
+
+/** 検索の購読の入力(サイト・探し方・キーワードなど) */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PaperSearchInput(
-    source: PaperSource,
-    onSourceChange: (PaperSource) -> Unit,
-    keywords: String,
-    onKeywordsChange: (String) -> Unit,
+private fun SearchInput(
+    source: SearchSource,
+    onSourceChange: (SearchSource) -> Unit,
+    kind: QueryKind,
+    onKindChange: (QueryKind) -> Unit,
+    query: String,
+    onQueryChange: (String) -> Unit,
     enabled: Boolean
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("検索するサイト", style = MaterialTheme.typography.labelLarge)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PaperSource.entries.forEach { item ->
-                FilterChip(
-                    selected = source == item,
-                    onClick = { onSourceChange(item) },
-                    label = { Text(item.label) },
-                    enabled = enabled
-                )
+        SearchSource.grouped.forEach { (group, sources) ->
+            Text(group.label, style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                sources.forEach { item ->
+                    FilterChip(
+                        selected = source == item,
+                        onClick = { onSourceChange(item) },
+                        label = { Text(item.label) },
+                        enabled = enabled
+                    )
+                }
             }
         }
         Text(
@@ -315,20 +346,63 @@ private fun PaperSearchInput(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (source.kinds.size > 1) {
+            Text("探し方", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                source.kinds.forEach { item ->
+                    FilterChip(
+                        selected = kind == item,
+                        onClick = { onKindChange(item) },
+                        label = { Text(item.label) },
+                        enabled = enabled
+                    )
+                }
+            }
+        }
+        val hint = queryHint(source, kind)
         OutlinedTextField(
-            value = keywords,
-            onValueChange = { onKeywordsChange(it) },
+            value = query,
+            onValueChange = onQueryChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("キーワード") },
-            placeholder = { Text("例: \"large language model\" agent") },
-            supportingText = {
-                Text("空白で区切った語をすべて含む論文を探します。\"…\" で囲むと語句のまま探します。英語の語のほうが多く見つかります")
-            },
+            label = { Text(hint.label) },
+            placeholder = { Text(hint.example) },
+            supportingText = { Text(hint.help) },
             singleLine = true,
             enabled = enabled,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (kind == QueryKind.REPOSITORY) KeyboardType.Uri else KeyboardType.Text,
+                imeAction = ImeAction.Done
+            )
         )
     }
+}
+
+/** 入力欄の名前・例・説明 */
+internal data class QueryHint(val label: String, val example: String, val help: String)
+
+internal fun queryHint(source: SearchSource, kind: QueryKind): QueryHint = when (kind) {
+    QueryKind.KEYWORDS -> QueryHint(
+        label = "キーワード",
+        example = when (source.group) {
+            SearchGroup.PAPER -> "例: \"large language model\" agent"
+            SearchGroup.NEWS -> "例: 生成AI 規制"
+            SearchGroup.TECH -> "例: rust async"
+        },
+        help = "空白で区切った語をすべて含むものを探します。\"…\" で囲むと語句のまま探します" +
+            if (source.group == SearchGroup.PAPER || source == SearchSource.HACKER_NEWS) "。英語の語のほうが多く見つかります" else ""
+    )
+    QueryKind.AUTHOR -> QueryHint("著者の名前", "例: Yann LeCun", "名前の語をすべて含む著者の新しい論文を探します")
+    QueryKind.CATEGORY -> QueryHint(
+        "arXiv の分野",
+        "例: cs.AI",
+        "分野の記号(cs.AI・cs.CL・stat.ML・quant-ph など)。その分野に新しく投稿された論文を保存します(1回に最大 $MAX_NEW_ITEMS_PER_FEED 件)"
+    )
+    QueryKind.TAG -> QueryHint(
+        if (source == SearchSource.ZENN) "トピック" else "タグ",
+        "例: kotlin",
+        "タグを1つ入れます。そのタグの付いた新しい記事を保存します"
+    )
+    QueryKind.REPOSITORY -> QueryHint("リポジトリ", "例: JetBrains/kotlin", "owner/repo か、リポジトリの URL を入れます")
 }
 
 /** 購読の状態の一行(失敗していればその理由、まだ確認していなければその旨、そうでなければ最後に確認した時間) */

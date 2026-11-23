@@ -4,7 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.unchunks.echomark.domain.subscription.PaperSource
+import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
 import com.unchunks.echomark.ui.subscription.SubscribeMode
@@ -16,7 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
 
-/** 購読(RSS・YouTube・論文)の管理シートの見た目。 */
+/** 購読(RSS・YouTube・サイトの検索)の管理シートの見た目。 */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SubscriptionsScreenshotTest {
@@ -45,15 +45,41 @@ class SubscriptionsScreenshotTest {
             enabled = false, lastCheckedAt = now - 100 * hour, failureCount = 0, lastError = null
         ),
         Subscription(
-            5, SubscriptionType.PAPER, "${PaperSource.ARXIV_API_URL}?search_query=all%3Adiffusion", "\"diffusion model\" robot",
+            5, SubscriptionType.PAPER, "${SearchSource.ARXIV_API_URL}?search_query=all%3Adiffusion", "\"diffusion model\" robot",
             "https://arxiv.org/search/?query=diffusion", createdAt = 5, enabled = true, lastCheckedAt = now - 2 * hour,
             failureCount = 0, lastError = null
         )
     )
 
+    /** 検索の購読(論文の著者・ニュース・技術記事のタグ・GitHub のリリース) */
+    private val searches = listOf(
+        subscriptions.last(),
+        Subscription(
+            6, SubscriptionType.PAPER, "${SearchSource.ARXIV_API_URL}?search_query=au%3Ayann+AND+au%3Alecun", "Yann LeCun",
+            null, createdAt = 6, enabled = true, lastCheckedAt = now - 2 * hour, failureCount = 0, lastError = null
+        ),
+        Subscription(
+            7, SubscriptionType.SEARCH, "${SearchSource.HATENA_SEARCH_URL}%E7%94%9F%E6%88%90ai?mode=rss", "生成AI 規制",
+            null, createdAt = 7, enabled = true, lastCheckedAt = now - 2 * hour, failureCount = 0, lastError = null
+        ),
+        Subscription(
+            8, SubscriptionType.SEARCH, "${SearchSource.QIITA_TAGS_URL}kotlin/feed", "kotlin",
+            null, createdAt = 8, enabled = true, lastCheckedAt = now - 2 * hour, failureCount = 0, lastError = null
+        ),
+        Subscription(
+            9, SubscriptionType.SEARCH, "https://github.com/jetbrains/kotlin/releases.atom", "JetBrains/kotlin",
+            null, createdAt = 9, enabled = true, lastCheckedAt = null, failureCount = 0, lastError = null
+        )
+    )
+
     @Test
-    fun papers() = screenshot.captureLightDark("subscriptions_papers") {
-        Content(SubscriptionsUiState(subscriptions = subscriptions.takeLast(1)), mode = SubscribeMode.Papers)
+    fun search() = screenshot.captureLightDark("subscriptions_search") {
+        Content(SubscriptionsUiState(subscriptions = searches), mode = SubscribeMode.Search)
+    }
+
+    @Test
+    fun searchGitHub() = screenshot.captureLightDark("subscriptions_search_github") {
+        Content(SubscriptionsUiState(), mode = SubscribeMode.Search, source = SearchSource.GITHUB_RELEASES)
     }
 
     @Test
@@ -77,7 +103,7 @@ class SubscriptionsScreenshotTest {
     }
 
     @Composable
-    private fun Content(state: SubscriptionsUiState, mode: SubscribeMode = SubscribeMode.Site) {
+    private fun Content(state: SubscriptionsUiState, mode: SubscribeMode = SubscribeMode.Site, source: SearchSource = SearchSource.ARXIV) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
             SubscriptionsContent(
                 state = state,
@@ -87,7 +113,8 @@ class SubscriptionsScreenshotTest {
                 onRemove = {},
                 onDismissMessage = {},
                 nowMillis = now,
-                initialMode = mode
+                initialMode = mode,
+                initialSource = source
             )
         }
     }

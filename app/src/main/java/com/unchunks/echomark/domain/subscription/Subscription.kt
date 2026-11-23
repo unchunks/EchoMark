@@ -9,43 +9,16 @@ enum class SubscriptionType(val label: String) {
     YOUTUBE("YouTube"),
 
     /**
-     * 論文サイトのキーワード検索(arXiv・Europe PMC)。検索の URL を [Subscription.feedUrl] に、キーワードを [Subscription.title] に持つ。
-     * どのサイトかは [PaperSource.ofFeedUrl] で URL から決める(DB に列を足さない)。
+     * 論文サイトの検索(arXiv・Europe PMC)。検索の URL を [Subscription.feedUrl] に、キーワード・著者・分野を [Subscription.title] に持つ。
+     * どのサイトかは [SearchSource.ofFeedUrl] で URL から決める(DB に列を足さない)。
      */
-    PAPER("論文")
-}
+    PAPER("論文"),
 
-/**
- * キーワードで新着論文を購読できるサイト。
- * @property label 画面に出す名前
- * @property tag 保存した論文に付けるタグ(キーワードのタグと一緒に付ける)
- * @property description 何が見つかるか(画面に出す説明)
- */
-enum class PaperSource(val label: String, val tag: String, val description: String) {
-    /** arXiv の API(Atom を返す)。物理・数学・情報科学・統計など */
-    ARXIV("arXiv", "arXiv", "物理・数学・情報科学・統計などのプレプリント"),
+    /** 論文以外のサイトのキーワード・タグの検索(ニュース・技術記事・GitHub のリリース)。持ち方は [PAPER] と同じ */
+    SEARCH("キーワード・タグ");
 
-    /** Europe PMC のプレプリント(bioRxiv・medRxiv・Research Square など)。JSON を返す */
-    PREPRINTS("bioRxiv・medRxiv など", "プレプリント", "生命科学・医学のプレプリント(bioRxiv・medRxiv など。Europe PMC で検索)"),
-
-    /** Europe PMC の PubMed の論文。JSON を返す */
-    PUBMED("PubMed", "PubMed", "生命科学・医学の論文(PubMed。Europe PMC で検索)");
-
-    companion object {
-        /** 検索の URL からサイトを決める。論文の検索の URL でなければ null */
-        fun ofFeedUrl(feedUrl: String): PaperSource? = when {
-            feedUrl.startsWith(ARXIV_API_URL) -> ARXIV
-            feedUrl.startsWith(EUROPE_PMC_API_URL) && feedUrl.contains("SRC%3AMED") -> PUBMED
-            feedUrl.startsWith(EUROPE_PMC_API_URL) -> PREPRINTS
-            else -> null
-        }
-
-        /** arXiv の検索の API */
-        const val ARXIV_API_URL = "https://export.arxiv.org/api/query"
-
-        /** Europe PMC の検索の API */
-        const val EUROPE_PMC_API_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-    }
+    /** サイトの検索の購読([PAPER]・[SEARCH])か */
+    val isSearch: Boolean get() = this == PAPER || this == SEARCH
 }
 
 /**
@@ -66,9 +39,13 @@ data class Subscription(
     val failureCount: Int,
     val lastError: String?
 ) {
-    /** 論文の購読なら、検索するサイト。それ以外は null */
-    val paperSource: PaperSource?
-        get() = if (type == SubscriptionType.PAPER) PaperSource.ofFeedUrl(feedUrl) else null
+    /** 検索の購読なら、検索するサイト。それ以外は null */
+    val searchSource: SearchSource?
+        get() = if (type.isSearch) SearchSource.ofFeedUrl(feedUrl) else null
+
+    /** 検索の購読なら、何で探しているか(キーワード・著者など)。それ以外は null */
+    val queryKind: QueryKind?
+        get() = searchSource?.queryKindOf(feedUrl)
 }
 
 /** 購読を追加した結果 */

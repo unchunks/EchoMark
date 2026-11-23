@@ -11,14 +11,14 @@ import com.unchunks.components.feed.ParsedFeed
 import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
-import com.unchunks.echomark.data.paper.PaperSearch
+import com.unchunks.echomark.data.search.SearchFeeds
 import com.unchunks.echomark.domain.importer.ImportedLink
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
 import com.unchunks.echomark.domain.subscription.INITIAL_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_FEED
 import com.unchunks.echomark.domain.subscription.MAX_NEW_ITEMS_PER_RUN
-import com.unchunks.echomark.domain.subscription.PaperSource
+import com.unchunks.echomark.domain.subscription.SearchSource
 import com.unchunks.echomark.domain.subscription.SubscriptionType
 import dagger.Lazy
 import kotlinx.coroutines.CancellationException
@@ -39,8 +39,9 @@ import javax.inject.Inject
  * - 保存は [BookmarkRepository.importLinks] で1回にまとめて行う。ページの取得と要約は、一括の再処理と同じ1本の順番の列で1件ずつ行う
  *   (記事ごとの急ぎの処理は積まない)。夜間にまとめて処理する設定なら、処理待ちのまま夜を待つ
  * - 続けて失敗しているフィードは、[BACKOFF_FAILURES] 回を超えたら [BACKOFF_MILLIS] ごとにしか確認しない(手動の確認は除く)
- * - 論文のキーワード検索([SubscriptionType.PAPER])は、タイトル(キーワード)を取得した内容で書き換えない。タグはキーワードとサイトの名前。
- *   arXiv は短い間に続けて問い合わせると断られるので、arXiv への問い合わせは [ARXIV_SPACING_MILLIS] ずつ空ける
+ * - サイトの検索の購読([SubscriptionType.PAPER]・[SubscriptionType.SEARCH])は、タイトル(キーワードなど)を取得した内容で書き換えない。
+ *   タグはキーワードなどとサイトの名前。検索に出てくるのが遅れるので、新着とみなす日付の余裕を [SEARCH_GRACE_MILLIS] に広げる
+ * - arXiv・GDELT は短い間に続けて問い合わせると断られるので、同じサイトへの問い合わせは [SearchSource.requestSpacingMillis] ずつ空ける
  */
 class FeedChecker @Inject constructor(
     private val subscriptionDao: SubscriptionDao,
@@ -78,16 +79,16 @@ class FeedChecker @Inject constructor(
         var checked = 0
         var failed = 0
         val pending = mutableListOf<Pending>()
-        var askedArxiv = false
+        val askedSources = mutableSetOf<SearchSource>()
 
         for (subscription in ordered) {
             if (remaining <= 0) break
             if (!manual && isBackedOff(subscription, now)) continue
             checked++
             try {
-                if (subscription.feedUrl.startsWith(PaperSource.ARXIV_API_URL)) {
-                    if (askedArxiv) delay(ARXIV_SPACING_MILLIS)
-                    askedArxiv = true
+                val source = if (subscription.isSearch) SearchSource.ofFeedUrl(subscription.feedUrl) else null
+                if (source != null && source.requestSpacingMillis > 0) {
+                    if (!askedSources.add(source)) delay(source.requestSpacingMillis)
                 }
                 when (val response = fetcher.fetch(subscription.feedUrl, subscription.etag, subscription.lastModified)) {
                     FeedResponse.NotModified -> subscriptionDao.recordNotModified(subscription.id, now)
@@ -97,17 +98,17 @@ class FeedChecker @Inject constructor(
                         }
                         if (parsed == null) {
                             failed++
-                            val message = if (subscription.type == SubscriptionType.PAPER.name) NOT_A_PAPER_SEARCH_MESSAGE else NOT_A_FEED_MESSAGE
+                            val message = if (subscription.isSearch) NOT_A_SEARCH_RESULT_MESSAGE else NOT_A_FEED_MESSAGE
                             subscriptionDao.recordFailure(subscription.id, now, message)
                         } else {
                             val plan = planNewItems(subscription, parsed.items, now, minOf(MAX_NEW_ITEMS_PER_FEED, remaining))
                             remaining -= plan.toSave.size
                             // 論文の検索は、キーワード・検索画面の URL を持ち続ける(検索の結果のタイトル・リンクで書き換えない)
-                            val isPaper = subscription.type == SubscriptionType.PAPER.name
+                            val isSearch = subscription.isSearch
                             pending += Pending(
                                 subscription,
-                                if (isPaper) subscription.title else parsed.title,
-                                if (isPaper) null else parsed.siteUrl,
+                                if (isSearch) subscription.title else parsed.title,
+                                if (isSearch) null else parsed.siteUrl,
                                 response.body.etag,
                                 response.body.lastModified,
                                 plan
@@ -163,9 +164,9 @@ class FeedChecker @Inject constructor(
 
     /** 取得した内容を読む。論文の検索は、Atom(arXiv)でなければ Europe PMC の JSON として読む */
     private fun parse(subscription: SubscriptionEntity, bytes: ByteArray, charsetName: String?, finalUrl: String): ParsedFeed? {
-        if (subscription.type != SubscriptionType.PAPER.name) return FeedParser.parse(bytes, charsetName, finalUrl)
-        val feed = FeedParser.parse(bytes, charsetName, finalUrl) ?: return PaperSearch.parseEuropePmc(bytes)
-        return feed.copy(items = PaperSearch.normalizeArxivItems(feed.items))
+        if (!subscription.isSearch) return FeedParser.parse(bytes, charsetName, finalUrl)
+        val feed = FeedParser.parse(bytes, charsetName, finalUrl) ?: return SearchFeeds.parseEuropePmc(bytes)
+        return feed.copy(items = SearchFeeds.normalizeArxivItems(feed.items))
     }
 
     private fun toLink(item: FeedItem, pending: Pending): ImportedLink {
@@ -173,8 +174,8 @@ class FeedChecker @Inject constructor(
         val tags = buildList {
             if (feedTag.isNotEmpty()) add(feedTag)
             if (pending.subscription.type == SubscriptionType.YOUTUBE.name) add("YouTube")
-            if (pending.subscription.type == SubscriptionType.PAPER.name) {
-                PaperSource.ofFeedUrl(pending.subscription.feedUrl)?.let { add(it.tag) }
+            if (pending.subscription.isSearch) {
+                SearchSource.ofFeedUrl(pending.subscription.feedUrl)?.let { add(it.tag) }
             }
         }
         // 保存した日時は今(新着として一覧の先頭に出す)。記事の公開日時は使わない
@@ -193,13 +194,11 @@ class FeedChecker @Inject constructor(
         val GRACE_MILLIS: Long = TimeUnit.DAYS.toMillis(2)
 
         /**
-         * 論文の検索での余裕。論文の日付は投稿・公開の日で、検索に出てくるのは数日(週末をはさむ・索引に入るのを待つ)遅れるため、
-         * ふつうのフィードより長く取る。同じ論文は見た記事の目印で二重に保存しない
+         * サイトの検索での余裕。論文の日付は投稿・公開の日で、検索に出てくるのは数日(週末をはさむ・索引に入るのを待つ)遅れる。
+         * はてなブックマークも、決まった人数にブックマークされてから検索に出る。そのため、ふつうのフィードより長く取る。
+         * 同じものは見た記事の目印で二重に保存しない
          */
-        val PAPER_GRACE_MILLIS: Long = TimeUnit.DAYS.toMillis(14)
-
-        /** arXiv への問い合わせの間隔(arXiv は3秒に1回までを求めている) */
-        const val ARXIV_SPACING_MILLIS = 3_500L
+        val SEARCH_GRACE_MILLIS: Long = TimeUnit.DAYS.toMillis(14)
 
         /** 続けて失敗したら間引きを始める回数 */
         const val BACKOFF_FAILURES = 5
@@ -216,7 +215,7 @@ class FeedChecker @Inject constructor(
         private fun nextTraceCookie(): Int = traceCookies.incrementAndGet()
 
         private const val NOT_A_FEED_MESSAGE = "フィードとして読めませんでした(RSS・Atom ではありません)"
-        private const val NOT_A_PAPER_SEARCH_MESSAGE = "論文の検索の結果として読めませんでした"
+        private const val NOT_A_SEARCH_RESULT_MESSAGE = "検索の結果として読めませんでした"
         private const val MAX_TAG_CHARS = 40
 
         /** 取得の失敗の理由を、利用者に見せる文にする(混み合って断られたときは、そう伝える) */
@@ -249,7 +248,7 @@ class FeedChecker @Inject constructor(
                 // 初めての確認では、保存しなかった分も含め、いま載っているものは全部「見た」ことにする
                 skipped = sorted.drop(toSave.size)
             } else {
-                val grace = if (subscription.type == SubscriptionType.PAPER.name) PAPER_GRACE_MILLIS else GRACE_MILLIS
+                val grace = if (subscription.isSearch) SEARCH_GRACE_MILLIS else GRACE_MILLIS
                 val watermark = maxOf(subscription.createdAt, subscription.lastSuccessAt ?: 0L) - grace
                 val unseen = sorted.filter { it.key !in seenSet }
                 val fresh = unseen.filter { item -> item.publishedAt.let { it == null || it >= watermark } }
@@ -262,3 +261,7 @@ class FeedChecker @Inject constructor(
         }
     }
 }
+
+/** サイトの検索の購読(論文・キーワード・タグ)か */
+internal val SubscriptionEntity.isSearch: Boolean
+    get() = type == SubscriptionType.PAPER.name || type == SubscriptionType.SEARCH.name
