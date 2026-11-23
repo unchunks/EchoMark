@@ -36,7 +36,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +48,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -76,6 +74,11 @@ import com.unchunks.echomark.domain.model.ConversationPreview
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkExtendedFab
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.design.SurfaceRole
+import com.unchunks.echomark.ui.design.designFieldStyle
 
 /**
  * 会話の一覧(チャットタブのトップ)。ViewModel をつなぐ薄いラッパー。見た目は [ConversationListContent]。
@@ -160,10 +163,10 @@ fun ConversationListContent(
         modifier = modifier,
         // クリアのガラスのボトムバーは中身の上に重なるので、その分を下に空ける(追加ボタン・スナックバーもバーの上に出す)
         contentWindowInsets = bottomBarAwareContentInsets(),
-        topBar = { TopAppBar(title = { Text("チャット", maxLines = 1, overflow = TextOverflow.Ellipsis) }) },
+        topBar = { EchoMarkTopAppBar(title = { Text("チャット", maxLines = 1, overflow = TextOverflow.Ellipsis) }) },
         floatingActionButton = {
             if (!isEmpty && !uiState.isLoading) {
-                ExtendedFloatingActionButton(
+                EchoMarkExtendedFab(
                     onClick = onNewConversation,
                     icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
                     text = { Text("新しいチャット") }
@@ -256,6 +259,8 @@ fun ConversationListContent(
 /** タイトルと発言を探す欄。 */
 @Composable
 private fun ConversationSearchField(query: String, onQueryChange: (String) -> Unit) {
+    // 検索欄の形・地色(ソフトはくぼみ)はデザインに従う
+    val field = designFieldStyle(classicContainer = MaterialTheme.colorScheme.surfaceContainerHighest)
     TextField(
         value = query,
         onValueChange = onQueryChange,
@@ -269,13 +274,15 @@ private fun ConversationSearchField(query: String, onQueryChange: (String) -> Un
             }
         },
         singleLine = true,
-        shape = RoundedCornerShape(28.dp),
+        shape = field.shape,
         colors = TextFieldDefaults.colors(
+            focusedContainerColor = field.containerColor,
+            unfocusedContainerColor = field.containerColor,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent
         ),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().then(field.depth)
     )
 }
 
@@ -297,13 +304,15 @@ private fun ConversationCard(
     val excerpt = matchedExcerpt ?: conversationExcerpt(preview)
     val pinLabel = if (conversation.isPinned) "固定を外す" else "一覧の先頭に固定"
     val aboutTitle = preview.aboutBookmarkTitle
-    Surface(
-        // 2 画面表示で右側に開いている会話は、枠線と背景色で強調する(アイコンの丸と同じ色にならないよう背景は少し濃くするだけ)
-        color = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow,
+    DesignCard(
+        // 2 画面表示で右側に開いている会話は、枠線と背景色で強調する(アイコンの丸と同じ色にならないよう背景は少し濃くするだけ)。
+        // カードの地色・枠線・影はデザインに従う
+        role = if (selected) SurfaceRole.Selected else SurfaceRole.Card,
+        classic = if (selected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow,
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         shape = MaterialTheme.shapes.medium,
-        modifier = modifier
-            .fillMaxWidth()
+        modifier = modifier.fillMaxWidth(),
+        clickModifier = Modifier
             .combinedClickable(
                 onClick = onOpen,
                 onLongClick = { menuExpanded = true },

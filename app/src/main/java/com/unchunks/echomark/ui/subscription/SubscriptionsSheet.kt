@@ -1,5 +1,7 @@
 package com.unchunks.echomark.ui.subscription
 
+import com.unchunks.echomark.ui.design.designSegmentColors
+import com.unchunks.echomark.ui.design.designSegmentShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,24 +27,19 @@ import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -73,13 +70,18 @@ import com.unchunks.echomark.domain.subscription.Subscription
 import com.unchunks.echomark.domain.subscription.SubscriptionType
 import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.components.composeui.formatRelativeTime
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkSwitch
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /** 購読するフィードの管理シート。設定から開く。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubscriptionsSheet(onDismiss: () -> Unit, viewModel: SubscriptionViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -147,7 +149,8 @@ fun SubscriptionsContent(
                 SegmentedButton(
                     selected = mode == item,
                     onClick = { mode = item },
-                    shape = SegmentedButtonDefaults.itemShape(index, SubscribeMode.entries.size),
+                    shape = designSegmentShape(index, SubscribeMode.entries.size),
+                    colors = designSegmentColors(),
                     enabled = !state.isBusy
                 ) { Text(item.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
@@ -183,7 +186,7 @@ fun SubscriptionsContent(
             SubscribeMode.Search -> query.isNotBlank()
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(
+            EchoMarkButton(
                 onClick = {
                     when (mode) {
                         SubscribeMode.Site -> onAdd(input) { input = "" }
@@ -192,7 +195,7 @@ fun SubscriptionsContent(
                 },
                 enabled = canAdd && !state.isBusy
             ) { Text("購読する") }
-            OutlinedButton(onClick = onCheckNow, enabled = state.subscriptions.any { it.enabled } && !state.isBusy) {
+            EchoMarkOutlinedButton(onClick = onCheckNow, enabled = state.subscriptions.any { it.enabled } && !state.isBusy) {
                 Text("いま確認する")
             }
             if (state.isBusy) {
@@ -321,7 +324,7 @@ private fun SubscriptionRow(
                 color = if (subscription.lastError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Switch(
+        EchoMarkSwitch(
             checked = subscription.enabled,
             onCheckedChange = onSetEnabled,
             modifier = Modifier.semantics { contentDescription = "「${subscription.title}」を確認する" }
@@ -438,7 +441,7 @@ private fun SearchInput(
             Text(group.label, style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 sources.forEach { item ->
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = source == item,
                         onClick = { onSourceChange(item) },
                         label = { Text(item.label) },
@@ -456,7 +459,7 @@ private fun SearchInput(
             Text("探し方", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 source.kinds.forEach { item ->
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = kind == item,
                         onClick = { onKindChange(item) },
                         label = { Text(item.label) },

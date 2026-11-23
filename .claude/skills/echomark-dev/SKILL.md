@@ -87,6 +87,10 @@ Claude・Gemini・OpenAI の API で作っている。LLM・埋め込み・文�
 - ログは Timber。
 - 画面は `XxxScreen(viewModel)` と、状態とコールバックだけを受け取る `XxxContent(uiState, …)` に分ける
   (スクリーンショットテストで描画できるように)。サンプルデータは `ui/components/PreviewSamples.kt`。
+- 画面の部品(カード・上のバー・ボタン・浮いたボタン・チップ・スイッチ・ボトムシート)は M3 を直に使わず、
+  `ui/design` の部品(`DesignCard`・`EchoMarkTopAppBar` など)を使う。設定の「デザイン」の描き分けがその画面にも効くように。
+  角丸の半径は直に書かず `MaterialTheme.shapes` か `EchoMarkDesign.roundedShape(クラシックでの半径)`。
+  `DesignSystemUsageTest` が確かめる(描き分けの一覧は `docs/settings-material3.md` の「アプリ全体での描き分け」)。
 - 画面の文言は日本語。利用者向けにやさしく、具体的に(設定のどこを開けばよいかまで書く)。
 - 単体テストは JVM(Robolectric 可)で書く。フェイクは `app/src/test/.../testing/`(`FakeRepositories.kt`・`FakeAi.kt` など)
   を使い、インターフェースを変えたらフェイクも直す。

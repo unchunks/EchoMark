@@ -27,7 +27,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +61,7 @@ import com.unchunks.echomark.ui.selection.SelectionTopBar
 import com.unchunks.echomark.ui.selection.showBulkMessage
 import com.unchunks.echomark.ui.shortcut.PinnedShortcuts
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /**
  * コレクションの中身(#91)。入れたブックマークを入れた順に並べ、外す・開く・ファイルに書き出すができる。
@@ -195,7 +195,7 @@ fun CollectionDetailContent(
                     onClear = onClearSelection,
                     scrollBehavior = scrollBehavior
                 )
-            } else TopAppBar(
+            } else EchoMarkTopAppBar(
                 title = { Text(collection?.name ?: "コレクション", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

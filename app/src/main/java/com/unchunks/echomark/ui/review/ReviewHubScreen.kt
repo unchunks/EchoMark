@@ -1,5 +1,6 @@
 package com.unchunks.echomark.ui.review
 
+import com.unchunks.echomark.ui.components.sectionHeaderStyle
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,8 +21,6 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,7 +32,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +60,9 @@ import com.unchunks.echomark.ui.components.LoadingState
 import com.unchunks.echomark.ui.components.TagChip
 import kotlinx.coroutines.launch
 import java.time.ZoneId
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /** ふり返りの 3 つの表示 */
 enum class ReviewHubTab(val label: String) {
@@ -150,7 +151,7 @@ fun ReviewHubContent(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("読む・ふり返る", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = actions.onBack) {
@@ -167,7 +168,7 @@ fun ReviewHubContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ReviewHubTab.entries.forEach { entry ->
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = tab == entry,
                         onClick = { tab = entry },
                         label = { Text(tabLabel(entry, uiState)) }
@@ -200,7 +201,8 @@ private fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
-        style = MaterialTheme.typography.titleSmall
+        // 見出しの書体はアプリ共通の見出し(SectionHeader)と同じく、デザインに従う
+        style = sectionHeaderStyle()
     )
 }
 
@@ -294,7 +296,7 @@ private fun WeeklySummary(review: WeeklyReview, actions: ReviewHubActions) {
         SummaryRow("あとで読む", "${review.readingListCount}件")
         SummaryRow("復習できる", "${review.dueReviews}件")
         if (review.dueReviews > 0) {
-            FilledTonalButton(onClick = actions.onStartReview) {
+            EchoMarkTonalButton(onClick = actions.onStartReview) {
                 Icon(Icons.Outlined.Quiz, contentDescription = null)
                 Text("復習を始める", modifier = Modifier.padding(start = 8.dp))
             }
@@ -331,7 +333,7 @@ private fun LazyListScope.readingListItems(state: ReviewHubUiState, actions: Rev
         Column {
             list.totalLabel()?.let { Note(it) }
             list.next?.let { next ->
-                FilledTonalButton(
+                EchoMarkTonalButton(
                     onClick = { actions.onOpenBookmark(next.id) },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 ) { Text("次を読む: ${next.title.take(18)}") }
@@ -376,7 +378,7 @@ private fun LazyListScope.reviewItems(state: ReviewHubUiState, actions: ReviewHu
                 "復習できる ${state.dueCount}件 / 復習に入れている ${state.reviewCards.size}件",
                 style = MaterialTheme.typography.bodyLarge
             )
-            FilledTonalButton(onClick = actions.onStartReview, enabled = state.dueCount > 0) {
+            EchoMarkTonalButton(onClick = actions.onStartReview, enabled = state.dueCount > 0) {
                 Icon(Icons.Outlined.Quiz, contentDescription = null)
                 Text(if (state.dueCount > 0) "復習を始める" else "いま復習できるものはありません", modifier = Modifier.padding(start = 8.dp))
             }

@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.PictureAsPdf
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,6 +30,7 @@ import java.io.ByteArrayInputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkCenterAlignedTopAppBar
 
 /**
  * 保存したオフラインコピーを開く画面の表示([SnapshotViewerActivity] が使う)。状態を受け取って描くだけなので、
@@ -49,7 +49,7 @@ internal fun SnapshotViewerContent(
     val ready = state as? SnapshotViewerState.Ready
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
+            EchoMarkCenterAlignedTopAppBar(
                 title = {
                     Text(ready?.title ?: "オフラインコピー", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },

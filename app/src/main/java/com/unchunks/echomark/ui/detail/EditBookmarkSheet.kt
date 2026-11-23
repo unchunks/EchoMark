@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,6 +28,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /** タイトルと本文(メモ)を編集するシート。保存すると [onSave] に新しい値を渡す。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,7 +41,7 @@ fun EditBookmarkSheet(
 ) {
     var title by rememberSaveable(bookmark.id) { mutableStateOf(bookmark.title) }
     var content by rememberSaveable(bookmark.id) { mutableStateOf(bookmark.content.orEmpty()) }
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -106,7 +106,7 @@ fun EditBookmarkSheetContent(
         ) {
             TextButton(onClick = onCancel) { Text("キャンセル") }
             Spacer(Modifier.size(8.dp))
-            Button(onClick = onSave, enabled = title.isNotBlank()) { Text("保存") }
+            EchoMarkButton(onClick = onSave, enabled = title.isNotBlank()) { Text("保存") }
         }
     }
 }

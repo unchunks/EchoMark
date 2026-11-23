@@ -18,18 +18,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +46,11 @@ import com.unchunks.echomark.domain.graph.KnowledgeGraph
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.ui.design.SurfaceRole
 
 /** 画面の 2 つの表示(絵・一覧)。一覧は絵と同じ内容を読み上げでも使えるようにするためのもの。 */
 enum class GraphMode { GRAPH, LIST }
@@ -95,7 +95,7 @@ fun GraphContent(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("つながり", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -143,11 +143,11 @@ private fun Controls(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            FilterChip(selected = mode == GraphMode.GRAPH, onClick = { onMode(GraphMode.GRAPH) }, label = { Text("図") })
-            FilterChip(selected = mode == GraphMode.LIST, onClick = { onMode(GraphMode.LIST) }, label = { Text("一覧") })
+            EchoMarkFilterChip(selected = mode == GraphMode.GRAPH, onClick = { onMode(GraphMode.GRAPH) }, label = { Text("図") })
+            EchoMarkFilterChip(selected = mode == GraphMode.LIST, onClick = { onMode(GraphMode.LIST) }, label = { Text("一覧") })
             Text("表示数", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
             GRAPH_NODE_CHOICES.forEach { choice ->
-                FilterChip(selected = uiState.maxNodes == choice, onClick = { onMaxNodes(choice) }, label = { Text("$choice") })
+                EchoMarkFilterChip(selected = uiState.maxNodes == choice, onClick = { onMaxNodes(choice) }, label = { Text("$choice") })
             }
         }
         if (uiState.filterTags.isNotEmpty()) {
@@ -157,9 +157,9 @@ private fun Controls(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("タグ", style = MaterialTheme.typography.labelLarge)
-                FilterChip(selected = uiState.tagFilter == null, onClick = { onTagFilter(null) }, label = { Text("すべて") })
+                EchoMarkFilterChip(selected = uiState.tagFilter == null, onClick = { onTagFilter(null) }, label = { Text("すべて") })
                 uiState.filterTags.forEach { tag ->
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = uiState.tagFilter == tag,
                         onClick = { onTagFilter(if (uiState.tagFilter == tag) null else tag) },
                         label = { Text(tag) }
@@ -209,9 +209,9 @@ private fun GraphBody(uiState: GraphUiState, onSelect: (Long?) -> Unit, onOpenBo
         )
         val selected = uiState.graph.nodes.indexOfFirst { it.id == uiState.selectedId }
         if (selected >= 0) {
-            Card(
+            DesignCard(
                 modifier = Modifier.fillMaxWidth().padding(12.dp).heightIn(max = 260.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                classic = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 NodeDetail(uiState.graph, selected, onSelect, onOpenBookmark, onClose = { onSelect(null) })
             }
@@ -239,7 +239,7 @@ private fun NodeDetail(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            FilledTonalButton(onClick = { onOpenBookmark(node.id) }) { Text("開く") }
+            EchoMarkTonalButton(onClick = { onOpenBookmark(node.id) }) { Text("開く") }
             if (onClose != null) TextButton(onClick = onClose) { Text("閉じる") }
         }
         Text(
@@ -307,11 +307,10 @@ private fun LazyListScope.nodeRows(
         val node = graph.nodes[index]
         item(key = "n${node.id}", contentType = "node") {
             val selected = node.id == selectedId
-            Card(
+            DesignCard(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow
-                ),
+                role = if (selected) SurfaceRole.Selected else SurfaceRole.Card,
+                classic = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
                 onClick = { onSelect(if (selected) null else node.id) }
             ) {
                 if (selected) {

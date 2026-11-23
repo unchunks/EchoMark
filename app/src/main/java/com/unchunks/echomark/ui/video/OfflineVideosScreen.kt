@@ -1,5 +1,12 @@
 package com.unchunks.echomark.ui.video
 
+import com.unchunks.echomark.ui.components.sectionHeaderColor
+import com.unchunks.echomark.ui.components.sectionHeaderStyle
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
+import com.unchunks.echomark.ui.design.GroupPosition
+import com.unchunks.echomark.ui.design.GroupedRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,16 +30,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +64,10 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkSwitch
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignSurface
 
 /** 「オフラインの動画」の画面(設定の「データ」の欄から開く) */
 @Composable
@@ -116,7 +124,7 @@ fun OfflineVideosContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("オフラインの動画", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -132,24 +140,31 @@ fun OfflineVideosContent(
             ReadableLazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                 item(key = "usage") { UsageCard(uiState) }
                 item(key = "settings-header") { SectionTitle("ダウンロード") }
+                // ダウンロードの設定の2行を1つのまとまりにする(地色・区切り・角丸はデザインに従う)
                 item(key = "wifi") {
-                    ListItem(
-                        headlineContent = { Text("Wi-Fi のときだけダウンロードする") },
-                        supportingContent = { Text("オフにすると、モバイル通信でもダウンロードします(大きなファイルは通信量にご注意ください)") },
-                        trailingContent = { Switch(checked = uiState.settings.wifiOnly, onCheckedChange = null) },
-                        modifier = Modifier.toggleable(
-                            value = uiState.settings.wifiOnly,
-                            role = Role.Switch,
-                            onValueChange = onWifiOnlyChange
+                    GroupedRow(GroupPosition(first = true, last = false), dividerStart = 16.dp) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text("Wi-Fi のときだけダウンロードする") },
+                            supportingContent = { Text("オフにすると、モバイル通信でもダウンロードします(大きなファイルは通信量にご注意ください)") },
+                            trailingContent = { EchoMarkSwitch(checked = uiState.settings.wifiOnly, onCheckedChange = null) },
+                            modifier = Modifier.toggleable(
+                                value = uiState.settings.wifiOnly,
+                                role = Role.Switch,
+                                onValueChange = onWifiOnlyChange
+                            )
                         )
-                    )
+                    }
                 }
                 item(key = "limit") {
-                    ListItem(
-                        headlineContent = { Text("保存する上限") },
-                        supportingContent = { Text("保存する動画の合計が ${formatFileSize(uiState.settings.maxTotalBytes)} を超えるときは、ダウンロードしません") },
-                        modifier = Modifier.clickable(onClickLabel = "上限を変える") { limitDialog = true }
-                    )
+                    GroupedRow(GroupPosition(first = false, last = true), dividerStart = 16.dp) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text("保存する上限") },
+                            supportingContent = { Text("保存する動画の合計が ${formatFileSize(uiState.settings.maxTotalBytes)} を超えるときは、ダウンロードしません") },
+                            modifier = Modifier.clickable(onClickLabel = "上限を変える") { limitDialog = true }
+                        )
+                    }
                 }
                 item(key = "list-header") { SectionTitle("保存した動画(${uiState.items.size})") }
                 if (uiState.items.isEmpty()) {
@@ -163,26 +178,29 @@ fun OfflineVideosContent(
                         )
                     }
                 } else {
-                    uiState.items.forEach { item ->
+                    uiState.items.forEachIndexed { index, item ->
                         item(key = "video-${item.bookmarkId}") {
-                            ListItem(
-                                headlineContent = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                                supportingContent = {
-                                    Text(listOfNotNull(item.label, formatFileSize(item.size), formatSavedAt(item.savedAt) + "に保存").joinToString("・"))
-                                },
-                                trailingContent = {
-                                    IconButton(onClick = { deleteTarget = item }) {
-                                        Icon(Icons.Outlined.Delete, contentDescription = "「${item.title}」の動画を削除")
-                                    }
-                                },
-                                modifier = Modifier.clickable(onClickLabel = "再生") { onPlay(item) }
-                            )
+                            GroupedRow(GroupPosition.of(index, uiState.items.size), dividerStart = 16.dp) {
+                                ListItem(
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                    headlineContent = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                    supportingContent = {
+                                        Text(listOfNotNull(item.label, formatFileSize(item.size), formatSavedAt(item.savedAt) + "に保存").joinToString("・"))
+                                    },
+                                    trailingContent = {
+                                        IconButton(onClick = { deleteTarget = item }) {
+                                            Icon(Icons.Outlined.Delete, contentDescription = "「${item.title}」の動画を削除")
+                                        }
+                                    },
+                                    modifier = Modifier.clickable(onClickLabel = "再生") { onPlay(item) }
+                                )
+                            }
                         }
                     }
                     item(key = "delete-all") {
-                        OutlinedButton(
+                        EchoMarkOutlinedButton(
                             onClick = { deleteAllConfirm = true },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            contentColor = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                         ) {
                             Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.padding(end = ButtonDefaults.IconSpacing))
@@ -232,9 +250,9 @@ fun OfflineVideosContent(
 /** 使っている量。上限に対する割合のバーと、端末の空き容量 */
 @Composable
 private fun UsageCard(uiState: OfflineVideosUiState) {
-    Surface(
+    DesignSurface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth().padding(16.dp)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -262,8 +280,9 @@ private fun UsageCard(uiState: OfflineVideosUiState) {
 private fun SectionTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
+        // 見出しの書体・色はアプリ共通の見出し(SectionHeader)と同じく、デザインに従う
+        style = sectionHeaderStyle(),
+        color = sectionHeaderColor(),
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp).semantics { heading() }
     )
 }

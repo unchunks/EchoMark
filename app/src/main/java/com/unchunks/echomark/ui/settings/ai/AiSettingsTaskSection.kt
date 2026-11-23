@@ -1,5 +1,8 @@
 package com.unchunks.echomark.ui.settings.ai
 
+import com.unchunks.echomark.ui.settings.SettingsBlock
+import com.unchunks.echomark.ui.design.designSegmentColors
+import com.unchunks.echomark.ui.design.designSegmentShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -15,10 +18,9 @@ import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -46,6 +48,8 @@ import com.unchunks.echomark.ui.settings.SettingsSwitchItem
 import com.unchunks.echomark.ui.settings.japaneseParagraph
 import com.unchunks.echomark.ui.settings.modelDisplayName
 import com.unchunks.echomark.ui.settings.shortName
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.DesignCard
 
 /*
  * AI 設定画面の「用途ごとの AI」。用途ごとの実行場所・提供元・モデルの選択と、クラウドに送る内容の説明。
@@ -78,10 +82,12 @@ internal fun TaskSettingCard(
 ) {
     val setting = uiState.setting(task)
     val provider = setting.apiProvider
-    OutlinedCard(
+    DesignCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        classic = MaterialTheme.colorScheme.surface,
+        classicBorder = CardDefaults.outlinedCardBorder()
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -102,7 +108,8 @@ internal fun TaskSettingCard(
                     SegmentedButton(
                         selected = setting.backend == backend,
                         onClick = { onSelectBackend(backend) },
-                        shape = SegmentedButtonDefaults.itemShape(index, LlmBackend.entries.size)
+                        shape = designSegmentShape(index, LlmBackend.entries.size),
+                        colors = designSegmentColors()
                     ) {
                         Text(
                             when (backend) {
@@ -126,7 +133,7 @@ internal fun TaskSettingCard(
                 FieldLabel("提供元")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ApiProvider.entries.forEach { option ->
-                        FilterChip(
+                        EchoMarkFilterChip(
                             selected = option == provider,
                             onClick = { onSelectProvider(option) },
                             label = { Text(option.shortName) }
@@ -164,13 +171,13 @@ internal fun TaskSettingCard(
 @Composable
 private fun LocalModelSelector(models: InstalledModels, selectedId: String?, onSelect: (String?) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(
+        EchoMarkFilterChip(
             selected = selectedId == null,
             onClick = { onSelect(null) },
             label = { Text("既定(${models.default?.displayName?.let(::modelDisplayName).orEmpty()})") }
         )
         models.models.forEach { model ->
-            FilterChip(
+            EchoMarkFilterChip(
                 selected = selectedId == model.id,
                 onClick = { onSelect(model.id) },
                 label = { Text(modelDisplayName(model.displayName)) }
@@ -186,7 +193,7 @@ private fun ModelSelector(provider: ApiProvider, selectedModel: String, onSetMod
     var modelInput by remember(provider, selectedModel) { mutableStateOf(selectedModel) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         provider.presets.forEach { preset ->
-            FilterChip(
+            EchoMarkFilterChip(
                 selected = selectedModel == preset.id,
                 onClick = { onSetModel(preset.id) },
                 label = { Text(preset.label) }
@@ -228,15 +235,17 @@ internal fun cloudNotice(uiState: AiSettingsUiState): String {
  */
 @Composable
 internal fun SendFilesToCloudSetting(providers: List<ApiProvider>, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    SettingsSwitchItem(
-        title = "ファイルもクラウドで解析",
-        icon = Icons.Outlined.CloudUpload,
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        summary = "保存した画像・PDF・音声・動画を ${providers.joinToString("・") { it.shortName }} に送り、" +
-            "写っているものや話している内容から要約・タグ付けします",
-        modifier = Modifier.padding(top = 8.dp)
-    )
+    // 行を、デザインのカードの描き方のまとまりにする
+    SettingsBlock(modifier = Modifier.padding(top = 8.dp)) {
+        SettingsSwitchItem(
+            title = "ファイルもクラウドで解析",
+            icon = Icons.Outlined.CloudUpload,
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            summary = "保存した画像・PDF・音声・動画を ${providers.joinToString("・") { it.shortName }} に送り、" +
+                "写っているものや話している内容から要約・タグ付けします"
+        )
+    }
     SettingsNotice(text = sendFilesNotice(providers, checked), icon = Icons.Outlined.Info)
 }
 

@@ -1,7 +1,6 @@
 package com.unchunks.echomark.ui.settings
 
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.FormatListBulleted
@@ -21,13 +20,13 @@ import com.unchunks.echomark.ui.components.SectionHeader
  */
 
 /** 「要約」の欄の行。値を選ぶ行は [onOpenDialog] でダイアログを開く。 */
-internal fun LazyListScope.summarySettingsItems(
+internal fun SettingsListBuilder.summarySettingsItems(
     style: SummaryStyle,
     onOpenDialog: (SettingsDialog) -> Unit,
     onChange: ((SummaryStyle) -> SummaryStyle) -> Unit = {}
 ) {
-    item { SectionHeader("要約") }
-    item {
+    header("要約")
+    row {
         SettingsItem(
             title = "要約の言語",
             icon = Icons.Outlined.Translate,
@@ -35,7 +34,7 @@ internal fun LazyListScope.summarySettingsItems(
             onClick = { onOpenDialog(SettingsDialog.SUMMARY_LANGUAGE) }
         )
     }
-    item {
+    row {
         SettingsItem(
             title = "要約の書き方",
             icon = Icons.Outlined.FormatListBulleted,
@@ -43,7 +42,7 @@ internal fun LazyListScope.summarySettingsItems(
             onClick = { onOpenDialog(SettingsDialog.SUMMARY_FORMAT) }
         )
     }
-    item {
+    row {
         SettingsSwitchItem(
             title = "要約の出来を確かめる",
             icon = Icons.Outlined.FactCheck,
@@ -52,7 +51,7 @@ internal fun LazyListScope.summarySettingsItems(
             onCheckedChange = { checked -> onChange { it.copy(qualityCheck = checked) } }
         )
     }
-    item {
+    row {
         Text(
             "変えても、保存済みの要約はそのままです。新しく作る要約から反映され、詳細画面の「再処理」で作り直せます。",
             style = MaterialTheme.typography.bodySmall,

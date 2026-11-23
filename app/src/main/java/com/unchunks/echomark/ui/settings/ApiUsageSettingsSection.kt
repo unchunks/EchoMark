@@ -1,11 +1,12 @@
 package com.unchunks.echomark.ui.settings
 
+import com.unchunks.echomark.ui.design.designSegmentColors
+import com.unchunks.echomark.ui.design.designSegmentShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -33,9 +34,9 @@ import java.util.Locale
  */
 
 /** 「クラウド AI の使用量」の欄。 */
-internal fun LazyListScope.apiUsageItems(usage: ApiUsagePeriods) {
-    item { SectionHeader("クラウド AI の使用量") }
-    item { ApiUsageCard(usage) }
+internal fun SettingsListBuilder.apiUsageItems(usage: ApiUsagePeriods) {
+    header("クラウド AI の使用量")
+    standalone { ApiUsageCard(usage) }
 }
 
 @Composable
@@ -51,7 +52,8 @@ internal fun ApiUsageCard(usage: ApiUsagePeriods, modifier: Modifier = Modifier)
                 SegmentedButton(
                     selected = period == entry,
                     onClick = { period = entry },
-                    shape = SegmentedButtonDefaults.itemShape(index, ApiUsagePeriod.entries.size)
+                    shape = designSegmentShape(index, ApiUsagePeriod.entries.size),
+                    colors = designSegmentColors()
                 ) {
                     Text(entry.label)
                 }

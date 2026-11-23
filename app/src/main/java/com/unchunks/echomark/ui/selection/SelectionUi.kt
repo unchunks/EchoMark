@@ -18,7 +18,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -30,6 +29,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /**
  * 複数選択の間、通常のトップバーの代わりに出すバー。選んでいる件数と、すべて選ぶ・選びを解く・選択をやめるを出す。
@@ -49,7 +49,7 @@ fun SelectionTopBar(
     modifier: Modifier = Modifier,
     scrollBehavior: TopAppBarScrollBehavior? = null
 ) {
-    TopAppBar(
+    EchoMarkTopAppBar(
         // 文字が大きいときも、1行に収めて省略する
         title = {
             Text(

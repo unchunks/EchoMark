@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Style
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -35,6 +34,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.DesignSurface
 
 /** 一覧の「新しいデザインを試す」のお知らせの状態。 */
 data class DesignIntroState(
@@ -77,8 +78,8 @@ class DesignIntroViewModel @Inject constructor(
 /** 一覧の先頭に出す、新しいデザインの案内。「選ぶ」でデザインのダイアログを開く */
 @Composable
 fun DesignIntroBanner(onChoose: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    DesignSurface(
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.medium,
         modifier = modifier
             .fillMaxWidth()
@@ -115,7 +116,7 @@ fun DesignIntroBanner(onChoose: () -> Unit, onDismiss: () -> Unit, modifier: Mod
             ) {
                 TextButton(onClick = onDismiss) { Text("閉じる") }
                 Spacer(Modifier.width(8.dp))
-                FilledTonalButton(onClick = onChoose) { Text("デザインを選ぶ") }
+                EchoMarkTonalButton(onClick = onChoose) { Text("デザインを選ぶ") }
             }
         }
     }

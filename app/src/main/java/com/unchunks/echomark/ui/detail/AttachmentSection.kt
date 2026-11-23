@@ -87,6 +87,7 @@ import com.unchunks.echomark.ui.common.icon
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.io.File
+import com.unchunks.echomark.ui.design.DesignSurface
 
 /** 保存したファイルの種類(MIME タイプから)。ファイルでなければ null */
 internal fun Bookmark.attachmentType(): BookmarkType? =
@@ -243,10 +244,10 @@ private fun PdfPreview(file: File, onOpenFile: () -> Unit, modifier: Modifier) {
         val rest = (pageCount ?: 0) - shown
         if (rest > 0) {
             item {
-                Surface(
+                DesignSurface(
                     onClick = onOpenFile,
                     shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    classic = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier
                         .width(pageWidth)
                         .aspectRatio(A4_RATIO)
@@ -521,9 +522,9 @@ internal fun FileInfoCard(
     modifier: Modifier = Modifier
 ) {
     val type = bookmark.attachmentType()
-    Surface(
+    DesignSurface(
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.fillMaxWidth()
     ) {
         Row(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {

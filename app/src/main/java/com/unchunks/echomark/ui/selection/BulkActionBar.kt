@@ -7,6 +7,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
+import com.unchunks.echomark.ui.design.DesignBottomBar
 
 
 import androidx.compose.foundation.layout.Row
@@ -39,12 +42,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -136,7 +137,8 @@ fun BulkActionBar(
         if (uri != null) callbacks.onExport(ExportFormat.BROWSER_HTML, uri.toString())
     }
 
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp) {
+    // 下の操作のバーの地色・上端の区切りはデザインに従う
+    DesignBottomBar(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -308,7 +310,7 @@ private fun MenuItem(text: String, icon: androidx.compose.ui.graphics.vector.Ima
 @Composable
 private fun AddTagSheet(suggestions: List<String>, count: Int, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 16.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -328,7 +330,7 @@ private fun AddTagSheet(suggestions: List<String>, count: Int, onConfirm: (Strin
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     candidates.forEach { tag ->
-                        FilterChip(selected = tag == name.trim(), onClick = { name = tag }, label = { Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                        EchoMarkFilterChip(selected = tag == name.trim(), onClick = { name = tag }, label = { Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis) })
                     }
                 }
             }
@@ -373,7 +375,7 @@ private fun RemoveTagDialog(tags: List<String>, onSelect: (String) -> Unit, onDi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CategoryChoiceSheet(categories: List<CategoryEntry>, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 16.dp).navigationBarsPadding()) {
             Text("カテゴリを設定", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
             Text(
@@ -418,7 +420,7 @@ private fun CollectionChoiceSheet(
 ) {
     var newName by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 16.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(8.dp)

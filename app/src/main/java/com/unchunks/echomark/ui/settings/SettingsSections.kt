@@ -1,6 +1,5 @@
 package com.unchunks.echomark.ui.settings
 
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
@@ -44,17 +43,17 @@ import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionState
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.ui.components.SectionHeader
 
-internal fun LazyListScope.preferenceItems(
+internal fun SettingsListBuilder.preferenceItems(
     uiState: SettingsUiState,
     actions: SettingsActions,
     notificationsBlocked: Boolean,
     dynamicColorAvailable: Boolean,
     openDialog: (SettingsDialog) -> Unit
 ) {
-    item("ai-heading") { SectionHeader("AI") }
-    item("ai") { SettingsAiCard(uiState.ai, actions.onOpenAiSettings) }
+    header("AI", key = "ai-heading")
+    standalone("ai") { SettingsAiCard(uiState.ai, actions.onOpenAiSettings) }
 
-    item {
+    row {
         SettingsItem(
             title = "カテゴリ",
             icon = Icons.Outlined.Category,
@@ -63,8 +62,8 @@ internal fun LazyListScope.preferenceItems(
         )
     }
 
-    item("appearance-heading") { SectionHeader("表示") }
-    item("theme") {
+    header("表示", key = "appearance-heading")
+    row("theme") {
         SettingsItem(
             title = "テーマ",
             icon = Icons.Outlined.BrightnessMedium,
@@ -72,7 +71,7 @@ internal fun LazyListScope.preferenceItems(
             onClick = { openDialog(SettingsDialog.THEME) }
         )
     }
-    item("design") {
+    row("design") {
         SettingsItem(
             title = "デザイン",
             icon = Icons.Outlined.Style,
@@ -81,7 +80,7 @@ internal fun LazyListScope.preferenceItems(
         )
     }
     if (dynamicColorAvailable) {
-        item("dynamic-color") {
+        row("dynamic-color") {
             SettingsSwitchItem(
                 title = "ダイナミックカラー",
                 icon = Icons.Outlined.Palette,
@@ -92,8 +91,8 @@ internal fun LazyListScope.preferenceItems(
         }
     }
 
-    item("notifications-heading") { SectionHeader("通知") }
-    item("rediscover") {
+    header("通知", key = "notifications-heading")
+    row("rediscover") {
         SettingsSwitchItem(
             title = "再発見通知",
             icon = Icons.Outlined.NotificationsActive,
@@ -103,7 +102,7 @@ internal fun LazyListScope.preferenceItems(
         )
     }
     if (notificationsBlocked) {
-        item("notification-permission") {
+        standalone("notification-permission") {
             SettingsNotice(
                 text = "通知が許可されていません。端末の設定で EchoMark の通知をオンにしてください。",
                 icon = Icons.Outlined.NotificationsOff,
@@ -120,7 +119,7 @@ internal fun LazyListScope.preferenceItems(
         }
     }
     if (uiState.rediscover.enabled) {
-        item("notification-day") {
+        row("notification-day") {
             SettingsItem(
                 title = "曜日",
                 icon = Icons.Outlined.CalendarMonth,
@@ -128,7 +127,7 @@ internal fun LazyListScope.preferenceItems(
                 onClick = { openDialog(SettingsDialog.DAY_OF_WEEK) }
             )
         }
-        item("notification-time") {
+        row("notification-time") {
             SettingsItem(
                 title = "時刻",
                 icon = Icons.Outlined.Schedule,
@@ -154,8 +153,8 @@ internal fun LazyListScope.preferenceItems(
         onChange = actions.onSummaryStyleChange
     )
 
-    item { SectionHeader("通信") }
-    item {
+    header("通信")
+    row {
         SettingsSwitchItem(
             title = "オフラインモード",
             icon = Icons.Outlined.CloudOff,
@@ -165,8 +164,8 @@ internal fun LazyListScope.preferenceItems(
         )
     }
 
-    item { SectionHeader("ロック") }
-    item {
+    header("ロック")
+    row {
         SettingsSwitchItem(
             title = "アプリのロック",
             icon = Icons.Outlined.Lock,
@@ -176,7 +175,7 @@ internal fun LazyListScope.preferenceItems(
         )
     }
     if (uiState.appLock.enabled) {
-        item {
+        row {
             SettingsItem(
                 title = "ロックするまでの時間",
                 icon = Icons.Outlined.Timer,
@@ -186,7 +185,7 @@ internal fun LazyListScope.preferenceItems(
         }
     }
     databaseEncryptionItems(uiState.databaseEncryption, actions.onDismissDatabaseKeyLost)
-    item {
+    row {
         SettingsSwitchItem(
             title = "最近使ったアプリで内容を隠す",
             icon = Icons.Outlined.VisibilityOff,
@@ -197,19 +196,19 @@ internal fun LazyListScope.preferenceItems(
     }
 }
 
-internal fun LazyListScope.managementItems(
+internal fun SettingsListBuilder.managementItems(
     uiState: SettingsUiState,
     actions: SettingsActions,
     openDialog: (SettingsDialog) -> Unit
 ) {
-    item("data-heading") { SectionHeader("データ管理") }
-    item("backup-notice") {
+    header("データ管理", key = "data-heading")
+    standalone("backup-notice") {
         SettingsNotice(
             text = "API キーと端末内モデルはバックアップに含まれません。JSON から復元する場合、ファイルのブックマークは要約とメモだけが復元されます。",
             icon = Icons.Outlined.Info
         )
     }
-    item {
+    row {
         SettingsItem(
             title = "バックアップを書き出す",
             icon = Icons.Outlined.Upload,
@@ -217,7 +216,7 @@ internal fun LazyListScope.managementItems(
             onClick = actions.onExportBackup
         )
     }
-    item {
+    row {
         SettingsItem(
             title = "ファイルも含めて書き出す",
             icon = Icons.Outlined.FolderZip,
@@ -225,7 +224,7 @@ internal fun LazyListScope.managementItems(
             onClick = actions.onExportBackupWithFiles
         )
     }
-    item {
+    row {
         SettingsItem(
             title = "バックアップを読み込む",
             icon = Icons.Outlined.Download,
@@ -241,7 +240,7 @@ internal fun LazyListScope.managementItems(
         onIncludeFilesChange = actions.onAutoBackupIncludeFilesChange,
         onRunNow = actions.onRunAutoBackupNow
     )
-    item {
+    row {
         SettingsItem(
             title = "他のサービスから取り込む",
             icon = Icons.Outlined.MoveToInbox,
@@ -249,7 +248,7 @@ internal fun LazyListScope.managementItems(
             onClick = actions.onImportFromServices
         )
     }
-    item {
+    row {
         SettingsItem(
             title = "購読(RSS・論文・ニュースなど)",
             icon = Icons.Outlined.RssFeed,
@@ -257,7 +256,7 @@ internal fun LazyListScope.managementItems(
             onClick = actions.onOpenSubscriptions
         )
     }
-    item("offline-videos") {
+    row("offline-videos") {
         SettingsItem(
             title = "オフラインの動画",
             icon = Icons.Outlined.VideoLibrary,
@@ -265,7 +264,7 @@ internal fun LazyListScope.managementItems(
             onClick = actions.onOpenOfflineVideos
         )
     }
-    item("storage") {
+    row("storage") {
         SettingsItem(
             title = "ストレージ使用量",
             icon = Icons.Outlined.Storage,
@@ -274,9 +273,9 @@ internal fun LazyListScope.managementItems(
         )
     }
 
-    item("about-heading") { SectionHeader("このアプリについて") }
+    header("このアプリについて", key = "about-heading")
     actions.onOpenAppHelp?.let { onOpenAppHelp ->
-        item("app-help") {
+        row("app-help") {
             SettingsItem(
                 title = "使い方を AI に聞く",
                 icon = Icons.AutoMirrored.Outlined.HelpOutline,
@@ -287,7 +286,7 @@ internal fun LazyListScope.managementItems(
         }
     }
     actions.onOpenOnboarding?.let { onOpenOnboarding ->
-        item("guide") {
+        row("guide") {
             SettingsItem(
                 title = "はじめにの案内をもう一度見る",
                 icon = Icons.Outlined.School,
@@ -297,7 +296,7 @@ internal fun LazyListScope.managementItems(
             )
         }
     }
-    item("privacy") {
+    row("privacy") {
         SettingsItem(
             title = "プライバシー",
             icon = Icons.Outlined.PrivacyTip,
@@ -305,14 +304,14 @@ internal fun LazyListScope.managementItems(
             onClick = { openDialog(SettingsDialog.PRIVACY) }
         )
     }
-    item("licenses") {
+    row("licenses") {
         SettingsItem(
             title = "オープンソースライセンス",
             icon = Icons.Outlined.Description,
             onClick = { openDialog(SettingsDialog.LICENSES) }
         )
     }
-    item("crash-log") {
+    row("crash-log") {
         SettingsItem(
             title = "クラッシュログ",
             icon = Icons.Outlined.BugReport,
@@ -320,12 +319,12 @@ internal fun LazyListScope.managementItems(
             onClick = { openDialog(SettingsDialog.CRASH_LOG) }
         )
     }
-    item("version") {
+    row("version") {
         SettingsItem(title = "バージョン", icon = Icons.Outlined.Info, summary = uiState.versionLabel)
     }
 
-    item("deletion-heading") { SectionHeader("データの削除") }
-    item("delete-data") {
+    header("データの削除", key = "deletion-heading")
+    row("delete-data") {
         SettingsItem(
             title = "すべてのデータを削除",
             icon = Icons.Outlined.DeleteForever,
@@ -338,11 +337,11 @@ internal fun LazyListScope.managementItems(
 }
 
 /** 保存したデータの暗号化の状態(#100)。うまくいっていないときは、理由とすることを出す */
-private fun LazyListScope.databaseEncryptionItems(
+private fun SettingsListBuilder.databaseEncryptionItems(
     state: DatabaseEncryptionState,
     onDismissKeyLost: () -> Unit
 ) {
-    item {
+    row {
         SettingsItem(
             title = "保存したデータの暗号化",
             icon = Icons.Outlined.EnhancedEncryption,
@@ -353,7 +352,7 @@ private fun LazyListScope.databaseEncryptionItems(
         )
     }
     if (state == DatabaseEncryptionState.KEY_LOST) {
-        item {
+        standalone {
             SettingsNotice(
                 text = "暗号化の鍵がこの端末で使えなくなったため、保存していたデータを読めず、新しく作り直しました。" +
                     "バックアップがあれば、「データ管理」→「バックアップを読み込む」で戻してください。",

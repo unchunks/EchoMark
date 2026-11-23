@@ -25,14 +25,11 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -63,6 +60,11 @@ import com.unchunks.echomark.ui.common.SelectedFile
 import com.unchunks.echomark.ui.common.extractDomain
 import com.unchunks.echomark.ui.common.formatFileSize
 import com.unchunks.echomark.ui.components.SelectedFileRow
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkSuggestionChip
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
+import com.unchunks.echomark.ui.design.DesignSurface
+import com.unchunks.echomark.ui.design.SurfaceRole
 
 /** 共有から開くクイック保存のボトムシート。入力中のタイトル・メモ・タグは回転などで作り直しても残す */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,7 +86,7 @@ internal fun QuickSaveSheet(
     // タイトルとメモが変わるたびに、保存する内容に合うタグの提案を出し直す(開いた直後も1回)
     LaunchedEffect(title, memo) { onInputChange(title, memo) }
 
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -266,7 +268,7 @@ private fun ShareForm(
         ) {
             TextButton(onClick = onCancel, enabled = !saving) { Text("キャンセル") }
             Spacer(Modifier.width(8.dp))
-            Button(
+            EchoMarkButton(
                 enabled = !saving && if (hasFiles) {
                     shared.files.any { it.canSave }
                 } else if (shared.hasMultipleEntries) {
@@ -302,9 +304,11 @@ private fun ShareForm(
 /** 共有された URL(ドメインと URL)またはテキストの冒頭を見せる */
 @Composable
 private fun SharedPreview(shared: SharedContent) {
-    Surface(
+    DesignSurface(
+        // シートの中の区画
+        role = SurfaceRole.Nested,
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -347,9 +351,11 @@ private fun SharedPreview(shared: SharedContent) {
 /** まとめて共有された URL・テキストのプレビュー。件数と、1件ずつのドメインまたは冒頭(多ければ先頭から数件)を出す */
 @Composable
 private fun SharedEntriesPreview(entries: List<SharedEntry>) {
-    Surface(
+    DesignSurface(
+        // シートの中の区画
+        role = SurfaceRole.Nested,
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -394,9 +400,11 @@ private fun SharedEntriesPreview(entries: List<SharedEntry>) {
 @Composable
 private fun SharedFilesPreview(files: List<SelectedFile>) {
     val single = files.singleOrNull()
-    Surface(
+    DesignSurface(
+        // シートの中の区画
+        role = SurfaceRole.Nested,
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -498,7 +506,7 @@ private fun TagSuggestionRow(suggestions: List<String>, typed: List<String>, ena
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             shown.forEach { name ->
-                SuggestionChip(
+                EchoMarkSuggestionChip(
                     onClick = { onPick(name) },
                     enabled = enabled,
                     label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },

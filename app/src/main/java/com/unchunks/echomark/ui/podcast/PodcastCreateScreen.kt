@@ -1,5 +1,7 @@
 package com.unchunks.echomark.ui.podcast
 
+import com.unchunks.echomark.ui.design.designSegmentColors
+import com.unchunks.echomark.ui.design.designSegmentShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +17,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Podcasts
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,7 +30,6 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +48,8 @@ import com.unchunks.echomark.domain.podcast.PodcastTemplates
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /**
  * 選んだブックマークからポッドキャストを作る画面(詳細画面・複数選択から開く)。話し方を選んで作り始めると、
@@ -91,7 +93,7 @@ fun PodcastCreateContent(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("ポッドキャストを作る", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, contentDescription = "閉じる") }
@@ -102,7 +104,7 @@ fun PodcastCreateContent(
         bottomBar = {
             if (!uiState.isLoading && uiState.errorMessage == null) {
                 Box(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Button(
+                    EchoMarkButton(
                         onClick = onCreate,
                         enabled = !uiState.isCreating,
                         modifier = Modifier.fillMaxWidth()
@@ -132,7 +134,8 @@ fun PodcastCreateContent(
                                     SegmentedButton(
                                         selected = uiState.format == format,
                                         onClick = { onFormatChange(format) },
-                                        shape = SegmentedButtonDefaults.itemShape(index, PodcastFormat.entries.size)
+                                        shape = designSegmentShape(index, PodcastFormat.entries.size),
+                                        colors = designSegmentColors()
                                     ) { Text(format.label, maxLines = 1) }
                                 }
                             }

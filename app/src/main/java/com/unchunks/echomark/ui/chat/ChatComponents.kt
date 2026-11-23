@@ -13,10 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -36,6 +33,8 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.repository.AiSetupState
 import com.unchunks.echomark.ui.common.extractDomain
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.AccentCard
 
 /**
  * AI が使えない設定のときの案内カード。会話一覧とチャット画面の上部に出す。
@@ -49,12 +48,10 @@ internal fun AiSetupBanner(
     compact: Boolean = false
 ) {
     if (state.isReady) return
-    Card(
+    AccentCard(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
             contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-        )
     ) {
         if (compact) CompactAiSetupBanner(state, onOpenAiSettings) else FullAiSetupBanner(state, onOpenAiSettings)
     }
@@ -77,7 +74,7 @@ private fun FullAiSetupBanner(state: AiSetupState, onOpenAiSettings: () -> Unit)
                 style = MaterialTheme.typography.bodyMedium.copy(lineBreak = LineBreak.Paragraph)
             )
             Spacer(Modifier.height(12.dp))
-            Button(
+            EchoMarkButton(
                 onClick = onOpenAiSettings,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.tertiary,

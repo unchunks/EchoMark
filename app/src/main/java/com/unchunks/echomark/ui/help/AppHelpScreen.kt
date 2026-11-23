@@ -31,25 +31,19 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -67,6 +61,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.MarkdownText
 import com.unchunks.echomark.domain.help.AppAction
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkSuggestionChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.AccentCard
+import com.unchunks.echomark.ui.design.designFieldStyle
+import com.unchunks.echomark.ui.design.userBubbleStyle
+import com.unchunks.echomark.ui.design.DesignBottomBar
 
 /** 使い方を AI に聞く画面。状態は [AppHelpViewModel]、表示は [AppHelpContent]。 */
 @Composable
@@ -127,7 +129,7 @@ fun AppHelpContent(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("使い方を AI に聞く") },
                 navigationIcon = {
                     IconButton(onClick = actions.onBack) {
@@ -211,7 +213,7 @@ private fun HelpIntro(suggestions: List<String>, onSuggestion: (String) -> Unit,
             modifier = Modifier.fillMaxWidth()
         ) {
             suggestions.forEach { question ->
-                SuggestionChip(onClick = { onSuggestion(question) }, label = { Text(question) })
+                EchoMarkSuggestionChip(onClick = { onSuggestion(question) }, label = { Text(question) })
             }
         }
     }
@@ -220,15 +222,18 @@ private fun HelpIntro(suggestions: List<String>, onSuggestion: (String) -> Unit,
 @Composable
 private fun QuestionBubble(text: String) {
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        // 会話の画面と同じ、自分の発言の吹き出し(色・形・影はデザインに従う)
+        val bubble = userBubbleStyle(classicShape = RoundedCornerShape(20.dp))
         Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shape = RoundedCornerShape(20.dp),
-            modifier = Modifier.widthIn(max = 320.dp)
+            color = bubble.color,
+            shape = bubble.shape,
+            border = bubble.border,
+            modifier = Modifier.widthIn(max = 320.dp).then(bubble.depth)
         ) {
             Text(
                 text,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = bubble.contentColor,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
             )
         }
@@ -298,9 +303,9 @@ private fun ActionButton(action: AppAction, enabled: Boolean, onClick: () -> Uni
         Text(action.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
     if (opensScreen) {
-        OutlinedButton(onClick = onClick, enabled = enabled, content = content)
+        EchoMarkOutlinedButton(onClick = onClick, enabled = enabled, content = content)
     } else {
-        FilledTonalButton(onClick = onClick, enabled = enabled, content = content)
+        EchoMarkTonalButton(onClick = onClick, enabled = enabled, content = content)
     }
 }
 
@@ -326,8 +331,8 @@ private fun ResultNotice(text: String) {
 
 @Composable
 private fun HelpErrorCard(error: AppHelpError, onOpenAiSettings: () -> Unit, onDismiss: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    AccentCard(
+        containerColor = MaterialTheme.colorScheme.errorContainer,
         modifier = Modifier
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Polite }
@@ -354,23 +359,26 @@ private fun HelpInputBar(
     onStop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier.fillMaxWidth()) {
+    // 入力のバー。地色・上端の区切りは、ほかの下の操作のバーと同じ
+    DesignBottomBar(modifier = modifier.fillMaxWidth(), classic = MaterialTheme.colorScheme.surface, classicTonalElevation = 0.dp) {
         Row(
             modifier = Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 会話の画面と同じ入力欄(形・地色・ソフトのくぼみはデザインに従う)
+            val field = designFieldStyle(classicContainer = MaterialTheme.colorScheme.surfaceContainerHigh)
             TextField(
                 value = value,
                 onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).then(field.depth),
                 placeholder = { Text("使い方について質問…", maxLines = 1) },
-                shape = RoundedCornerShape(28.dp),
+                shape = field.shape,
                 maxLines = 4,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    focusedContainerColor = field.containerColor,
+                    unfocusedContainerColor = field.containerColor,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent

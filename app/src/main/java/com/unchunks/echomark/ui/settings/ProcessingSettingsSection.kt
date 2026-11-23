@@ -1,6 +1,5 @@
 package com.unchunks.echomark.ui.settings
 
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.Bedtime
@@ -19,14 +18,14 @@ import com.unchunks.echomark.ui.components.SectionHeader
  */
 
 /** 「処理」の欄の行。値を選ぶ行は [onOpenDialog] でダイアログを開く。 */
-internal fun LazyListScope.processingSettingsItems(
+internal fun SettingsListBuilder.processingSettingsItems(
     settings: ProcessingSettings,
     onChange: ((ProcessingSettings) -> ProcessingSettings) -> Unit,
     onOpenDialog: (SettingsDialog) -> Unit,
     onOpenQueue: () -> Unit = {}
 ) {
-    item { SectionHeader("処理") }
-    item {
+    header("処理")
+    row {
         SettingsItem(
             title = "処理の状況",
             icon = Icons.Outlined.Pending,
@@ -34,7 +33,7 @@ internal fun LazyListScope.processingSettingsItems(
             onClick = onOpenQueue
         )
     }
-    item {
+    row {
         SettingsSwitchItem(
             title = "充電中だけ処理する",
             icon = Icons.Outlined.BatteryChargingFull,
@@ -43,7 +42,7 @@ internal fun LazyListScope.processingSettingsItems(
             onCheckedChange = { checked -> onChange { it.copy(chargingOnly = checked) } }
         )
     }
-    item {
+    row {
         SettingsSwitchItem(
             title = "Wi-Fi のときだけ通信する",
             icon = Icons.Outlined.Wifi,
@@ -52,7 +51,7 @@ internal fun LazyListScope.processingSettingsItems(
             onCheckedChange = { checked -> onChange { it.copy(unmeteredOnly = checked) } }
         )
     }
-    item {
+    row {
         SettingsSwitchItem(
             title = "夜間にまとめて処理する",
             icon = Icons.Outlined.Bedtime,
@@ -63,7 +62,7 @@ internal fun LazyListScope.processingSettingsItems(
         )
     }
     if (settings.nightlyBatch) {
-        item {
+        row {
             SettingsItem(
                 title = "夜間の処理を始める時刻",
                 icon = Icons.Outlined.Schedule,
@@ -72,7 +71,7 @@ internal fun LazyListScope.processingSettingsItems(
             )
         }
     }
-    item {
+    row {
         SettingsItem(
             title = "同時に処理する数",
             icon = Icons.Outlined.Tune,
@@ -82,7 +81,7 @@ internal fun LazyListScope.processingSettingsItems(
     }
     // クラウドの AI を無効にしている間は、呼び出しの上限も出さない(CLOUD_AI_ENABLED)
     if (CLOUD_AI_ENABLED) {
-        item {
+        row {
             SettingsItem(
                 title = "クラウド AI の呼び出しの上限",
                 icon = Icons.Outlined.Speed,

@@ -18,12 +18,10 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -77,6 +75,8 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkLargeTopAppBar
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 
 /** 設定画面で開くダイアログ。スクリーンショットテストでは最初から開いた状態を渡せる。 */
@@ -337,9 +337,9 @@ internal fun SettingsContent(
         topBar = {
             val title: @Composable () -> Unit = { Text("設定", Modifier.semantics { heading() }) }
             if (useLargeBar) {
-                LargeTopAppBar(title = title, scrollBehavior = scrollBehavior)
+                EchoMarkLargeTopAppBar(title = title, scrollBehavior = scrollBehavior)
             } else {
-                TopAppBar(title = title)
+                EchoMarkTopAppBar(title = title)
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -359,12 +359,12 @@ internal fun SettingsContent(
                 modifier = contentModifier.fillMaxSize(),
                 list = {
                     SettingsColumn(state = preferencesState, gutter = 24.dp) {
-                        preferenceItems(uiState, actions, notificationsBlocked, dynamicColorAvailable, openDialog)
+                        settingsList { preferenceItems(uiState, actions, notificationsBlocked, dynamicColorAvailable, openDialog) }
                     }
                 },
                 detail = {
                     SettingsColumn(state = managementState, gutter = 24.dp) {
-                        managementItems(uiState, actions, openDialog)
+                        settingsList { managementItems(uiState, actions, openDialog) }
                     }
                 }
             )
@@ -374,8 +374,10 @@ internal fun SettingsContent(
                 gutter = if (compact) 16.dp else 24.dp,
                 modifier = contentModifier
             ) {
-                preferenceItems(uiState, actions, notificationsBlocked, dynamicColorAvailable, openDialog)
-                managementItems(uiState, actions, openDialog)
+                settingsList {
+                    preferenceItems(uiState, actions, notificationsBlocked, dynamicColorAvailable, openDialog)
+                    managementItems(uiState, actions, openDialog)
+                }
             }
         }
     }

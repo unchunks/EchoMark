@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +46,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
 
 /**
  * アプリのロック([AppLockManager])に従って、[content] を隠す。アプリのすべての Activity の setContent の中で、テーマの内側に置く。
@@ -169,9 +169,9 @@ fun AppLockContent(
                 textAlign = TextAlign.Center
             )
             if (noDeviceLock) {
-                OutlinedButton(onClick = onTurnOff) { Text("アプリのロックをオフにして開く") }
+                EchoMarkOutlinedButton(onClick = onTurnOff) { Text("アプリのロックをオフにして開く") }
             } else {
-                Button(onClick = onUnlock) { Text("ロックを解除") }
+                EchoMarkButton(onClick = onUnlock) { Text("ロックを解除") }
             }
         }
     }

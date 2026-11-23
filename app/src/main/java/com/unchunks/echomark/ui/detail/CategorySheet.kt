@@ -11,8 +11,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,6 +26,10 @@ import androidx.compose.ui.unit.dp
 import com.unchunks.echomark.domain.model.CategoryEntry
 import com.unchunks.echomark.domain.model.CategoryKind
 import com.unchunks.echomark.domain.model.CategoryNames
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
+import com.unchunks.echomark.ui.design.DesignSurface
+import com.unchunks.echomark.ui.design.SurfaceRole
 
 /**
  * ブックマークのカテゴリのシート: 今のカテゴリの説明・だれが決めたか・カテゴリとは何か、別のカテゴリへの変更、
@@ -57,7 +59,7 @@ internal fun CategorySheet(
         listOf(CategoryEntry(current, CategoryNames.AI_OTHER_DESCRIPTION, CategoryKind.AI_OTHER, 0)) + selectable
     }
 
-    ModalBottomSheet(
+    EchoMarkModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -69,9 +71,11 @@ internal fun CategorySheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("カテゴリ「${current}」", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Surface(
+            DesignSurface(
+                // シートの中の区画
+                role = SurfaceRole.Nested,
                 shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                classic = MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -122,7 +126,7 @@ internal fun CategorySheet(
                 }
             }
             if (isEdited) {
-                OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("AI に決め直してもらう") }
+                EchoMarkOutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("AI に決め直してもらう") }
                 Text(
                     "AI がタグとカテゴリを付け直します。",
                     style = MaterialTheme.typography.labelSmall,

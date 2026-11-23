@@ -12,14 +12,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +32,9 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.ChatScopeChoices
 import com.unchunks.echomark.domain.model.ChatTemplate
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 private val BookmarkFilter.scopeLabel: String
     get() = when (this) {
@@ -53,7 +53,7 @@ internal fun ChatScopeSheet(
     onChange: (BookmarkQuery) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss) {
         ChatScopeSheetContent(query, choices, count, onChange)
     }
 }
@@ -85,7 +85,7 @@ internal fun ChatScopeSheetContent(
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(BookmarkFilter.ACTIVE, BookmarkFilter.FAVORITES, BookmarkFilter.ARCHIVED).forEach { filter ->
-                FilterChip(
+                EchoMarkFilterChip(
                     selected = query.filter == filter,
                     onClick = { onChange(query.copy(filter = filter)) },
                     label = { Text(filter.scopeLabel) }
@@ -96,7 +96,7 @@ internal fun ChatScopeSheetContent(
             SectionLabel("タグ")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 choices.tags.forEach { tag ->
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = tag.id in query.tagIds,
                         onClick = { onChange(query.toggleTag(tag.id)) },
                         label = { Text(tag.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -105,12 +105,12 @@ internal fun ChatScopeSheetContent(
             }
             if (query.tagIds.size >= 2) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = query.tagMatch == TagMatch.ALL,
                         onClick = { onChange(query.copy(tagMatch = TagMatch.ALL)) },
                         label = { Text("すべてのタグが付いたもの") }
                     )
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = query.tagMatch == TagMatch.ANY,
                         onClick = { onChange(query.copy(tagMatch = TagMatch.ANY)) },
                         label = { Text("どれかのタグが付いたもの") }
@@ -122,7 +122,7 @@ internal fun ChatScopeSheetContent(
             SectionLabel("カテゴリ")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 choices.categories.forEach { name ->
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = query.categories.any { it.equals(name, ignoreCase = true) },
                         onClick = { onChange(query.toggleCategory(name)) },
                         label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -164,7 +164,7 @@ internal fun ChatTemplateSheet(
     onDelete: (ChatTemplate) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss) {
         ChatTemplateSheetContent(input, userTemplates, onPick, onSaveInput, onDelete)
     }
 }
@@ -196,7 +196,7 @@ internal fun ChatTemplateSheetContent(
                 .semantics { heading() }
         )
         if (input.isNotBlank()) {
-            FilledTonalButton(
+            EchoMarkTonalButton(
                 onClick = onSaveInput,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)
             ) { Text("入力中の文をテンプレートに保存") }

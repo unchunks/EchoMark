@@ -16,11 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +41,9 @@ import com.unchunks.echomark.domain.place.GeoParser
 import com.unchunks.echomark.domain.place.GeoPoint
 import com.unchunks.echomark.domain.repository.CurrentLocationResult
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkModalBottomSheet
 
 /** 場所の操作。状態を持たない画面に渡す。 */
 class PlaceCallbacks(
@@ -82,9 +82,9 @@ fun PlaceSection(bookmark: Bookmark, callbacks: PlaceCallbacks, modifier: Modifi
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                 if (point != null) {
-                    FilledTonalButton(onClick = { callbacks.onOpenInMap(point, name ?: bookmark.title) }) { Text("地図アプリで開く") }
+                    EchoMarkTonalButton(onClick = { callbacks.onOpenInMap(point, name ?: bookmark.title) }) { Text("地図アプリで開く") }
                 }
-                OutlinedButton(onClick = callbacks.onClear) { Text("消す") }
+                EchoMarkOutlinedButton(onClick = callbacks.onClear) { Text("消す") }
             }
         } else {
             Text(
@@ -141,7 +141,7 @@ private fun PlaceSheet(initialName: String, initialPoint: GeoPoint?, callbacks: 
         if (granted) fetchCurrent() else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    EchoMarkModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -163,7 +163,7 @@ private fun PlaceSheet(initialName: String, initialPoint: GeoPoint?, callbacks: 
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            OutlinedButton(onClick = ::onCurrentLocationClick, modifier = Modifier.fillMaxWidth()) {
+            EchoMarkOutlinedButton(onClick = ::onCurrentLocationClick, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.MyLocation, contentDescription = null)
                 Text("現在地を入れる", modifier = Modifier.padding(start = 8.dp))
             }
@@ -174,7 +174,7 @@ private fun PlaceSheet(initialName: String, initialPoint: GeoPoint?, callbacks: 
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("キャンセル") }
-                FilledTonalButton(onClick = {
+                EchoMarkTonalButton(onClick = {
                     val text = coordinates.trim()
                     val point = if (text.isEmpty()) null else GeoParser.parseCoordinates(text) ?: GeoParser.fromUrl(text)
                     if (text.isNotEmpty() && point == null) {

@@ -1,5 +1,10 @@
 package com.unchunks.echomark.ui.podcast
 
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
+import com.unchunks.echomark.ui.design.GroupPosition
+import com.unchunks.echomark.ui.design.GroupedRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,8 +20,6 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,7 +32,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +53,8 @@ import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignCard
 
 /**
  * ポッドキャストの読みの辞書(表記 → 読み)。読み上げの直前に、AI の読みより先に当てる。ViewModel をつなぐだけの薄いラッパー。
@@ -109,7 +113,7 @@ fun ReadingDictionaryContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("読みの辞書", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -156,21 +160,25 @@ fun ReadingDictionaryContent(
                             }
                         }
                     }
-                    items(uiState.entries, key = { it.matchKey }) { entry ->
-                        ListItem(
-                            headlineContent = { Text(entry.surface, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            supportingContent = { Text(entry.reading, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            trailingContent = {
-                                Row {
-                                    IconButton(onClick = { editing = entry.surface }) {
-                                        Icon(Icons.Outlined.Edit, contentDescription = "「${entry.surface}」の読みを直す")
-                                    }
-                                    IconButton(onClick = { onRemove(entry) }) {
-                                        Icon(Icons.Outlined.Delete, contentDescription = "「${entry.surface}」の読みを削除")
+                    itemsIndexed(uiState.entries, key = { _, entry -> entry.matchKey }) { index, entry ->
+                        // 一覧の行のまとまり(地色・区切り・角丸はデザインに従う)
+                        GroupedRow(GroupPosition.of(index, uiState.entries.size), dividerStart = 16.dp) {
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                headlineContent = { Text(entry.surface, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = { Text(entry.reading, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                trailingContent = {
+                                    Row {
+                                        IconButton(onClick = { editing = entry.surface }) {
+                                            Icon(Icons.Outlined.Edit, contentDescription = "「${entry.surface}」の読みを直す")
+                                        }
+                                        IconButton(onClick = { onRemove(entry) }) {
+                                            Icon(Icons.Outlined.Delete, contentDescription = "「${entry.surface}」の読みを削除")
+                                        }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -210,9 +218,9 @@ fun ReadingDictionaryContent(
 
 @Composable
 private fun AboutCard() {
-    Card(
+    DesignCard(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        classic = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("ポッドキャストの読み上げで、表記を読みに置き換えます。", style = MaterialTheme.typography.bodyMedium)

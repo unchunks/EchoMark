@@ -1,5 +1,7 @@
 package com.unchunks.echomark.ui.duplicates
 
+import com.unchunks.echomark.ui.design.designSegmentColors
+import com.unchunks.echomark.ui.design.designSegmentShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,15 +20,10 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -37,7 +34,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +64,11 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignCard
 
 /** 画面の2つの表示(重複の候補・関連のまとまり) */
 enum class DuplicatesTab { DUPLICATES, GROUPS }
@@ -144,7 +145,7 @@ fun DuplicatesContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("重複と関連", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -174,12 +175,12 @@ fun DuplicatesContent(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        FilterChip(
+                        EchoMarkFilterChip(
                             selected = tab == DuplicatesTab.DUPLICATES,
                             onClick = { tab = DuplicatesTab.DUPLICATES },
                             label = { Text("重複の候補 ${uiState.duplicates.size}") }
                         )
-                        FilterChip(
+                        EchoMarkFilterChip(
                             selected = tab == DuplicatesTab.GROUPS,
                             onClick = { tab = DuplicatesTab.GROUPS },
                             label = { Text("関連のまとまり ${uiState.groups.size}") }
@@ -253,7 +254,8 @@ private fun SensitivitySection(sensitivity: DuplicateSensitivity, onSensitivity:
                 SegmentedButton(
                     selected = sensitivity == entry,
                     onClick = { onSensitivity(entry) },
-                    shape = SegmentedButtonDefaults.itemShape(index, DuplicateSensitivity.entries.size)
+                    shape = designSegmentShape(index, DuplicateSensitivity.entries.size),
+                    colors = designSegmentColors()
                 ) { Text(entry.label()) }
             }
         }
@@ -330,9 +332,9 @@ private fun DuplicateCard(
     onKeepBoth: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    DesignCard(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        classic = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(Modifier.padding(vertical = 12.dp)) {
             Text(
@@ -376,9 +378,9 @@ private fun DuplicateSide(bookmark: Bookmark, suggested: Boolean, onOpen: () -> 
         val label = if (suggested) "こちらを残す(おすすめ)" else "こちらを残す"
         Row(Modifier.padding(horizontal = 16.dp)) {
             if (suggested) {
-                FilledTonalButton(onClick = onKeep) { Text(label) }
+                EchoMarkTonalButton(onClick = onKeep) { Text(label) }
             } else {
-                OutlinedButton(onClick = onKeep) { Text(label) }
+                EchoMarkOutlinedButton(onClick = onKeep) { Text(label) }
             }
         }
     }
@@ -386,9 +388,9 @@ private fun DuplicateSide(bookmark: Bookmark, suggested: Boolean, onOpen: () -> 
 
 @Composable
 private fun GroupCard(group: RelatedGroup, onOpenBookmark: (Long) -> Unit, modifier: Modifier = Modifier) {
-    Card(
+    DesignCard(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        classic = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(Modifier.padding(vertical = 12.dp)) {
             Text(

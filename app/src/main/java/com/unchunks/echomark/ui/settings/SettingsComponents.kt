@@ -1,5 +1,11 @@
 package com.unchunks.echomark.ui.settings
 
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
+import com.unchunks.echomark.ui.design.DesignCard
+import com.unchunks.echomark.domain.repository.DesignStyle
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,14 +16,15 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.unchunks.echomark.ui.design.AccentCard
+import com.unchunks.echomark.ui.design.DesignSurface
+import com.unchunks.echomark.ui.design.EchoMarkSwitch
+import com.unchunks.echomark.ui.design.SurfaceRole
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -94,7 +101,7 @@ fun SettingsSwitchItem(
         icon = icon,
         summary = summary,
         enabled = enabled,
-        trailing = { Switch(checked = checked, onCheckedChange = null, enabled = enabled) },
+        trailing = { EchoMarkSwitch(checked = checked, onCheckedChange = null, enabled = enabled) },
         modifier = modifier.toggleable(
             value = checked,
             enabled = enabled,
@@ -107,14 +114,12 @@ fun SettingsSwitchItem(
 @Composable
 internal fun SettingsAiCard(ai: AiSummary, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Card(
+    AccentCard(
+        containerColor = colors.primaryContainer,
+        contentColor = colors.onPrimaryContainer,
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = colors.primaryContainer,
-            contentColor = colors.onPrimaryContainer
-        )
+        shape = MaterialTheme.shapes.extraLarge
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -151,14 +156,10 @@ fun SettingsNotice(
     action: (@Composable () -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
-    Surface(
-        color = if (isWarning) colors.errorContainer else colors.surfaceContainerLow,
-        contentColor = if (isWarning) colors.onErrorContainer else colors.onSurfaceVariant,
-        shape = MaterialTheme.shapes.medium,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-    ) {
+    val noticeModifier = modifier
+        .fillMaxWidth()
+        .padding(vertical = 4.dp)
+    val body: @Composable () -> Unit = {
         Column {
             Row(
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = if (action == null) 12.dp else 4.dp),
@@ -180,6 +181,25 @@ fun SettingsNotice(
             }
         }
     }
+    if (isWarning) {
+        // 警告はどのデザインでも警告の色で目立たせる
+        Surface(
+            color = colors.errorContainer,
+            contentColor = colors.onErrorContainer,
+            shape = MaterialTheme.shapes.medium,
+            modifier = noticeModifier,
+            content = body
+        )
+    } else {
+        // ふつうのお知らせは「中の区画」として描く(ソフトならくぼみ、クリアなら灰色の区画)
+        DesignSurface(
+            classic = colors.surfaceContainerLow,
+            role = SurfaceRole.Nested,
+            contentColor = colors.onSurfaceVariant,
+            modifier = noticeModifier,
+            content = body
+        )
+    }
 }
 
 private const val DISABLED_ALPHA = 0.38f
@@ -197,3 +217,27 @@ internal fun TextStyle.japaneseParagraph(): TextStyle = copy(
         wordBreak = LineBreak.WordBreak.Phrase
     )
 )
+
+/**
+ * 設定の行と、その行に付く操作(ボタン・状態の説明)のひとまとまり。まとまりの一覧([settingsList])の外で
+ * 行を置く画面(AI の設定など、カードと行が混ざる画面)で使う。
+ * - クラシック: 入れ物なし(これまでどおり、行と操作を並べるだけ)
+ * - そのほか: その画面のほかのカードと同じく、デザインのカードの描き方にする(左右 16dp・上下 6dp の余白)
+ */
+@Composable
+internal fun SettingsBlock(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    if (EchoMarkDesign.style == DesignStyle.CLASSIC) {
+        Column(modifier, content = content)
+    } else {
+        DesignCard(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            classic = Color.Transparent
+        ) {
+            content()
+            // 最後のボタンがカードの下端に付かないよう、少し空ける
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}

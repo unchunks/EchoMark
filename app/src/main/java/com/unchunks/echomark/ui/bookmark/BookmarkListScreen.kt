@@ -1,5 +1,6 @@
 package com.unchunks.echomark.ui.bookmark
 
+import com.unchunks.echomark.ui.design.DesignTopBarSurface
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -65,15 +66,12 @@ import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.VerticalAlignTop
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,13 +81,11 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.VerticalDivider
@@ -165,6 +161,11 @@ import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.review.ReadLaterViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
+import com.unchunks.echomark.ui.design.EchoMarkAssistChip
+import com.unchunks.echomark.ui.design.EchoMarkExtendedFab
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkSmallFab
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /**
  * ブックマーク一覧(ホーム)。ViewModel をつなぐだけの薄いラッパーで、描画は [BookmarkListContent] が行う。
@@ -646,7 +647,7 @@ fun BookmarkListContent(
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (showingList && showScrollToTop) {
-                    SmallFloatingActionButton(
+                    EchoMarkSmallFab(
                         onClick = {
                             scope.launch {
                                 listState.animateScrollToItem(0)
@@ -659,7 +660,7 @@ fun BookmarkListContent(
                     }
                 }
                 if (!uiState.isSearchActive && !uiState.isSelecting) {
-                    ExtendedFloatingActionButton(
+                    EchoMarkExtendedFab(
                         text = { Text("追加") },
                         icon = { Icon(Icons.Filled.Add, contentDescription = null) },
                         expanded = fabExpanded,
@@ -923,7 +924,7 @@ private fun ListTopBar(
     var sortMenuOpen by remember { mutableStateOf(false) }
     var displayMenuOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
-    TopAppBar(
+    EchoMarkTopAppBar(
         // 文字が大きいときも単語の途中で折り返さず、1行に収めて省略する
         title = { Text("ブックマーク", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         scrollBehavior = scrollBehavior,
@@ -1091,7 +1092,8 @@ private fun SearchTopBar(
         onQueryChange(value)
     }
 
-    Surface(color = MaterialTheme.colorScheme.surface) {
+    // 検索中の上の帯。地色と下端の区切りは、ふだんの上のバーと同じ
+    DesignTopBarSurface {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1204,7 +1206,7 @@ private fun FilterBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ClearConditionsChip(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    AssistChip(
+    EchoMarkAssistChip(
         onClick = onClick,
         label = { Text("すべて解除") },
         leadingIcon = {
@@ -1232,12 +1234,12 @@ private fun TagMatchRow(count: Int, tagMatch: TagMatch, onChange: (TagMatch) -> 
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.CenterVertically)
         )
-        FilterChip(
+        EchoMarkFilterChip(
             selected = tagMatch == TagMatch.ALL,
             onClick = { onChange(TagMatch.ALL) },
             label = { Text("すべて含む") }
         )
-        FilterChip(
+        EchoMarkFilterChip(
             selected = tagMatch == TagMatch.ANY,
             onClick = { onChange(TagMatch.ANY) },
             label = { Text("どれかを含む") }
@@ -1274,7 +1276,7 @@ private fun FilterChipRow(
     ) {
         items(FILTER_ORDER, key = { "filter_${it.name}" }) { item ->
             val selected = filter == item
-            FilterChip(
+            EchoMarkFilterChip(
                 selected = selected,
                 onClick = { onFilterChange(item) },
                 label = { Text(item.label()) },
@@ -1285,7 +1287,7 @@ private fun FilterChipRow(
         }
         item(key = "conditions") {
             val count = selectedTypes.size + (if (period != null) 1 else 0) + (if (readState != null) 1 else 0)
-            AssistChip(
+            EchoMarkAssistChip(
                 onClick = onOpenConditions,
                 label = { Text(if (count == 0) "条件" else "条件(${count})") },
                 leadingIcon = { Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
@@ -1301,7 +1303,7 @@ private fun FilterChipRow(
             }
             items(categories, key = { "category_${it}" }) { name ->
                 val selected = selectedCategories.any { it.equals(name, ignoreCase = true) }
-                FilterChip(
+                EchoMarkFilterChip(
                     selected = selected,
                     onClick = { onCategoryToggle(name) },
                     label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -1325,7 +1327,7 @@ private fun FilterChipRow(
         }
         items(tags, key = { "tag_${it.id}" }) { tag ->
             val selected = tag.id in selectedTagIds
-            FilterChip(
+            EchoMarkFilterChip(
                 selected = selected,
                 onClick = { onTagToggle(tag.id) },
                 label = { Text("#${tag.name}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -1533,11 +1535,12 @@ private fun RediscoverSection(items: List<Bookmark>, nowMillis: Long, onOpen: (L
                     bookmark = bookmark,
                     onClick = { onOpen(bookmark.id) },
                     caption = rediscoverCaption(bookmark, nowMillis),
-                    // クラシックは一覧のカードより一段濃く、クリアは一覧と同じ白いカード、ほかは地色(帯・紙面)から浮かせる
+                    // クラシックは一覧のカードより一段濃く、エコーは帯の上で地色から浮かせる。
+                    // ほかは一覧のカードと同じ描き方(ペーパーは罫線、クリアは白、ソフトは押し出し)
                     containerColor = when (EchoMarkDesign.style) {
                         DesignStyle.CLASSIC -> colors.surfaceContainer
-                        DesignStyle.CLEAR -> EchoMarkDesign.cardContainerColor
-                        else -> colors.surface
+                        DesignStyle.ECHO -> colors.surface
+                        else -> null
                     }
                 )
             }

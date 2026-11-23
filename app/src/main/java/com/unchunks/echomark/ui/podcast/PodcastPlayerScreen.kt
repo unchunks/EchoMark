@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,7 +36,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +60,10 @@ import com.unchunks.echomark.domain.podcast.PodcastPlayback
 import com.unchunks.echomark.domain.podcast.PodcastSpeaker
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignBottomBar
+import com.unchunks.echomark.ui.theme.EchoMarkDesign
 
 /** 再生の画面の操作。状態を持たない [PodcastPlayerContent] に渡す */
 class PodcastPlayerCallbacks(
@@ -114,7 +116,7 @@ fun PodcastPlayerContent(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text(uiState.episode?.title ?: "ポッドキャスト", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = callbacks.onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る") }
@@ -175,7 +177,7 @@ fun PodcastPlayerContent(
                                     .fillMaxWidth()
                                     .background(
                                         if (current) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                                        RoundedCornerShape(12.dp)
+                                        EchoMarkDesign.roundedShape(12.dp)
                                     )
                                     .clickable(enabled = line.startMs != null, onClickLabel = "ここから聞く") { callbacks.onPlayLine(index) }
                                     .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -202,7 +204,7 @@ fun PodcastPlayerContent(
 /** 位置(つまみ)・時間・戻る/再生/進む・速さ */
 @Composable
 private fun PlayerControls(uiState: PodcastPlayerUiState, callbacks: PodcastPlayerCallbacks) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp) {
+    DesignBottomBar {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
             val duration = uiState.durationMs.coerceAtLeast(1)
             // つまみを動かしている間は、その位置を出す(離したところへ移る)
@@ -247,7 +249,7 @@ private fun PlayerControls(uiState: PodcastPlayerUiState, callbacks: PodcastPlay
             ) {
                 Text("速さ", style = MaterialTheme.typography.labelMedium)
                 PodcastPlayback.SPEEDS.forEach { speed ->
-                    FilterChip(
+                    EchoMarkFilterChip(
                         selected = uiState.speed == speed,
                         onClick = { callbacks.onSpeedChange(speed) },
                         label = { Text(speedLabel(speed)) }

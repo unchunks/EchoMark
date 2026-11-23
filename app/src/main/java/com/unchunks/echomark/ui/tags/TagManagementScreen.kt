@@ -1,5 +1,10 @@
 package com.unchunks.echomark.ui.tags
 
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
+import com.unchunks.echomark.ui.design.GroupPosition
+import com.unchunks.echomark.ui.design.GroupedRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,12 +29,9 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -41,7 +43,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +69,9 @@ import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
 import kotlinx.coroutines.launch
+import com.unchunks.echomark.ui.design.EchoMarkFilterChip
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.AccentCard
 
 /**
  * タグの管理(件数つき一覧・名前変更・統合・表記ゆれの整理・削除)。ViewModel をつなぐだけの薄いラッパー。
@@ -148,7 +152,7 @@ fun TagManagementContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("タグの管理", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -205,18 +209,20 @@ fun TagManagementContent(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
-                    items(visibleNodes, key = { it.tag.id }) { (tag, depth) ->
-                        TagRow(
-                            tag = tag,
-                            depth = depth,
-                            parentName = if (sort == TagSort.TREE) null else uiState.tags.firstOrNull { it.id == tag.parentId }?.name,
-                            onClick = { onOpenTag(tag.id) },
-                            onRename = { renameTargetId = tag.id },
-                            onParent = { parentTargetId = tag.id },
-                            onMerge = { mergeTargetId = tag.id },
-                            onDelete = { deleteTargetId = tag.id },
-                            modifier = Modifier.animateItem()
-                        )
+                    itemsIndexed(visibleNodes, key = { _, node -> node.tag.id }) { index, (tag, depth) ->
+                        // 一覧の行のまとまり(地色・区切り・角丸はデザインに従う)
+                        GroupedRow(GroupPosition.of(index, visibleNodes.size), modifier = Modifier.animateItem()) {
+                            TagRow(
+                                tag = tag,
+                                depth = depth,
+                                parentName = if (sort == TagSort.TREE) null else uiState.tags.firstOrNull { it.id == tag.parentId }?.name,
+                                onClick = { onOpenTag(tag.id) },
+                                onRename = { renameTargetId = tag.id },
+                                onParent = { parentTargetId = tag.id },
+                                onMerge = { mergeTargetId = tag.id },
+                                onDelete = { deleteTargetId = tag.id }
+                            )
+                        }
                     }
                 }
             }
@@ -345,7 +351,7 @@ private fun TagListOptionsRow(
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TagOriginFilter.entries.forEach { filter ->
-                FilterChip(
+                EchoMarkFilterChip(
                     selected = filter == origin,
                     onClick = { onOrigin(filter) },
                     label = { Text(filter.label) }
@@ -354,7 +360,7 @@ private fun TagListOptionsRow(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TagSort.entries.forEach { option ->
-                FilterChip(
+                EchoMarkFilterChip(
                     selected = option == sort,
                     onClick = { onSort(option) },
                     label = { Text(option.label) }
@@ -367,11 +373,11 @@ private fun TagListOptionsRow(
 /** 表記ゆれの候補1組。名前と件数を並べ、「まとめる」で残す名前を選ぶ。 */
 @Composable
 private fun VariantGroupCard(group: List<TagWithCount>, onUnify: () -> Unit, modifier: Modifier = Modifier) {
-    Card(
+    AccentCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        containerColor = MaterialTheme.colorScheme.secondaryContainer
     ) {
         Row(
             modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
@@ -402,6 +408,8 @@ private fun TagRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     ListItem(
+        // まとまり(GroupedRow)の地色を見せるため、行そのものは塗らない
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         headlineContent = { Text(tag.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
             val count = if (tag.bookmarkCount > 0) "${tag.bookmarkCount}件" else "ブックマークなし"

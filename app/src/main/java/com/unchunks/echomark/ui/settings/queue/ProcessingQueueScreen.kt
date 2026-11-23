@@ -1,5 +1,7 @@
 package com.unchunks.echomark.ui.settings.queue
 
+import com.unchunks.echomark.ui.design.GroupPosition
+import com.unchunks.echomark.ui.design.GroupedRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,7 +30,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -49,6 +50,7 @@ import com.unchunks.echomark.ui.components.message
 import com.unchunks.echomark.ui.components.processingBadge
 import com.unchunks.echomark.ui.components.rememberTickingNow
 import com.unchunks.echomark.ui.components.summaryText
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /** 処理の状況(#65)。状態は [ProcessingQueueViewModel]、表示は [ProcessingQueueContent]。 */
 @Composable
@@ -100,7 +102,7 @@ fun ProcessingQueueContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("処理の状況", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = actions.onBack) {
@@ -164,36 +166,40 @@ fun ProcessingQueueContent(
                             }
                         }
                         itemsIndexed(queue.waiting, key = { _, item -> "waiting_${item.id}" }) { index, bookmark ->
-                            QueueRow(
-                                bookmark = bookmark,
-                                supporting = "${index + 1} 番目",
-                                onClick = { actions.onOpenBookmark(bookmark.id) },
-                                trailing = {
-                                    Row {
-                                        IconButton(onClick = { actions.onProcessNow(bookmark.id) }) {
-                                            Icon(Icons.Outlined.FastForward, contentDescription = "「${bookmark.title}」を今すぐ処理")
-                                        }
-                                        IconButton(onClick = { actions.onCancel(bookmark.id) }) {
-                                            Icon(Icons.Outlined.Close, contentDescription = "「${bookmark.title}」の処理をやめる")
+                            GroupedRow(GroupPosition.of(index, queue.waiting.size), dividerStart = 16.dp) {
+                                QueueRow(
+                                    bookmark = bookmark,
+                                    supporting = "${index + 1} 番目",
+                                    onClick = { actions.onOpenBookmark(bookmark.id) },
+                                    trailing = {
+                                        Row {
+                                            IconButton(onClick = { actions.onProcessNow(bookmark.id) }) {
+                                                Icon(Icons.Outlined.FastForward, contentDescription = "「${bookmark.title}」を今すぐ処理")
+                                            }
+                                            IconButton(onClick = { actions.onCancel(bookmark.id) }) {
+                                                Icon(Icons.Outlined.Close, contentDescription = "「${bookmark.title}」の処理をやめる")
+                                            }
                                         }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                     if (queue.recentFailures.isNotEmpty()) {
                         item { SectionHeader("最近の失敗") }
-                        items(queue.recentFailures, key = { "failed_${it.id}" }) { bookmark ->
-                            QueueRow(
-                                bookmark = bookmark,
-                                supporting = bookmark.processing.failureReason?.message(),
-                                onClick = { actions.onOpenBookmark(bookmark.id) },
-                                trailing = {
-                                    IconButton(onClick = { actions.onRetry(bookmark.id) }) {
-                                        Icon(Icons.Outlined.Refresh, contentDescription = "「${bookmark.title}」を再試行")
+                        itemsIndexed(queue.recentFailures, key = { _, item -> "failed_${item.id}" }) { index, bookmark ->
+                            GroupedRow(GroupPosition.of(index, queue.recentFailures.size), dividerStart = 16.dp) {
+                                QueueRow(
+                                    bookmark = bookmark,
+                                    supporting = bookmark.processing.failureReason?.message(),
+                                    onClick = { actions.onOpenBookmark(bookmark.id) },
+                                    trailing = {
+                                        IconButton(onClick = { actions.onRetry(bookmark.id) }) {
+                                            Icon(Icons.Outlined.Refresh, contentDescription = "「${bookmark.title}」を再試行")
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }

@@ -11,11 +11,9 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.OfflinePin
 import androidx.compose.material.icons.outlined.PictureAsPdf
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,6 +27,9 @@ import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.unchunks.echomark.ui.design.EchoMarkButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.DesignSurface
 
 /** オフラインコピーの操作 */
 class PageSnapshotCallbacks(
@@ -54,9 +55,9 @@ fun PageSnapshotSection(
     busy: Boolean = false
 ) {
     if (!canSnapshot(bookmark.contentUri)) return
-    Surface(
+    DesignSurface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        classic = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -82,9 +83,9 @@ fun PageSnapshotSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(onClick = callbacks.onOpen, enabled = !busy) { Text("開く") }
+                    EchoMarkButton(onClick = callbacks.onOpen, enabled = !busy) { Text("開く") }
                     if (bookmark.snapshotPdfPath != null) {
-                        OutlinedButton(onClick = callbacks.onOpenPdf, enabled = !busy) {
+                        EchoMarkOutlinedButton(onClick = callbacks.onOpenPdf, enabled = !busy) {
                             Icon(Icons.Outlined.PictureAsPdf, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                             Text("PDF", modifier = Modifier.padding(start = ButtonDefaults.IconSpacing))
                         }
@@ -110,7 +111,7 @@ fun PageSnapshotSection(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                OutlinedButton(onClick = callbacks.onSave, enabled = !busy) {
+                EchoMarkOutlinedButton(onClick = callbacks.onSave, enabled = !busy) {
                     Icon(Icons.Outlined.CloudDownload, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                     Text(
                         if (busy) "保存中…" else "オフライン用に保存",

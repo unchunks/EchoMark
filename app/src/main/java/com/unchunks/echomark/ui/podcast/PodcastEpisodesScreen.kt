@@ -25,24 +25,19 @@ import androidx.compose.material.icons.outlined.Podcasts
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Spellcheck
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +69,10 @@ import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.unchunks.echomark.ui.design.EchoMarkTonalButton
+import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
+import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
+import com.unchunks.echomark.ui.design.DesignCard
 
 /** エピソードの一覧の操作。状態を持たない [PodcastEpisodesContent] に渡す */
 class PodcastEpisodesCallbacks(
@@ -155,7 +154,7 @@ fun PodcastEpisodesContent(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            EchoMarkTopAppBar(
                 title = { Text("ポッドキャスト", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = callbacks.onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る") }
@@ -271,9 +270,9 @@ private fun EpisodeCard(
     onDelete: () -> Unit,
     onEditReading: (String) -> Unit
 ) {
-    Card(
+    DesignCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        classic = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(
             Modifier.fillMaxWidth().clickable(onClickLabel = if (expanded) "詳しい情報を閉じる" else "詳しい情報を開く", onClick = onToggle).padding(16.dp),
@@ -306,13 +305,13 @@ private fun EpisodeCard(
             if (expanded) EpisodeDetails(episode, onEditReading, onListen.takeIf { episode.status == EpisodeStatus.READY })
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (episode.status == EpisodeStatus.READY) {
-                    FilledTonalButton(onClick = onPlay) {
+                    EchoMarkTonalButton(onClick = onPlay) {
                         Icon(Icons.Outlined.PlayArrow, contentDescription = null)
                         Text("聞く", Modifier.padding(start = 4.dp))
                     }
                 }
                 if (episode.status != EpisodeStatus.GENERATING) {
-                    OutlinedButton(onClick = onRecreate) {
+                    EchoMarkOutlinedButton(onClick = onRecreate) {
                         Icon(Icons.Outlined.Refresh, contentDescription = null)
                         Text("作り直す", Modifier.padding(start = 4.dp))
                     }
