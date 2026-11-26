@@ -3,67 +3,28 @@ package com.unchunks.echomark.ui.chat
 import android.Manifest
 import android.content.ClipData
 import android.content.pm.PackageManager
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ArrowDownward
-import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.DriveFileRenameOutline
-import androidx.compose.material.icons.outlined.FilterList
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -78,7 +39,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -87,14 +47,11 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import com.unchunks.components.composeui.ChatMarkdown
-import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.model.ChatMessage
 import com.unchunks.echomark.domain.repository.ChatModelOption
 import com.unchunks.echomark.domain.websearch.WebSource
@@ -103,14 +60,8 @@ import com.unchunks.echomark.domain.factcheck.FactCheckTarget
 import com.unchunks.echomark.ui.factcheck.FactCheckSheet
 import com.unchunks.echomark.ui.factcheck.FactCheckViewModel
 import com.unchunks.echomark.ui.components.LoadingState
-import com.unchunks.echomark.ui.navigation.WideContentMaxWidth
 import com.unchunks.echomark.ui.navigation.centeredMaxWidth
 import kotlinx.coroutines.launch
-import com.unchunks.echomark.ui.design.EchoMarkInputChip
-import com.unchunks.echomark.ui.design.EchoMarkSmallFab
-import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
-import com.unchunks.echomark.ui.design.designFieldStyle
-import com.unchunks.echomark.ui.design.DesignBottomBar
 
 /**
  * 1つの会話の画面(ViewModel をつなぐ薄いラッパー。見た目は [ChatContent])。
@@ -553,360 +504,6 @@ private suspend fun LazyListState.scrollToBottom(animate: Boolean = false) {
     scrollToItem(lastIndex, scrollOffset = BOTTOM_SCROLL_OFFSET)
 }
 
-/** 上へスクロールしているときに出す「最新へ」ボタン。 */
-@Composable
-private fun ScrollToLatestButton(visible: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut(),
-        modifier = modifier
-    ) {
-        EchoMarkSmallFab(
-            onClick = onClick,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ) {
-            Icon(Icons.Outlined.ArrowDownward, contentDescription = "最新のメッセージへ")
-        }
-    }
-}
-
 private const val BOTTOM_SCROLL_OFFSET = 100_000
+
 internal const val DEFAULT_CHAT_TITLE = "新しいチャット"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ChatTopBar(
-    title: String,
-    canEdit: Boolean,
-    onBack: (() -> Unit)?,
-    onRename: () -> Unit,
-    onDelete: () -> Unit,
-    modelPicker: @Composable () -> Unit
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    EchoMarkTopAppBar(
-        title = {
-            Text(
-                text = title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = if (canEdit) Modifier.clickable(onClickLabel = "名前を変更", onClick = onRename) else Modifier
-            )
-        },
-        navigationIcon = {
-            if (onBack != null) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
-                }
-            }
-        },
-        actions = {
-            modelPicker()
-            if (canEdit) {
-                Box {
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Outlined.MoreVert, contentDescription = "その他の操作")
-                    }
-                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                        DropdownMenuItem(
-                            text = { Text("名前を変更") },
-                            leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },
-                            onClick = { menuExpanded = false; onRename() }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("削除") },
-                            leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
-                            onClick = { menuExpanded = false; onDelete() }
-                        )
-                    }
-                }
-            }
-        }
-    )
-}
-
-@Composable
-private fun ChatMessageList(
-    uiState: ChatUiState,
-    listState: LazyListState,
-    onRetry: () -> Unit,
-    onOpenBookmark: (Long) -> Unit,
-    onOpenAiSettings: () -> Unit,
-    onCopy: (String) -> Unit,
-    onRegenerate: () -> Unit,
-    onEditLast: (String) -> Unit,
-    onFollowUp: (String) -> Unit,
-    onBranch: (ChatMessage) -> Unit,
-    onOpenConversation: (Long) -> Unit,
-    onSaveNote: (ChatMessage) -> Unit,
-    onToggleSpeaking: (ChatMessage) -> Unit,
-    onOpenWebSource: (String) -> Unit,
-    onSaveWebSource: (WebSource) -> Unit,
-    onFactCheck: (ChatMessage) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    // 生成中でなければ、最後の質問は編集でき、最後が回答なら作り直せる(失敗の表示中は再試行のボタンを使う)
-    val lastUserId = uiState.messages.lastOrNull { it.role == ChatRole.USER }?.id.takeIf { !uiState.isSending }
-    val regeneratableId = uiState.messages.lastOrNull()
-        ?.takeIf { it.role == ChatRole.ASSISTANT && !uiState.isSending && uiState.error == null }?.id
-    // 途中の質問は、手前の発言を残して分け、質問を直して送れる(最初の質問は分けても何も残らないため出さない)
-    val firstUserId = uiState.messages.firstOrNull { it.role == ChatRole.USER }?.id
-    val idle = !uiState.isSending
-    // 広い画面では左右の余白を広げて、メッセージを中央の読みやすい幅に収める(スクロールは幅全体で受ける)
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val side = maxOf(16.dp, (maxWidth - WideContentMaxWidth) / 2 + 16.dp)
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = side, end = side, top = 8.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(uiState.messages, key = { it.id }, contentType = { it.role }) { message ->
-                if (message.role == ChatRole.USER) {
-                    UserMessageItem(
-                        text = message.content,
-                        onCopy = { onCopy(message.content) },
-                        onEdit = if (message.id == lastUserId) ({ onEditLast(message.content) }) else null,
-                        onBranch = if (idle && message.id != firstUserId) ({ onBranch(message) }) else null
-                    )
-                } else {
-                    AssistantMessageItem(
-                        message = message,
-                        referencedBookmarks = uiState.referencedBookmarks,
-                        review = uiState.answerReviews[message.id],
-                        onOpenBookmark = onOpenBookmark,
-                        onCopy = { onCopy(ChatMarkdown.toPlainText(message.content)) },
-                        onRegenerate = if (message.id == regeneratableId) onRegenerate else null,
-                        onBranch = if (idle) ({ onBranch(message) }) else null,
-                        onSaveNote = if (idle) ({ onSaveNote(message) }) else null,
-                        onFactCheck = if (idle) ({ onFactCheck(message) }) else null,
-                        isSpeaking = message.id == uiState.speakingMessageId,
-                        onToggleSpeaking = { onToggleSpeaking(message) },
-                        savedWebUrls = uiState.webSearch.savedUrls,
-                        onOpenWebSource = onOpenWebSource,
-                        onSaveWebSource = onSaveWebSource
-                    )
-                }
-                val branches = uiState.branches.filter { it.branchedAt == message.createdAt }
-                if (branches.isNotEmpty()) BranchLinks(branches = branches, onOpen = onOpenConversation)
-            }
-            // 生成中の回答。最初の文字が届くまでは進み具合を出す
-            val streaming = uiState.streamingText
-            if (uiState.isSending) {
-                item(key = "streaming", contentType = "streaming") {
-                    StreamingMessageItem(
-                        text = streaming.orEmpty(),
-                        pendingReferenceCount = uiState.pendingReferenceCount,
-                        isSearchingWeb = uiState.isSearchingWeb,
-                        pendingWebSourceCount = uiState.pendingWebSourceCount
-                    )
-                }
-            }
-            uiState.error?.let { error ->
-                item(key = "error", contentType = "error") {
-                    ChatErrorItem(
-                        error = error,
-                        onRetry = onRetry,
-                        onOpenAiSettings = onOpenAiSettings,
-                        // 上部に AI 未設定の案内が出ているときは、同じボタンを重ねて出さない
-                        showAiSettingsButton = error.needsAiSettings && uiState.aiSetup.isReady
-                    )
-                }
-            }
-            if (uiState.followUps.isNotEmpty() && !uiState.isSending && uiState.error == null) {
-                item(key = "followUps", contentType = "followUps") {
-                    FollowUpSuggestions(suggestions = uiState.followUps, onClick = onFollowUp)
-                }
-            }
-        }
-    }
-}
-
-/**
- * 次の質問に添付したファイルの名前(外せる)と、添付の読み込み中・失敗の表示。入力欄の上に出す。
- * 添付していない・読み込みも失敗もないときは何も出さない。
- */
-@Composable
-internal fun ChatAttachmentStatus(
-    name: String?,
-    isAttaching: Boolean,
-    error: String?,
-    onRemove: () -> Unit
-) {
-    if (name == null && !isAttaching && error == null) return
-    Column(modifier = Modifier.centeredMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp)) {
-        if (isAttaching) {
-            Text(
-                "ファイルを読み込んでいます…",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (name != null) {
-            EchoMarkInputChip(
-                selected = true,
-                onClick = onRemove,
-                label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                leadingIcon = { Icon(Icons.Outlined.AttachFile, contentDescription = null) },
-                trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "添付を外す") }
-            )
-        }
-        error?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-    }
-}
-
-/** 保存全体ではなく絞った範囲を参照しているときに、入力欄の上に出す表示。押すと範囲を選び直せる。 */
-@Composable
-internal fun ChatScopeStatus(label: String, onClick: () -> Unit) {
-    Column(modifier = Modifier.centeredMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp)) {
-        EchoMarkInputChip(
-            selected = true,
-            onClick = onClick,
-            label = { Text("範囲: $label", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null) }
-        )
-    }
-}
-
-/** 音声入力の間、入力欄の代わりに出す。話し終えるボタンと、やめるボタン。文字に起こしている間は待つだけ。 */
-@Composable
-internal fun ChatVoiceBar(state: ChatVoiceState, onFinish: () -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
-    // 入力のバー。地色・上端の区切りは、ほかの下の操作のバーと同じ
-    DesignBottomBar(modifier = modifier.fillMaxWidth(), classic = MaterialTheme.colorScheme.surface, classicTonalElevation = 0.dp) {
-        Row(
-            modifier = Modifier
-                .centeredMaxWidth()
-                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onCancel) {
-                Icon(Icons.Filled.Close, contentDescription = "音声入力をやめる")
-            }
-            Text(
-                text = if (state == ChatVoiceState.TRANSCRIBING) "文字に起こしています…" else "聞いています…",
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp)
-            )
-            if (state == ChatVoiceState.TRANSCRIBING) {
-                CircularProgressIndicator(modifier = Modifier.padding(12.dp).size(24.dp), strokeWidth = 2.dp)
-            } else {
-                FilledIconButton(onClick = onFinish, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Filled.Stop, contentDescription = "話し終える")
-                }
-            }
-        }
-    }
-}
-
-/**
- * 入力欄。複数行の丸い入力欄と、送信ボタン(空なら無効)。生成中は送信ボタンが停止ボタンに変わる。
- * 生成中も次の質問を打ち始められるよう、入力欄自体は無効にしない。
- * 何も入力していないときは、送信ボタンの代わりに音声で質問するボタンを出す。
- * 左の追加のボタンから、添付・テンプレート・参照する範囲を開く。
- * @param onScopeClick null なら参照する範囲を選べない
- */
-@Composable
-internal fun ChatInputBar(
-    value: String,
-    onValueChange: (String) -> Unit,
-    isSending: Boolean,
-    onSend: () -> Unit,
-    onStop: () -> Unit,
-    modifier: Modifier = Modifier,
-    onVoiceClick: () -> Unit = {},
-    onAttachClick: () -> Unit = {},
-    onTemplateClick: () -> Unit = {},
-    onScopeClick: (() -> Unit)? = null,
-    webSearchEnabled: Boolean = false,
-    onWebSearchChange: ((Boolean) -> Unit)? = null
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    // 入力のバー。地色・上端の区切りは、ほかの下の操作のバーと同じ
-    DesignBottomBar(modifier = modifier.fillMaxWidth(), classic = MaterialTheme.colorScheme.surface, classicTonalElevation = 0.dp) {
-        Row(
-            // 広い画面では、メッセージと同じ中央の幅にそろえる
-            modifier = Modifier
-                .centeredMaxWidth()
-                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            Box(modifier = Modifier.padding(bottom = 4.dp)) {
-                IconButton(onClick = { menuExpanded = true }, enabled = !isSending) {
-                    Icon(Icons.Outlined.Add, contentDescription = "追加の操作")
-                }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    // 添付はこの質問の根拠にだけ使う(会話には保存しない)
-                    DropdownMenuItem(
-                        text = { Text("ファイルを添付") },
-                        leadingIcon = { Icon(Icons.Outlined.AttachFile, contentDescription = null) },
-                        onClick = { menuExpanded = false; onAttachClick() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("テンプレート") },
-                        leadingIcon = { Icon(Icons.Outlined.Description, contentDescription = null) },
-                        onClick = { menuExpanded = false; onTemplateClick() }
-                    )
-                    if (onScopeClick != null) {
-                        DropdownMenuItem(
-                            text = { Text("参照する範囲") },
-                            leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null) },
-                            onClick = { menuExpanded = false; onScopeClick() }
-                        )
-                    }
-                }
-            }
-            if (onWebSearchChange != null) {
-                Box(modifier = Modifier.padding(bottom = 4.dp)) {
-                    WebSearchToggleButton(enabled = webSearchEnabled, onChange = onWebSearchChange, isSending = isSending)
-                }
-            }
-            // 入力欄の形・地色(ソフトはくぼみ)はデザインに従う
-            val field = designFieldStyle(classicContainer = MaterialTheme.colorScheme.surfaceContainerHigh)
-            TextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f).then(field.depth),
-                placeholder = {
-                    Text(
-                        if (webSearchEnabled) "ブックマークと Web をもとに質問…" else "保存したブックマークについて質問…",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                shape = field.shape,
-                maxLines = 6,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = field.containerColor,
-                    unfocusedContainerColor = field.containerColor,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent
-                )
-            )
-            Spacer(Modifier.width(8.dp))
-            // テキスト欄(最小 56dp)の下端にそろえ、48dp のタップ領域を確保する
-            Box(modifier = Modifier.padding(bottom = 4.dp)) {
-                if (isSending) {
-                    FilledTonalIconButton(onClick = onStop, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Filled.Stop, contentDescription = "生成を停止")
-                    }
-                } else if (value.isBlank()) {
-                    FilledTonalIconButton(onClick = onVoiceClick, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Outlined.Mic, contentDescription = "音声で質問")
-                    }
-                } else {
-                    FilledIconButton(onClick = onSend, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Filled.ArrowUpward, contentDescription = "送信")
-                    }
-                }
-            }
-        }
-    }
-}

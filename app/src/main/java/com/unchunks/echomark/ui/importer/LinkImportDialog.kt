@@ -18,8 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.unchunks.echomark.domain.importer.ImportParseResult
-import com.unchunks.echomark.domain.importer.MAX_IMPORT_LINKS
+import com.unchunks.components.bookmarkfile.ImportFormat
+import com.unchunks.components.bookmarkfile.ImportParseResult
+import com.unchunks.components.bookmarkfile.LinkImportParser
 
 /**
  * 他のサービスから取り込むときの確認・進み具合・結果のダイアログ。状態を受け取って描くだけなので、
@@ -140,6 +141,14 @@ internal fun summaryOf(parsed: ImportParseResult): String {
     if (parsed.hasFolders) parts += "フォルダ ${parsed.links.mapNotNull { it.folder }.distinct().size} 個"
     if (parsed.archivedCount > 0) parts += "アーカイブ済み ${parsed.archivedCount} 件(アーカイブとして取り込みます)"
     if (parsed.invalidCount > 0) parts += "URL が読めず読み飛ばしたもの ${parsed.invalidCount} 件"
-    if (parsed.truncated) parts += "多すぎるため先頭の ${MAX_IMPORT_LINKS} 件までです"
+    if (parsed.truncated) parts += "多すぎるため先頭の ${LinkImportParser.MAX_LINKS} 件までです"
     return parts.joinToString("\n")
 }
+
+/** 画面に出す形式の名前 */
+internal val ImportFormat.label: String
+    get() = when (this) {
+        ImportFormat.HTML -> "ブックマークの HTML"
+        ImportFormat.CSV -> "CSV"
+        ImportFormat.JSON -> "JSON"
+    }

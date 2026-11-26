@@ -1,6 +1,6 @@
 package com.unchunks.echomark.domain.bookmark.model
 
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 
 // ここを変更するときは、com.unchunks.echomark.data.local.entity.BookmarkEntity.kt の変更が不要か確認すること
 data class Bookmark(

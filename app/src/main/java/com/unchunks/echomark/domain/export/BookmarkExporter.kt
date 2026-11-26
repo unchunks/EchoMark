@@ -1,5 +1,7 @@
 package com.unchunks.echomark.domain.export
 
+import com.unchunks.components.bookmarkfile.NetscapeBookmark
+import com.unchunks.components.bookmarkfile.NetscapeBookmarkWriter
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkNote
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
@@ -128,35 +130,17 @@ object BookmarkExporter {
     internal fun escapeMarkdownUrl(url: String): String =
         url.replace(" ", "%20").replace("(", "%28").replace(")", "%29").replace("<", "%3C").replace(">", "%3E")
 
-    // ---- ブラウザのブックマーク(Netscape 形式) ----
+    // ---- ブラウザのブックマーク(Netscape 形式。書き方は部品の bookmark-file) ----
 
     private fun browserHtml(title: String, items: List<ExportItem>): ExportDocument {
-        val linked = items.filter { it.bookmark.webUrl() != null }
-        val out = StringBuilder()
-        out.append("<!DOCTYPE NETSCAPE-Bookmark-file-1>\n")
-        out.append("<!-- This is an automatically generated file. It will be read and overwritten. DO NOT EDIT! -->\n")
-        out.append("<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n")
-        out.append("<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n")
-        out.append("    <DT><H3>").append(escapeHtml(title)).append("</H3>\n    <DL><p>\n")
-        linked.forEach { item ->
+        val linked = items.mapNotNull { item ->
             val bookmark = item.bookmark
-            out.append("        <DT><A HREF=\"").append(escapeHtml(bookmark.webUrl().orEmpty())).append('"')
-            out.append(" ADD_DATE=\"").append(bookmark.createdAt / 1000).append('"')
-            if (bookmark.tags.isNotEmpty()) {
-                // タグの区切りはコンマなので、名前に含まれるコンマは空白にする
-                out.append(" TAGS=\"").append(escapeHtml(bookmark.tags.joinToString(",") { it.replace(',', ' ').trim() })).append('"')
-            }
-            out.append('>').append(escapeHtml(bookmark.title)).append("</A>\n")
-            bookmark.summary?.takeIf { it.isNotBlank() }?.let {
-                out.append("        <DD>").append(escapeHtml(it.trim().replace(Regex("\\s*[\r\n]+\\s*"), " "))).append('\n')
-            }
+            val url = bookmark.webUrl() ?: return@mapNotNull null
+            NetscapeBookmark(url, bookmark.title, bookmark.createdAt, bookmark.tags, bookmark.summary)
         }
-        out.append("    </DL><p>\n</DL><p>\n")
-        return ExportDocument(out.toString(), exported = linked.size, skipped = items.size - linked.size)
+        val text = NetscapeBookmarkWriter.write(title, linked)
+        return ExportDocument(text, exported = linked.size, skipped = items.size - linked.size)
     }
-
-    internal fun escapeHtml(text: String): String =
-        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
     private fun Bookmark.webUrl(): String? =
         contentUri?.trim()?.takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }

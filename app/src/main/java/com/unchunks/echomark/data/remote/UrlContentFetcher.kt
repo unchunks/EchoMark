@@ -1,6 +1,8 @@
 package com.unchunks.echomark.data.remote
 
 import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.core.TextDecoding
+import com.unchunks.components.core.readAtMost
 import com.unchunks.components.web.PageLink
 import com.unchunks.components.web.PageLinks
 import com.unchunks.components.web.PublicAddressInterceptor
@@ -10,13 +12,12 @@ import com.unchunks.components.web.isAllowedRedirect
 import com.unchunks.components.web.isPublicAddress
 import com.unchunks.echomark.data.attachment.extensionOf
 import com.unchunks.echomark.data.attachment.fallbackMimeTypeOf
-import com.unchunks.echomark.data.extract.TextFileReader
 import com.unchunks.echomark.domain.bookmark.model.GitHubFileRef
 import com.unchunks.echomark.domain.bookmark.model.GitHubUrls
 import com.unchunks.echomark.domain.bookmark.model.MAX_DOWNLOAD_BYTES
 import com.unchunks.echomark.domain.bookmark.model.StageProgressReporter
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
-import com.unchunks.echomark.domain.bookmark.model.PageAccessLimit
+import com.unchunks.components.web.PageAccessLimit
 import com.unchunks.echomark.domain.bookmark.model.isDownloadableMimeType
 import com.unchunks.echomark.domain.bookmark.model.normalizeMimeType
 import com.unchunks.echomark.domain.bookmark.model.titleFromFileName
@@ -30,7 +31,6 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
-import java.io.ByteArrayOutputStream
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -307,7 +307,7 @@ class UrlContentFetcher internal constructor(
                 throw IOException("unsupported content type: $mediaType")
             }
 
-            val bytes = readCapped(body.byteStream())
+            val bytes = body.byteStream().readAtMost(MAX_BODY_BYTES)
             val document = Jsoup.parse(
                 bytes.inputStream(),
                 mediaType?.charset()?.name(),
@@ -322,25 +322,13 @@ class UrlContentFetcher internal constructor(
      * 文字コードは Content-Type の指定を優先し、無ければ UTF-8・Shift_JIS の順に試す。
      */
     private fun textFile(url: HttpUrl, mediaType: MediaType, input: InputStream): FetchedContent {
-        val bytes = readCapped(input)
-        val decoded = mediaType.charset()?.let { String(bytes, it) } ?: TextFileReader.decode(bytes, truncatedInput = bytes.size >= MAX_BODY_BYTES)
+        val bytes = input.readAtMost(MAX_BODY_BYTES)
+        val decoded = mediaType.charset()?.let { String(bytes, it) } ?: TextDecoding.decode(bytes, truncatedInput = bytes.size >= MAX_BODY_BYTES)
         return FetchedContent(
             title = url.pathSegments.lastOrNull()?.takeIf { it.isNotBlank() }?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) },
             description = null,
             text = decoded.trim().take(ExtractedContent.MAX_TEXT_LENGTH)
         )
-    }
-
-    /** 上限サイズまでだけ読み込む(巨大レスポンス対策) */
-    private fun readCapped(input: InputStream): ByteArray {
-        val out = ByteArrayOutputStream()
-        val buffer = ByteArray(8 * 1024)
-        while (out.size() < MAX_BODY_BYTES) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            out.write(buffer, 0, minOf(read, MAX_BODY_BYTES - out.size()))
-        }
-        return out.toByteArray()
     }
 
     companion object {

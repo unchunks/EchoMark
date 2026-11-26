@@ -1,25 +1,13 @@
 package com.unchunks.echomark.domain.place
 
-import kotlin.math.max
-import kotlin.math.min
-
-/** 帰属表示の 1 片(文字と、あればリンク先)。 */
-data class AttributionPart(val text: String, val url: String? = null)
-
-/** 地図の表示範囲(南西〜北東の緯度・経度)。点が 1 つ(または全部同じ場所)のときは [isSinglePoint]。 */
-data class MapCameraBounds(
-    val south: Double,
-    val west: Double,
-    val north: Double,
-    val east: Double,
-    val isSinglePoint: Boolean
-) {
-    val centerLatitude: Double get() = (south + north) / 2
-    val centerLongitude: Double get() = (west + east) / 2
-}
+import com.unchunks.components.geo.AttributionPart
+import com.unchunks.components.geo.GeoJson
+import com.unchunks.components.geo.GeoJsonPoint
+import com.unchunks.components.geo.attributionText
 
 /**
- * 場所の画面の「地図の背景」(タイルの地図。#85)の、地図のライブラリに依らない部分(純粋な処理)。
+ * 場所の画面の「地図の背景」(タイルの地図。#85)の、タイルの提供元と地図に置く点の決まり(純粋な処理)。
+ * 座標の計算・GeoJSON の書き方・表示範囲は部品の geo(`MapCameraBounds`・`GeoJson`)。
  *
  * タイルのサーバーに送るのは、表示する範囲のタイルの番号(z/x/y)・IP アドレス・アプリ名の User-Agent だけ。
  * ブックマークのタイトル・URL・メモ・場所の名前は、地図の中(端末の中)の GeoJSON にだけ入れ、どこにも送らない。
@@ -41,6 +29,8 @@ object PlacesTileMap {
     const val SOURCE_ID = "echomark-places"
     const val LAYER_ID = "echomark-places-circles"
 
+    const val OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright"
+
     /**
      * 地図に必ず出す帰属表示。OpenFreeMap の指定(<https://openfreemap.org/> の「Attribution」)は
      * 「OpenFreeMap © OpenMapTiles Data from OpenStreetMap」(それぞれ openfreemap.org・openmaptiles.org・OSM の著作権のページへのリンク)で、
@@ -54,66 +44,20 @@ object PlacesTileMap {
         AttributionPart("© OpenStreetMap contributors", OSM_COPYRIGHT_URL)
     )
 
-    const val OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright"
-
     /** 帰属表示を 1 行の文字にしたもの(読み上げ・テスト用) */
-    fun attributionText(): String = attribution.joinToString("") { it.text }
+    fun attributionText(): String = attribution.attributionText()
 
     /**
      * 座標のあるまとまりを、地図に置く点の GeoJSON(FeatureCollection)の文字にする。
      * 各点の properties は、まとまりの `key`・件数 `count`・選んでいるか `selected` だけ(タイトルなどは入れない)。
      */
-    fun featureCollection(groups: List<PlaceGroup>, selectedKey: String?): String = buildString {
-        append("{\"type\":\"FeatureCollection\",\"features\":[")
-        var first = true
-        for (group in groups) {
-            val center = group.center ?: continue
-            if (!first) append(',')
-            first = false
-            append("{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[")
-            append(center.longitude).append(',').append(center.latitude)
-            append("]},\"properties\":{\"key\":").append(jsonString(group.key))
-            append(",\"count\":").append(group.bookmarks.size)
-            append(",\"selected\":").append(group.key == selectedKey).append("}}")
+    fun featureCollection(groups: List<PlaceGroup>, selectedKey: String?): String = GeoJson.featureCollection(
+        groups.mapNotNull { group ->
+            val center = group.center ?: return@mapNotNull null
+            GeoJsonPoint(
+                center,
+                linkedMapOf("key" to group.key, "count" to group.bookmarks.size, "selected" to (group.key == selectedKey))
+            )
         }
-        append("]}")
-    }
-
-    /** 点がすべて入る範囲。点が無ければ null。広がりが小さいときは [MapFrame.MIN_SPAN_DEGREES] まで広げる。 */
-    fun cameraBounds(points: List<GeoPoint>): MapCameraBounds? {
-        if (points.isEmpty()) return null
-        val minLat = points.minOf { it.latitude }
-        val maxLat = points.maxOf { it.latitude }
-        val minLng = points.minOf { it.longitude }
-        val maxLng = points.maxOf { it.longitude }
-        val single = maxLat - minLat < MapFrame.MIN_SPAN_DEGREES && maxLng - minLng < MapFrame.MIN_SPAN_DEGREES
-        val halfLat = max(maxLat - minLat, MapFrame.MIN_SPAN_DEGREES) / 2
-        val halfLng = max(maxLng - minLng, MapFrame.MIN_SPAN_DEGREES) / 2
-        val centerLat = (minLat + maxLat) / 2
-        val centerLng = (minLng + maxLng) / 2
-        return MapCameraBounds(
-            south = max(centerLat - halfLat, -GeoPoint.MAX_LATITUDE),
-            west = max(centerLng - halfLng, -GeoPoint.MAX_LONGITUDE),
-            north = min(centerLat + halfLat, GeoPoint.MAX_LATITUDE),
-            east = min(centerLng + halfLng, GeoPoint.MAX_LONGITUDE),
-            isSinglePoint = single
-        )
-    }
-
-    /** JSON の文字列(引用符つき)。制御文字・引用符・バックスラッシュを避ける。 */
-    internal fun jsonString(value: String): String = buildString {
-        append('"')
-        for (c in value) {
-            when {
-                c == '"' -> append("\\\"")
-                c == '\\' -> append("\\\\")
-                c == '\n' -> append("\\n")
-                c == '\r' -> append("\\r")
-                c == '\t' -> append("\\t")
-                c.code < 0x20 -> append(String.format("\\u%04x", c.code))
-                else -> append(c)
-            }
-        }
-        append('"')
-    }
+    )
 }

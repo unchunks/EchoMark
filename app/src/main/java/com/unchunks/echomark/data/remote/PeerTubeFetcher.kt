@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.components.core.readAllWithin
 import com.unchunks.components.web.CaptionFileText
 import com.unchunks.components.web.CaptionTranscript
 import com.unchunks.echomark.domain.video.PeerTubeUrls
@@ -10,9 +11,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.io.InputStream
 
 /**
  * PeerTube の動画の情報と字幕を、そのサーバーの公開の REST API(認証なし)から取る。
@@ -143,7 +142,8 @@ class PeerTubeFetcher(
     private fun execute(request: Request): String? = try {
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful || response.isRedirect) return null
-            val bytes = readCapped(response.body.byteStream()) ?: return null
+            // 上限を超える応答は途中で切れた JSON・字幕になるので使わない
+            val bytes = response.body.byteStream().readAllWithin(MAX_BYTES) ?: return null
             String(bytes, response.body.contentType()?.charset() ?: Charsets.UTF_8)
         }
     } catch (_: IOException) {
@@ -159,20 +159,7 @@ class PeerTubeFetcher(
     private fun JSONArray?.strings(): List<String> =
         if (this == null) emptyList() else (0 until length()).mapNotNull { optString(it).takeIf { s -> s.isNotBlank() } }
 
-    /** 上限を超える応答は途中で切れた JSON・字幕になるので使わない */
-    private fun readCapped(input: InputStream): ByteArray? {
-        val out = ByteArrayOutputStream()
-        val buffer = ByteArray(8 * 1024)
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            if (out.size() + read > MAX_BYTES) return null
-            out.write(buffer, 0, read)
-        }
-        return out.toByteArray()
-    }
-
     companion object {
-        private const val MAX_BYTES = 2 * 1024 * 1024
+        private const val MAX_BYTES = 2L * 1024 * 1024
     }
 }

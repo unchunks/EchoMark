@@ -7,8 +7,8 @@ import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.model.CatalogDownloadState
-import com.unchunks.echomark.data.ai.model.DeviceSpecs
-import com.unchunks.echomark.data.ai.model.DeviceSpecsReader
+import com.unchunks.components.llm.ondevice.DeviceSpecs
+import com.unchunks.components.llm.ondevice.DeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.EmbeddingModelInfo
 import com.unchunks.echomark.data.ai.model.EmbeddingModelManager
 import com.unchunks.echomark.data.ai.model.InstalledModels

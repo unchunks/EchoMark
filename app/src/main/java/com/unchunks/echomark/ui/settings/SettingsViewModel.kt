@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.BuildConfig
-import com.unchunks.echomark.crash.CrashLogStore
+import com.unchunks.components.crashlog.CrashLogStore
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
@@ -14,8 +14,8 @@ import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BackupImportSummary
 import com.unchunks.echomark.data.network.OfflineModeController
-import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionState
-import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionStatus
+import com.unchunks.components.dbencryption.DatabaseEncryptionState
+import com.unchunks.components.dbencryption.DatabaseEncryptionStatus
 import com.unchunks.echomark.domain.backup.AutoBackupSettings
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.worker.AutoBackupController

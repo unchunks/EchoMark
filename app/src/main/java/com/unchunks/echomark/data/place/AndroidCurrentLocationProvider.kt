@@ -8,7 +8,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.CancellationSignal
 import androidx.core.content.ContextCompat
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 import com.unchunks.echomark.domain.repository.CurrentLocationProvider
 import com.unchunks.echomark.domain.repository.CurrentLocationResult
 import dagger.hilt.android.qualifiers.ApplicationContext

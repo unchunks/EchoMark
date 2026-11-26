@@ -1,10 +1,10 @@
 package com.unchunks.echomark.domain.place
 
+import com.unchunks.components.geo.GeoPoint
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -81,42 +81,5 @@ class PlacesTileMapTest {
     @Test
     fun 点が無ければ空のFeatureCollection() {
         assertEquals("{\"type\":\"FeatureCollection\",\"features\":[]}", PlacesTileMap.featureCollection(emptyList(), null))
-    }
-
-    @Test
-    fun 制御文字はユニコードの形に直す() {
-        assertEquals("\"a\\u0001b\"", PlacesTileMap.jsonString("a\u0001b"))
-    }
-
-    // ---- カメラ ----
-
-    @Test
-    fun 点が無ければカメラの範囲も無い() {
-        assertNull(PlacesTileMap.cameraBounds(emptyList()))
-    }
-
-    @Test
-    fun 点が1つなら小さい範囲に広げ_単一の点として扱う() {
-        val bounds = PlacesTileMap.cameraBounds(listOf(GeoPoint(35.0, 139.0)))!!
-        assertTrue(bounds.isSinglePoint)
-        assertEquals(35.0, bounds.centerLatitude, 1e-9)
-        assertEquals(139.0, bounds.centerLongitude, 1e-9)
-        assertEquals(MapFrame.MIN_SPAN_DEGREES, bounds.north - bounds.south, 1e-9)
-    }
-
-    @Test
-    fun 複数の点はすべて入る範囲() {
-        val bounds = PlacesTileMap.cameraBounds(listOf(GeoPoint(35.0, 139.0), GeoPoint(34.0, 135.0), GeoPoint(43.0, 141.0)))!!
-        assertFalse(bounds.isSinglePoint)
-        assertEquals(34.0, bounds.south, 1e-9)
-        assertEquals(43.0, bounds.north, 1e-9)
-        assertEquals(135.0, bounds.west, 1e-9)
-        assertEquals(141.0, bounds.east, 1e-9)
-    }
-
-    @Test
-    fun 極に近い点でも範囲は緯度経度の範囲に収まる() {
-        val bounds = PlacesTileMap.cameraBounds(listOf(GeoPoint(90.0, 180.0)))!!
-        assertTrue(bounds.north <= 90.0 && bounds.east <= 180.0)
     }
 }

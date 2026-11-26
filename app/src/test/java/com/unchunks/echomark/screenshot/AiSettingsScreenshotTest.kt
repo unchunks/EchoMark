@@ -9,7 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.llm.ondevice.EngineBackend
 import com.unchunks.echomark.data.ai.model.CatalogDownloadState
-import com.unchunks.echomark.data.ai.model.DeviceSpecs
+import com.unchunks.components.llm.ondevice.DeviceSpecs
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.LocalModelInfo
 import com.unchunks.echomark.data.ai.model.LocalModelLoadFailure

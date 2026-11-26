@@ -10,7 +10,7 @@ import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
 import com.unchunks.echomark.domain.bookmark.model.ProcessingStage
 import com.unchunks.echomark.domain.bookmark.model.StoredAttachment
 import com.unchunks.echomark.domain.importer.ImportResult
-import com.unchunks.echomark.domain.importer.ImportedLink
+import com.unchunks.components.bookmarkfile.ImportedLink
 import com.unchunks.echomark.domain.model.CategoryDefinition
 import com.unchunks.echomark.domain.model.AnalysisScope
 import com.unchunks.echomark.domain.model.SummaryOrigin

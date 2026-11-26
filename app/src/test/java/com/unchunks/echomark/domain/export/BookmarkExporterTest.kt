@@ -1,6 +1,6 @@
 package com.unchunks.echomark.domain.export
 
-import com.unchunks.echomark.data.importer.LinkImportParser
+import com.unchunks.components.bookmarkfile.LinkImportParser
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkNote
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType

@@ -12,7 +12,7 @@ import com.unchunks.components.web.isOfflineModeBlock
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.entity.SubscriptionEntity
 import com.unchunks.echomark.data.search.SearchFeeds
-import com.unchunks.echomark.domain.importer.ImportedLink
+import com.unchunks.components.bookmarkfile.ImportedLink
 import com.unchunks.echomark.domain.repository.BookmarkRepository
 import com.unchunks.echomark.domain.subscription.FeedCheckSummary
 import com.unchunks.echomark.domain.subscription.FeedFilter

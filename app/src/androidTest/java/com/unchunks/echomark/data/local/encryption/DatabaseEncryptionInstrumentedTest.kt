@@ -4,6 +4,12 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.unchunks.components.dbencryption.DatabaseEncryptionMigrator
+import com.unchunks.components.dbencryption.DatabaseKeyStore
+import com.unchunks.components.dbencryption.EncryptingOpenHelperFactory
+import com.unchunks.components.dbencryption.EncryptionOutcome
+import com.unchunks.components.dbencryption.OpenCheck
+import com.unchunks.components.dbencryption.SqlCipherEngine
 import com.unchunks.components.securestorage.KeystoreSecretCipher
 import com.unchunks.echomark.data.local.AppDatabase
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
@@ -20,7 +26,8 @@ import java.io.File
 import java.security.KeyStore
 
 /**
- * 本物の SQLCipher と Android Keystore で、DB の暗号化を確かめる(JVM のテストでは Fake の仕組みでしか確かめられない部分)。
+ * 本物の SQLCipher と Android Keystore で、DB の暗号化(部品の database-encryption)を確かめる
+ * (部品の JVM のテストでは Fake の仕組みでしか確かめられない部分。EchoMark の Room の DB と合わせて確かめるため、ここに置く)。
  * - 平文の Room の DB を暗号化し、暗号化した DB を Room で開いて中身を読める
  * - 平文の写し・写している途中のもの・平文の WAL が残らない。ファイルに平文の中身が見えない。違う鍵では読めない
  * - Keystore の鍵が失われたら、暗号化した DB を消して作り直し、平文を残さない

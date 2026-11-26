@@ -4,8 +4,8 @@ import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.place.PhotoLocationReader
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.place.GeoParser
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoParser
+import com.unchunks.components.geo.GeoPoint
 import com.unchunks.echomark.domain.repository.PlaceDetection
 import com.unchunks.echomark.domain.repository.PlaceRepository
 import kotlinx.coroutines.currentCoroutineContext

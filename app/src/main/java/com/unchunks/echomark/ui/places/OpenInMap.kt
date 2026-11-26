@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.core.net.toUri
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 
 /** 地図アプリで [point] を開く(geo: URI)。[title] はピンの名前。地図アプリが無ければ知らせる。 */
 fun openInMapApp(context: Context, point: GeoPoint, title: String? = null) {

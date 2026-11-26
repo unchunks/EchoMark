@@ -1,14 +1,13 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.components.core.readAtMost
 import com.unchunks.echomark.domain.bookmark.model.GitHubFolderRef
 import com.unchunks.echomark.domain.bookmark.model.GitHubRepoRef
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.io.InputStream
 
 /**
  * GitHub のリポジトリの情報と README を、GitHub の API(認証なし)から取る(#14)。
@@ -65,24 +64,13 @@ class GitHubRepoFetcher(
                         return@use
                     }
                     if (!response.isSuccessful) return null
-                    return String(readCapped(response.body.byteStream()).toByteArray(), Charsets.UTF_8)
+                    return String(response.body.byteStream().readAtMost(MAX_BYTES), Charsets.UTF_8)
                 }
             } catch (_: IOException) {
                 return null
             }
         }
         return null
-    }
-
-    private fun readCapped(input: InputStream): ByteArrayOutputStream {
-        val out = ByteArrayOutputStream()
-        val buffer = ByteArray(BUFFER_BYTES)
-        while (out.size() < MAX_BYTES) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            out.write(buffer, 0, minOf(read, MAX_BYTES - out.size()))
-        }
-        return out
     }
 
     companion object {
@@ -94,6 +82,5 @@ class GitHubRepoFetcher(
         private const val API_VERSION = "2022-11-28"
         private const val MAX_REDIRECTS = 1
         private const val MAX_BYTES = 300 * 1024
-        private const val BUFFER_BYTES = 8 * 1024
     }
 }

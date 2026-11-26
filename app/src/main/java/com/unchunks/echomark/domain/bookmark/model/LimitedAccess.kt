@@ -1,21 +1,9 @@
 package com.unchunks.echomark.domain.bookmark.model
 
-/**
- * ページが全文を見せてくれなかった理由(#23)。取得した本文を、記事の全文として要約しないために使う。
- */
-enum class PageAccessLimit {
-    /** 有料・購読者限定(続きは購読が要る)。公開されている冒頭だけ取れる */
-    PAYWALL,
-
-    /** ログイン・会員登録が要る(無料の会員登録を含む)。公開されている冒頭だけ取れる */
-    LOGIN_REQUIRED,
-
-    /** ボット対策・アクセス拒否のページ(「Just a moment...」など)。ページの本文は取れていない */
-    BLOCKED
-}
+import com.unchunks.components.web.PageAccessLimit
 
 /**
- * 一部しか取得できなかったページ(有料・会員限定)の扱い。
+ * 一部しか取得できなかったページ(有料・会員限定。見分け方は部品の web-content の PageAccessDetector)の扱い。
  * 保存する本文の先頭に [MARKER] の行を入れ、AI には取得できた範囲だけを要約させ(AiPrompts)、
  * 要約の末尾に [SUMMARY_SUFFIX] を付けて、全文の要約ではないことが分かるようにする。
  * 本文に印を残す形にしているのは、保存の形(DB のスキーマ)を変えずに、再処理しても判断が消えないようにするため。

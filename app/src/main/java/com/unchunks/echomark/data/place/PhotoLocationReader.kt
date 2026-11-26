@@ -2,7 +2,7 @@ package com.unchunks.echomark.data.place
 
 import androidx.exifinterface.media.ExifInterface
 import com.unchunks.echomark.data.attachment.AttachmentStore
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 import timber.log.Timber
 import java.io.File
 import javax.inject.Inject

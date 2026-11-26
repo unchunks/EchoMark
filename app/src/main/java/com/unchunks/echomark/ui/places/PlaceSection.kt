@@ -37,8 +37,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
-import com.unchunks.echomark.domain.place.GeoParser
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoParser
+import com.unchunks.components.geo.GeoPoint
 import com.unchunks.echomark.domain.repository.CurrentLocationResult
 import kotlinx.coroutines.launch
 import com.unchunks.echomark.ui.design.EchoMarkTonalButton

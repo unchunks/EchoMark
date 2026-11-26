@@ -22,7 +22,7 @@ import javax.inject.Inject
  * Web を検索し、上位の結果のページを読んで、質問に関係する部分を抜き出す。
  *
  * ページは [UrlContentFetcher] で読む(ローカルネットワーク・ループバックには接続しない。本文は
- * [com.unchunks.echomark.data.remote.BodyCleaner] で画面の部品を除いたもの)。回答を長く待たせないよう、1ページを読む時間を
+ * [com.unchunks.components.web.BodyCleaner] で画面の部品を除いたもの)。回答を長く待たせないよう、1ページを読む時間を
  * [PAGE_CALL_TIMEOUT_SECONDS] 秒までにした接続で読む。読めないページ(ボット対策・PDF・時間切れ)は、検索結果の概要で代える。
  * 概要はその回答のためだけに使い、保存しない([CollectedWebSource.toWebSource])。
  * 同じサイトのページばかりにならないよう、1つのサイトから [MAX_PER_DOMAIN] 件まで。

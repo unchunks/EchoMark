@@ -1,6 +1,6 @@
 package com.unchunks.echomark.domain.repository
 
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 
 /** 「場所を探す」の結果。[checked] は調べた件数、[fromLinks]・[fromPhotos] は座標を見つけた件数。 */
 data class PlaceDetection(val checked: Int, val fromLinks: Int, val fromPhotos: Int) {

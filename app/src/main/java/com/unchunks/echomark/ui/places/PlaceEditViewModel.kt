@@ -2,7 +2,7 @@ package com.unchunks.echomark.ui.places
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 import com.unchunks.echomark.domain.repository.CurrentLocationProvider
 import com.unchunks.echomark.domain.repository.CurrentLocationResult
 import com.unchunks.echomark.domain.repository.PlaceRepository
