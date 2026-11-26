@@ -1,17 +1,13 @@
 package com.unchunks.echomark.ui.bookmark
 
-import com.unchunks.echomark.ui.design.DesignTopBarSurface
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.ui.platform.LocalLayoutDirection
 import com.unchunks.echomark.ui.navigation.LocalBottomBarOverlap
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,80 +17,33 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.outlined.Category
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.BookmarkAdd
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Insights
-import androidx.compose.material.icons.outlined.AutoStories
-import androidx.compose.material.icons.outlined.Podcasts
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.TravelExplore
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.LinkOff
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.SearchOff
-import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.VerticalAlignTop
-import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.TopAppBarScrollBehavior
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -103,27 +52,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.echomark.ui.navigation.bottomBarAwareContentInsets
-import com.unchunks.components.composeui.formatRelativeTime
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkFilter
 import com.unchunks.echomark.domain.bookmark.model.BookmarkListDisplay
@@ -131,16 +71,11 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.domain.bookmark.model.CreatedPeriod
 import com.unchunks.echomark.domain.bookmark.model.ReadState
-import com.unchunks.echomark.domain.bookmark.model.ReadingTime
-import com.unchunks.echomark.domain.bookmark.model.Recommendation
-import com.unchunks.echomark.domain.bookmark.model.RecommendationReason
 import com.unchunks.echomark.domain.bookmark.model.SearchSuggestion
 import com.unchunks.echomark.domain.bookmark.model.SmartFolder
 import com.unchunks.echomark.domain.bookmark.model.SmartFolderResult
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
-import com.unchunks.echomark.domain.model.Tag
 import com.unchunks.echomark.domain.repository.DesignStyle
-import com.unchunks.echomark.ui.common.displayName
 import com.unchunks.echomark.ui.common.shareBookmark
 import com.unchunks.echomark.ui.selection.BulkActionBar
 import com.unchunks.echomark.ui.selection.BulkActionCallbacks
@@ -152,20 +87,13 @@ import com.unchunks.echomark.ui.common.shortTitle
 import com.unchunks.echomark.ui.components.BookmarkCard
 import com.unchunks.echomark.ui.components.BookmarkGridTile
 import com.unchunks.echomark.ui.components.CompactBookmarkRow
-import com.unchunks.echomark.ui.components.CompactBookmarkCard
-import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.ErrorState
 import com.unchunks.echomark.ui.components.LoadingState
-import com.unchunks.echomark.ui.theme.EchoBubbleShape
-import com.unchunks.echomark.ui.theme.EchoMarkDesign
 import com.unchunks.echomark.ui.review.ReadLaterViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
-import com.unchunks.echomark.ui.design.EchoMarkAssistChip
 import com.unchunks.echomark.ui.design.EchoMarkExtendedFab
-import com.unchunks.echomark.ui.design.EchoMarkFilterChip
 import com.unchunks.echomark.ui.design.EchoMarkSmallFab
-import com.unchunks.echomark.ui.design.EchoMarkTopAppBar
 
 /**
  * ブックマーク一覧(ホーム)。ViewModel をつなぐだけの薄いラッパーで、描画は [BookmarkListContent] が行う。
@@ -901,747 +829,6 @@ private fun BookmarkList(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ListTopBar(
-    sortOrder: BookmarkSortOrder,
-    display: BookmarkListDisplay,
-    scrollBehavior: TopAppBarScrollBehavior,
-    onSearchClick: () -> Unit,
-    onSortOrderChange: (BookmarkSortOrder) -> Unit,
-    onDisplayChange: (BookmarkListDisplay) -> Unit,
-    onOpenTagManagement: () -> Unit,
-    onOpenDiscover: () -> Unit,
-    onOpenDuplicates: () -> Unit,
-    onOpenInsights: () -> Unit,
-    onOpenReview: () -> Unit,
-    onOpenCollections: () -> Unit,
-    onOpenBrokenLinks: () -> Unit,
-    onOpenPodcasts: () -> Unit,
-    canSelect: Boolean,
-    onEnterSelection: () -> Unit
-) {
-    var sortMenuOpen by remember { mutableStateOf(false) }
-    var displayMenuOpen by remember { mutableStateOf(false) }
-    var overflowOpen by remember { mutableStateOf(false) }
-    EchoMarkTopAppBar(
-        // 文字が大きいときも単語の途中で折り返さず、1行に収めて省略する
-        title = { Text("ブックマーク", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        scrollBehavior = scrollBehavior,
-        actions = {
-            IconButton(onClick = onSearchClick) {
-                Icon(Icons.Outlined.Search, contentDescription = "検索")
-            }
-            Box {
-                IconButton(onClick = { sortMenuOpen = true }) {
-                    Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "並べ替え(${sortOrder.label()})")
-                }
-                DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
-                    BookmarkSortOrder.entries.forEach { order ->
-                        DropdownMenuItem(
-                            text = { Text(order.label()) },
-                            onClick = {
-                                sortMenuOpen = false
-                                onSortOrderChange(order)
-                            },
-                            leadingIcon = {
-                                if (order == sortOrder) {
-                                    Icon(Icons.Filled.Check, contentDescription = "選択中")
-                                } else {
-                                    Spacer(Modifier.size(24.dp))
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-            Box {
-                IconButton(onClick = { displayMenuOpen = true }) {
-                    Icon(display.icon(), contentDescription = "表示の切り替え(${display.label()})")
-                }
-                DropdownMenu(expanded = displayMenuOpen, onDismissRequest = { displayMenuOpen = false }) {
-                    BookmarkListDisplay.entries.forEach { entry ->
-                        DropdownMenuItem(
-                            text = { Text(entry.label()) },
-                            onClick = {
-                                displayMenuOpen = false
-                                onDisplayChange(entry)
-                            },
-                            leadingIcon = {
-                                if (entry == display) {
-                                    Icon(Icons.Filled.Check, contentDescription = "選択中")
-                                } else {
-                                    Icon(entry.icon(), contentDescription = null)
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-            Box {
-                IconButton(onClick = { overflowOpen = true }) {
-                    Icon(Icons.Outlined.MoreVert, contentDescription = "その他のメニュー")
-                }
-                DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("選択") },
-                        leadingIcon = { Icon(Icons.Outlined.Checklist, contentDescription = null) },
-                        enabled = canSelect,
-                        onClick = {
-                            overflowOpen = false
-                            onEnterSelection()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("資料を探す") },
-                        leadingIcon = { Icon(Icons.Outlined.TravelExplore, contentDescription = null) },
-                        onClick = {
-                            overflowOpen = false
-                            onOpenDiscover()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("コレクション") },
-                        leadingIcon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
-                        onClick = {
-                            overflowOpen = false
-                            onOpenCollections()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("タグを管理") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Label, contentDescription = null) },
-                        onClick = {
-                            overflowOpen = false
-                            onOpenTagManagement()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("リンク切れ") },
-                        leadingIcon = { Icon(Icons.Outlined.LinkOff, contentDescription = null) },
-                        onClick = {
-                            overflowOpen = false
-                            onOpenBrokenLinks()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("重複と関連を整理") },
-                        leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
-                        onClick = {
-                            overflowOpen = false
-                            onOpenDuplicates()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("ライブラリの分析") },
-                        leadingIcon = { Icon(Icons.Outlined.Insights, contentDescription = null) },
-                        onClick = {
-                            overflowOpen = false
-                            onOpenInsights()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("読む・ふり返る") },
-                        leadingIcon = { Icon(Icons.Outlined.AutoStories, contentDescription = null) },
-                        onClick = {
-                            overflowOpen = false
-                            onOpenReview()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("ポッドキャスト") },
-                        leadingIcon = { Icon(Icons.Outlined.Podcasts, contentDescription = null) },
-                        onClick = {
-                            overflowOpen = false
-                            onOpenPodcasts()
-                        }
-                    )
-                }
-            }
-        }
-    )
-}
-
-/** 検索モードのトップバー。戻る・検索欄・クリアを並べる */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SearchTopBar(
-    query: String,
-    queryRevision: Int,
-    onQueryChange: (String) -> Unit,
-    onSubmit: () -> Unit,
-    onClose: () -> Unit
-) {
-    val focusRequester = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
-    // 入力中の文字はここで持ち、その場で書き換える。ViewModel の uiState(複数の Flow を合わせたもの)を通して
-    // 表示し直すと反映が1テンポ遅れ、その間に古い文字列で上書きされて、日本語入力の変換中の文字が消える・確定されるなど
-    // 入力できなくなるため。[query] は検索欄を開いたときの初期値にだけ使う
-    var text by rememberSaveable { mutableStateOf(query) }
-    // ViewModel の側で検索語を書き換えたとき(候補を選んだとき)だけ、入力中の文字を取り込み直す
-    var seenRevision by rememberSaveable { mutableIntStateOf(queryRevision) }
-    LaunchedEffect(queryRevision) {
-        if (queryRevision != seenRevision) {
-            seenRevision = queryRevision
-            text = query
-        }
-    }
-    val onTextChange = { value: String ->
-        text = value
-        onQueryChange(value)
-    }
-
-    // 検索中の上の帯。地色と下端の区切りは、ふだんの上のバーと同じ
-    DesignTopBarSurface {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(TopAppBarDefaults.windowInsets)
-                .height(72.dp)
-                .padding(start = 4.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "検索を閉じる")
-            }
-            TextField(
-                value = text,
-                onValueChange = onTextChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focusRequester),
-                placeholder = { Text("キーワードや内容で検索", maxLines = 1) },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (text.isNotEmpty()) {
-                        IconButton(onClick = { onTextChange("") }) {
-                            Icon(Icons.Outlined.Close, contentDescription = "検索語を消す")
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = CircleShape,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    keyboard?.hide()
-                    onSubmit()
-                })
-            )
-        }
-    }
-}
-
-/**
- * 絞り込み(すべて/お気に入り/アーカイブ)・カテゴリ・タグのチップを横スクロールで並べる。
- * カテゴリ・タグは複数選べる(タグは、2つ以上選ぶと下に「すべて含む / どれかを含む」の切り替えを出す)。
- * タグかカテゴリで絞り込んでいる間は、右端に「すべて解除」を固定して出す(選んだチップは先頭へ移るため、
- * 右へスクロールして選んだあとは見えなくなる。スクロールし直さずに一度で絞り込みを外せるように)。押すと、選んでいるタグとカテゴリをすべて外す
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FilterBar(
-    filter: BookmarkFilter,
-    tags: List<Tag>,
-    selectedTagIds: Set<Long>,
-    tagMatch: TagMatch,
-    categories: List<String>,
-    selectedCategories: Set<String>,
-    selectedTypes: Set<BookmarkType>,
-    period: CreatedPeriod?,
-    readState: ReadState?,
-    onFilterChange: (BookmarkFilter) -> Unit,
-    onTagToggle: (Long) -> Unit,
-    onCategoryToggle: (String) -> Unit,
-    onTypeToggle: (BookmarkType) -> Unit,
-    onPeriodToggle: (CreatedPeriod) -> Unit,
-    onReadStateToggle: (ReadState) -> Unit,
-    onOpenConditions: () -> Unit,
-    onTagMatchChange: (TagMatch) -> Unit,
-    onClearFilters: () -> Unit,
-    showClear: Boolean
-) {
-    val narrowed = selectedTagIds.isNotEmpty() || selectedCategories.isNotEmpty() || selectedTypes.isNotEmpty() || period != null ||
-        readState != null
-    val clearVisible = showClear && narrowed
-    Column {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            FilterChipRow(
-                filter = filter,
-                tags = tags,
-                selectedTagIds = selectedTagIds,
-                categories = categories,
-                selectedCategories = selectedCategories,
-                selectedTypes = selectedTypes,
-                period = period,
-                readState = readState,
-                onFilterChange = onFilterChange,
-                onTagToggle = onTagToggle,
-                onCategoryToggle = onCategoryToggle,
-                onTypeToggle = onTypeToggle,
-                onPeriodToggle = onPeriodToggle,
-                onReadStateToggle = onReadStateToggle,
-                onOpenConditions = onOpenConditions,
-                // 「すべて解除」を出す間は、右の余白を詰めてそちらに譲る
-                endPadding = if (clearVisible) 8.dp else 16.dp,
-                modifier = Modifier.weight(1f)
-            )
-            if (clearVisible) {
-                ClearConditionsChip(onClick = onClearFilters, modifier = Modifier.padding(end = 16.dp))
-            }
-        }
-        if (selectedTagIds.size >= 2) {
-            TagMatchRow(count = selectedTagIds.size, tagMatch = tagMatch, onChange = onTagMatchChange)
-        }
-    }
-}
-
-/** タグ・カテゴリ・種類・期間・読んだかの絞り込みを一度に外すチップ */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ClearConditionsChip(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    EchoMarkAssistChip(
-        onClick = onClick,
-        label = { Text("すべて解除") },
-        leadingIcon = {
-            Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize))
-        },
-        modifier = modifier.semantics { contentDescription = "タグ・カテゴリ・種類・期間・読んだかの絞り込みをすべて解除" }
-    )
-}
-
-/** 複数のタグを選んだときの組み合わせ方(すべて含む=AND / どれかを含む=OR)の切り替え。 */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-private fun TagMatchRow(count: Int, tagMatch: TagMatch, onChange: (TagMatch) -> Unit) {
-    FlowRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .semantics { contentDescription = "選んだタグの組み合わせ方" },
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            "選んだ${count}個のタグを",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.CenterVertically)
-        )
-        EchoMarkFilterChip(
-            selected = tagMatch == TagMatch.ALL,
-            onClick = { onChange(TagMatch.ALL) },
-            label = { Text("すべて含む") }
-        )
-        EchoMarkFilterChip(
-            selected = tagMatch == TagMatch.ANY,
-            onClick = { onChange(TagMatch.ANY) },
-            label = { Text("どれかを含む") }
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FilterChipRow(
-    filter: BookmarkFilter,
-    tags: List<Tag>,
-    selectedTagIds: Set<Long>,
-    categories: List<String>,
-    selectedCategories: Set<String>,
-    selectedTypes: Set<BookmarkType>,
-    period: CreatedPeriod?,
-    readState: ReadState?,
-    onFilterChange: (BookmarkFilter) -> Unit,
-    onTagToggle: (Long) -> Unit,
-    onCategoryToggle: (String) -> Unit,
-    onTypeToggle: (BookmarkType) -> Unit,
-    onPeriodToggle: (CreatedPeriod) -> Unit,
-    onReadStateToggle: (ReadState) -> Unit,
-    onOpenConditions: () -> Unit,
-    endPadding: Dp,
-    modifier: Modifier = Modifier
-) {
-    LazyRow(
-        modifier = modifier,
-        contentPadding = PaddingValues(start = 16.dp, end = endPadding),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        items(FILTER_ORDER, key = { "filter_${it.name}" }) { item ->
-            val selected = filter == item
-            EchoMarkFilterChip(
-                selected = selected,
-                onClick = { onFilterChange(item) },
-                label = { Text(item.label()) },
-                leadingIcon = item.icon(selected)?.let { icon ->
-                    { Icon(icon, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
-                }
-            )
-        }
-        item(key = "conditions") {
-            val count = selectedTypes.size + (if (period != null) 1 else 0) + (if (readState != null) 1 else 0)
-            EchoMarkAssistChip(
-                onClick = onOpenConditions,
-                label = { Text(if (count == 0) "条件" else "条件(${count})") },
-                leadingIcon = { Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
-                modifier = Modifier.semantics {
-                    contentDescription = if (count == 0) "種類・保存した時期・読んだかで絞り込む" else "種類・保存した時期・読んだかで絞り込む(${count}件を選択中)"
-                }
-            )
-        }
-        conditionChips(selectedTypes, period, readState, onTypeToggle, onPeriodToggle, onReadStateToggle)
-        if (categories.isNotEmpty()) {
-            item(key = "divider_categories") {
-                VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
-            }
-            items(categories, key = { "category_${it}" }) { name ->
-                val selected = selectedCategories.any { it.equals(name, ignoreCase = true) }
-                EchoMarkFilterChip(
-                    selected = selected,
-                    onClick = { onCategoryToggle(name) },
-                    label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingIcon = {
-                        Icon(
-                            if (selected) Icons.Filled.Check else Icons.Outlined.Category,
-                            contentDescription = null,
-                            modifier = Modifier.size(FilterChipDefaults.IconSize)
-                        )
-                    },
-                    modifier = Modifier
-                        .animateItem()
-                        .semantics { contentDescription = "カテゴリ「${name}」" + if (selected) "(選択中。タップで外す)" else "" }
-                )
-            }
-        }
-        if (tags.isNotEmpty()) {
-            item(key = "divider") {
-                VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
-            }
-        }
-        items(tags, key = { "tag_${it.id}" }) { tag ->
-            val selected = tag.id in selectedTagIds
-            EchoMarkFilterChip(
-                selected = selected,
-                onClick = { onTagToggle(tag.id) },
-                label = { Text("#${tag.name}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                trailingIcon = if (selected) {
-                    { Icon(Icons.Outlined.Close, contentDescription = "絞り込みを解除", modifier = Modifier.size(FilterChipDefaults.IconSize)) }
-                } else {
-                    null
-                },
-                modifier = Modifier.animateItem()
-            )
-        }
-    }
-}
-
-/** 選んでいるタグ・カテゴリを、空状態の説明に出す形("#A と #B / 技術" など)にする。何も選んでいなければ null。 */
-private fun filterSummary(uiState: BookmarkListUiState): String? {
-    val tags = uiState.selectedTags
-    val tagText = when {
-        tags.isEmpty() -> null
-        tags.size == 1 -> "#${tags.single().name}"
-        else -> tags.joinToString(if (uiState.tagMatch == TagMatch.ALL) " かつ " else " または ") { "#${it.name}" }
-    }
-    val categoryText = uiState.selectedCategories.takeIf { it.isNotEmpty() }?.joinToString(" または ")?.let { "カテゴリ: ${it}" }
-    val typeText = uiState.selectedTypes.takeIf { it.isNotEmpty() }?.joinToString(" または ") { it.displayName() }?.let { "種類: ${it}" }
-    val periodText = uiState.period?.let { "保存した時期: ${it.label()}" }
-    val readText = uiState.readState?.label()
-    return listOfNotNull(tagText, categoryText, typeText, periodText, readText).takeIf { it.isNotEmpty() }?.joinToString("、")
-}
-
-@Composable
-private fun SearchResultHeader(count: Int, isSearching: Boolean, semanticAvailable: Boolean) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (isSearching) {
-                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("検索中…", style = MaterialTheme.typography.titleSmall)
-            } else {
-                Text(
-                    "${count}件見つかりました",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.semantics { heading() }
-                )
-            }
-        }
-        Spacer(Modifier.height(2.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val color = if (semanticAvailable) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
-            Icon(
-                if (semanticAvailable) Icons.Outlined.AutoAwesome else Icons.Outlined.Info,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(14.dp)
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = if (semanticAvailable) {
-                    "キーワードと意味の近さで検索しています"
-                } else {
-                    "キーワードで検索しています(意味での検索は AI の準備ができると使えます)"
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = color
-            )
-        }
-    }
-}
-
-/** 意味の近さだけで見つかった結果に付ける小さな目印 */
-@Composable
-private fun SemanticMatchLabel() {
-    Row(
-        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            Icons.Outlined.AutoAwesome,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.tertiary,
-            modifier = Modifier.size(12.dp)
-        )
-        Spacer(Modifier.width(4.dp))
-        Text("意味が近い結果", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-    }
-}
-
-@Composable
-private fun ListHeader(count: Int, sortOrder: BookmarkSortOrder) {
-    Text(
-        text = "${count}件 · ${sortOrder.label()}",
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 4.dp)
-    )
-}
-
-/** 「次に読む」(#61): まだ読んでいないものから、最近読んだものに近い・お気に入り・すぐ読める・新しいものを選んで横に並べる */
-@Composable
-private fun ReadNextSection(items: List<Recommendation>, onOpen: (Long) -> Unit) {
-    Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.AutoMirrored.Outlined.MenuBook,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(
-                    "次に読む",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.semantics { heading() }
-                )
-                Text(
-                    "まだ読んでいないブックマークから",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(items, key = { it.bookmark.id }) { recommendation ->
-                CompactBookmarkCard(
-                    bookmark = recommendation.bookmark,
-                    onClick = { onOpen(recommendation.bookmark.id) },
-                    caption = recommendation.reason.caption(),
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                )
-            }
-        }
-    }
-}
-
-/** おすすめの理由の言い方 */
-internal fun RecommendationReason.caption(): String = when (this) {
-    is RecommendationReason.SharedTag -> "最近「#${tag}」を読んでいます"
-    is RecommendationReason.SharedCategory -> "最近「${category}」を読んでいます"
-    RecommendationReason.Favorite -> "お気に入りで、まだ読んでいません"
-    is RecommendationReason.Short -> "${ReadingTime.label(minutes)}で読めます"
-    RecommendationReason.Recent -> "最近保存しました"
-}
-
-/**
- * 「今日の再発見」: しばらく開いていないブックマークを横に並べる。
- * エコーのデザインでは、吹き出し形のトーナルな帯に載せて一覧の主役にする。
- */
-@Composable
-private fun RediscoverSection(items: List<Bookmark>, nowMillis: Long, onOpen: (Long) -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val emphasized = EchoMarkDesign.style == DesignStyle.ECHO
-    val accent = if (emphasized) colors.onPrimaryContainer else colors.primary
-    val supporting = if (emphasized) colors.onPrimaryContainer else colors.onSurfaceVariant
-    val sectionModifier = if (emphasized) {
-        Modifier
-            .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp)
-            .background(colors.primaryContainer, EchoBubbleShape)
-            .padding(bottom = 16.dp)
-    } else {
-        Modifier.padding(top = 4.dp, bottom = 8.dp)
-    }
-    Column(sectionModifier) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = if (emphasized) 12.dp else 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Outlined.History,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(
-                    "今日の再発見",
-                    style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
-                    color = accent,
-                    modifier = Modifier.semantics { heading() }
-                )
-                Text(
-                    "しばらく開いていないブックマーク",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = supporting
-                )
-            }
-        }
-        LazyRow(
-            // ソフトのカードは外に光と影を描くので、横並びの切り抜きで欠けないよう上下にも余白を取る
-            contentPadding = PaddingValues(
-                horizontal = if (emphasized) 8.dp else 16.dp,
-                vertical = if (EchoMarkDesign.style == DesignStyle.SOFT) 12.dp else 0.dp
-            ),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(items, key = { it.id }) { bookmark ->
-                CompactBookmarkCard(
-                    bookmark = bookmark,
-                    onClick = { onOpen(bookmark.id) },
-                    caption = rediscoverCaption(bookmark, nowMillis),
-                    // クラシックは一覧のカードより一段濃く、エコーは帯の上で地色から浮かせる。
-                    // ほかは一覧のカードと同じ描き方(ペーパーは罫線、クリアは白、ソフトは押し出し)
-                    containerColor = when (EchoMarkDesign.style) {
-                        DesignStyle.CLASSIC -> colors.surfaceContainer
-                        DesignStyle.ECHO -> colors.surface
-                        else -> null
-                    }
-                )
-            }
-        }
-    }
-}
-
-private fun rediscoverCaption(bookmark: Bookmark, nowMillis: Long): String =
-    if (bookmark.lastAccessedAt <= bookmark.createdAt) {
-        "${formatRelativeTime(bookmark.createdAt, nowMillis)}に保存してから未読"
-    } else {
-        "最後に開いたのは${formatRelativeTime(bookmark.lastAccessedAt, nowMillis)}"
-    }
-
-@Composable
-private fun ListEmptyState(uiState: BookmarkListUiState, callbacks: BookmarkListCallbacks) {
-    when (uiState.emptyKind) {
-        ListEmptyKind.FIRST_RUN -> EmptyState(
-            icon = Icons.Outlined.BookmarkAdd,
-            title = "まだブックマークがありません",
-            description = "ブラウザなどの共有メニューから「EchoMarkに保存」を選ぶと、記事を保存して AI が要約します。",
-            actionLabel = "URL を追加",
-            actionIcon = Icons.Filled.Add,
-            onAction = callbacks.onAddClick
-        )
-        ListEmptyKind.ALL_ARCHIVED -> EmptyState(
-            icon = Icons.Outlined.Archive,
-            title = "すべてアーカイブ済みです",
-            description = "アーカイブしたブックマークは「アーカイブ」で見られます。",
-            actionLabel = "アーカイブを見る",
-            onAction = { callbacks.onFilterChange(BookmarkFilter.ARCHIVED) }
-        )
-        ListEmptyKind.NO_FAVORITES -> EmptyState(
-            icon = Icons.Outlined.StarOutline,
-            title = "お気に入りはまだありません",
-            description = "カードの☆をタップすると、ここにまとまります。",
-            actionLabel = "すべて表示",
-            onAction = { callbacks.onFilterChange(BookmarkFilter.ACTIVE) }
-        )
-        ListEmptyKind.NO_ARCHIVED -> EmptyState(
-            icon = Icons.Outlined.Archive,
-            title = "アーカイブは空です",
-            description = "カードを長押しして「アーカイブ」を選ぶと、ここへ移せます。"
-        )
-        ListEmptyKind.NO_FILTER_MATCH -> EmptyState(
-            icon = Icons.AutoMirrored.Outlined.Label,
-            title = "当てはまるブックマークがありません",
-            description = filterSummary(uiState)?.let { "「${it}」に当てはまるブックマークは、この絞り込みにはありません。" },
-            actionLabel = "絞り込みを解除",
-            onAction = callbacks.onClearFilters
-        )
-        ListEmptyKind.NO_SEARCH_RESULT -> EmptyState(
-            icon = Icons.Outlined.SearchOff,
-            title = "「${uiState.searchQuery.trim()}」は見つかりませんでした",
-            description = if (uiState.isNarrowed) {
-                "${filterSummary(uiState) ?: "選択した条件"}で絞り込んでいます。検索語をそのままに、絞り込みを解除して探せます。"
-            } else if (uiState.filter != BookmarkFilter.ACTIVE) {
-                "「${uiState.filter.label()}」の中を検索しています。検索語をそのままに、「すべて」の一覧から探せます。"
-            } else if (uiState.semanticSearchAvailable) {
-                "別の言葉や、探している内容を文章で入力してみてください。"
-            } else {
-                "別の言葉で試してみてください。AI の準備ができると、意味の近いものも探せます。"
-            },
-            actionLabel = when {
-                uiState.isNarrowed -> "絞り込みを解除して検索"
-                uiState.filter != BookmarkFilter.ACTIVE -> "すべてから検索"
-                else -> "検索を閉じる"
-            },
-            onAction = {
-                when {
-                    uiState.isNarrowed -> callbacks.onClearFilters()
-                    uiState.filter != BookmarkFilter.ACTIVE -> callbacks.onFilterChange(BookmarkFilter.ACTIVE)
-                    else -> callbacks.onSearchActiveChange(false)
-                }
-            }
-        )
-        ListEmptyKind.NONE -> Unit
-    }
-}
-
-/** 一覧の見せ方の表示名 */
-internal fun BookmarkListDisplay.label(): String = when (this) {
-    BookmarkListDisplay.CARD -> "カード"
-    BookmarkListDisplay.COMPACT -> "コンパクト"
-    BookmarkListDisplay.GRID -> "グリッド"
-}
-
-/** 一覧の見せ方のアイコン */
-internal fun BookmarkListDisplay.icon(): ImageVector = when (this) {
-    BookmarkListDisplay.CARD -> Icons.Outlined.ViewAgenda
-    BookmarkListDisplay.COMPACT -> Icons.AutoMirrored.Outlined.ViewList
-    BookmarkListDisplay.GRID -> Icons.Outlined.GridView
-}
-
-internal fun BookmarkSortOrder.label(): String = when (this) {
-    BookmarkSortOrder.NEWEST -> "新しい順"
-    BookmarkSortOrder.OLDEST -> "古い順"
-    BookmarkSortOrder.RECENTLY_OPENED -> "最近開いた順"
-    BookmarkSortOrder.TITLE -> "タイトル順"
-}
-
 /** 一覧の左右の余白 */
 private val LIST_SIDE_PADDING = 16.dp
 
@@ -1668,21 +855,6 @@ private fun Modifier.ignoreListSidePadding(): Modifier = layout { measurable, co
     )
     val width = (placeable.width - side * 2).coerceIn(constraints.minWidth, constraints.maxWidth)
     layout(width, placeable.height) { placeable.placeRelative(-side, 0) }
-}
-
-/** 絞り込みチップの並び(すべて → お気に入り → アーカイブ) */
-private val FILTER_ORDER = listOf(BookmarkFilter.ACTIVE, BookmarkFilter.FAVORITES, BookmarkFilter.ARCHIVED)
-
-private fun BookmarkFilter.label(): String = when (this) {
-    BookmarkFilter.ACTIVE -> "すべて"
-    BookmarkFilter.FAVORITES -> "お気に入り"
-    BookmarkFilter.ARCHIVED -> "アーカイブ"
-}
-
-private fun BookmarkFilter.icon(selected: Boolean): ImageVector? = when (this) {
-    BookmarkFilter.ACTIVE -> null
-    BookmarkFilter.FAVORITES -> if (selected) Icons.Filled.Star else Icons.Outlined.StarOutline
-    BookmarkFilter.ARCHIVED -> Icons.Outlined.Archive
 }
 
 /** [PaddingValues] の下から [amount] を引く(0 未満にはしない) */
