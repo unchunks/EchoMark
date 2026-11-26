@@ -2,7 +2,7 @@ package com.unchunks.echomark.ui.importer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.unchunks.echomark.domain.importer.ImportParseResult
+import com.unchunks.components.bookmarkfile.ImportParseResult
 import com.unchunks.echomark.domain.importer.ImportResult
 import com.unchunks.echomark.domain.importer.LinkImportException
 import com.unchunks.echomark.domain.importer.LinkImportSource

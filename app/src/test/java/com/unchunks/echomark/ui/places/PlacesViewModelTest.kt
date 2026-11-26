@@ -4,7 +4,7 @@ import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.components.testing.TestDispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 import com.unchunks.echomark.domain.repository.CurrentLocationProvider
 import com.unchunks.echomark.domain.repository.CurrentLocationResult
 import com.unchunks.echomark.domain.repository.PlaceDetection

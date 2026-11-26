@@ -4,10 +4,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.unchunks.echomark.domain.importer.ImportFormat
-import com.unchunks.echomark.domain.importer.ImportParseResult
+import com.unchunks.components.bookmarkfile.ImportFormat
+import com.unchunks.components.bookmarkfile.ImportParseResult
 import com.unchunks.echomark.domain.importer.ImportResult
-import com.unchunks.echomark.domain.importer.ImportedLink
+import com.unchunks.components.bookmarkfile.ImportedLink
 import com.unchunks.echomark.ui.importer.LinkImportDialog
 import com.unchunks.echomark.ui.importer.LinkImportState
 import org.junit.Rule

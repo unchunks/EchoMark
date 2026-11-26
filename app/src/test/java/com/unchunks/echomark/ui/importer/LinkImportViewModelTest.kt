@@ -1,9 +1,9 @@
 package com.unchunks.echomark.ui.importer
 
 import com.unchunks.components.testing.MainDispatcherRule
-import com.unchunks.echomark.domain.importer.ImportFormat
-import com.unchunks.echomark.domain.importer.ImportParseResult
-import com.unchunks.echomark.domain.importer.ImportedLink
+import com.unchunks.components.bookmarkfile.ImportFormat
+import com.unchunks.components.bookmarkfile.ImportParseResult
+import com.unchunks.components.bookmarkfile.ImportedLink
 import com.unchunks.echomark.domain.importer.LinkImportException
 import com.unchunks.echomark.domain.importer.LinkImportSource
 import com.unchunks.echomark.testing.FakeBookmarkRepository

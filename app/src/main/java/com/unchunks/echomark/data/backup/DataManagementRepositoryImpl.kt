@@ -7,13 +7,14 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.core.readAllWithin
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.speechtext.ReadingDictionary
 import com.unchunks.components.speechtext.ReadingEntry
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.data.attachment.AttachmentStore
 import com.unchunks.echomark.data.local.dao.BackupDao
-import com.unchunks.echomark.data.local.encryption.DatabaseLeftovers
+import com.unchunks.components.dbencryption.DatabaseLeftovers
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.local.objectbox.VectorSearchDataSource
 import com.unchunks.echomark.data.video.VideoFileStore
@@ -44,7 +45,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -314,19 +314,9 @@ internal const val MAX_BACKUP_BYTES: Long = 32L * 1024 * 1024
 
 /** [input] を UTF-8 の文字列として読む。[maxBytes] を超えたら読むのをやめて [BackupFormatException]。 */
 internal fun readBackupText(input: InputStream, maxBytes: Long): String {
-    val out = ByteArrayOutputStream()
-    val buffer = ByteArray(64 * 1024)
-    var total = 0L
-    while (true) {
-        val read = input.read(buffer)
-        if (read < 0) break
-        total += read
-        if (total > maxBytes) {
-            throw BackupFormatException("ファイルが大きすぎます(上限 ${maxBytes / (1024 * 1024)}MB)。EchoMark のバックアップファイルか確認してください")
-        }
-        out.write(buffer, 0, read)
-    }
-    return out.toString(Charsets.UTF_8.name())
+    val bytes = input.readAllWithin(maxBytes)
+        ?: throw BackupFormatException("ファイルが大きすぎます(上限 ${maxBytes / (1024 * 1024)}MB)。EchoMark のバックアップファイルか確認してください")
+    return String(bytes, Charsets.UTF_8)
 }
 
 /** zip を展開する一時的な場所(キャッシュの中。読み込みが終わったら消す) */

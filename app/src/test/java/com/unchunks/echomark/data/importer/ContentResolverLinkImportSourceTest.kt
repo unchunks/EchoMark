@@ -5,7 +5,7 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.testing.TestDispatcherProvider
-import com.unchunks.echomark.domain.importer.ImportFormat
+import com.unchunks.components.bookmarkfile.ImportFormat
 import com.unchunks.echomark.domain.importer.LinkImportException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking

@@ -1,5 +1,6 @@
 package com.unchunks.echomark.data.ai.model
 
+import com.unchunks.components.llm.ondevice.DeviceSpecs
 import com.unchunks.components.llm.ondevice.EngineBackend
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

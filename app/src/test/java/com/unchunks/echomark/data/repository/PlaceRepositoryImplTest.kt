@@ -9,7 +9,7 @@ import com.unchunks.echomark.data.local.dao.BookmarkDao
 import com.unchunks.echomark.data.local.entity.BookmarkEntity
 import com.unchunks.echomark.data.place.PhotoLocationReader
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After

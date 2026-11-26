@@ -348,7 +348,7 @@ class HtmlContentExtractorTest {
             """.trimIndent()
         )
 
-        assertEquals(com.unchunks.echomark.domain.bookmark.model.PageAccessLimit.PAYWALL, result.accessLimit)
+        assertEquals(com.unchunks.components.web.PageAccessLimit.PAYWALL, result.accessLimit)
         assertEquals("有料記事", result.title)
         assertTrue(result.text.startsWith("記事の冒頭の数行です。"))
     }
@@ -362,7 +362,7 @@ class HtmlContentExtractorTest {
             """.trimIndent()
         )
 
-        assertEquals(com.unchunks.echomark.domain.bookmark.model.PageAccessLimit.BLOCKED, result.accessLimit)
+        assertEquals(com.unchunks.components.web.PageAccessLimit.BLOCKED, result.accessLimit)
         assertNull(result.title)
         assertNull(result.description)
         assertTrue(result.text.isEmpty())

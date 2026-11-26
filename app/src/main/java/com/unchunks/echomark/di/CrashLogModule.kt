@@ -1,7 +1,7 @@
 package com.unchunks.echomark.di
 
 import android.content.Context
-import com.unchunks.echomark.crash.CrashLogStore
+import com.unchunks.components.crashlog.CrashLogStore
 import com.unchunks.echomark.crash.CrashReporter
 import dagger.Module
 import dagger.Provides

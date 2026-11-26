@@ -101,15 +101,18 @@ dependencies {
     implementation(libs.unchunks.llm.ondevice)
     implementation(libs.unchunks.file.storage)
     implementation(libs.unchunks.compose.ui)
+    // 保存したデータ(Room の DB)の暗号化(#100)。SQLCipher と androidx.sqlite 2.7 はこの部品から入る
+    implementation(libs.unchunks.database.encryption)
+    implementation(libs.unchunks.crash.log)
+    implementation(libs.unchunks.geo)
+    implementation(libs.unchunks.graph.layout)
+    implementation(libs.unchunks.bookmark.file)
 
     // Core / Lifecycle
     implementation(libs.androidx.core.ktx)
     // 重い処理の区間を Perfetto のトレースに出す(端末でのもたつきの調査用)
     implementation(libs.androidx.tracing.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    // 保存したデータ(Room の DB)の暗号化(#100)。SQLCipher の Room 2 向けの SupportOpenHelperFactory が androidx.sqlite 2.7 を求める
-    implementation(libs.sqlcipher.android) { artifact { type = "aar" } }
-    implementation(libs.androidx.sqlite)
 
     implementation(libs.datastore.preferences)
     implementation(libs.timber)

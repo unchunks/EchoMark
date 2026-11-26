@@ -34,7 +34,7 @@ import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.model.ChatTemplate
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.model.TagSource
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
 import com.unchunks.echomark.domain.review.SpacedRepetition
 import org.json.JSONArray
 import org.json.JSONException

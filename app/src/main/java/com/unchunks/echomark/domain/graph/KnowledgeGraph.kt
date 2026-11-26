@@ -1,5 +1,8 @@
 package com.unchunks.echomark.domain.graph
 
+import com.unchunks.components.graphlayout.ForceLayout
+import com.unchunks.components.graphlayout.GraphLayout
+import com.unchunks.components.graphlayout.LayoutEdge
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateDetector
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 
@@ -59,6 +62,17 @@ data class KnowledgeGraph(
         val EMPTY = KnowledgeGraph(emptyList(), emptyList(), emptyList(), 0)
     }
 }
+
+/**
+ * 点を並べる位置(部品の graph-layout の力指向の配置)。まとまりごとに離れた場所から並べ始め、線の重みで引き合わせる。
+ * 重いので、バックグラウンドの Dispatcher で呼び、[isCancelled] で途中でやめられるようにする。
+ */
+fun KnowledgeGraph.forceLayout(isCancelled: () -> Boolean = { false }): GraphLayout = ForceLayout.layout(
+    clusters = IntArray(nodes.size) { nodes[it].cluster },
+    edges = edges.map { LayoutEdge(it.a, it.b, it.weight) },
+    clusterCount = clusters.size,
+    isCancelled = isCancelled
+)
 
 /** グラフを作る条件。 */
 data class GraphOptions(

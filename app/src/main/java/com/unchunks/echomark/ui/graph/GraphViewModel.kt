@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unchunks.components.core.DispatcherProvider
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
-import com.unchunks.echomark.domain.graph.ForceLayout
-import com.unchunks.echomark.domain.graph.GraphLayout
+import com.unchunks.echomark.domain.graph.forceLayout
+import com.unchunks.components.graphlayout.GraphLayout
 import com.unchunks.echomark.domain.graph.GraphOptions
 import com.unchunks.echomark.domain.graph.KnowledgeGraph
 import com.unchunks.echomark.domain.graph.KnowledgeGraphBuilder
@@ -125,7 +125,7 @@ class GraphViewModel @Inject constructor(
                     val graph = KnowledgeGraphBuilder.build(
                         loaded.bookmarks, loaded.groups, GraphOptions(maxNodes = state.maxNodes, tagFilter = state.tagFilter)
                     )
-                    graph to ForceLayout.layout(graph, isCancelled = { !isActive })
+                    graph to graph.forceLayout(isCancelled = { !isActive })
                 }
                 _uiState.update { current ->
                     current.copy(

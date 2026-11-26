@@ -20,6 +20,7 @@ import com.unchunks.components.llm.ondevice.LiteRtLmTextEngine
 import com.unchunks.components.llm.ondevice.LocalChatInput
 import com.unchunks.components.llm.ondevice.LocalGeneration
 import com.unchunks.components.llm.ondevice.LocalTextEngine
+import com.unchunks.components.llm.ondevice.ProcessMemory
 import com.unchunks.components.llm.ondevice.isInputTooLong
 import com.unchunks.components.llm.ondevice.shouldReleaseEngineOnTrim
 import com.unchunks.echomark.data.ai.AiPerfLog

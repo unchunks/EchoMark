@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.graph.ForceLayout
+import com.unchunks.echomark.domain.graph.forceLayout
 import com.unchunks.echomark.domain.graph.GraphOptions
 import com.unchunks.echomark.domain.graph.KnowledgeGraphBuilder
 import com.unchunks.echomark.domain.place.Places
@@ -59,7 +59,7 @@ class GraphAndPlacesScreenshotTest {
     private val graphState = GraphUiState(
         isLoading = false,
         graph = graph,
-        layout = ForceLayout.layout(graph),
+        layout = graph.forceLayout(),
         filterTags = listOf("Android", "料理", "旅行", "Kotlin"),
         bookmarkCount = graphBookmarks.size
     )

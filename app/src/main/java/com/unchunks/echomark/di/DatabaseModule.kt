@@ -24,13 +24,13 @@ import com.unchunks.echomark.data.local.dao.SmartFolderDao
 import com.unchunks.echomark.data.local.dao.SubscriptionDao
 import com.unchunks.echomark.data.local.dao.TagDao
 import com.unchunks.components.securestorage.KeystoreSecretCipher
-import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionMigrator
-import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionStatus
-import com.unchunks.echomark.data.local.encryption.DatabaseKeyStore
-import com.unchunks.echomark.data.local.encryption.DatabaseLeftovers
-import com.unchunks.echomark.data.local.encryption.EncryptingOpenHelperFactory
-import com.unchunks.echomark.data.local.encryption.EncryptionOutcome
-import com.unchunks.echomark.data.local.encryption.SqlCipherEngine
+import com.unchunks.components.dbencryption.DatabaseEncryptionMigrator
+import com.unchunks.components.dbencryption.DatabaseEncryptionStatus
+import com.unchunks.components.dbencryption.DatabaseKeyStore
+import com.unchunks.components.dbencryption.DatabaseLeftovers
+import com.unchunks.components.dbencryption.EncryptingOpenHelperFactory
+import com.unchunks.components.dbencryption.EncryptionOutcome
+import com.unchunks.components.dbencryption.SqlCipherEngine
 import dagger.Lazy
 import dagger.Module
 import dagger.Provides
@@ -52,6 +52,15 @@ object DatabaseModule {
 
     /** DB の鍵の暗号文のファイル(バックアップされない場所) */
     private const val DATABASE_KEY_FILE = "database_key.bin"
+
+    /** 鍵が失われて DB を作り直したことを、利用者が知らせを閉じるまで覚えておく印(バックアップされない場所) */
+    private const val DATABASE_KEY_LOST_FLAG = "db_key_lost"
+
+    /** DB の暗号化の状態(設定画面に出す) */
+    @Provides
+    @Singleton
+    fun provideDatabaseEncryptionStatus(@ApplicationContext context: Context): DatabaseEncryptionStatus =
+        DatabaseEncryptionStatus(File(context.noBackupFilesDir, DATABASE_KEY_LOST_FLAG))
 
     /** DB の暗号化の準備(#100)。平文の DB の暗号化と、残った平文の写しの片付けを行う */
     @Provides

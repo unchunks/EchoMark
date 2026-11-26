@@ -3,8 +3,9 @@
 EchoMark のうち、ほかのアプリでも使える仕組み(LLM の API クライアント・端末内の埋め込み・秘密情報の暗号化保存・オフラインモードの仕組み・
 音声の文字起こし・WAV の読み書き・PDF と画像の文字の読み取り・端末内 AI のエンジン・資料の検索・RSS と Atom のフィードの読み取り・字幕のファイルの読み取り・
 zip の読み書き・アプリのロック・件数のグラフ・Brave Search API のクライアント・続きから落とせるダウンロード・日本語の読み上げの整え・
-フィードの取得・通信できるかの判定・話し終わりの判定・
-Compose の部品など)は、
+フィードの取得・通信できるかの判定・話し終わりの判定・DB の暗号化・クラッシュの記録・座標と地図の計算・グラフの配置・
+ブックマークの書き出しファイルの読み書き・Web ページの本文の整えと有料ページの見分け・上限つきの読み込みと文字コードの推定・
+端末のメモリと性能の読み取り・Compose の部品など)は、
 別のリポジトリ components(非公開の unchunks/components)の `android/` に切り出してある。部品の一覧と中身は `components/android/README.md`。
 
 ## ビルドに必要なもの
@@ -46,3 +47,10 @@ Web 検索のキーの保存先とキーが無いときの知らせ・AI に渡�
 PeerTube の API と動画の画質の選び方・失敗の理由(`data/video/VideoFileDownloader.kt`)、読み上げで入れてある読みのうちアプリの名前
 (`domain/podcast/AppReadings.kt`)も、EchoMark に残した。
 フィードを取りに行くときに名乗る名前とオフラインモードの文言(`data/feed/EchoMarkFeedFetcher.kt`)も、EchoMark に残した。
+DB の名前・鍵のファイル名・Keystore の鍵の名前と、鍵が失われたときに ObjectBox の埋め込みを消す処理(`di/DatabaseModule.kt`)、
+クラッシュの記録の置き場所とアプリ名・WorkManager のワーカーの失敗の記録(`crash/CrashReporter.kt`)も、EchoMark に残した。
+ブックマークを場所でまとめる処理とタイルの提供元(OpenFreeMap)の URL・帰属表示(`domain/place/Places.kt`・`PlacesTileMap.kt`)、
+ナレッジグラフの組み立て(`domain/graph/KnowledgeGraph.kt`。配置は部品の graph-layout)、取り込みの形式の表示名と読むファイルの大きさの上限
+(`ui/importer/LinkImportDialog.kt`・`domain/importer/ImportedLink.kt`)、一部しか取れなかった本文の印と要約の注記(`domain/bookmark/model/LimitedAccess.kt`)、
+端末の性能からモデルを勧める処理(`data/ai/model/ModelRecommender.kt`)も、EchoMark に残した。
+DB の暗号化を本物の SQLCipher で確かめる端末のテスト(`androidTest/.../DatabaseEncryptionInstrumentedTest.kt`)は、Room の DB と合わせて確かめるため EchoMark に置いている。

@@ -1,5 +1,6 @@
 package com.unchunks.echomark.domain.bookmark.model
 
+import com.unchunks.components.web.PageAccessLimit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

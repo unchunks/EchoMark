@@ -1,6 +1,7 @@
 package com.unchunks.echomark.data.extract
 
 import com.unchunks.components.core.DispatcherProvider
+import com.unchunks.components.core.TextDecoding
 import com.unchunks.echomark.data.extract.image.ImageContentExtractor
 import com.unchunks.echomark.data.extract.media.MediaContentExtractor
 import com.unchunks.echomark.data.extract.pdf.PdfContentExtractor
@@ -65,7 +66,8 @@ class DefaultContentExtractor @Inject constructor(
     }
 
     private suspend fun readTextFile(file: File): ExtractedContent? = withContext(dispatcherProvider.io) {
-        val (text, truncated) = TextFileReader.read(file)
+        // UTF-8 の日本語で [ExtractedContent.MAX_TEXT_LENGTH] 字を少し超える量まで読む
+        val (text, truncated) = TextDecoding.readFile(file, maxBytes = ExtractedContent.MAX_TEXT_LENGTH * 3 + 4)
         ExtractedContent.of(text, ExtractionSource.TEXT_FILE, truncated = truncated, engine = "text")
     }
 

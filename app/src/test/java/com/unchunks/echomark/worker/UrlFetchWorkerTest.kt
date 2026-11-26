@@ -6,7 +6,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkType
 import com.unchunks.echomark.worker.UrlFetchWorker.Companion.contentAfterFetch
 import com.unchunks.echomark.worker.UrlFetchWorker.Companion.titleAfterFetch
 import com.unchunks.echomark.domain.bookmark.model.LimitedAccess
-import com.unchunks.echomark.domain.bookmark.model.PageAccessLimit
+import com.unchunks.components.web.PageAccessLimit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

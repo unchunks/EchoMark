@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.unchunks.components.composeui.chartPalette
 import com.unchunks.echomark.domain.graph.EdgeKind
-import com.unchunks.echomark.domain.graph.GraphLayout
+import com.unchunks.components.graphlayout.GraphLayout
 import com.unchunks.echomark.domain.graph.KnowledgeGraph
 import kotlin.math.hypot
 

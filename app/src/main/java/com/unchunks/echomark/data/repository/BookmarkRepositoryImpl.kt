@@ -28,7 +28,7 @@ import com.unchunks.echomark.domain.bookmark.model.BookmarkQuery
 import com.unchunks.echomark.domain.bookmark.model.BookmarkSortOrder
 import com.unchunks.echomark.domain.bookmark.model.TagMatch
 import com.unchunks.echomark.domain.bookmark.model.BookmarkType
-import com.unchunks.echomark.domain.place.GeoParser
+import com.unchunks.components.geo.GeoParser
 import com.unchunks.echomark.domain.bookmark.model.ProcessingFailureReason
 import com.unchunks.echomark.domain.bookmark.model.ProcessingInfo
 import com.unchunks.echomark.domain.bookmark.model.ProcessingQueue
@@ -47,7 +47,7 @@ import com.unchunks.echomark.domain.model.CategoryDefinition
 import com.unchunks.echomark.domain.model.CategoryNames
 import com.unchunks.echomark.domain.model.TagNames
 import com.unchunks.echomark.domain.importer.ImportResult
-import com.unchunks.echomark.domain.importer.ImportedLink
+import com.unchunks.components.bookmarkfile.ImportedLink
 import com.unchunks.echomark.domain.model.TagSource
 import com.unchunks.echomark.domain.model.TagSuggestions
 import com.unchunks.echomark.domain.repository.BookmarkRepository
@@ -193,7 +193,8 @@ class BookmarkRepositoryImpl @Inject constructor(
             ).toEntity().copy(queuedAt = now)
             val id = bookmarkDao.insertIgnore(entity)
             if (id != -1L) {
-                val tags = if (folderAsTag && link.folder != null) link.tags + link.folder else link.tags
+                val folder = link.folder
+                val tags = if (folderAsTag && folder != null) link.tags + folder else link.tags
                 if (tags.isNotEmpty()) tagDao.addTagsToBookmark(id, tags, TagSource.USER)
             }
             id

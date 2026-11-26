@@ -47,11 +47,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.ReadableLazyColumn
-import com.unchunks.echomark.domain.place.GeoPoint
-import com.unchunks.echomark.domain.place.MapFrame
+import com.unchunks.components.geo.GeoPoint
+import com.unchunks.components.geo.MapFrame
 import com.unchunks.echomark.domain.place.PlaceGroup
-import com.unchunks.echomark.domain.place.graticuleLines
-import com.unchunks.echomark.domain.place.graticuleStep
+import com.unchunks.components.geo.graticuleLines
+import com.unchunks.components.geo.graticuleStep
 import com.unchunks.echomark.domain.repository.PlaceDetection
 import com.unchunks.echomark.ui.components.EmptyState
 import com.unchunks.echomark.ui.components.LoadingState

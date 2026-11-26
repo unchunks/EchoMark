@@ -39,7 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.semantics
-import com.unchunks.echomark.data.local.encryption.DatabaseEncryptionState
+import com.unchunks.components.dbencryption.DatabaseEncryptionState
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.ui.components.SectionHeader
 

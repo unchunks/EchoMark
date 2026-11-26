@@ -2,8 +2,10 @@ package com.unchunks.echomark.data.importer
 
 import android.content.Context
 import androidx.core.net.toUri
+import com.unchunks.components.bookmarkfile.ImportParseResult
+import com.unchunks.components.bookmarkfile.LinkImportParser
 import com.unchunks.components.core.DispatcherProvider
-import com.unchunks.echomark.domain.importer.ImportParseResult
+import com.unchunks.components.core.readAllWithin
 import com.unchunks.echomark.domain.importer.LinkImportException
 import com.unchunks.echomark.domain.importer.LinkImportSource
 import com.unchunks.echomark.domain.importer.MAX_IMPORT_BYTES
@@ -11,7 +13,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import javax.inject.Inject
@@ -58,19 +59,7 @@ class ContentResolverLinkImportSource @Inject constructor(
 
 /** [input] を [maxBytes] まで UTF-8 の文字列として読む。超えたら [LinkImportException]。 */
 internal fun readLimited(input: InputStream, maxBytes: Long): String {
-    val output = ByteArrayOutputStream()
-    val buffer = ByteArray(BUFFER_BYTES)
-    var total = 0L
-    while (true) {
-        val read = input.read(buffer)
-        if (read < 0) break
-        total += read
-        if (total > maxBytes) {
-            throw LinkImportException("ファイルが大きすぎます(${maxBytes / (1024 * 1024)}MB まで)")
-        }
-        output.write(buffer, 0, read)
-    }
-    return output.toString(Charsets.UTF_8.name())
+    val bytes = input.readAllWithin(maxBytes)
+        ?: throw LinkImportException("ファイルが大きすぎます(${maxBytes / (1024 * 1024)}MB まで)")
+    return String(bytes, Charsets.UTF_8)
 }
-
-private const val BUFFER_BYTES = 64 * 1024

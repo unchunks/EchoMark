@@ -1,7 +1,9 @@
 package com.unchunks.echomark.data.remote
 
+import com.unchunks.components.web.BodyCleaner
 import com.unchunks.components.web.CaptionTranscript
-import com.unchunks.echomark.domain.bookmark.model.PageAccessLimit
+import com.unchunks.components.web.PageAccessDetector
+import com.unchunks.components.web.PageAccessLimit
 import org.json.JSONObject
 import org.json.JSONTokener
 import org.jsoup.nodes.Document

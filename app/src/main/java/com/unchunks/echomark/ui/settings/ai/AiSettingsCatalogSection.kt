@@ -33,7 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.unchunks.components.filestorage.formatBytes
 import com.unchunks.echomark.data.ai.model.CatalogDownloadState
-import com.unchunks.echomark.data.ai.model.DeviceSpecs
+import com.unchunks.components.llm.ondevice.DeviceSpecs
 import com.unchunks.echomark.data.ai.model.InstalledModels
 import com.unchunks.echomark.data.ai.model.ModelCatalog
 import com.unchunks.echomark.data.ai.model.ModelCatalogEntry

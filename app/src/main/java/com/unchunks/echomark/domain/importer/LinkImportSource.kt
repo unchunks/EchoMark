@@ -1,5 +1,7 @@
 package com.unchunks.echomark.domain.importer
 
+import com.unchunks.components.bookmarkfile.ImportParseResult
+
 /** 取り込むファイルを読めなかった・対応していない形式だった。[message] は利用者にそのまま見せる */
 class LinkImportException(message: String, cause: Throwable? = null) : Exception(message, cause)
 

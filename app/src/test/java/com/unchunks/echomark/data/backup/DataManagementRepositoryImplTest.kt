@@ -52,7 +52,7 @@ class DataManagementRepositoryImplTest {
     private lateinit var bookmarkRepository: BookmarkRepositoryImpl
     private lateinit var repository: DataManagementRepositoryImpl
     private val settings = FakeAppSettingsRepository()
-    private val leftovers = object : com.unchunks.echomark.data.local.encryption.DatabaseLeftovers {
+    private val leftovers = object : com.unchunks.components.dbencryption.DatabaseLeftovers {
         var calls = 0
         override fun deleteLeftovers() {
             calls++

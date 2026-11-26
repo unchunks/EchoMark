@@ -5,9 +5,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.components.testing.TestDispatcherProvider
-import com.unchunks.echomark.crash.CrashEnvironment
-import com.unchunks.echomark.crash.CrashLogKind
-import com.unchunks.echomark.crash.CrashLogStore
+import com.unchunks.components.crashlog.CrashEnvironment
+import com.unchunks.components.crashlog.CrashLogKind
+import com.unchunks.components.crashlog.CrashLogStore
+import com.unchunks.components.dbencryption.DatabaseEncryptionStatus
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.domain.lock.AppLockDelay
 import com.unchunks.echomark.domain.lock.AppLockSettings
@@ -43,6 +44,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
+import java.io.File
 import java.time.DayOfWeek
 
 /** ModelManager が Context を使うため Robolectric で動かす。 */
@@ -74,7 +76,7 @@ class SettingsViewModelTest {
         processingScheduleController = processingScheduler,
         offlineModeController = offlineController,
         autoBackupController = autoBackup,
-        databaseEncryption = com.unchunks.echomark.data.local.encryption.DatabaseEncryptionStatus(ApplicationProvider.getApplicationContext()),
+        databaseEncryption = DatabaseEncryptionStatus(File(tmp.root, "db_key_lost")),
         apiUsageRepository = usage,
         crashLogs = crashLogs,
         dispatchers = TestDispatcherProvider(mainRule.dispatcher)
@@ -84,7 +86,7 @@ class SettingsViewModelTest {
     val tmp = TemporaryFolder()
 
     private val crashLogs by lazy {
-        CrashLogStore(tmp.newFolder("crash-logs"), { CrashEnvironment("1.0 (1)", "Test Device", "Android 16 (API 36)") })
+        CrashLogStore(tmp.newFolder("crash-logs"), { CrashEnvironment("EchoMark", "1.0 (1)", "Test Device", "Android 16 (API 36)") })
     }
 
     @Test

@@ -36,7 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.unchunks.echomark.domain.place.GeoPoint
+import com.unchunks.components.geo.GeoPoint
+import com.unchunks.components.geo.MapCameraBounds
 import com.unchunks.echomark.domain.place.PlaceGroup
 import com.unchunks.echomark.domain.place.PlacesTileMap
 import dagger.hilt.EntryPoint
@@ -93,8 +94,9 @@ fun MapAttribution(modifier: Modifier = Modifier) {
     val linkStyle = TextLinkStyles(SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline))
     val text: AnnotatedString = buildAnnotatedString {
         PlacesTileMap.attribution.forEach { part ->
-            if (part.url != null) {
-                withLink(LinkAnnotation.Url(part.url, linkStyle)) { append(part.text) }
+            val url = part.url
+            if (url != null) {
+                withLink(LinkAnnotation.Url(url, linkStyle)) { append(part.text) }
             } else {
                 append(part.text)
             }
@@ -247,7 +249,7 @@ private class MapState {
     fun fit(map: MapLibreMap) {
         if (fitted) return
         val points: List<GeoPoint> = groups.mapNotNull { it.center }
-        val bounds = PlacesTileMap.cameraBounds(points) ?: return
+        val bounds = MapCameraBounds.enclosing(points) ?: return
         fitted = true
         val update = if (bounds.isSinglePoint) {
             CameraUpdateFactory.newLatLngZoom(LatLng(bounds.centerLatitude, bounds.centerLongitude), PlacesTileMap.SINGLE_POINT_ZOOM)

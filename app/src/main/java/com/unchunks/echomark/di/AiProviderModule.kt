@@ -1,5 +1,8 @@
 package com.unchunks.echomark.di
 
+import android.content.Context
+import com.unchunks.components.llm.ondevice.AndroidDeviceSpecsReader
+import com.unchunks.components.llm.ondevice.DeviceSpecsReader
 import com.unchunks.echomark.data.ai.LlmSummaryTranslator
 import com.unchunks.echomark.data.ai.LocalLlmProviders
 import com.unchunks.echomark.data.ai.LocalModelBenchmarker
@@ -8,9 +11,7 @@ import com.unchunks.echomark.data.ai.api.ApiLlmProvider
 import com.unchunks.echomark.data.ai.api.ApiLlmProviderFactory
 import com.unchunks.echomark.data.ai.api.AttachmentLoader
 import com.unchunks.echomark.data.ai.local.LocalLlmProvider
-import com.unchunks.echomark.data.ai.model.AndroidDeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.AndroidModelDownloadClient
-import com.unchunks.echomark.data.ai.model.DeviceSpecsReader
 import com.unchunks.echomark.data.ai.model.DownloadedModelInstaller
 import com.unchunks.echomark.data.ai.model.ModelDownloadClient
 import com.unchunks.echomark.data.ai.model.ModelManager
@@ -21,7 +22,9 @@ import com.unchunks.echomark.domain.help.AppHelpAssistant
 import com.unchunks.echomark.domain.provider.SummaryTranslator
 import dagger.Binds
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 
 @Module
@@ -47,10 +50,6 @@ abstract class AiProviderModule {
     @Binds
     abstract fun bindDownloadedModelInstaller(impl: ModelManager): DownloadedModelInstaller
 
-    /** この端末の性能を読む */
-    @Binds
-    abstract fun bindDeviceSpecsReader(impl: AndroidDeviceSpecsReader): DeviceSpecsReader
-
     @Binds
     abstract fun bindAttachmentLoader(impl: AndroidAttachmentLoader): AttachmentLoader
 
@@ -65,4 +64,10 @@ abstract class AiProviderModule {
     /** 要約の翻訳(#24) */
     @Binds
     abstract fun bindSummaryTranslator(impl: LlmSummaryTranslator): SummaryTranslator
+
+    companion object {
+        /** この端末の性能を読む(部品の llm-ondevice) */
+        @Provides
+        fun provideDeviceSpecsReader(@ApplicationContext context: Context): DeviceSpecsReader = AndroidDeviceSpecsReader(context)
+    }
 }
