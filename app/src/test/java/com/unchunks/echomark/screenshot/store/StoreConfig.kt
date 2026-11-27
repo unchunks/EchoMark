@@ -1,9 +1,7 @@
 package com.unchunks.echomark.screenshot.store
 
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import com.unchunks.echomark.domain.repository.DesignStyle
 import org.json.JSONArray
@@ -64,8 +62,8 @@ internal data class StoreConfig(
             val video = root.getJSONObject("video")
             val design = app.getString("design")
             return StoreConfig(
-                headline = StoreTextStyle.parse(text.getJSONObject("headline"), baseDir),
-                caption = StoreTextStyle.parse(text.getJSONObject("caption"), baseDir),
+                headline = StoreTextStyle.parse(text.getJSONObject("headline"), baseDir, "text.headline"),
+                caption = StoreTextStyle.parse(text.getJSONObject("caption"), baseDir, "text.caption"),
                 backgroundColors = background.getJSONArray("colors").strings().map(::parseColor),
                 backgroundRings = background.optBoolean("rings", true),
                 deviceFrameColor = parseColor(device.getString("frameColor")),
@@ -74,8 +72,8 @@ internal data class StoreConfig(
                     ?: error("app.design は ${DesignStyle.entries.joinToString()} のどれか(今: $design)"),
                 appDarkTheme = app.optBoolean("dark", false),
                 appFont = StoreAppFont(
-                    regular = fontFileOf(app, "font", baseDir),
-                    bold = fontFileOf(app, "boldFont", baseDir)
+                    regular = fontSpecOf(app, "font", baseDir, "app.font"),
+                    bold = fontSpecOf(app, "boldFont", baseDir, "app.boldFont")
                 ),
                 featureTitle = feature.getString("title"),
                 featureTagline = feature.getString("tagline"),
@@ -100,35 +98,20 @@ internal data class StoreConfig(
 
 /**
  * 見出し・説明の文字の見た目。
- * @property fontFile フォントのファイル(TTF・OTF。TTC は最初の書体を使う)。null なら既定の書体
- * @property weight 太さ(100〜900)。可変フォントなら、その太さで描く
+ * @property font フォント(ファイルか、入っているフォントの名前。[StoreFontSpec])。null なら既定の書体
+ * @property weight 太さ(100〜900)。可変フォントなら、その太さで描く(フォントの名前で太さを決めたときは、そちら)
  */
-internal data class StoreTextStyle(val fontFile: File?, val weight: Int, val sizeSp: Float, val color: Color) {
+internal data class StoreTextStyle(val font: StoreFontSpec?, val weight: Int, val sizeSp: Float, val color: Color) {
 
     val fontWeight: FontWeight get() = FontWeight(weight)
 
-    /**
-     * 指定のフォントの書体。指定が無ければ null(既定の書体を使う)。
-     * ファイルがあるかは、描くときに初めて確かめる(CI などフォントの無い環境でも、設定の読み込みだけは通るように)。
-     */
-    val fontFamily: FontFamily? by lazy {
-        fontFile?.let { file ->
-            require(file.isFile) { "フォントのファイルが見つかりません: $file(store-assets.json の text.*.font)" }
-            FontFamily(
-                Font(
-                    file = file,
-                    weight = fontWeight,
-                    // 可変フォント(NotoSansJP-VF など)は、太さの軸をここで決める
-                    variationSettings = FontVariation.Settings(FontVariation.weight(weight))
-                )
-            )
-        }
-    }
+    /** 指定のフォントの書体。指定が無ければ null(既定の書体を使う) */
+    val fontFamily: FontFamily? by lazy { font?.face?.let { FontFamily(it.font(weight)) } }
 
     companion object {
-        fun parse(json: JSONObject, baseDir: File): StoreTextStyle {
+        fun parse(json: JSONObject, baseDir: File, key: String): StoreTextStyle {
             return StoreTextStyle(
-                fontFile = fontFileOf(json, "font", baseDir),
+                font = fontSpecOf(json, "font", baseDir, "$key.font"),
                 weight = json.optInt("weight", 400),
                 sizeSp = json.getDouble("size").toFloat(),
                 color = parseColor(json.getString("color"))
@@ -183,50 +166,41 @@ internal data class StoreVideoConfig(
  * 枠の中のアプリの画面の書体。[regular] が null なら変えない(アプリと同じ、端末の標準の書体)。
  *
  * - 可変フォント(NotoSansJP-VF など)は、1つのファイルから太さごとの書体を作る
- * - 太さが1つだけのフォントは、[bold] があれば太字にそれを使い、無ければ太字を機械的に太らせる
+ * - 太字(600 以上)には [bold] があればそれを使う。「Noto Sans JP Medium」のように名前で太さを決めれば、
+ *   可変フォントでも太字をその太さで描ける
+ * - 太さが1つだけのフォントで [bold] が無ければ、太字を機械的に太らせる
+ *   (太さが1つのフォントに太さごとの書体を作ると、太字が太くならないため、標準の太さだけを宣言する)
  */
-internal data class StoreAppFont(val regular: File?, val bold: File?) {
+internal data class StoreAppFont(val regular: StoreFontSpec?, val bold: StoreFontSpec?) {
 
     val fontFamily: FontFamily? by lazy {
-        val file = regular ?: return@lazy null
-        require(file.isFile) { "フォントのファイルが見つかりません: $file(store-assets.json の app.font)" }
-        val boldFile = bold?.also { require(it.isFile) { "フォントのファイルが見つかりません: $it(store-assets.json の app.boldFont)" } }
-        val fonts = if (boldFile == null && isVariableFont(file)) {
-            VARIABLE_WEIGHTS.map { w ->
-                Font(file = file, weight = FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+        val regularFace = regular?.face ?: return@lazy null
+        val boldFace = bold?.face
+        val fonts = WEIGHTS.mapNotNull { w ->
+            val isBold = w >= BOLD_FROM
+            // 標準の書体の名前で決めた太さ(「Noto Sans JP Light」など)は、太字には当てない
+            val face = if (isBold) boldFace ?: regularFace.copy(weight = null) else regularFace
+            when {
+                face.variable -> face.font(w)
+                !isBold && w == 400 -> face.font(w)
+                isBold && w == 700 && boldFace != null -> face.font(w)
+                else -> null
             }
-        } else {
-            listOfNotNull(Font(file = file, weight = FontWeight.Normal), boldFile?.let { Font(file = it, weight = FontWeight.Bold) })
         }
         FontFamily(fonts)
     }
 
     private companion object {
         /** アプリの画面で使う太さ(Material 3 の文字の型は 400・500、太字は 600・700) */
-        val VARIABLE_WEIGHTS = listOf(300, 400, 500, 600, 700, 800)
+        val WEIGHTS = listOf(300, 400, 500, 600, 700, 800)
+        const val BOLD_FROM = 600
     }
 }
 
-/**
- * フォントのファイルに太さなどの軸(fvar の表)があるか。TTC は最初の書体を見る。
- * 太さが1つだけのフォントに太さごとの書体を作ると、太字が太くならないため、作り方を分ける。
- */
-internal fun isVariableFont(file: File): Boolean = runCatching {
-    val bytes = file.readBytes()
-    fun u32(at: Int) = ((bytes[at].toLong() and 0xFF) shl 24) or ((bytes[at + 1].toLong() and 0xFF) shl 16) or
-        ((bytes[at + 2].toLong() and 0xFF) shl 8) or (bytes[at + 3].toLong() and 0xFF)
-    fun u16(at: Int) = ((bytes[at].toInt() and 0xFF) shl 8) or (bytes[at + 1].toInt() and 0xFF)
-    // TTC は 'ttcf' の後ろに、それぞれの書体の表の位置が並ぶ
-    val start = if (String(bytes, 0, 4, Charsets.US_ASCII) == "ttcf") u32(12).toInt() else 0
-    val tables = u16(start + 4)
-    (0 until tables).any { i -> String(bytes, start + 12 + i * 16, 4, Charsets.US_ASCII) == "fvar" }
-}.getOrDefault(false)
-
-/** [key] のフォントのファイル。絶対パスか、設定のファイルからの相対パス。null なら指定なし */
-private fun fontFileOf(json: JSONObject, key: String, baseDir: File): File? {
+/** [key] のフォント(ファイルのパスか、入っているフォントの名前)。null か空なら指定なし */
+private fun fontSpecOf(json: JSONObject, key: String, baseDir: File, path: String): StoreFontSpec? {
     if (!json.has(key) || json.isNull(key)) return null
-    val path = json.getString(key)
-    return File(path).takeIf { it.isAbsolute } ?: File(baseDir, path)
+    return json.getString(key).trim().takeIf { it.isNotEmpty() }?.let { StoreFontSpec(it, baseDir, path) }
 }
 
 /** "#RRGGBB" か "#AARRGGBB" */
