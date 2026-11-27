@@ -11,6 +11,9 @@ object AppGuideRetriever {
     /** 端末内 AI の文脈は短いため、渡す節は少なくする */
     const val DEFAULT_LIMIT = 3
 
+    /** クラウド API は文脈が長いため、近い節を多めに渡す(言い換えの質問でも答えの載った節を落としにくい) */
+    const val CLOUD_LIMIT = 8
+
     /** 題名に出てくる2文字は、本文より重く数える(題名は節の主題そのものなので) */
     private const val TITLE_WEIGHT = 2
 

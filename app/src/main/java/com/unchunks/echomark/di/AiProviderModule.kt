@@ -16,7 +16,7 @@ import com.unchunks.echomark.data.ai.model.DownloadedModelInstaller
 import com.unchunks.echomark.data.ai.model.ModelDownloadClient
 import com.unchunks.echomark.data.ai.model.ModelManager
 import com.unchunks.echomark.data.help.AppActionRunnerImpl
-import com.unchunks.echomark.data.help.LocalAppHelpAssistant
+import com.unchunks.echomark.data.help.LlmAppHelpAssistant
 import com.unchunks.echomark.domain.help.AppActionRunner
 import com.unchunks.echomark.domain.help.AppHelpAssistant
 import com.unchunks.echomark.domain.provider.SummaryTranslator
@@ -53,9 +53,9 @@ abstract class AiProviderModule {
     @Binds
     abstract fun bindAttachmentLoader(impl: AndroidAttachmentLoader): AttachmentLoader
 
-    /** アプリの使い方の質問に端末内 AI で答える */
+    /** アプリの使い方の質問に、チャットの用途で選んだ AI(端末内・クラウド API)で答える */
     @Binds
-    abstract fun bindAppHelpAssistant(impl: LocalAppHelpAssistant): AppHelpAssistant
+    abstract fun bindAppHelpAssistant(impl: LlmAppHelpAssistant): AppHelpAssistant
 
     /** 使い方の AI から頼まれた操作(保存・設定の切り替えなど)を実行する */
     @Binds

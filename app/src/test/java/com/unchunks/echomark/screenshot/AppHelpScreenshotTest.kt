@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.help.AppAction
 import com.unchunks.echomark.domain.help.AppScreen
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -39,6 +40,14 @@ class AppHelpScreenshotTest {
     @Test
     fun empty() = screenshot.captureLightDark("app_help_empty") {
         Box(Modifier.height(800.dp)) { AppHelpContent(AppHelpUiState(), AppHelpActions()) }
+    }
+
+    /** チャットをクラウド API にしているとき: 質問の送り先を書く */
+    @Test
+    fun emptyCloud() = screenshot.captureLightDark("app_help_empty_cloud") {
+        Box(Modifier.height(800.dp)) {
+            AppHelpContent(AppHelpUiState(cloudProvider = ApiProvider.GEMINI), AppHelpActions())
+        }
     }
 
     @Test

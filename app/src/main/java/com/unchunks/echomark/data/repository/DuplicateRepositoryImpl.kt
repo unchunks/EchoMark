@@ -14,6 +14,7 @@ import com.unchunks.echomark.domain.bookmark.duplicates.BookmarkMerge
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateDetector
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicatePair
 import com.unchunks.echomark.domain.bookmark.duplicates.DuplicateSensitivity
+import com.unchunks.echomark.domain.bookmark.duplicates.duplicateDistanceScale
 import com.unchunks.echomark.domain.bookmark.duplicates.VectorNeighbor
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
 import com.unchunks.echomark.domain.model.TagSource
@@ -56,11 +57,15 @@ class DuplicateRepositoryImpl @Inject constructor(
 
     override suspend fun scan(sensitivity: DuplicateSensitivity): DuplicateScan = withContext(dispatcherProvider.io) {
         val existing = bookmarkDao.getAllIds().toSet()
-        val version = embeddingProvider.modelVersion
+        val profile = embeddingProvider.profile
+        val version = profile.modelVersion
+        // しきい値は同梱のモデルの距離で決めてある。ほかのモデル(クラウドの埋め込みなど)では距離の出方が違うため、
+        // 検索の採用の上限の比で読み替え、距離も同梱のモデルの尺度に直してから比べる
+        val scale = duplicateDistanceScale(profile)
         // 削除済みのブックマークの埋め込みが残っていても、候補に出さない
-        val neighbors = collectNeighbors(version, sensitivity.relatedDistance).filter {
-            it.bookmarkId in existing && it.otherId in existing
-        }
+        val neighbors = collectNeighbors(version, sensitivity.relatedDistance * scale)
+            .filter { it.bookmarkId in existing && it.otherId in existing }
+            .map { it.copy(distance = it.distance / scale) }
         val urls = bookmarkDao.getUrlEntries()
 
         val dismissed = appSettings.dismissedDuplicates.first()

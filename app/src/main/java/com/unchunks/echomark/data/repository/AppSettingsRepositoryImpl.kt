@@ -33,6 +33,8 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
+import com.unchunks.echomark.domain.repository.EMBEDDING_API_PROVIDERS
+import com.unchunks.echomark.domain.repository.EmbeddingSetting
 import com.unchunks.echomark.domain.repository.DesignStyle
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
@@ -119,6 +121,27 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) {
         dataStore.edit { it[KEY_LOCAL_LLM_USE_GPU] = enabled }
+    }
+
+    // 埋め込みの API が無い提供元(Claude など)が保存されていたら、既定の提供元として読む
+    override val embeddingSetting: Flow<EmbeddingSetting> = data.map { prefs ->
+        val defaults = EmbeddingSetting()
+        EmbeddingSetting(
+            backend = if (!CLOUD_AI_ENABLED) LlmBackend.LOCAL else {
+                prefs[KEY_EMBEDDING_BACKEND]?.let { name -> LlmBackend.entries.firstOrNull { it.name == name } }
+                    ?: defaults.backend
+            },
+            apiProvider = prefs[KEY_EMBEDDING_API_PROVIDER]
+                ?.let { name -> EMBEDDING_API_PROVIDERS.firstOrNull { it.name == name } }
+                ?: defaults.apiProvider
+        )
+    }.distinctUntilChanged()
+
+    override suspend fun setEmbeddingSetting(setting: EmbeddingSetting) {
+        dataStore.edit { prefs ->
+            prefs[KEY_EMBEDDING_BACKEND] = setting.backend.name
+            if (setting.apiProvider in EMBEDDING_API_PROVIDERS) prefs[KEY_EMBEDDING_API_PROVIDER] = setting.apiProvider.name
+        }
     }
 
     // 検索語は1行で入力するので、改行で区切って持つ
@@ -487,6 +510,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
         val KEY_DESIGN_INTRO_SEEN = booleanPreferencesKey("design_intro_seen")
         val KEY_SEND_FILES_TO_CLOUD = booleanPreferencesKey("send_files_to_cloud")
         val KEY_LOCAL_LLM_USE_GPU = booleanPreferencesKey("local_llm_use_gpu")
+        val KEY_EMBEDDING_BACKEND = stringPreferencesKey("embedding_backend")
+        val KEY_EMBEDDING_API_PROVIDER = stringPreferencesKey("embedding_api_provider")
         val KEY_BOOKMARK_SORT_ORDER = stringPreferencesKey("bookmark_sort_order")
         val KEY_CHAT_TEMPLATES = stringPreferencesKey("chat_templates")
         val KEY_READING_DICTIONARY = stringPreferencesKey("reading_dictionary")

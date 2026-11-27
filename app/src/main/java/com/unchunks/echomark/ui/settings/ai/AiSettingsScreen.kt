@@ -50,6 +50,7 @@ import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.provider.EmbeddingModels
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
+import com.unchunks.echomark.domain.repository.EmbeddingSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.ui.components.SectionHeader
 import com.unchunks.echomark.ui.settings.SettingsItem
@@ -88,6 +89,8 @@ class AiSettingsActions(
     val onCancelEmbeddingImport: () -> Unit = {},
     /** 取り込んだ埋め込みモデルを消して、同梱のモデルに戻す */
     val onRevertEmbeddingModel: () -> Unit = {},
+    /** 検索用の埋め込みを作る場所(端末内・クラウド API の提供元)を変える */
+    val onSetEmbeddingSetting: (EmbeddingSetting) -> Unit = {},
     val onSelectProvider: (AiTask, ApiProvider) -> Unit = { _, _ -> },
     val onSetModel: (AiTask, ApiProvider, String) -> Unit = { _, _, _ -> },
     /** API キーを入力する提供元を選ぶ */
@@ -168,6 +171,7 @@ fun AiSettingsScreen(
             },
             onCancelEmbeddingImport = viewModel::cancelEmbeddingImport,
             onRevertEmbeddingModel = viewModel::revertEmbeddingModel,
+            onSetEmbeddingSetting = viewModel::setEmbeddingSetting,
             onSelectProvider = viewModel::setApiProvider,
             onSetModel = viewModel::setApiModel,
             onSelectKeyProvider = viewModel::selectKeyProvider,
@@ -290,13 +294,23 @@ fun AiSettingsContent(
 
             SectionDivider()
             SectionHeader("検索用の埋め込みモデル")
-            EmbeddingModelSection(
-                model = uiState.embeddingModel,
-                importState = uiState.embeddingImportState,
-                onPickModel = actions.onPickEmbeddingModel,
-                onCancelImport = actions.onCancelEmbeddingImport,
-                onRevert = actions.onRevertEmbeddingModel
-            )
+            // クラウドを無効にしている間は、作る場所の切り替えを出さない(端末内で作る)
+            if (CLOUD_AI_ENABLED) {
+                EmbeddingLocationSection(
+                    setting = uiState.embeddingSetting,
+                    ready = uiState.isEmbeddingReady,
+                    onChange = actions.onSetEmbeddingSetting
+                )
+            }
+            if (uiState.embeddingSetting.cloudProvider == null) {
+                EmbeddingModelSection(
+                    model = uiState.embeddingModel,
+                    importState = uiState.embeddingImportState,
+                    onPickModel = actions.onPickEmbeddingModel,
+                    onCancelImport = actions.onCancelEmbeddingImport,
+                    onRevert = actions.onRevertEmbeddingModel
+                )
+            }
             uiState.embeddingProgress?.takeIf { !it.isComplete }?.let { EmbeddingIndexProgress(it) }
 
             // クラウド AI とは別に、端末内 AI でも使えるため、いつも出す

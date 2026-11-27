@@ -1,9 +1,11 @@
 package com.unchunks.echomark.ui.help
 
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.testing.MainDispatcherRule
 import com.unchunks.echomark.domain.help.AppAction
 import com.unchunks.echomark.domain.help.AppActionRunner
 import com.unchunks.echomark.domain.help.AppActionSpec
+import com.unchunks.echomark.domain.help.AppGuideRetriever
 import com.unchunks.echomark.domain.help.AppHelpAssistant
 import com.unchunks.echomark.domain.help.AppScreen
 import com.unchunks.echomark.domain.repository.ThemeMode
@@ -32,7 +34,10 @@ class AppHelpViewModelTest {
     val mainRule = MainDispatcherRule()
 
     /** 呼ばれた引数を覚え、[respond] の結果を返す */
-    private class FakeAssistant(var respond: () -> Flow<String> = { flowOf("回答") }) : AppHelpAssistant {
+    private class FakeAssistant(
+        override val cloudProvider: Flow<ApiProvider?> = flowOf(null),
+        var respond: () -> Flow<String> = { flowOf("回答") }
+    ) : AppHelpAssistant {
         val calls = mutableListOf<Triple<String, List<GuideSection>, List<ChatMessage>>>()
         val actionLists = mutableListOf<List<AppActionSpec>>()
         override fun answer(
@@ -75,6 +80,33 @@ class AppHelpViewModelTest {
         assertTrue(state.messages.last().sourceTitles.isNotEmpty())
         assertEquals("", state.input)
         assertFalse(state.answering)
+    }
+
+    @Test
+    fun クラウドAPIで答えるときは提供元を画面に伝え_案内を多めに渡す() = runTest {
+        val local = FakeAssistant()
+        val cloud = FakeAssistant(cloudProvider = flowOf(ApiProvider.GEMINI))
+        val localViewModel = AppHelpViewModel(local, runner)
+        val cloudViewModel = AppHelpViewModel(cloud, runner)
+        advanceUntilIdle()
+
+        // 「設定」はほとんどの節に出てくるため、上限まで節が選ばれる
+        localViewModel.askSuggestion("設定を変えるには?")
+        cloudViewModel.askSuggestion("設定を変えるには?")
+        advanceUntilIdle()
+
+        assertNull(localViewModel.uiState.value.cloudProvider)
+        assertEquals(ApiProvider.GEMINI, cloudViewModel.uiState.value.cloudProvider)
+        assertEquals(AppGuideRetriever.DEFAULT_LIMIT, local.calls.single().second.size)
+        assertEquals(AppGuideRetriever.CLOUD_LIMIT, cloud.calls.single().second.size)
+    }
+
+    @Test
+    fun 使い方の画面の説明は端末内なら外に送らないと書き_クラウドなら送り先を書く() {
+        assertTrue(helpIntroText(null).contains("端末の外には送りません"))
+        val cloud = helpIntroText(ApiProvider.CLAUDE)
+        assertTrue(cloud, cloud.contains("Claude (Anthropic) に送ります"))
+        assertFalse(cloud, cloud.contains("端末の外には送りません"))
     }
 
     @Test

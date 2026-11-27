@@ -31,6 +31,7 @@ import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
 import com.unchunks.echomark.domain.repository.BookmarkRepository
+import com.unchunks.echomark.domain.repository.EmbeddingSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -76,6 +77,8 @@ data class AiSettingsUiState(
     val embeddingImportState: ModelImportState = ModelImportState.Idle,
     /** 検索インデックス(埋め込み)の更新状況。まだ読めていなければ null */
     val embeddingProgress: EmbeddingProgress? = null,
+    /** 検索用の埋め込みを作る場所(端末内・クラウド API) */
+    val embeddingSetting: EmbeddingSetting = EmbeddingSetting(),
     /** API キーを入力・確認する提供元(キーは提供元ごとに1つで、用途の選択とは別) */
     val keyProvider: ApiProvider = ApiProvider.CLAUDE,
     /** API キーが保存済みの提供元 */
@@ -136,6 +139,10 @@ data class AiSettingsUiState(
 
     val isKeyConfigured: Boolean get() = keyProvider in configuredProviders
 
+    /** 検索用の埋め込みを作るのに必要なもの(クラウド API なら、その提供元のキー)がそろっているか。端末内は同梱のモデルがあるので常にそろう */
+    val isEmbeddingReady: Boolean
+        get() = embeddingSetting.cloudProvider?.let { it in configuredProviders } ?: true
+
     /** 接続テストに使うモデル。[keyProvider] を選んでいる用途があればそのモデル、無ければ提供元の既定 */
     val testModel: String
         get() = apiTasks.map(::setting).firstOrNull { it.apiProvider == keyProvider }?.apiModel
@@ -153,6 +160,14 @@ private data class LocalLlmSnapshot(
     val loadFailures: Map<String, LocalModelLoadFailure>,
     val benchmarks: List<ModelBenchmarkResult>,
     val benchmarkState: ModelBenchmarkState
+)
+
+/** uiState にまとめる前の、ほかの設定。 */
+private data class OtherSettings(
+    val sendFilesToCloud: Boolean,
+    val localLlmUseGpu: Boolean,
+    val catalogDownload: CatalogDownloadState,
+    val embeddingSetting: EmbeddingSetting
 )
 
 /** uiState にまとめる前の、モデル(端末内 LLM・埋め込み)に関する状態。 */
@@ -195,9 +210,11 @@ class AiSettingsViewModel @Inject constructor(
             ModelsSnapshot(llm, llmImport, embedding, embeddingImport, embeddingProgress, deviceSpecs)
         },
         selectedKeyProvider,
-        combine(appSettings.sendFilesToCloud, appSettings.localLlmUseGpu, catalogDownloadFlow(), ::Triple),
+        combine(
+            appSettings.sendFilesToCloud, appSettings.localLlmUseGpu, catalogDownloadFlow(), appSettings.embeddingSetting, ::OtherSettings
+        ),
         apiKeyRepository.configuredProviders
-    ) { tasks, models, keyProvider, (sendFiles, useGpu, catalogDownload), configured ->
+    ) { tasks, models, keyProvider, (sendFiles, useGpu, catalogDownload, embeddingSetting), configured ->
         AiSettingsUiState(
             tasks = tasks,
             localModels = models.llm.installed,
@@ -215,7 +232,8 @@ class AiSettingsViewModel @Inject constructor(
             configuredProviders = configured,
             sendFilesToCloud = sendFiles,
             localLlmUseGpu = useGpu,
-            catalogDownload = catalogDownload
+            catalogDownload = catalogDownload,
+            embeddingSetting = embeddingSetting
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AiSettingsUiState())
 
@@ -288,6 +306,15 @@ class AiSettingsViewModel @Inject constructor(
 
     fun setSendFilesToCloud(enabled: Boolean) {
         viewModelScope.launch { appSettings.setSendFilesToCloud(enabled) }
+    }
+
+    /**
+     * 検索用の埋め込みを作る場所を変える(変えると全ブックマークの埋め込みを作り直す)。
+     * クラウド API の提供元を選んだら、キーの入力欄もその提供元に合わせる(未設定ならすぐ入力できるように)。
+     */
+    fun setEmbeddingSetting(setting: EmbeddingSetting) {
+        setting.cloudProvider?.let(::selectKeyProvider)
+        viewModelScope.launch { appSettings.setEmbeddingSetting(setting) }
     }
 
     fun setLocalLlmUseGpu(enabled: Boolean) {

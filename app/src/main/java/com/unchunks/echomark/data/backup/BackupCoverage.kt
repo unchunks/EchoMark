@@ -199,6 +199,9 @@ object BackupCoverage {
         "llm_backend_*" to Key.Setting(SettingType.STRING, restorableValues = setOf("LOCAL"), valueReason = SENDS_DATA),
         "api_provider_*" to STRING,
         "api_model_*" to STRING,
+        // 検索用の埋め込みも、端末内で作る(LOCAL)ときだけ戻す。クラウド API で作る値は受け取ったファイルから勝手に選ばない
+        "embedding_backend" to Key.Setting(SettingType.STRING, restorableValues = setOf("LOCAL"), valueReason = SENDS_DATA),
+        "embedding_api_provider" to STRING,
         // 入れないもの
         // 端末の外にデータを送る設定。書き換えた・人から受け取ったファイルで、勝手にオンにしない
         "send_files_to_cloud" to Key.Excluded(SENDS_DATA),

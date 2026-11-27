@@ -644,6 +644,32 @@ class ApiLlmProviderTest {
     }
 
     @Test
+    fun 使い方の質問は案内と操作をシステム指示に入れて流し_チャットの用途で記録する() = runBlocking {
+        server.enqueue(geminiSseWithUsage("「設定」の「表示」で変えられます", 120, 10))
+        val history = listOf(
+            ChatMessage(conversationId = 0, role = ChatRole.USER, content = "前の質問", createdAt = 0),
+            ChatMessage(conversationId = 0, role = ChatRole.ASSISTANT, content = "前の回答", createdAt = 0)
+        )
+
+        val answer = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.CHAT)
+            .appHelpStream("ダークにするには?", listOf("[1] 表示: テーマを変えられます"), listOf("theme_dark: ダークにする"), history)
+            .toList()
+            .joinToString("")
+
+        assertEquals("「設定」の「表示」で変えられます", answer)
+        val body = JSONObject(server.takeRequest().body!!.utf8())
+        val system = body.getJSONObject("systemInstruction").getJSONArray("parts").getJSONObject(0).getString("text")
+        // ブックマークのチャットではなく、使い方の案内の指示で答えさせる
+        assertTrue(system, system.contains("使い方を案内するアシスタント"))
+        assertTrue(system, system.contains("[1] 表示: テーマを変えられます"))
+        assertTrue(system, system.contains("theme_dark: ダークにする"))
+        val contents = body.getJSONArray("contents")
+        assertEquals(3, contents.length())
+        assertEquals("ダークにするには?", contents.getJSONObject(2).getJSONArray("parts").getJSONObject(0).getString("text"))
+        assertEquals(AiTask.CHAT, usage.records.value.single().task)
+    }
+
+    @Test
     fun チャットの量はモデルの文脈長で決まる() = runBlocking {
         settings.setApiModel(AiTask.CHAT, ApiProvider.GEMINI, "gemini-3.1-pro-preview")
         val llm = provider(FakeApiKeyRepository(mapOf(ApiProvider.GEMINI to "AIzaKeyForTest0000")), AiTask.CHAT)

@@ -22,6 +22,7 @@ import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
 import com.unchunks.echomark.domain.repository.ApiKeyRepository
 import com.unchunks.echomark.domain.repository.AppSettingsRepository
+import com.unchunks.echomark.domain.repository.EmbeddingSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
@@ -65,6 +66,7 @@ class FakeAppSettingsRepository(
     val onboardingCompletedFlow = MutableStateFlow(false)
     val sendFilesToCloudFlow = MutableStateFlow(true)
     val localLlmUseGpuFlow = MutableStateFlow(false)
+    val embeddingSettingFlow = MutableStateFlow(EmbeddingSetting())
     val bookmarkSortOrderFlow = MutableStateFlow(BookmarkSortOrder.NEWEST)
     val bookmarkListDisplayFlow = MutableStateFlow(BookmarkListDisplay.CARD)
     val readingStyleFlow = MutableStateFlow(ReadingStyle())
@@ -104,6 +106,7 @@ class FakeAppSettingsRepository(
     override val onboardingCompleted: Flow<Boolean> = onboardingCompletedFlow
     override val sendFilesToCloud: Flow<Boolean> = sendFilesToCloudFlow
     override val localLlmUseGpu: Flow<Boolean> = localLlmUseGpuFlow
+    override val embeddingSetting: Flow<EmbeddingSetting> = embeddingSettingFlow
     override val bookmarkSortOrder: Flow<BookmarkSortOrder> = bookmarkSortOrderFlow
     override val bookmarkListDisplay: Flow<BookmarkListDisplay> = bookmarkListDisplayFlow
     override val readingStyle: Flow<ReadingStyle> = readingStyleFlow
@@ -126,6 +129,7 @@ class FakeAppSettingsRepository(
     override suspend fun setOnboardingCompleted(completed: Boolean) { onboardingCompletedFlow.value = completed }
     override suspend fun setSendFilesToCloud(enabled: Boolean) { sendFilesToCloudFlow.value = enabled }
     override suspend fun setLocalLlmUseGpu(enabled: Boolean) { localLlmUseGpuFlow.value = enabled }
+    override suspend fun setEmbeddingSetting(setting: EmbeddingSetting) { embeddingSettingFlow.value = setting }
     override suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder) { bookmarkSortOrderFlow.value = sortOrder }
     override val duplicateSensitivity: Flow<DuplicateSensitivity> = duplicateSensitivityFlow
     override val linkCheckEnabled: Flow<Boolean> = linkCheckEnabledFlow
@@ -185,6 +189,7 @@ class FakeAppSettingsRepository(
         designIntroSeenFlow.value = false
         sendFilesToCloudFlow.value = true
         localLlmUseGpuFlow.value = false
+        embeddingSettingFlow.value = EmbeddingSetting()
         bookmarkSortOrderFlow.value = BookmarkSortOrder.NEWEST
         bookmarkListDisplayFlow.value = BookmarkListDisplay.CARD
         readingStyleFlow.value = ReadingStyle()
