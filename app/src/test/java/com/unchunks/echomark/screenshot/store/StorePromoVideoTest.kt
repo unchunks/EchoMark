@@ -173,7 +173,7 @@ private object PromoTimeline {
         PromoScene("graph", 26_400, 28_800) {
             StoreScreens.Graph()
         },
-        // クラウドの AI は今は使えない(CLOUD_AI_ENABLED = false)ので、見出しは端末内の AI だけを打ち出している
+        // 端末内とクラウド(CLOUD_AI_ENABLED = true)の AI を並べて打ち出す。画面は初回の「AI の準備」で、両方の選択肢が写る
         PromoScene("ai", 28_800, OUTRO_START) {
             StoreScreens.AiChoice()
         }
