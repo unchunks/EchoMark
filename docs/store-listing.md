@@ -34,6 +34,9 @@
 
 - `JAVA_HOME`・`ANDROID_HOME` が無い・壊れているときは、Android Studio の JDK(`Program Files\Android\*\jbr`)と
   `local.properties` の SDK を探して使う。部品(components)の場所は、ふだんのビルドと同じ探し方。
+- 部品のコピーが `origin/main` より古ければ、描く前に知らせる。古いままだと、ビルドが
+  `… could not be resolved`(KSP など)で失敗する。そのときは知らせに出るコマンド(`git -C <部品> pull --ff-only`)で
+  最新にしてからやり直す。作業の途中の変更があるかもしれないので、自動では pull しない
 - コードが変わっていなくても、毎回必ず描き直す(Gradle に毎回ちがう値 `-Pechomark.storeAssetsRun` を渡している)。
 - 中身: `store-assets.cmd` → `tools/store-assets/make-store-assets.ps1` が次を順に行う。
   1. `app/src/test/java/com/unchunks/echomark/screenshot/store/` のテストで描く
@@ -56,12 +59,12 @@
 
 | 項目 | 意味 |
 | --- | --- |
-| `text.headline` / `text.caption` | 見出し / 説明の文字。`font` はフォントのファイル(TTF・OTF・TTC。TTC は最初の書体)の絶対パスか、このファイルからの相対パス。`null` なら既定の書体。`weight` は太さ(100〜900。可変フォントはこの太さで描く)、`size` は大きさ(sp)、`color` は `#RRGGBB` か `#AARRGGBB` |
+| `text.headline` / `text.caption` | 見出し / 説明の文字。`font` はフォント(下の「フォントの書き方」)。`null` なら既定の書体。`weight` は太さ(100〜900。可変フォントはこの太さで描く)、`size` は大きさ(sp)、`color` は `#RRGGBB` か `#AARRGGBB` |
 | `background.colors` | 背景のグラデーションの色(左上から右下へ。1色なら単色) |
 | `background.rings` | 背景にアイコンと同じ波紋を薄く描くか |
 | `device.frameColor` / `device.statusBarTime` | スマートフォンの枠の色 / ステータスバーの時刻 |
 | `app.design` / `app.dark` | 画面のデザイン(`CLASSIC`・`ECHO`・`PAPER`・`CLEAR`・`SOFT`)/ ダークテーマで描くか |
-| `app.font` / `app.boldFont` | 枠の中のアプリの画面(とタブレットの画像)の書体。`null` なら実際のアプリと同じ端末の標準の書体。可変フォントは `font` だけでよい。太さが1つのフォントは、太字のファイルを `boldFont` に書く(無ければ機械的に太らせる)。書体を直に決めている所(ペーパーの明朝など)は変わらない。**実際のアプリの書体は変わらない**ので、Play のおすすめ(実際の画面を載せる)から離れすぎないように使う |
+| `app.font` / `app.boldFont` | 枠の中のアプリの画面(とタブレットの画像)の書体。`null` なら実際のアプリと同じ端末の標準の書体。`boldFont` は太字(600 以上)に使う書体で、可変フォントなら省いてよい(太字は太字の太さで描く)。可変フォントでも `"boldFont": "Noto Sans JP Medium"` のように太さを書けば、太字をその太さで描く。太さが1つのフォントは、太字の書体を `boldFont` に書く(無ければ機械的に太らせる)。書体を直に決めている所(ペーパーの明朝など)は変わらない。**実際のアプリの書体は変わらない**ので、Play のおすすめ(実際の画面を載せる)から離れすぎないように使う |
 | `featureGraphic.title` / `featureGraphic.tagline` | フィーチャー グラフィックのアプリ名とキャッチコピー |
 | `phone[]` | スマートフォンの画像。`file`(ファイル名。Play ではこの順に並ぶ)・`screen`(画面)・`headline`・`caption`(`\n` で改行)・`scroll`(撮る前に下へスクロールする dp。省略で画面ごとの既定) |
 | `tablet[]` | タブレットの画像。`file`・`screen`・`scroll` |
@@ -75,16 +78,28 @@
 
 画面を足すときは `StoreScreens.phoneScreens` / `tabletScreens` に名前と画面を足す。
 
-フォントの例(Windows に入っているもの。ストアに載せる画像なので、ライセンスで画像への利用が認められたフォントを使う):
+### フォントの書き方
+
+`font`・`boldFont` には、パソコンに入っているフォントの名前か、フォントのファイルのパスを書く。
+
+- **名前**: Windows の「設定 > 個人用設定 > フォント」に出る名前(Windows・macOS・Linux のフォントの置き場所から探す)。
+  大文字・小文字・空白・ハイフンの違いは見ない。日本語の名前(「BIZ UDゴシック」)でもよい
+  - ファミリーの名前(`"Noto Sans JP"`)… 太さは `weight`(アプリの画面なら、それぞれの文字の太さ)のまま
+  - ファミリーの名前 + 太さ(`"Noto Sans JP Medium"`)… その太さで描く。太さは Thin・ExtraLight・Light・Regular・Medium・
+    SemiBold・Bold・ExtraBold・Black。可変フォントはその太さで、太さが1つのフォントはいちばん近い太さの書体で描く
+  - 書体の名前(`"BIZ UDGothic Bold"`・`"NotoSansJP-Medium"`)… その書体で描く
+  - 1つのファイルに書体がいくつも入ったフォント(TTC)は、最初の書体しか使えない(「BIZ UDPGothic」など2つ目以降を書くと、そう知らせて止まる)
+- **ファイル**: 絶対パスか、このファイルからの相対パス(TTF・OTF・TTC)。フォントのファイルをリポジトリに置くなら
+  `tools/store-assets/fonts/` に置き、`"font": "fonts/xxx.ttf"` と書く
+
+見つからなければ、似た名前を添えて止まる。ストアに載せる画像なので、ライセンスで画像への利用が認められたフォントを使う。例:
 
 ```json
-"headline": { "font": "C:/Windows/Fonts/BIZ-UDGothicB.ttc", "weight": 700, "size": 24, "color": "#FFFFFF" },
-"caption": { "font": "C:/Windows/Fonts/NotoSansJP-VF.ttf", "weight": 400, "size": 12.5, "color": "#DBFFFFFF" }
+"headline": { "font": "Noto Sans JP", "weight": 700, "size": 24, "color": "#FFFFFF" },
+"caption": { "font": "Noto Sans JP", "weight": 400, "size": 12.5, "color": "#DBFFFFFF" }
 
-"app": { "design": "CLASSIC", "dark": false, "font": "C:/Windows/Fonts/BIZ-UDGothicR.ttc", "boldFont": "C:/Windows/Fonts/BIZ-UDGothicB.ttc" }
+"app": { "design": "CLASSIC", "dark": false, "font": "BIZ UDGothic", "boldFont": "BIZ UDGothic Bold" }
 ```
-
-フォントのファイルをリポジトリに置くなら `tools/store-assets/fonts/` に置き、`"font": "fonts/xxx.ttf"` と書く。
 
 ## 見出しの方針
 
