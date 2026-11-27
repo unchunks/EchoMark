@@ -180,8 +180,8 @@ fun ReviewHubContent(
                 uiState.errorMessage != null -> ErrorState(message = uiState.errorMessage)
                 else -> ReadableLazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                     when (tab) {
-                        ReviewHubTab.WEEKLY -> weeklyItems(uiState, actions)
-                        ReviewHubTab.READING_LIST -> readingListItems(uiState, actions)
+                        ReviewHubTab.WEEKLY -> weeklyItems(uiState, actions, nowMillis)
+                        ReviewHubTab.READING_LIST -> readingListItems(uiState, actions, nowMillis)
                         ReviewHubTab.REVIEW -> reviewItems(uiState, actions, nowMillis, zone)
                     }
                 }
@@ -229,7 +229,8 @@ private fun minutesText(minutes: Int): String = when {
     else -> "約${minutes / 60}時間${minutes % 60}分"
 }
 
-private fun LazyListScope.weeklyItems(state: ReviewHubUiState, actions: ReviewHubActions) {
+// 保存した日時などの「〜前」は [nowMillis] から数える(スクリーンショットが撮る日で変わらないように)
+private fun LazyListScope.weeklyItems(state: ReviewHubUiState, actions: ReviewHubActions, nowMillis: Long) {
     val review = state.weekly ?: return
     item(key = "weekly-summary") { WeeklySummary(review, actions) }
     if (review.topTags.isNotEmpty()) {
@@ -254,7 +255,8 @@ private fun LazyListScope.weeklyItems(state: ReviewHubUiState, actions: ReviewHu
             CompactBookmarkRow(
                 bookmark = bookmark,
                 onClick = { actions.onOpenBookmark(bookmark.id) },
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                nowMillis = nowMillis
             )
         }
     }
@@ -270,7 +272,8 @@ private fun LazyListScope.weeklyItems(state: ReviewHubUiState, actions: ReviewHu
                 CompactBookmarkRow(
                     bookmark = bookmark,
                     onClick = { actions.onOpenBookmark(bookmark.id) },
-                    modifier = Modifier.weight(1f).padding(start = 12.dp, top = 2.dp, bottom = 2.dp)
+                    modifier = Modifier.weight(1f).padding(start = 12.dp, top = 2.dp, bottom = 2.dp),
+                    nowMillis = nowMillis
                 )
                 if (!bookmark.isInReadingList) {
                     TextButton(onClick = { actions.onAddToReadingList(bookmark) }) { Text("あとで読む") }
@@ -316,7 +319,7 @@ private fun SummaryRow(label: String, value: String) {
 
 // ---- あとで読む ----
 
-private fun LazyListScope.readingListItems(state: ReviewHubUiState, actions: ReviewHubActions) {
+private fun LazyListScope.readingListItems(state: ReviewHubUiState, actions: ReviewHubActions, nowMillis: Long) {
     val list = state.readingList
     if (list.isEmpty) {
         item(key = "reading-empty") {
@@ -343,7 +346,12 @@ private fun LazyListScope.readingListItems(state: ReviewHubUiState, actions: Rev
     items(list.items, key = { "reading-${it.id}" }) { bookmark ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 12.dp)) {
             Column(Modifier.weight(1f)) {
-                CompactBookmarkRow(bookmark = bookmark, onClick = { actions.onOpenBookmark(bookmark.id) }, modifier = Modifier.padding(vertical = 2.dp))
+                CompactBookmarkRow(
+                    bookmark = bookmark,
+                    onClick = { actions.onOpenBookmark(bookmark.id) },
+                    modifier = Modifier.padding(vertical = 2.dp),
+                    nowMillis = nowMillis
+                )
                 bookmark.readingMinutes()?.let {
                     Text(
                         ReadingTime.label(it),
