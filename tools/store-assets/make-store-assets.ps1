@@ -75,6 +75,52 @@ if (-not $env:ANDROID_HOME -or -not (Test-Path $env:ANDROID_HOME)) {
     $env:ANDROID_HOME = $sdk
 }
 
+# 部品(components/android)の場所。settings.gradle.kts と同じ探し方
+# (gradle.properties の unchunks.componentsDir → 環境変数 UNCHUNKS_COMPONENTS_DIR → 親をたどって最初の components/android)
+function Find-ComponentsDir {
+    $configured = $null
+    foreach ($properties in (Join-Path $root 'gradle.properties'), (Join-Path $env:USERPROFILE '.gradle/gradle.properties')) {
+        if (-not $configured -and (Test-Path $properties)) {
+            $line = Get-Content $properties | Where-Object { $_ -match '^\s*unchunks\.componentsDir\s*=' } | Select-Object -First 1
+            if ($line) { $configured = ($line -replace '^\s*unchunks\.componentsDir\s*=\s*', '').Trim() }
+        }
+    }
+    if (-not $configured) { $configured = $env:UNCHUNKS_COMPONENTS_DIR }
+    if ($configured) {
+        if ([IO.Path]::IsPathRooted($configured)) { return $configured }
+        return Join-Path $root $configured
+    }
+    $parent = Split-Path $root -Parent
+    while ($parent) {
+        $candidate = Join-Path $parent 'components/android'
+        if (Test-Path (Join-Path $candidate 'settings.gradle.kts')) { return $candidate }
+        $parent = Split-Path $parent -Parent
+    }
+    return $null
+}
+
+# アプリは部品の origin/main に合わせて作られるので、部品のコピーが古いとビルドが KSP などで
+# 「… could not be resolved」と失敗する。先に知らせる(作業の途中の変更があるかもしれないので、自動では pull しない)
+function Test-ComponentsUpToDate {
+    $components = Find-ComponentsDir
+    if (-not $components -or -not (Get-Command git -ErrorAction SilentlyContinue)) { return }
+    $repo = git -C $components rev-parse --show-toplevel 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $repo) { return }
+    $previousPrompt = $env:GIT_TERMINAL_PROMPT
+    $env:GIT_TERMINAL_PROMPT = '0'  # 認証を聞かれて止まらないように
+    try {
+        git -C $repo fetch --quiet origin main 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Warning "部品($repo)を fetch できなかったため、最新かどうかは確かめていません"; return }
+        $behind = git -C $repo rev-list --count 'HEAD..origin/main' 2>$null
+        if ($LASTEXITCODE -eq 0 -and [int]$behind -gt 0) {
+            Write-Warning ("部品のコピー($repo)が origin/main より $behind コミット古いため、ビルドに失敗することがあります。" +
+                "失敗したら、次で最新にしてからやり直してください: git -C `"$repo`" pull --ff-only")
+        }
+    } finally {
+        $env:GIT_TERMINAL_PROMPT = $previousPrompt
+    }
+}
+
 # ---- 1. 仕上げの道具のビルド ----
 $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 if (-not (Test-Path $csc)) { throw ".NET Framework の csc が見つかりません: $csc" }
@@ -83,6 +129,10 @@ if ($LASTEXITCODE -ne 0) { throw 'StoreAssetTool のビルドに失敗しまし�
 
 # ---- 2. テストで描く ----
 if (-not $SkipRender) {
+    # git の標準エラーを捨てても止まらないように($ErrorActionPreference = 'Stop' だと、PowerShell 5.1 は止まる)
+    $ErrorActionPreference = 'Continue'
+    try { Test-ComponentsUpToDate } finally { $ErrorActionPreference = 'Stop' }
+
     Remove-Item -Recurse -Force (Join-Path $outputs 'store'), (Join-Path $outputs 'video') -ErrorAction SilentlyContinue
     if ($Video) { $env:ECHOMARK_STORE_VIDEO = '1' } else { Remove-Item Env:ECHOMARK_STORE_VIDEO -ErrorAction SilentlyContinue }
     Push-Location $root
