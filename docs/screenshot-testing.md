@@ -51,3 +51,8 @@ class FooScreenshotTest {
 - `app/src/test/resources/robolectric.properties`: SDK 36 固定、素の `Application`(Hilt を起動しない)、既定の画面サイズ `w400dp-h1600dp-xhdpi`。部品は中身の大きさで切り出される。画面全体を撮るときはテストクラスに `@Config(qualifiers = RobolectricDeviceQualifiers.Pixel7)` などを付ける。
 - `gradle.properties` の `roborazzi.record.filePathStrategy=relativePathFromRoborazziContextOutputDirectory` で、`captureRoboImage("name.png")` の保存先を出力ディレクトリ基準にしている。
 - 初回実行時に Robolectric が Android の実行環境 jar(android-all)を Maven Central から取得する。
+
+## Play ストアの画像・紹介動画
+
+`screenshot/store/` のテストは、同じ仕組みで Play ストアの掲載用の画像と紹介動画のコマを描く(記録のときだけ動く)。
+作り方は `docs/store-listing.md`。

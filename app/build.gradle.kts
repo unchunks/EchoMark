@@ -229,3 +229,14 @@ val objectBoxModelFileLock = gradle.sharedServices.registerIfAbsent("objectBoxMo
 tasks.matching { it.name.startsWith("kapt") && !it.name.startsWith("kaptGenerateStubs") }.configureEach {
     usesService(objectBoxModelFileLock)
 }
+// Play ストアの画像・紹介動画(app/src/test/.../screenshot/store/。docs/store-listing.md)。
+// 設定のファイルと、動画を描くかどうかを単体テストの入力にして、それだけを変えたときも描き直させる
+// (入力でないと、コードが変わっていなければテストが「最新」と見なされて飛ばされる)。
+// echomark.storeAssetsRun は tools/store-assets/make-store-assets.ps1 が毎回ちがう値を渡し、必ず描き直させる。
+tasks.withType<Test>().configureEach {
+    inputs.file(rootProject.file("tools/store-assets/store-assets.json"))
+        .withPropertyName("storeAssetsConfig")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.property("storeVideo", providers.environmentVariable("ECHOMARK_STORE_VIDEO").orElse(""))
+    inputs.property("storeAssetsRun", providers.gradleProperty("echomark.storeAssetsRun").orElse(""))
+}

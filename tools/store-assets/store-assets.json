@@ -1,0 +1,54 @@
+{
+  "text": {
+    "headline": { "font": null, "weight": 700, "size": 24, "color": "#FFFFFF" },
+    "caption": { "font": null, "weight": 400, "size": 12.5, "color": "#DBFFFFFF" }
+  },
+  "background": {
+    "colors": ["#5A66C0", "#4A55A7", "#2B3683"],
+    "rings": true
+  },
+  "device": {
+    "frameColor": "#15161C",
+    "statusBarTime": "10:00"
+  },
+  "app": {
+    "design": "CLASSIC",
+    "dark": false
+  },
+  "featureGraphic": {
+    "title": "EchoMark",
+    "tagline": "保存するだけで、AI が整理\nあとから意味で見つかる"
+  },
+  "phone": [
+    { "file": "1_home", "screen": "home", "headline": "保存するだけで\nAI が要約とタグ付け", "caption": "記事・メモ・PDF・画像をまとめて整理" },
+    { "file": "2_share", "screen": "share", "headline": "ブラウザの共有から\nそのまま保存", "caption": "本文の取り込みから要約まで、あとは自動で" },
+    { "file": "3_detail", "screen": "detail", "headline": "長い記事も\nまずは要点から", "caption": "AI の要約・タグ・関連するブックマーク" },
+    { "file": "4_search", "screen": "search", "headline": "言葉を忘れても\n意味で見つかる", "caption": "キーワードが一致しなくても探せる検索" },
+    { "file": "5_chat", "screen": "chat", "headline": "保存したものに\nAI が答える", "caption": "答えには、もとの記事への引用つき" },
+    { "file": "6_review", "screen": "review", "headline": "忘れた頃に\nもう一度届く", "caption": "週ごとのふり返りと、開いていないもののお知らせ" },
+    { "file": "7_graph", "screen": "graph", "headline": "興味のつながりが\nひと目でわかる", "caption": "タグと内容から、ブックマークの関係を図に" },
+    { "file": "8_ai", "screen": "ai", "headline": "AI は\n端末の中で動く", "caption": "要約・タグ付け・チャットの AI は、端末の中で処理" }
+  ],
+  "tablet": [
+    { "file": "1_library", "screen": "library" },
+    { "file": "2_search", "screen": "search" },
+    { "file": "3_chat", "screen": "chat" },
+    { "file": "4_graph", "screen": "graph" },
+    { "file": "5_explore", "screen": "explore" }
+  ],
+  "video": {
+    "headlineSize": 28,
+    "captionSize": 14.5,
+    "title": "EchoMark",
+    "tagline": "保存するだけで、AI が整理するブックマーク",
+    "scenes": {
+      "share": { "headline": "ブラウザの共有から\nそのまま保存", "caption": "読みたい記事は、共有から EchoMark へ" },
+      "organize": { "headline": "AI が自動で\n要約とタグ付け", "caption": "保存したものが、ひとりでに整理される" },
+      "detail": { "headline": "長い記事も\nまずは要点から", "caption": "要約・タグ・関連するブックマーク" },
+      "search": { "headline": "言葉を忘れても\n意味で見つかる", "caption": "キーワードが一致しなくても探せる" },
+      "chat": { "headline": "保存したものに\nAI が答える", "caption": "答えには、もとの記事への引用つき" },
+      "graph": { "headline": "興味のつながりが\nひと目でわかる", "caption": "タグと内容から、関係を図に" },
+      "ai": { "headline": "AI は\n端末の中で動く", "caption": "要約もチャットも、端末の中で処理" }
+    }
+  }
+}
