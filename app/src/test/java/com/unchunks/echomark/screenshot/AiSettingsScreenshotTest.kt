@@ -20,6 +20,7 @@ import com.unchunks.echomark.data.ai.model.ModelImportError
 import com.unchunks.echomark.data.ai.model.ModelImportState
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
+import com.unchunks.echomark.domain.repository.EmbeddingSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.testing.aiTasks
 import com.unchunks.echomark.ui.settings.ai.AiSettingsActions
@@ -235,6 +236,19 @@ class AiSettingsScreenshotTest {
                 keyProvider = ApiProvider.GEMINI,
                 configuredProviders = setOf(ApiProvider.GEMINI),
                 sendFilesToCloud = false
+            )
+        )
+    }
+
+    /** 検索用の埋め込みをクラウド API(OpenAI)で作る・キー未設定(端末内の埋め込みモデルの欄は出さない) */
+    @Test
+    fun cloudEmbeddingNeedsKey() = screenshot.captureLightDark("ai_settings_cloud_embedding_needs_key") {
+        Screen(
+            AiSettingsUiState(
+                tasks = aiTasks(LlmBackend.API, ApiProvider.GEMINI),
+                keyProvider = ApiProvider.GEMINI,
+                configuredProviders = setOf(ApiProvider.GEMINI),
+                embeddingSetting = EmbeddingSetting(LlmBackend.API, ApiProvider.OPENAI)
             )
         )
     }

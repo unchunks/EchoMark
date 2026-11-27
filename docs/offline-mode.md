@@ -33,8 +33,9 @@
 | オフラインコピーの作成(`PageSnapshotter`) | WebView | 読み込む前と、ページの中の読み込みのたびに確かめる |
 | オフラインコピーの表示(`SnapshotViewer`) | WebView | もともと保存したファイル以外を読み込まない(通信しない) |
 | おすすめのモデルのダウンロード(Hugging Face) | DownloadManager(端末の側で通信) | 始めない。オンにしたら、ダウンロード中のものをやめる |
-| クラウド AI(Claude・Gemini・OpenAI。接続テストを含む) | Claude は SDK の自前の OkHttp、ほかは共通の client | 部品の llm-cloud の `OfflineGuardedApiLlmClient`(`ApiLlmProvider` で `gate::isOffline` を渡す)が呼ぶ前に断る。処理は処理待ちのまま残す(今は `CLOUD_AI_ENABLED = false`) |
+| クラウド AI(Claude・Gemini・OpenAI。接続テストを含む) | Claude は SDK の自前の OkHttp、ほかは共通の client | 部品の llm-cloud の `OfflineGuardedApiLlmClient`(`ApiLlmProvider` で `gate::isOffline` を渡す)が呼ぶ前に断る。処理は処理待ちのまま残す |
 | クラウドの文字起こし(OpenAI・Gemini) | 共通の client | 端末内の文字起こしを使う |
+| クラウドの埋め込み(検索用のベクトル。OpenAI・Gemini。`ApiCloudEmbedder`) | 共通の client | 呼ぶ前に断る。保存用は埋め込みを飛ばし(次の起動で作り直す)、検索はキーワードだけで動く |
 | 場所の画面の地図の背景(MapLibre + OpenFreeMap) | MapLibre の HTTP を共通の client から作った client に差し替え | 地図を作らず、分布図にして理由を出す |
 | ポッドキャストの読み上げ(`AndroidPodcastSpeechEngine`) | 端末の読み上げのアプリ(`TextToSpeech`。別のアプリ) | 通信しない: 日本語の端末内の声だけを使い、読み上げのたびに通信による合成を断る(オフラインモードに関係なく) |
 | ポッドキャストの再生(`PodcastPlaybackService`) | Media3 の ExoPlayer(`FileDataSource`) | 通信しない: エピソードの置き場所の音声だけを読む |

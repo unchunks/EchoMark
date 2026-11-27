@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unchunks.components.composeui.MarkdownText
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.echomark.domain.help.AppAction
 import com.unchunks.echomark.ui.design.EchoMarkTonalButton
 import com.unchunks.echomark.ui.design.EchoMarkOutlinedButton
@@ -69,6 +70,7 @@ import com.unchunks.echomark.ui.design.AccentCard
 import com.unchunks.echomark.ui.design.designFieldStyle
 import com.unchunks.echomark.ui.design.userBubbleStyle
 import com.unchunks.echomark.ui.design.DesignBottomBar
+import com.unchunks.echomark.ui.settings.shortName
 
 /** 使い方を AI に聞く画面。状態は [AppHelpViewModel]、表示は [AppHelpContent]。 */
 @Composable
@@ -153,6 +155,7 @@ fun AppHelpContent(
         if (uiState.messages.isEmpty() && uiState.error == null) {
             HelpIntro(
                 suggestions = uiState.suggestions,
+                cloudProvider = uiState.cloudProvider,
                 onSuggestion = actions.onSuggestion,
                 modifier = Modifier
                     .padding(padding)
@@ -187,10 +190,18 @@ fun AppHelpContent(
     }
 }
 
-/** まだ何も聞いていないときの説明と、質問の例 */
+/**
+ * まだ何も聞いていないときの説明と、質問の例。
+ * [cloudProvider] があれば(チャットをクラウド API にしているとき)、質問をその提供元に送ることを書く。
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HelpIntro(suggestions: List<String>, onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun HelpIntro(
+    suggestions: List<String>,
+    cloudProvider: ApiProvider?,
+    onSuggestion: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier.padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
@@ -204,7 +215,7 @@ private fun HelpIntro(suggestions: List<String>, onSuggestion: (String) -> Unit,
         )
         Text("アプリの使い方を質問できます", style = MaterialTheme.typography.titleMedium)
         Text(
-            "端末内の AI が、アプリの案内をもとに答えます。「ダークモードにして」のように操作を頼むと、実行のボタンを出します。質問も回答も端末の外には送りません。",
+            helpIntroText(cloudProvider),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -216,6 +227,17 @@ private fun HelpIntro(suggestions: List<String>, onSuggestion: (String) -> Unit,
                 EchoMarkSuggestionChip(onClick = { onSuggestion(question) }, label = { Text(question) })
             }
         }
+    }
+}
+
+/** 使い方の画面の説明。回答に使う AI の場所(チャットの用途の設定)で、質問を端末の外に送るかが変わる */
+internal fun helpIntroText(cloudProvider: ApiProvider?): String {
+    val common = "「ダークモードにして」のように操作を頼むと、実行のボタンを出します。"
+    return if (cloudProvider == null) {
+        "端末内の AI が、アプリの案内をもとに答えます。${common}質問も回答も端末の外には送りません。"
+    } else {
+        "${cloudProvider.shortName} の API が、アプリの案内をもとに答えます。${common}" +
+            "質問と使い方の案内は ${cloudProvider.displayName} に送ります(AI の設定の「チャット」で端末内に切り替えられます)。"
     }
 }
 

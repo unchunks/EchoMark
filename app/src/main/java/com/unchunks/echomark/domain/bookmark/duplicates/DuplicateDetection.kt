@@ -2,7 +2,9 @@ package com.unchunks.echomark.domain.bookmark.duplicates
 
 import com.unchunks.components.websearch.ResourceSearcher
 import com.unchunks.echomark.domain.bookmark.model.AiStatus
+import com.unchunks.components.embedding.EmbeddingModelProfile
 import com.unchunks.echomark.domain.bookmark.model.Bookmark
+import com.unchunks.echomark.domain.provider.EmbeddingModels
 
 /**
  * 重複・関連の見つけ方のしきい値(ObjectBox COSINE の距離 = 1 - コサイン類似度。小さいほど近い)。
@@ -61,6 +63,14 @@ data class DuplicateCandidate(val pair: DuplicatePair, val reason: DuplicateReas
 
 /** ベクトルの近傍検索の結果1件分: [bookmarkId] から見て [otherId] が [distance] の距離にある。 */
 data class VectorNeighbor(val bookmarkId: Long, val otherId: Long, val distance: Double)
+
+/**
+ * [DuplicateSensitivity] の距離を、[profile] のモデルの距離に読み替える倍率。しきい値は同梱のモデル
+ * ([EmbeddingModels.BUNDLED])で決めてあるため、モデルごとの検索の採用の上限([EmbeddingModelProfile.maxSearchDistance])の比で読み替える
+ * (同梱のモデルなら 1)。
+ */
+fun duplicateDistanceScale(profile: EmbeddingModelProfile): Double =
+    profile.maxSearchDistance / EmbeddingModels.BUNDLED.maxSearchDistance
 
 /** ブックマークの ID と URL(URL の一致を調べる入力)。 */
 data class UrlEntry(val id: Long, val url: String)

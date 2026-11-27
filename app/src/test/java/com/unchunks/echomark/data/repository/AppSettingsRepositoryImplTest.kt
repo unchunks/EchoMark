@@ -24,7 +24,9 @@ import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AiTask
 import com.unchunks.echomark.domain.repository.AiTaskSetting
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.repository.DesignStyle
+import com.unchunks.echomark.domain.repository.EmbeddingSetting
 import com.unchunks.echomark.domain.repository.LlmBackend
 import com.unchunks.echomark.domain.repository.ProcessingSettings
 import com.unchunks.echomark.domain.repository.RediscoverSettings
@@ -39,7 +41,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Test
 import java.time.DayOfWeek
 
@@ -343,7 +347,7 @@ class AppSettingsRepositoryImplTest {
         val settings = repository.aiTaskSettings.first()
         val summary = settings.getValue(AiTask.SUMMARY)
         // クラウドを無効にしている間は、保存した API の設定も端末内として読む(提供元・モデルは保存されたまま)
-        assertEquals(LlmBackend.LOCAL, summary.backend)
+        assertEquals(if (CLOUD_AI_ENABLED) LlmBackend.API else LlmBackend.LOCAL, summary.backend)
         assertEquals("gemini-3.5-flash-lite", summary.apiModel)
         assertEquals(AiTaskSetting(), settings.getValue(AiTask.TAGGING).copy(apiModels = emptyMap()))
         assertEquals(LlmBackend.LOCAL, settings.getValue(AiTask.CHAT).backend)
@@ -352,6 +356,27 @@ class AppSettingsRepositoryImplTest {
         // 空白のモデル ID は既定値に戻す
         repository.setApiModel(AiTask.SUMMARY, ApiProvider.GEMINI, " ")
         assertEquals(ApiProvider.GEMINI.defaultModel, repository.aiTaskSettings.first().getValue(AiTask.SUMMARY).apiModel)
+    }
+
+    @Test
+    fun 検索用の埋め込みは既定で端末内_保存した場所を読み_埋め込みの無い提供元は既定にする() = runTest {
+        Assume.assumeTrue(CLOUD_AI_ENABLED)
+        val dataStore = InMemorySettingsDataStore()
+        val repository = createRepository(dataStore)
+        assertEquals(EmbeddingSetting(), repository.embeddingSetting.first())
+        assertNull(repository.embeddingSetting.first().cloudProvider)
+
+        repository.setEmbeddingSetting(EmbeddingSetting(LlmBackend.API, ApiProvider.OPENAI))
+        assertEquals(ApiProvider.OPENAI, createRepository(dataStore).embeddingSetting.first().cloudProvider)
+
+        // Claude には埋め込みの API が無いので、提供元は書き換えない
+        repository.setEmbeddingSetting(EmbeddingSetting(LlmBackend.API, ApiProvider.CLAUDE))
+        assertEquals(ApiProvider.OPENAI, repository.embeddingSetting.first().apiProvider)
+        dataStore.edit { it[stringPreferencesKey("embedding_api_provider")] = "CLAUDE" }
+        assertEquals(EmbeddingSetting().apiProvider, repository.embeddingSetting.first().apiProvider)
+
+        repository.resetToDefaults()
+        assertEquals(EmbeddingSetting(), repository.embeddingSetting.first())
     }
 
     @Test
@@ -379,7 +404,7 @@ class AppSettingsRepositoryImplTest {
         val repository = createRepository(dataStore)
 
         repository.aiTaskSettings.first().values.forEach {
-            assertEquals(LlmBackend.LOCAL, it.backend)
+            assertEquals(if (CLOUD_AI_ENABLED) LlmBackend.API else LlmBackend.LOCAL, it.backend)
             assertEquals(ApiProvider.OPENAI, it.apiProvider)
             assertEquals("gpt-6-luna", it.apiModel)
         }

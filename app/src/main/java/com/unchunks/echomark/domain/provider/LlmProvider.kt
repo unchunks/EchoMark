@@ -64,7 +64,8 @@ interface LlmProvider {
      * @param actions AI が提案できる操作(1つ1行に整形済み)。AI は回答の最後に「操作: 名前」と書いて提案する
      * @param history 直近の会話履歴(古い順。今回の [question] は含まない)
      * @throws ModelNotAvailableException 利用に必要なモデルが未取得のとき
-     * @throws UnsupportedOperationException 対応していない実装(クラウド API)
+     * @throws LlmException クラウド API の呼び出しに失敗したとき
+     * @throws UnsupportedOperationException 対応していない実装(既定の実装)
      */
     fun appHelpStream(question: String, guide: List<String>, actions: List<String>, history: List<ChatMessage>): Flow<String> =
         flow { throw UnsupportedOperationException("appHelpStream は未対応") }

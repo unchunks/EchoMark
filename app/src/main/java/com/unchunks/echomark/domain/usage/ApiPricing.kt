@@ -86,7 +86,12 @@ object ApiPricing {
         (ApiProvider.OPENAI to "gpt-6-luna") to listOf(
             PriceRule(price(0.10, 0.50), maxInputTokens = 272_000),
             PriceRule(price(0.20, 0.75))
-        )
+        ),
+        // 検索用の埋め込み(2026-11-27 に同じ公式のページで確かめた)。出力のトークンは無い
+        // Gemini は gemini-embedding-2 の Text input price(有料・Standard)。テキストだけを送る
+        (ApiProvider.GEMINI to "gemini-embedding-2") to listOf(PriceRule(price(0.20, 0.0))),
+        // OpenAI は Specialized models の Embedding の行(Standard)
+        (ApiProvider.OPENAI to "text-embedding-3-small") to listOf(PriceRule(price(0.02, 0.0)))
     )
 
     /** 価格を確かめたモデルか。 */

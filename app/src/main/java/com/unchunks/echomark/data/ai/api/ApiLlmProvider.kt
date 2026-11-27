@@ -100,6 +100,14 @@ class ApiLlmProvider @Inject constructor(
             onContextUsage: (ChatContextUsage) -> Unit
         ): Flow<String> = chatStream(task, userMessage, context, history, memory)
 
+        // 使い方の案内は端末内と同じ指示で答えさせる(案内に無い画面を作らない・操作は「操作: 名前」で提案する)
+        override fun appHelpStream(
+            question: String,
+            guide: List<String>,
+            actions: List<String>,
+            history: List<ChatMessage>
+        ): Flow<String> = stream(task, conversationRequest(AiPrompts.appHelpInstructions(guide, actions), history, question))
+
         override suspend fun chatContextLimits(): ChatContextLimits {
             val setting = appSettings.aiTaskSetting(task).first()
             return ChatContextLimits.forCloud(ApiInputBudget.singleCallChars(setting.apiProvider, setting.apiModel))
@@ -290,12 +298,15 @@ class ApiLlmProvider @Inject constructor(
         context: List<String>,
         history: List<ChatMessage>,
         memory: String?
-    ): Flow<String> = flow {
+    ): Flow<String> = stream(task, chatRequest(userMessage, context, history, memory))
+
+    /** [request] を [task] の設定の提供元に送り、生成されたテキストを増分で流す。 */
+    private fun stream(task: AiTask, request: ApiRequest): Flow<String> = flow {
         val (client, credentials) = current(task)
         var latest: ApiTokenUsage? = null
         // 途中で止められても(収集のキャンセル・失敗)、そこまでに分かったトークン数を記録する
         emitAll(
-            client.stream(chatRequest(userMessage, context, history, memory), credentials) { latest = it }
+            client.stream(request, credentials) { latest = it }
                 .onCompletion { recordUsage(task, client, credentials, latest) }
         )
     }
@@ -360,12 +371,19 @@ class ApiLlmProvider @Inject constructor(
         context: List<String>,
         history: List<ChatMessage>,
         memory: String?
-    ): ApiRequest = ApiRequest(
-        purpose = ApiPurpose.CHAT,
+    ): ApiRequest = conversationRequest(
         system = listOfNotNull(
             AiPrompts.chatInstructions(context),
             memory?.takeIf { it.isNotBlank() }?.let(AiPrompts::chatMemorySection)
         ).joinToString("\n\n"),
+        history = history,
+        userMessage = userMessage
+    )
+
+    /** [system] の指示で、直近の会話([history])に続けて [userMessage] に答えさせるリクエスト。 */
+    private fun conversationRequest(system: String, history: List<ChatMessage>, userMessage: String): ApiRequest = ApiRequest(
+        purpose = ApiPurpose.CHAT,
+        system = system,
         messages = history.takeLast(ChatContextLimits.MAX_CLOUD_HISTORY_MESSAGES).map { ApiMessage(it.role, it.content.take(MAX_HISTORY_CHARS)) } +
             ApiMessage(ChatRole.USER, userMessage)
     )

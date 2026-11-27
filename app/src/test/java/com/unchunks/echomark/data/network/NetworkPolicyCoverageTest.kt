@@ -60,6 +60,11 @@ class NetworkPolicyCoverageTest {
             mapOf("com/unchunks/echomark/data/ai/api/ApiLlmProvider.kt" to "OfflineGuardedApiLlmClient(client, gate::isOffline)")
         ),
         Rule(
+            "クラウドの埋め込み(検索用のベクトル)",
+            Regex("""import com\.unchunks\.components\.llm\.cloud\.(OpenAiEmbeddingClient|GeminiEmbeddingClient)"""),
+            mapOf("com/unchunks/echomark/data/ai/embedding/CloudEmbedder.kt" to "if (gate.isOffline()) throw EmbeddingUnavailableException(")
+        ),
+        Rule(
             "クラウドの文字起こし",
             Regex("""import com\.unchunks\.components\.speech\.(OpenAiTranscriptionClient|GeminiTranscriptionClient)"""),
             mapOf("com/unchunks/echomark/data/extract/transcribe/TranscriptionProviderSelector.kt" to "if (gate.isOffline()) return null")

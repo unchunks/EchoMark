@@ -16,6 +16,7 @@ import com.unchunks.echomark.domain.model.SummaryFormat
 import com.unchunks.echomark.domain.model.SummaryLanguage
 import com.unchunks.echomark.domain.model.SummaryStyle
 import com.unchunks.echomark.domain.repository.AiTask
+import com.unchunks.echomark.domain.repository.CLOUD_AI_ENABLED
 import com.unchunks.echomark.domain.usage.ApiUsagePeriods
 import com.unchunks.echomark.domain.usage.ApiUsageRecord
 import com.unchunks.echomark.domain.repository.DataOperationException
@@ -40,6 +41,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -90,8 +92,26 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun クラウドAIを使えるときは今日の使用量を集計して出す() = runTest {
+        Assume.assumeTrue(CLOUD_AI_ENABLED)
+        val usage = FakeApiUsageRepository()
+        usage.record(
+            ApiUsageRecord(System.currentTimeMillis(), ApiProvider.CLAUDE, "claude-haiku-5-5", AiTask.SUMMARY, 100, 20)
+        )
+        val viewModel = createViewModel(usage)
+        backgroundScope.launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+
+        val today = viewModel.uiState.value.apiUsage.today
+        assertEquals(1, today.calls)
+        assertEquals(100L, today.inputTokens)
+        assertEquals(20L, today.outputTokens)
+    }
+
+    @Test
     fun クラウドAIを使えない間は使用量を読まず_欄も空のまま() = runTest {
         // クラウド AI を無効にしている間は記録が無いので、DB も読まない(CLOUD_AI_ENABLED)
+        Assume.assumeFalse(CLOUD_AI_ENABLED)
         val usage = FakeApiUsageRepository()
         usage.record(
             ApiUsageRecord(System.currentTimeMillis(), ApiProvider.CLAUDE, "claude-haiku-5-5", AiTask.SUMMARY, 100, 20)

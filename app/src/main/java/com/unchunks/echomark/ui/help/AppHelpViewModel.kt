@@ -2,6 +2,7 @@ package com.unchunks.echomark.ui.help
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unchunks.components.llm.ApiProvider
 import com.unchunks.components.llm.ChatRole
 import com.unchunks.echomark.domain.help.AppAction
 import com.unchunks.echomark.domain.help.AppActionCatalog
@@ -50,6 +51,7 @@ data class AppHelpError(val message: String, val needsAiSettings: Boolean)
  * 使い方を AI に聞く画面の状態。
  * @property answering 回答を作っている間 true(送信を止め、「止める」を出す)
  * @property runningAction 操作を実行している間 true(操作のボタンを押せなくする)
+ * @property cloudProvider 回答に使うクラウド API の提供元(チャットの用途の設定)。端末内 AI で答えるなら null
  */
 data class AppHelpUiState(
     val messages: List<AppHelpMessage> = emptyList(),
@@ -57,7 +59,8 @@ data class AppHelpUiState(
     val answering: Boolean = false,
     val runningAction: Boolean = false,
     val error: AppHelpError? = null,
-    val suggestions: List<String> = SUGGESTED_QUESTIONS
+    val suggestions: List<String> = SUGGESTED_QUESTIONS,
+    val cloudProvider: ApiProvider? = null
 ) {
     val canSend: Boolean get() = input.isNotBlank() && !answering
 
@@ -74,8 +77,8 @@ data class AppHelpUiState(
 }
 
 /**
- * アプリの使い方を端末内 AI に聞き、頼んだ操作を行う。会話は画面を閉じると消える(保存しない)。
- * 質問ごとに、使い方の案内から近い節を選んで AI に渡す([AppGuideRetriever])。
+ * アプリの使い方を AI(チャットの用途で選んだ端末内 AI・クラウド API)に聞き、頼んだ操作を行う。会話は画面を閉じると消える(保存しない)。
+ * 質問ごとに、使い方の案内から近い節を選んで AI に渡す([AppGuideRetriever]。クラウド API なら多めに渡す)。
  * AI が提案した操作はボタンにして、利用者が押したときだけ実行する([AppActionCatalog])。
  */
 @HiltViewModel
@@ -94,6 +97,13 @@ class AppHelpViewModel @Inject constructor(
 
     private var answerJob: Job? = null
     private var nextId = 1L
+
+    init {
+        // 回答に使う AI の場所を画面の説明と、渡す案内の量に使う(設定を変えて戻ってきたときにも追う)
+        viewModelScope.launch {
+            assistant.cloudProvider.collect { provider -> _uiState.update { it.copy(cloudProvider = provider) } }
+        }
+    }
 
     fun onInputChange(text: String) = _uiState.update { it.copy(input = text) }
 
@@ -156,7 +166,8 @@ class AppHelpViewModel @Inject constructor(
         val history = _uiState.value.messages
             .filter { it.text.isNotBlank() && !it.isResult }
             .map { it.toChatMessage() }
-        val sections = AppGuideRetriever.retrieve(question)
+        val limit = if (_uiState.value.cloudProvider != null) AppGuideRetriever.CLOUD_LIMIT else AppGuideRetriever.DEFAULT_LIMIT
+        val sections = AppGuideRetriever.retrieve(question, limit = limit)
         val candidates = AppActionCatalog.candidatesFor(sections)
         val questionMessage = AppHelpMessage(nextId++, fromUser = true, text = question)
         val answerId = nextId++

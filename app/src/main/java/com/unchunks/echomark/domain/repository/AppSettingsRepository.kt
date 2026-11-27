@@ -37,10 +37,11 @@ fun AiTask.defaultApiModel(provider: ApiProvider): String =
     if (this == AiTask.SUMMARY && provider == ApiProvider.CLAUDE) SUMMARY_DEFAULT_CLAUDE_MODEL else provider.defaultModel
 
 /**
- * クラウド API の経路を使うか。false の間は、保存された設定に関係なく全用途を端末内 AI で動かす。
- * クラウドのコード(API クライアント・設定画面)は残してあり、true に戻せば元の挙動になる。
+ * クラウド API の経路を使うか。true の間は、用途ごとに端末内 AI とクラウド API(Claude・Gemini・OpenAI)を選べる。
+ * false にすると、保存された設定に関係なく全用途を端末内 AI で動かし、設定や初回設定からクラウドの選択肢を消す
+ * (配布の都合でクラウドを止めたいときのための切り替え。既定の実行場所はどちらでも端末内)。
  */
-const val CLOUD_AI_ENABLED = false
+const val CLOUD_AI_ENABLED = true
 
 /**
  * 1つの用途の AI の設定。
@@ -67,6 +68,23 @@ data class AiTaskSetting(
                 LlmBackend.LOCAL -> localModelId == other.localModelId
                 LlmBackend.API -> apiProvider == other.apiProvider && apiModel == other.apiModel
             }
+}
+
+/** 埋め込み(検索用のベクトル)の API がある提供元。設定に出す順。Claude には埋め込みの API が無い */
+val EMBEDDING_API_PROVIDERS: List<ApiProvider> = listOf(ApiProvider.GEMINI, ApiProvider.OPENAI)
+
+/**
+ * 検索用の埋め込み(ベクトル)を作る場所。意味での検索・関連・重複の検出・チャットの資料探しに使う。
+ * 端末内なら同梱・取り込んだ埋め込みモデル、クラウド API なら [apiProvider] の埋め込み API で作る。
+ * 作る場所を変えるとベクトルの版が変わるため、全ブックマークの埋め込みを作り直す。
+ * @property apiProvider クラウド API で作るときの提供元([EMBEDDING_API_PROVIDERS] のどれか)
+ */
+data class EmbeddingSetting(
+    val backend: LlmBackend = LlmBackend.LOCAL,
+    val apiProvider: ApiProvider = EMBEDDING_API_PROVIDERS.first()
+) {
+    /** クラウド API で作るときの提供元。端末内で作るなら null */
+    val cloudProvider: ApiProvider? get() = apiProvider.takeIf { backend == LlmBackend.API }
 }
 
 /** 画面の明暗。SYSTEM は端末の設定に合わせる。 */
@@ -163,6 +181,12 @@ interface AppSettingsRepository {
      */
     val localLlmUseGpu: Flow<Boolean>
 
+    /**
+     * 検索用の埋め込みを作る場所(端末内・クラウド API)。既定は端末内。
+     * [CLOUD_AI_ENABLED] が false の間は、保存された値に関係なく端末内。
+     */
+    val embeddingSetting: Flow<EmbeddingSetting>
+
     /** ユーザーが保存したチャットのテンプレート(新しい順)。 */
     val chatTemplates: Flow<List<ChatTemplate>>
 
@@ -253,6 +277,9 @@ interface AppSettingsRepository {
     suspend fun setOnboardingCompleted(completed: Boolean)
     suspend fun setSendFilesToCloud(enabled: Boolean)
     suspend fun setLocalLlmUseGpu(enabled: Boolean)
+
+    /** [setting] の提供元が [EMBEDDING_API_PROVIDERS] に無ければ、提供元は今のまま */
+    suspend fun setEmbeddingSetting(setting: EmbeddingSetting)
     suspend fun setBookmarkSortOrder(sortOrder: BookmarkSortOrder)
     suspend fun setBookmarkListDisplay(display: BookmarkListDisplay)
     suspend fun setReadingStyle(style: ReadingStyle)
