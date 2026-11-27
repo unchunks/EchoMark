@@ -61,6 +61,7 @@
 | `background.rings` | 背景にアイコンと同じ波紋を薄く描くか |
 | `device.frameColor` / `device.statusBarTime` | スマートフォンの枠の色 / ステータスバーの時刻 |
 | `app.design` / `app.dark` | 画面のデザイン(`CLASSIC`・`ECHO`・`PAPER`・`CLEAR`・`SOFT`)/ ダークテーマで描くか |
+| `app.font` / `app.boldFont` | 枠の中のアプリの画面(とタブレットの画像)の書体。`null` なら実際のアプリと同じ端末の標準の書体。可変フォントは `font` だけでよい。太さが1つのフォントは、太字のファイルを `boldFont` に書く(無ければ機械的に太らせる)。書体を直に決めている所(ペーパーの明朝など)は変わらない。**実際のアプリの書体は変わらない**ので、Play のおすすめ(実際の画面を載せる)から離れすぎないように使う |
 | `featureGraphic.title` / `featureGraphic.tagline` | フィーチャー グラフィックのアプリ名とキャッチコピー |
 | `phone[]` | スマートフォンの画像。`file`(ファイル名。Play ではこの順に並ぶ)・`screen`(画面)・`headline`・`caption`(`\n` で改行)・`scroll`(撮る前に下へスクロールする dp。省略で画面ごとの既定) |
 | `tablet[]` | タブレットの画像。`file`・`screen`・`scroll` |
@@ -79,6 +80,8 @@
 ```json
 "headline": { "font": "C:/Windows/Fonts/BIZ-UDGothicB.ttc", "weight": 700, "size": 24, "color": "#FFFFFF" },
 "caption": { "font": "C:/Windows/Fonts/NotoSansJP-VF.ttf", "weight": 400, "size": 12.5, "color": "#DBFFFFFF" }
+
+"app": { "design": "CLASSIC", "dark": false, "font": "C:/Windows/Fonts/BIZ-UDGothicR.ttc", "boldFont": "C:/Windows/Fonts/BIZ-UDGothicB.ttc" }
 ```
 
 フォントのファイルをリポジトリに置くなら `tools/store-assets/fonts/` に置き、`"font": "fonts/xxx.ttf"` と書く。

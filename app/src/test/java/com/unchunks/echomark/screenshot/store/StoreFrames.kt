@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
@@ -49,6 +50,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -125,6 +128,46 @@ internal fun StoreEnvironment(content: @Composable () -> Unit) {
             content()
         }
     }
+}
+
+/**
+ * 枠の中のアプリの画面だけ、設定(app.font)の書体で描く。Material 3 の文字の型(typography)の書体を差し替えるので、
+ * 書体を直に指定している所(ペーパーのデザインの明朝など)はそのまま。見出しやステータスバーには効かせない。
+ */
+@Composable
+internal fun WithAppFont(content: @Composable () -> Unit) {
+    val family = StoreConfig.current.appFont.fontFamily
+    if (family == null) {
+        content()
+        return
+    }
+    MaterialTheme(
+        colorScheme = MaterialTheme.colorScheme,
+        shapes = MaterialTheme.shapes,
+        typography = MaterialTheme.typography.withFontFamily(family),
+        content = content
+    )
+}
+
+private fun Typography.withFontFamily(family: FontFamily): Typography {
+    fun TextStyle.withFamily() = copy(fontFamily = family)
+    return copy(
+        displayLarge = displayLarge.withFamily(),
+        displayMedium = displayMedium.withFamily(),
+        displaySmall = displaySmall.withFamily(),
+        headlineLarge = headlineLarge.withFamily(),
+        headlineMedium = headlineMedium.withFamily(),
+        headlineSmall = headlineSmall.withFamily(),
+        titleLarge = titleLarge.withFamily(),
+        titleMedium = titleMedium.withFamily(),
+        titleSmall = titleSmall.withFamily(),
+        bodyLarge = bodyLarge.withFamily(),
+        bodyMedium = bodyMedium.withFamily(),
+        bodySmall = bodySmall.withFamily(),
+        labelLarge = labelLarge.withFamily(),
+        labelMedium = labelMedium.withFamily(),
+        labelSmall = labelSmall.withFamily()
+    )
 }
 
 private const val STORE_TAG = "store_root"
@@ -205,7 +248,7 @@ internal fun PhoneFrame(
         ) {
             Column {
                 StatusBar(Modifier.height(STATUS_BAR_DP.dp))
-                Box(Modifier.size(APP_WIDTH_DP.dp, APP_HEIGHT_DP.dp).clipToBounds()) { content() }
+                Box(Modifier.size(APP_WIDTH_DP.dp, APP_HEIGHT_DP.dp).clipToBounds()) { WithAppFont { content() } }
                 GestureBar(Modifier.height(GESTURE_BAR_DP.dp))
             }
         }

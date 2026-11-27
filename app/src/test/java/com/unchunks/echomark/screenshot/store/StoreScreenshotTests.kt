@@ -148,7 +148,7 @@ class StoreTabletScreenshotTest(private val shot: StoreShot) {
             beforeCapture = { if (scrollDp > 0f) scrollContaining(screen.scroll?.text ?: "", scrollDp) }
         ) {
             Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-                screen.content(layout)
+                WithAppFont { screen.content(layout) }
             }
         }
     }

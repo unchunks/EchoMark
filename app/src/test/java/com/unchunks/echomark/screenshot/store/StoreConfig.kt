@@ -24,6 +24,8 @@ internal data class StoreConfig(
     val statusBarTime: String,
     val appDesign: DesignStyle,
     val appDarkTheme: Boolean,
+    /** 枠の中のアプリの画面の書体(設定の app.font・app.boldFont)。実際のアプリは端末の標準の書体のまま */
+    val appFont: StoreAppFont,
     val featureTitle: String,
     val featureTagline: String,
     val phone: List<StoreShot>,
@@ -71,6 +73,10 @@ internal data class StoreConfig(
                 appDesign = DesignStyle.entries.firstOrNull { it.name == design }
                     ?: error("app.design は ${DesignStyle.entries.joinToString()} のどれか(今: $design)"),
                 appDarkTheme = app.optBoolean("dark", false),
+                appFont = StoreAppFont(
+                    regular = fontFileOf(app, "font", baseDir),
+                    bold = fontFileOf(app, "boldFont", baseDir)
+                ),
                 featureTitle = feature.getString("title"),
                 featureTagline = feature.getString("tagline"),
                 phone = root.getJSONArray("phone").objects().map(StoreShot::parse),
@@ -120,12 +126,9 @@ internal data class StoreTextStyle(val fontFile: File?, val weight: Int, val siz
     }
 
     companion object {
-        /** `font` は絶対パスか、設定のファイルからの相対パス */
         fun parse(json: JSONObject, baseDir: File): StoreTextStyle {
-            val path = if (json.isNull("font")) null else json.getString("font")
-            val font = path?.let { p -> File(p).takeIf { it.isAbsolute } ?: File(baseDir, p) }
             return StoreTextStyle(
-                fontFile = font,
+                fontFile = fontFileOf(json, "font", baseDir),
                 weight = json.optInt("weight", 400),
                 sizeSp = json.getDouble("size").toFloat(),
                 color = parseColor(json.getString("color"))
@@ -174,6 +177,56 @@ internal data class StoreVideoConfig(
 ) {
     fun caption(scene: String): StoreCaption =
         scenes[scene] ?: error("video.scenes に「$scene」の見出しがありません")
+}
+
+/**
+ * 枠の中のアプリの画面の書体。[regular] が null なら変えない(アプリと同じ、端末の標準の書体)。
+ *
+ * - 可変フォント(NotoSansJP-VF など)は、1つのファイルから太さごとの書体を作る
+ * - 太さが1つだけのフォントは、[bold] があれば太字にそれを使い、無ければ太字を機械的に太らせる
+ */
+internal data class StoreAppFont(val regular: File?, val bold: File?) {
+
+    val fontFamily: FontFamily? by lazy {
+        val file = regular ?: return@lazy null
+        require(file.isFile) { "フォントのファイルが見つかりません: $file(store-assets.json の app.font)" }
+        val boldFile = bold?.also { require(it.isFile) { "フォントのファイルが見つかりません: $it(store-assets.json の app.boldFont)" } }
+        val fonts = if (boldFile == null && isVariableFont(file)) {
+            VARIABLE_WEIGHTS.map { w ->
+                Font(file = file, weight = FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+            }
+        } else {
+            listOfNotNull(Font(file = file, weight = FontWeight.Normal), boldFile?.let { Font(file = it, weight = FontWeight.Bold) })
+        }
+        FontFamily(fonts)
+    }
+
+    private companion object {
+        /** アプリの画面で使う太さ(Material 3 の文字の型は 400・500、太字は 600・700) */
+        val VARIABLE_WEIGHTS = listOf(300, 400, 500, 600, 700, 800)
+    }
+}
+
+/**
+ * フォントのファイルに太さなどの軸(fvar の表)があるか。TTC は最初の書体を見る。
+ * 太さが1つだけのフォントに太さごとの書体を作ると、太字が太くならないため、作り方を分ける。
+ */
+internal fun isVariableFont(file: File): Boolean = runCatching {
+    val bytes = file.readBytes()
+    fun u32(at: Int) = ((bytes[at].toLong() and 0xFF) shl 24) or ((bytes[at + 1].toLong() and 0xFF) shl 16) or
+        ((bytes[at + 2].toLong() and 0xFF) shl 8) or (bytes[at + 3].toLong() and 0xFF)
+    fun u16(at: Int) = ((bytes[at].toInt() and 0xFF) shl 8) or (bytes[at + 1].toInt() and 0xFF)
+    // TTC は 'ttcf' の後ろに、それぞれの書体の表の位置が並ぶ
+    val start = if (String(bytes, 0, 4, Charsets.US_ASCII) == "ttcf") u32(12).toInt() else 0
+    val tables = u16(start + 4)
+    (0 until tables).any { i -> String(bytes, start + 12 + i * 16, 4, Charsets.US_ASCII) == "fvar" }
+}.getOrDefault(false)
+
+/** [key] のフォントのファイル。絶対パスか、設定のファイルからの相対パス。null なら指定なし */
+private fun fontFileOf(json: JSONObject, key: String, baseDir: File): File? {
+    if (!json.has(key) || json.isNull(key)) return null
+    val path = json.getString(key)
+    return File(path).takeIf { it.isAbsolute } ?: File(baseDir, path)
 }
 
 /** "#RRGGBB" か "#AARRGGBB" */

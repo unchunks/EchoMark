@@ -13,7 +13,9 @@
   },
   "app": {
     "design": "CLASSIC",
-    "dark": false
+    "dark": false,
+    "font": null,
+    "boldFont": null
   },
   "featureGraphic": {
     "title": "EchoMark",
