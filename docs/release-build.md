@@ -39,6 +39,11 @@
 前もって環境変数を入れておけば、その値が使われる(別の鍵で署名したいときなど)。
 リポジトリ直下に `keystore.properties` があると、そちらが環境変数より優先される。
 
-`JAVA_HOME` と `ANDROID_HOME` が無ければ、Android Studio の `jbr` と `%LOCALAPPDATA%\Android\Sdk` を使う。
+`JAVA_HOME` が無ければ、Android Studio の `jbr` を探して使う(`C:\Program Files\Android\Android Studio*` など。
+Android Studio を更新するとフォルダの名前が変わったり古いフォルダが中途半端に残ったりするので、`java.exe` と `keytool.exe` がそろった新しいものを選ぶ)。
+`JAVA_HOME` を設定しているのにそこに `keytool.exe` が無いときは、エラーで止まる。
+`ANDROID_HOME` が無ければ `%LOCALAPPDATA%\Android\Sdk` を使う。
+
+ビルド前のパスワードの確認で合わなかったとき、保存したパスワード(`-RememberPassword`)を使っていたなら、その保存を消す。
 
 鍵が設定されていないまま `gradlew assembleRelease` を直接呼ぶと、debug の鍵で仮に署名される(端末での確認用。配布には使えない)。
