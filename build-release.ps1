@@ -69,13 +69,42 @@ function ConvertTo-PlainText([Security.SecureString]$Secure) {
 }
 
 # --- ビルドに要る道具の場所(未設定のときだけ既定値を入れる) ---
-$studioJbr = 'C:\Program Files\Android\Android Studio\jbr'
-if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME) -and (Test-Path $studioJbr)) {
-    $env:JAVA_HOME = $studioJbr
+function Test-Jdk([string]$Dir) {
+    -not [string]::IsNullOrWhiteSpace($Dir) -and
+        (Test-Path -LiteralPath (Join-Path $Dir 'bin\java.exe')) -and
+        (Test-Path -LiteralPath (Join-Path $Dir 'bin\keytool.exe'))
 }
-if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
-    throw 'JAVA_HOME が設定されていません。JDK 17 以上(Android Studio の jbr など)の場所を設定してください'
+
+if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
+    if (-not (Test-Jdk $env:JAVA_HOME)) {
+        throw "JAVA_HOME ($env:JAVA_HOME) に java.exe と keytool.exe がありません。JDK 17 以上の場所にするか、JAVA_HOME を消してください(消すと Android Studio の jbr を探して使います)"
+    }
+} else {
+    # Android Studio の jbr を探す。更新すると、フォルダの名前が変わったり(例: Android Studio Rabbit)、
+    # 古いフォルダが中途半端に残ったりするため、決め打ちせず、java.exe と keytool.exe がそろった新しいものを使う
+    $roots = @(
+        (Join-Path $env:ProgramFiles 'Android'),
+        (Join-Path $env:LOCALAPPDATA 'Programs'),
+        (Join-Path $env:LOCALAPPDATA 'JetBrains\Toolbox\apps')
+    )
+    $candidates = foreach ($root in $roots) {
+        if (Test-Path -LiteralPath $root) {
+            Get-ChildItem -LiteralPath $root -Directory -Filter 'Android Studio*' -ErrorAction SilentlyContinue
+            Get-ChildItem -LiteralPath $root -Directory -Filter 'AndroidStudio*' -ErrorAction SilentlyContinue |
+                Get-ChildItem -Directory -ErrorAction SilentlyContinue
+        }
+    }
+    $jbr = $candidates |
+        ForEach-Object { Join-Path $_.FullName 'jbr' } |
+        Where-Object { Test-Jdk $_ } |
+        Sort-Object { (Get-Item -LiteralPath (Join-Path $_ 'bin\java.exe')).LastWriteTime } -Descending |
+        Select-Object -First 1
+    if ($null -eq $jbr) {
+        throw 'JDK が見つかりません。JAVA_HOME に JDK 17 以上(Android Studio の jbr など)の場所を設定してください'
+    }
+    $env:JAVA_HOME = $jbr
 }
+Write-Host "JDK: $env:JAVA_HOME"
 # components の composite build は自分の local.properties を持たないため、SDK の場所を環境変数でも渡す
 $defaultSdk = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME) -and (Test-Path $defaultSdk)) {
@@ -88,6 +117,7 @@ $envNames = 'ECHOMARK_KEYSTORE_FILE', 'ECHOMARK_KEY_ALIAS', 'ECHOMARK_KEYSTORE_P
 $preset = @{}
 foreach ($name in $envNames) { $preset[$name] = [Environment]::GetEnvironmentVariable($name) }
 
+$passwordFromFile = $false
 try {
     Set-DefaultEnv 'ECHOMARK_KEYSTORE_FILE' $DefaultKeystoreFile
     Set-DefaultEnv 'ECHOMARK_KEY_ALIAS' $DefaultKeyAlias
@@ -99,7 +129,7 @@ try {
     if ([string]::IsNullOrEmpty($env:ECHOMARK_KEYSTORE_PASSWORD)) {
         $secure = $null
         if (Test-Path $PasswordFile) {
-            try { $secure = Import-Clixml $PasswordFile } catch { $secure = $null }
+            try { $secure = Import-Clixml $PasswordFile; $passwordFromFile = $true } catch { $secure = $null }
         }
         if ($null -eq $secure) {
             $secure = Read-Host -AsSecureString "署名鍵のパスワード ($env:ECHOMARK_KEYSTORE_FILE)"
@@ -119,7 +149,11 @@ try {
     $keytoolExit = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
     if ($keytoolExit -ne 0) {
-        if (Test-Path $PasswordFile) { Remove-Item $PasswordFile -Force }
+        # 保存したパスワードが古くなっていたときだけ消す(環境変数や入力のパスワードが違うだけなら残す)
+        if ($passwordFromFile) {
+            Remove-Item $PasswordFile -Force
+            Write-Host "保存したパスワードが合わないため消しました: $PasswordFile"
+        }
         throw "署名鍵を開けません。パスワードか鍵の名前 ($env:ECHOMARK_KEY_ALIAS) が違います"
     }
 
