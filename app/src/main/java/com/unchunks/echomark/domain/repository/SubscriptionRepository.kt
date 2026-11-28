@@ -1,0 +1,43 @@
+package com.unchunks.echomark.domain.repository
+
+import com.unchunks.echomark.domain.subscription.FeedCheckSummary
+import com.unchunks.echomark.domain.subscription.QueryKind
+import com.unchunks.echomark.domain.subscription.SearchSource
+import com.unchunks.echomark.domain.subscription.SubscribeOutcome
+import com.unchunks.echomark.domain.subscription.Subscription
+import kotlinx.coroutines.flow.Flow
+
+/** 購読するフィード(RSS・Atom・YouTube のチャンネル。#78)の管理と確認。 */
+interface SubscriptionRepository {
+    /** 購読の一覧(登録した順) */
+    fun observeAll(): Flow<List<Subscription>>
+
+    /**
+     * 入力された URL(サイトの URL・フィードの URL・YouTube のチャンネルや再生リストの URL・チャンネル ID)の購読を追加する。
+     * サイトの URL なら、ページからフィードを探す。通信が要る。最初の確認は [checkNow] で行う。
+     */
+    suspend fun subscribe(input: String): SubscribeOutcome
+
+    /**
+     * サイト [source] を [kind](キーワード・著者・分野・タグ・リポジトリ)の [query] で探し、新着を保存する購読を追加する。
+     * キーワードは空白で区切った語をすべて含むもの(`"..."` は語句のまま)。通信しない。最初の確認は [checkNow] で行う。
+     */
+    suspend fun subscribeSearch(source: SearchSource, kind: QueryKind, query: String): SubscribeOutcome
+
+    suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    /**
+     * 新着の絞り込みを変える。[include]・[exclude] は入力のまま(空白・読点・カンマで区切る。`"..."` は語句のまま)。
+     * 空にすると絞り込まない。これまでに見送った記事は、さかのぼって保存しない
+     */
+    suspend fun setFilter(id: Long, include: String, exclude: String)
+
+    /** 購読をやめる。保存済みのブックマークは残る */
+    suspend fun remove(id: Long)
+
+    /**
+     * いま確認して、新しい記事・動画を保存する(利用者が押したとき・購読を追加した直後)。[id] が null なら有効なすべて。
+     * 夜間の確認と違い、充電中・Wi-Fi の設定は見ない(利用者が自分で押したため)。
+     */
+    suspend fun checkNow(id: Long? = null): FeedCheckSummary
+}

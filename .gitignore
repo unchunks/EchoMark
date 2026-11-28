@@ -7,12 +7,25 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+# 端末ごとの Android Studio の状態(実行先の端末選択・Device Manager の並び順)
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
 .DS_Store
 /build
 /captures
 .externalNativeBuild
 .cxx
 local.properties
-/app/src/main/assets/all-minilm-l6-v2/
-/app/src/main/assets/multilingual-e5-small/
 /app/src/main/assets/embeddinggemma-300m/
+
+# Claude Code のサブエージェント用 worktree
+/.claude/worktrees/
+# ObjectBox のビルド時バックアップ
+/app/objectbox-models/*.bak
+# ObjectBox がテスト実行時に展開するネイティブライブラリ
+/app/objectbox-jni-*.dll
+
+# リリース用の署名鍵と、その場所・パスワード(コミットしない)
+keystore.properties
+*.jks
+*.keystore
